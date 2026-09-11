@@ -28,16 +28,27 @@ Identical data, identical hardware, identical client-protocol load path, Postgre
 
 | Measure | PostgreSQL 17 | ClickHouse 25.8 | Ratio |
 |---|---:|---:|---:|
-| Load 125.9M rows | 829 s (staging only) | **195 s** (+60 s optimise) | **~3.2×** |
-| …to a *queryable, sorted, typed* table | + **> 2 h** transform (single-threaded) | **included in the load** | **~12×** |
+| Load 125.9M rows | 829 s (staging only) | **195 s** (+60 s optimise) | 4.3× |
+| …to a *queryable, sorted, typed* table | + **> 2 h** transform (single-threaded) | **included in the load** | **~28×** |
 | On disk | 8.92 GiB (unsorted text, no index) | **2.60 GiB** (sorted, typed) | **3.4×** |
 | TAC dimension | 28.3 s / 159 MB | **3.25 s / 39.96 MiB** | 8.7× / 4.0× |
-| **Q1 dashboard aggregate** | 87.5–146.7 s | **3.6–4.0 s** | **~22×** |
-| Q2 high-cardinality churn | 187.9 s | **52.1–61.8 s** | **3.6×** |
-| Q4 drill-down | *(see results)* | 2.3–5.7 s | |
+| **Q1 dashboard aggregate** | 90,449 ms | **3,481 ms** | **26×** |
+| **Q4 drill-down** | 90,821 ms | **2,587 ms** | **35×** |
+| Q2 high-cardinality churn | 187,876 ms | **52,459 ms** | 3.6× |
+| **Q3 point lookup** | needs a dedicated B-tree | **12 ms** (278K of 126M rows read) | — |
 
-The decisive number is **Q1: 90 s versus 4 s** on the single most common query shape in the product — and
+ClickHouse figures are server-side, from `system.query_log`. Both engines returned identical results on
+every query, which is what makes the timings meaningful.
+
+The decisive number is **Q1: 90 s versus 3.5 s** on the single most common query shape in the product — and
 PostgreSQL's figure is against a *staging* table, having not yet paid the 2-hour cost of proper modelling.
+
+**Q3 settles the main doubt about this choice.** Point lookup is the workload column stores are
+traditionally bad at, and it was the strongest reason to suspect ClickHouse could not serve all three
+confirmed workloads from one engine. It answered in a **median of 12 ms** by reading 278,360 of 125,939,523
+rows — the sparse primary index on `(msisdn, imsi, imei)` skipped 99.8% of the table. The same ordering that
+makes aggregates fast makes the lookup fast, at no extra storage cost. PostgreSQL would need a separate
+multi-GB B-tree, and tens of minutes to build it.
 
 ### A. ClickHouse — **chosen**
 

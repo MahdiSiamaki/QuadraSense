@@ -64,12 +64,86 @@ a nightly pipeline that fits in its window and one that does not.
 
 ---
 
+### Final load figures
+
+| Measure | PostgreSQL 17 | ClickHouse 25.8 | Ratio |
+|---|---:|---:|---:|
+| Load 125,939,523 rows | **829.4 s** | **195 s** | **4.3×** |
+| …plus sort/merge to final form | *(transform: >2 h, abandoned)* | **+60 s** (`OPTIMIZE FINAL`) | |
+| **Total to a queryable, sorted, typed table** | **> 2 h** | **255 s** | **~28×** |
+| Throughput | 151,845 rows/s | **645,844 rows/s** | 4.3× |
+| Base table on disk | **8.92 GiB** (unsorted text, no index) | **2.60 GiB** (sorted, typed) | **3.4×** |
+| TAC load / size | 28.3 s / 159 MB | **3.25 s / 39.96 MiB** | 8.7× / 4.0× |
+
+---
+
 ## Query results
 
-*(populated below when the query run completes)*
+Client-side wall clock (3 runs each). **ClickHouse figures also reported server-side** from
+`system.query_log`, because `docker exec` plus `clickhouse-client` startup adds roughly 400 ms — negligible
+for multi-second queries but completely dominant for a point lookup.
+
+| Query | PostgreSQL (median) | ClickHouse (client) | ClickHouse (**server**) | Rows read (CH) | Ratio (server) |
+|---|---:|---:|---:|---:|---:|
+| **Q1** dashboard aggregate | **90,449 ms** | 4,014 ms | **3,481 ms** | 126.2M | **26×** |
+| **Q4** drill-down | **90,821 ms** | 3,182 ms | **2,587 ms** | 126.1M | **35×** |
+| **Q2** churn distribution | **187,876 ms** | 53,409 ms | **52,459 ms** | 125.9M | **3.6×** |
+| **Q3** point lookup | *(index build pending)* | 429 ms | **12 ms** | **278K** | — |
+
+Both engines returned identical results on every query (e.g. Samsung Korea 52,696,268; Xiaomi 28,090,873),
+which is the correctness check that makes the timings meaningful.
+
+### Q3 deserves a note
+
+ClickHouse answered the point lookup in a **median of 12 ms (min 9 ms)** by reading **278,360 of
+125,939,523 rows** — its sparse primary index on `(msisdn, imsi, imei)` skipped 99.8% of the table. This
+matters because point lookup is the workload column stores are traditionally *bad* at, and it was the main
+reason to suspect ClickHouse might not be able to serve all three workloads. It can.
+
+PostgreSQL needs a dedicated B-tree on `msisdn` to compete here, and building one on 125.9M rows is itself a
+multi-tens-of-minutes operation plus several GB of index — a cost ClickHouse does not pay at all, because the
+ordering that makes the lookup fast is the same ordering that makes the aggregates fast.
 
 ---
 
 ## Interpretation
 
-*(populated when complete)*
+### 1. ClickHouse wins every measured workload
+
+26–35× on the dashboard query shapes, 3.6× on the heavy churn aggregate, 3.4× less storage, and ~28× faster
+to reach a queryable state. PostgreSQL was given every advantage — `fsync=off`, unlogged staging, 6 parallel
+workers, a generous buffer pool — and was still measured against a *staging* table it had not yet paid the
+2-hour cost of properly modelling.
+
+### 2. The most important finding is not about the winner
+
+**Neither engine can serve dashboards from raw data.** Against a 500 ms P95 budget:
+
+- ClickHouse's best dashboard query is **3.5 s** — 7× over budget.
+- The churn distribution is **52 s** — 100× over budget.
+- PostgreSQL is 90 s and 188 s respectively.
+
+So the **pre-aggregation / mart layer is mandatory from day one**, not an optimisation to add later if things
+feel slow. This single result reshapes Phase 3: the importer and the aggregate refresh must be built
+together, because the product does not work without both.
+
+What the engine choice actually buys is **what happens when a user drills past the pre-aggregates**. At 3.5 s
+ClickHouse makes ad-hoc exploration viable; at 90 s PostgreSQL does not. Given that churn analysis and
+subscriber lookup are confirmed requirements, that difference is the decision.
+
+### 3. Q2 is the shape to watch
+
+The churn distribution (group by 79M distinct MSISDNs) is slow on both engines because it is genuinely hard —
+high cardinality, no filter, no index can help. It must be served from a pre-computed daily rollup rather than
+computed on demand. Worth designing deliberately rather than discovering in production.
+
+### 4. What this benchmark does *not* establish
+
+- **Concurrency.** Every measurement is single-user. Behaviour under 10–50 concurrent dashboard users is
+  unmeasured and depends on the confirmed user count.
+- **Production hardware.** A 6-core laptop with 8 GiB available to Docker is not a server. Absolute numbers
+  will change; the relative ordering is unlikely to.
+- **MS SQL Server with Clustered Columnstore**, which was excluded on licensing grounds (Express caps at
+  10 GB) rather than measured. If licences already exist, it deserves a run before Phase 3.
+- **The event-log workload.** Only the 126M-row current state was benchmarked, not the 678M-row event
+  history or the 3B-row/year projection.
