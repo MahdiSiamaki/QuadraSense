@@ -1,48 +1,76 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useKpiSummary, useTopDimension, useDistribution, type DashboardFilters } from '@/api/dashboard'
+import { computed } from 'vue'
+import {
+  useKpiSummary,
+  useTopDimension,
+  useDistribution,
+  useDeviceClassMix,
+} from '@/api/dashboard'
 import Card from '@/design-system/Card.vue'
 import KpiCard from '@/design-system/KpiCard.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import BarChart from '@/design-system/BarChart.vue'
+import CompositionBar from '@/design-system/CompositionBar.vue'
+import DimensionTable from '@/design-system/DimensionTable.vue'
 import { formatFull, formatPercent } from '@/lib/format'
+import { useFilterState, FILTER_LABELS } from './useFilterState'
 
-/*
-  Filters live in component state for now. Phase 4 moves them into the URL so a
-  view is shareable and reloadable - the shape here is already the shape that
-  will be serialised, so that move is mechanical rather than a rewrite.
-*/
-const filters = ref<DashboardFilters>({ includeUnknownDevice: true })
+const { filters, activeFilters, setFilter, toggleUnknownDevice, clearAll } = useFilterState()
 
 const kpi = useKpiSummary(filters)
 const vendors = useTopDimension('vendorCanonical', filters, 10)
 const deviceTypes = useDistribution('deviceType', filters)
 const operatingSystems = useTopDimension('operatingSystem', filters, 8)
+const classMix = useDeviceClassMix()
 
-/** Clicking a bar narrows the dashboard - the drill-down the brief asks for. */
-function drillIntoVendor(key: string) {
-  if (key.startsWith('(unknown')) return
-  filters.value = { ...filters.value, vendor: key }
+/**
+ * Top models always excludes the unknown-device bucket.
+ *
+ * Not a cosmetic choice. "(unknown device)" is 8.8M bindings — larger than every
+ * real model — so including it dwarfs the bars and makes the models
+ * incomparable, which is the one thing this chart exists to do. And it is not an
+ * answer to "which models are popular": it is the absence of one.
+ *
+ * The count is not hidden: it stays in the KPI row, the class mix, and the
+ * device-type table, where it genuinely is a category.
+ */
+const modelFilters = computed(() => ({ ...filters.value, includeUnknownDevice: false }))
+const models = useTopDimension('marketingName', modelFilters, 10)
+
+/** Clicking a bar drills in. The URL changes, so back undoes it. */
+function drillInto(key: keyof typeof FILTER_LABELS, value: string) {
+  if (value.startsWith('(unknown')) return
+  setFilter(key, value)
 }
-
-function clearFilters() {
-  filters.value = { includeUnknownDevice: true }
-}
-
-const hasFilters = computed(() =>
-  Boolean(filters.value.vendor || filters.value.deviceType || filters.value.operatingSystem),
-)
 
 const unknownShare = computed(() => {
   const k = kpi.data.value
-  if (!k || !k.activeBindings) return null
+  if (!k?.activeBindings) return null
   return (k.unknownDeviceBindings / k.activeBindings) * 100
 })
+
+/**
+ * Bindings with a well-formed IMEI whose TAC is absent from the GSMA database.
+ *
+ * Computed from exact counts the API returns, never from the coverage percentage.
+ * Deriving it from a figure rounded to three decimals put this ~30,000 rows off
+ * the true 255,676 - a rounding artifact presented as a count, on the screen
+ * whose whole job is to report data quality accurately.
+ */
+const unregisteredTac = computed(() => {
+  const k = kpi.data.value
+  if (!k?.activeBindings) return null
+  return (
+    k.activeBindings - k.tacMatchedBindings - k.unknownDeviceBindings - k.malformedImeiBindings
+  )
+})
+
+/** The filtered path falls back to the raw table and is measurably slower. */
+const isFiltered = computed(() => activeFilters.value.length > 0)
 </script>
 
 <template>
   <div class="space-y-5">
-    <!-- Page header -->
     <header class="flex flex-wrap items-end justify-between gap-3">
       <div>
         <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Device population</h1>
@@ -51,22 +79,44 @@ const unknownShare = computed(() => {
         </p>
       </div>
 
-      <div v-if="hasFilters" class="flex items-center gap-2">
-        <span
-          v-if="filters.vendor"
-          class="inline-flex items-center gap-1.5 rounded-full bg-[var(--c-accent-subtle)] px-2.5 py-1 text-[var(--text-xs)] font-medium"
-        >
-          {{ filters.vendor }}
-        </span>
+      <div class="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          class="rounded-[var(--radius-sm)] border px-2.5 py-1 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)]"
-          @click="clearFilters"
+          class="rounded-[var(--radius-md)] border px-2.5 py-1.5 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)]"
+          :class="filters.includeUnknownDevice ? '' : 'bg-[var(--c-surface-sunken)]'"
+          @click="toggleUnknownDevice"
         >
-          Clear
+          {{ filters.includeUnknownDevice ? 'Hide unknown devices' : 'Show unknown devices' }}
         </button>
       </div>
     </header>
+
+    <!-- Active filters. Shown as removable chips so the current view is always legible. -->
+    <div v-if="isFiltered" class="flex flex-wrap items-center gap-2">
+      <span class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Filtered by</span>
+      <button
+        v-for="f in activeFilters"
+        :key="f.key"
+        type="button"
+        class="group inline-flex items-center gap-1.5 rounded-full bg-[var(--c-accent-subtle)] py-1 pr-2 pl-2.5 text-[var(--text-xs)] font-medium"
+        :title="`Remove ${FILTER_LABELS[f.key]} filter`"
+        @click="setFilter(f.key, undefined)"
+      >
+        <span class="text-[var(--c-text-secondary)]">{{ FILTER_LABELS[f.key] }}:</span>
+        <span>{{ f.value }}</span>
+        <span aria-hidden="true" class="text-[var(--c-text-muted)] group-hover:text-[var(--c-text)]">×</span>
+      </button>
+      <button
+        type="button"
+        class="rounded-[var(--radius-sm)] px-2 py-1 text-[var(--text-xs)] font-medium text-[var(--c-text-secondary)] underline-offset-2 hover:underline"
+        @click="clearAll"
+      >
+        Clear all
+      </button>
+      <span class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        · filtered views query raw data and take a few seconds
+      </span>
+    </div>
 
     <!-- KPI row -->
     <AsyncBoundary
@@ -101,9 +151,25 @@ const unknownShare = computed(() => {
       </div>
     </AsyncBoundary>
 
-    <!-- Charts -->
+    <!-- Composition -->
+    <Card
+      title="Device class mix"
+      subtitle="Handsets versus machines. IoT/M2M is a real segment here, not tail noise."
+    >
+      <AsyncBoundary
+        :is-loading="classMix.isPending.value"
+        :is-error="classMix.isError.value"
+        :error="classMix.error.value"
+        min-height="6rem"
+        @retry="classMix.refetch()"
+      >
+        <CompositionBar :data="classMix.data.value ?? []" />
+      </AsyncBoundary>
+    </Card>
+
+    <!-- Vendors and models -->
     <div class="grid gap-5 xl:grid-cols-2">
-      <Card title="Top vendors" subtitle="By active bindings. Click a bar to filter.">
+      <Card title="Top vendors" subtitle="Normalised names. Click a bar to filter.">
         <AsyncBoundary
           :is-loading="vendors.isPending.value"
           :is-error="vendors.isError.value"
@@ -112,55 +178,130 @@ const unknownShare = computed(() => {
           min-height="18rem"
           @retry="vendors.refetch()"
         >
-          <BarChart :data="vendors.data.value ?? []" @select="drillIntoVendor" />
+          <BarChart :data="vendors.data.value ?? []" @select="(v) => drillInto('vendor', v)" />
         </AsyncBoundary>
       </Card>
 
-      <Card title="Device types" subtitle="Smartphone, feature phone, modem and IoT mix.">
+      <Card title="Top models" subtitle="By GSMA marketing name. Excludes unknown devices.">
+        <AsyncBoundary
+          :is-loading="models.isPending.value"
+          :is-error="models.isError.value"
+          :error="models.error.value"
+          :is-empty="models.data.value?.length === 0"
+          min-height="18rem"
+          @retry="models.refetch()"
+        >
+          <BarChart :data="models.data.value ?? []" />
+        </AsyncBoundary>
+      </Card>
+    </div>
+
+    <!-- Types and OS -->
+    <div class="grid gap-5 xl:grid-cols-2">
+      <Card title="Device types" subtitle="Full GSMA taxonomy. Click to filter." flush>
         <AsyncBoundary
           :is-loading="deviceTypes.isPending.value"
           :is-error="deviceTypes.isError.value"
           :error="deviceTypes.error.value"
           :is-empty="deviceTypes.data.value?.length === 0"
-          min-height="18rem"
+          min-height="16rem"
           @retry="deviceTypes.refetch()"
         >
-          <BarChart :data="(deviceTypes.data.value ?? []).slice(0, 10)" />
+          <DimensionTable
+            :rows="(deviceTypes.data.value ?? []).slice(0, 10)"
+            header="Device type"
+            @select="(v) => drillInto('deviceType', v)"
+          />
+        </AsyncBoundary>
+      </Card>
+
+      <Card title="Operating systems" subtitle="Normalised for case and whitespace." flush>
+        <AsyncBoundary
+          :is-loading="operatingSystems.isPending.value"
+          :is-error="operatingSystems.isError.value"
+          :error="operatingSystems.error.value"
+          :is-empty="operatingSystems.data.value?.length === 0"
+          min-height="16rem"
+          @retry="operatingSystems.refetch()"
+        >
+          <DimensionTable
+            :rows="operatingSystems.data.value ?? []"
+            header="Operating system"
+            @select="(v) => drillInto('operatingSystem', v)"
+          />
         </AsyncBoundary>
       </Card>
     </div>
 
-    <Card title="Operating systems" subtitle="Normalised for case and whitespace.">
+    <!-- Data quality -->
+    <Card
+      title="Enrichment breakdown"
+      subtitle="Every active binding, accounted for. These are characteristics of the feed, not defects — except where noted."
+    >
       <AsyncBoundary
-        :is-loading="operatingSystems.isPending.value"
-        :is-error="operatingSystems.isError.value"
-        :error="operatingSystems.error.value"
-        :is-empty="operatingSystems.data.value?.length === 0"
-        min-height="15rem"
-        @retry="operatingSystems.refetch()"
+        :is-loading="kpi.isPending.value"
+        :is-error="kpi.isError.value"
+        :error="kpi.error.value"
+        min-height="8rem"
+        @retry="kpi.refetch()"
       >
-        <table class="w-full text-[var(--text-sm)]">
-          <thead>
-            <tr class="border-b text-left text-[var(--text-xs)] text-[var(--c-text-muted)]">
-              <th class="pb-2 font-medium">Operating system</th>
-              <th class="pb-2 text-right font-medium">Bindings</th>
-              <th class="pb-2 text-right font-medium">Share</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="row in operatingSystems.data.value ?? []"
-              :key="row.key"
-              class="border-b last:border-0 hover:bg-[var(--c-surface-hover)]"
-            >
-              <td class="py-2 pr-4">{{ row.key }}</td>
-              <td class="py-2 text-right tabular">{{ formatFull(row.count) }}</td>
-              <td class="py-2 text-right tabular text-[var(--c-text-secondary)]">
-                {{ formatPercent(row.percent, 2) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="space-y-4">
+          <!-- The four categories are shown together, and they sum exactly to the total.
+               Presenting them separately is the point: only one of them is a defect. -->
+          <dl class="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Enriched from GSMA</dt>
+              <dd class="mt-1 text-[var(--text-lg)] font-semibold tabular text-[var(--c-success)]">
+                {{ formatFull(kpi.data.value?.tacMatchedBindings ?? 0) }}
+              </dd>
+              <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+                {{ formatPercent(kpi.data.value?.tacCoveragePercent ?? 0, 2) }} of active bindings.
+              </dd>
+            </div>
+
+            <div>
+              <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+                Unknown device (<code class="font-[var(--font-mono)]">000000</code>)
+              </dt>
+              <dd class="mt-1 text-[var(--text-lg)] font-semibold tabular text-[var(--c-warning)]">
+                {{ formatFull(kpi.data.value?.unknownDeviceBindings ?? 0) }}
+              </dd>
+              <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+                A sentinel the source uses for "device not known". Expected, not a defect.
+              </dd>
+            </div>
+
+            <div>
+              <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Malformed IMEI</dt>
+              <dd class="mt-1 text-[var(--text-lg)] font-semibold tabular text-[var(--c-danger)]">
+                {{ formatFull(kpi.data.value?.malformedImeiBindings ?? 0) }}
+              </dd>
+              <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+                Numeric but not 14 digits. <strong>The only genuine defect here</strong> — worth raising
+                with the source.
+              </dd>
+            </div>
+
+            <div>
+              <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Unregistered TAC</dt>
+              <dd class="mt-1 text-[var(--text-lg)] font-semibold tabular">
+                {{ formatFull(unregisteredTac ?? 0) }}
+              </dd>
+              <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+                Well-formed IMEI whose TAC is absent from the GSMA database.
+              </dd>
+            </div>
+          </dl>
+
+          <p class="border-t pt-3 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+            The four figures sum to
+            <span class="tabular font-medium text-[var(--c-text-secondary)]">
+              {{ formatFull(kpi.data.value?.activeBindings ?? 0) }}
+            </span>
+            active bindings. The enrichment ceiling is set by unknown-device rows, not by gaps in the
+            GSMA database.
+          </p>
+        </div>
       </AsyncBoundary>
     </Card>
   </div>

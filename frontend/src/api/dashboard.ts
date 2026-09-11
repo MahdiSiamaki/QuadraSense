@@ -13,6 +13,10 @@ export interface KpiSummary {
   distinctSubscribers: number
   distinctDevices: number
   unknownDeviceBindings: number
+  /** Numeric IMEI that is not 14 digits: a defect, distinct from the 000000 sentinel. */
+  malformedImeiBindings: number
+  /** Exact count, not derived from the percentage - see the contract for why. */
+  tacMatchedBindings: number
   tacCoveragePercent: number
 }
 
@@ -120,6 +124,21 @@ export function useDistribution(
         { ...toValue(filters) },
         signal,
       ),
+    staleTime: DAILY_DATA_STALE_TIME,
+  })
+}
+
+/**
+ * The handset-versus-machine mix.
+ *
+ * Read from a pre-computed 8-row table, so this is effectively free (~106 ms end
+ * to end, most of it HTTP).
+ */
+export function useDeviceClassMix() {
+  return useQuery({
+    queryKey: ['device-class-mix'],
+    queryFn: ({ signal }) =>
+      api.get<DimensionCount[]>('/api/v1/dashboard/device-class-mix', undefined, signal),
     staleTime: DAILY_DATA_STALE_TIME,
   })
 }

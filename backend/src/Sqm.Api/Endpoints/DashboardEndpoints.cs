@@ -34,7 +34,18 @@ public static class DashboardEndpoints
             .WithName("GetChangeSeries")
             .WithSummary("Adds, removes and net change per delivery sequence.");
 
+        group.MapGet("/device-class-mix", GetDeviceClassMixAsync)
+            .WithName("GetDeviceClassMix")
+            .WithSummary("Handset versus machine mix: smartphone, feature phone, tablet, IoT/M2M.");
+
         return app;
+    }
+
+    private static async Task<IResult> GetDeviceClassMixAsync(
+        IDeviceAnalyticsStore store, CancellationToken ct)
+    {
+        var rows = await store.GetDeviceClassMixAsync(ct).ConfigureAwait(false);
+        return Results.Ok(rows);
     }
 
     private static async Task<IResult> GetKpiAsync(

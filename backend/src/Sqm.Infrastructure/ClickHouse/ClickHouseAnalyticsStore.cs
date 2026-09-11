@@ -43,25 +43,97 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         Message = "Subscriber lookup returned {BindingCount} bindings")]
     private partial void LogLookupCompleted(int bindingCount);
 
+    /// <summary>Name of the pooled <see cref="HttpClient"/> used for every ClickHouse call.</summary>
+    public const string HttpClientName = "clickhouse";
+
     private readonly ClickHouseOptions _options;
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    // Named `_logger` because the LoggerMessage source generator looks for an ILogger field
+    // on the containing type to emit the partial method body against.
     private readonly ILogger<ClickHouseAnalyticsStore> _logger;
 
     public ClickHouseAnalyticsStore(
         IOptions<ClickHouseOptions> options,
+        IHttpClientFactory httpClientFactory,
         ILogger<ClickHouseAnalyticsStore> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options.Value;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
     /// <inheritdoc />
     public async Task<KpiSummary> GetKpiSummaryAsync(DashboardFilter filter, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(filter);
+
+        var unfiltered =
+            MartRouting.CanUseMart(filter) &&
+            string.IsNullOrWhiteSpace(filter.Manufacturer) &&
+            string.IsNullOrWhiteSpace(filter.VendorCanonical) &&
+            string.IsNullOrWhiteSpace(filter.DeviceType) &&
+            string.IsNullOrWhiteSpace(filter.OperatingSystem) &&
+            string.IsNullOrWhiteSpace(filter.Tac);
+
+        return unfiltered
+            ? await GetKpiFromMartAsync(ct).ConfigureAwait(false)
+            : await GetKpiFromRawAsync(filter, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The unfiltered KPI row, read straight from the pre-computed mart.
+    /// </summary>
+    /// <remarks>
+    /// The distinct counts here cannot be derived from the TAC rollup — one subscriber holds bindings
+    /// across several TACs, so distinct MSISDNs per TAC do not sum to distinct MSISDNs overall. They are
+    /// computed once at ingest over the whole population and stored, which is why this table exists
+    /// separately from <c>agg_device_daily</c>.
+    /// </remarks>
+    private async Task<KpiSummary> GetKpiFromMartAsync(CancellationToken ct)
+    {
+        const string Sql = """
+            SELECT
+                active_bindings,
+                distinct_subscribers,
+                distinct_devices,
+                unknown_device_bindings,
+                malformed_imei_bindings,
+                tac_matched_bindings,
+                round(100.0 * tac_matched_bindings / nullIf(active_bindings, 0), 3) AS tac_coverage_pct
+            FROM sqm.agg_kpi_daily
+            ORDER BY seq DESC
+            LIMIT 1
+            """;
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = CreateCommand(connection, Sql);
+
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            return new KpiSummary(0, 0, 0, 0, 0, 0, 0);
+        }
+
+        return new KpiSummary(
+            ActiveBindings: GetInt64(reader, 0),
+            DistinctSubscribers: GetInt64(reader, 1),
+            DistinctDevices: GetInt64(reader, 2),
+            UnknownDeviceBindings: GetInt64(reader, 3),
+            MalformedImeiBindings: GetInt64(reader, 4),
+            TacMatchedBindings: GetInt64(reader, 5),
+            TacCoveragePercent: GetDouble(reader, 6));
+    }
+
+    /// <summary>Filtered KPIs, which must scan the raw table. Measured at ~6 s.</summary>
+    private async Task<KpiSummary> GetKpiFromRawAsync(DashboardFilter filter, CancellationToken ct)
+    {
         var f = FilterBuilder.ForCurrentState(filter);
 
         // uniqExact would be correct but costs ~52 s on this cardinality (measured). uniq() is a
-        // HyperLogLog estimate with ~0.5% error, which is invisible on a KPI card reading "73.3M" and
+        // HyperLogLog estimate with ~0.5% error, which is invisible on a KPI card reading "79.5M" and
         // three orders of magnitude cheaper. Exact counts remain available via export.
         var sql = $"""
             SELECT
@@ -69,6 +141,8 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 uniq(b.msisdn)                                 AS distinct_subscribers,
                 uniq(b.imei)                                   AS distinct_devices,
                 countIf(b.imei = '000000')                     AS unknown_device_bindings,
+                countIf(length(b.imei) != 14 AND b.imei != '000000') AS malformed_imei_bindings,
+                countIf(t.tac != '')                           AS tac_matched_bindings,
                 round(100.0 * countIf(t.tac != '') / count(), 3) AS tac_coverage_pct
             FROM sqm.binding_current AS b
             LEFT JOIN sqm.tac AS t ON t.tac = b.tac
@@ -84,7 +158,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            return new KpiSummary(0, 0, 0, 0, 0);
+            return new KpiSummary(0, 0, 0, 0, 0, 0, 0);
         }
 
         return new KpiSummary(
@@ -92,7 +166,9 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
             DistinctSubscribers: GetInt64(reader, 1),
             DistinctDevices: GetInt64(reader, 2),
             UnknownDeviceBindings: GetInt64(reader, 3),
-            TacCoveragePercent: GetDouble(reader, 4));
+            MalformedImeiBindings: GetInt64(reader, 4),
+            TacMatchedBindings: GetInt64(reader, 5),
+            TacCoveragePercent: GetDouble(reader, 6));
     }
 
     /// <inheritdoc />
@@ -103,6 +179,27 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         var f = FilterBuilder.ForCurrentState(filter);
         var take = FilterBuilder.ClampLimit(limit);
 
+        // Read the rollup when the filter allows it (39 ms), the raw table when it does not (3.5 s).
+        // MartRouting explains exactly which filters force the fallback and why.
+        var useMart = MartRouting.CanUseMart(filter);
+
+        var source = useMart
+            ? $"""
+               FROM sqm.agg_device_daily AS b
+               LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+               LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+               WHERE b.active = 1 AND b.seq = {MartRouting.SnapshotSequence}
+               """
+            : """
+              FROM sqm.binding_current AS b
+              LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+              LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+              WHERE b.active = 1
+              """;
+
+        // The rollup stores a pre-counted `n`; the raw table counts rows. Same result, different arithmetic.
+        var measure = useMart ? "sum(b.n)" : "count()";
+
         // The unknown-device population has no dimension value at all, so it is labelled rather than
         // silently excluded — it would otherwise be a 7% hole in every chart.
         // Note the doubled `$$`: in a raw string literal `{{ }}` marks interpolation, which leaves single
@@ -112,11 +209,8 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 multiIf(b.tac = '', {unknown_device:String},
                         t.tac = '',  {unknown_tac:String},
                         coalesce(nullIf({{column}}, ''), {unknown_tac:String})) AS dim_key,
-                count() AS n
-            FROM sqm.binding_current AS b
-            LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-            LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
-            WHERE b.active = 1 AND {{f.WhereClause}}
+                {{measure}} AS n
+            {{source}} AND {{f.WhereClause}}
             GROUP BY dim_key
             ORDER BY n DESC
             LIMIT {{take}}
@@ -245,7 +339,47 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         return points;
     }
 
-    private ClickHouseConnection CreateConnection() => new(_options.ConnectionString);
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<DistributionSlice>> GetDeviceClassMixAsync(CancellationToken ct)
+    {
+        const string Sql = """
+            SELECT device_class, sum(n) AS n
+            FROM sqm.agg_device_class_daily
+            WHERE seq = (SELECT max(seq) FROM sqm.agg_device_class_daily)
+            GROUP BY device_class
+            ORDER BY n DESC
+            """;
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = CreateCommand(connection, Sql);
+
+        var rows = new List<(string Key, long Count)>();
+        await using (var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                rows.Add((reader.GetString(0), GetInt64(reader, 1)));
+            }
+        }
+
+        var total = rows.Sum(r => r.Count);
+        return rows
+            .Select(r => new DistributionSlice(r.Key, r.Count, Percent(r.Count, total)))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Opens a connection backed by the pooled <see cref="HttpClient"/>.
+    /// </summary>
+    /// <remarks>
+    /// Constructing a connection with only a connection string makes ClickHouse.Client create its own
+    /// <see cref="HttpClient"/> per instance. That costs a fresh TCP and TLS handshake on every query —
+    /// measured here at roughly a second of overhead on a 39 ms query — and under load it leaks sockets
+    /// into TIME_WAIT until the port range is exhausted. Passing the factory reuses pooled connections.
+    /// </remarks>
+    private ClickHouseConnection CreateConnection() =>
+        new(_options.ConnectionString, _httpClientFactory, HttpClientName);
 
     private ClickHouseCommand CreateCommand(ClickHouseConnection connection, string sql)
     {

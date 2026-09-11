@@ -68,6 +68,7 @@ Each is a test with a purpose-built fixture:
 | **Added column** | Accepted with a warning |
 | **Partial failure** (crash mid-batch) | State consistent on restart; batch resumable or cleanly re-runnable |
 | **Reprocessing** a batch | Identical end state — the fold is deterministic |
+| **Re-running the mart refresh** | Identical counts. **Regression test — this bug happened.** A refresh that only INSERTed doubled `agg_device_daily` to 251,879,046 against a real 125,939,523, silently, because a `SummingMergeTree` sums duplicates without complaint. Fixed structurally by partitioning each mart on `seq` and dropping the partition before insert. The test runs the refresh three times and asserts the total is unchanged. |
 | **Out-of-order files** | Detected where possible; explicitly logged as an assumption |
 | **Late data** | Applied in sequence order, counters reflect it |
 | **Empty file** | Handled as a valid zero-row day, not an error |

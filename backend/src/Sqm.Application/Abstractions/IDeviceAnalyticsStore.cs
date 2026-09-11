@@ -36,6 +36,16 @@ public interface IDeviceAnalyticsStore
 
     /// <summary>Adds, removes and net change per delivery sequence.</summary>
     Task<IReadOnlyList<ChangePoint>> GetChangeSeriesAsync(DashboardFilter filter, CancellationToken ct);
+
+    /// <summary>
+    /// The handset-versus-machine mix: smartphone, feature phone, tablet, IoT/M2M, wearable.
+    /// </summary>
+    /// <remarks>
+    /// A coarse grouping of the 19 GSMA device types, on purpose. Charting all 19 is unreadable, and an
+    /// arbitrary top-5 would hide the IoT segment — measured at 9.56M bindings (7.6%), which is a real
+    /// business segment rather than tail noise.
+    /// </remarks>
+    Task<IReadOnlyList<DistributionSlice>> GetDeviceClassMixAsync(CancellationToken ct);
 }
 
 /// <summary>

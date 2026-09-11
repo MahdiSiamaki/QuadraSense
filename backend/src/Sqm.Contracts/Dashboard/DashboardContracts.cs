@@ -42,12 +42,32 @@ public sealed record DashboardFilter(
 /// <param name="DistinctSubscribers">Distinct MSISDNs with at least one active binding.</param>
 /// <param name="DistinctDevices">Distinct IMEIs currently active.</param>
 /// <param name="UnknownDeviceBindings">Active bindings whose IMEI is the <c>000000</c> sentinel.</param>
+/// <param name="MalformedImeiBindings">
+/// Active bindings whose IMEI is numeric but not 14 digits, so no TAC can be derived.
+/// <para>
+/// Reported separately from <paramref name="UnknownDeviceBindings"/> because the two mean different
+/// things: the sentinel is the source telling us it does not know the device, while a malformed value
+/// is a defect in the data itself. Measured at 31,209 versus 8,776,237 - reporting the small one inside
+/// the large one makes a real, fixable problem invisible.
+/// </para>
+/// </param>
+/// <param name="TacMatchedBindings">
+/// Active bindings that matched a TAC in the GSMA database.
+/// <para>
+/// Returned as an exact count, not left to be derived from <paramref name="TacCoveragePercent"/>.
+/// Deriving it (total − percent×total − unknown) compounds the percentage's rounding across 126M rows
+/// and lands tens of thousands of rows away from the truth — which is unacceptable in a figure the
+/// data-quality screen presents as a count.
+/// </para>
+/// </param>
 /// <param name="TacCoveragePercent">Share of active bindings that enrich against the TAC database.</param>
 public sealed record KpiSummary(
     long ActiveBindings,
     long DistinctSubscribers,
     long DistinctDevices,
     long UnknownDeviceBindings,
+    long MalformedImeiBindings,
+    long TacMatchedBindings,
     double TacCoveragePercent);
 
 /// <summary>One row of a "top N by dimension" result.</summary>

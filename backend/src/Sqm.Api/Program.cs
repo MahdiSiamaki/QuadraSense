@@ -21,6 +21,22 @@ builder.Services.Configure<ClickHouseOptions>(
     builder.Configuration.GetSection(ClickHouseOptions.SectionName));
 
 // ---------------------------------------------------------------- services
+// One pooled HttpClient for every ClickHouse call. Without this the driver builds
+// a client per connection, paying a TCP handshake on each query and leaking sockets
+// into TIME_WAIT under load.
+builder.Services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName)
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        MaxConnectionsPerServer = 32,
+
+        // Required, not optional. ClickHouse compresses its HTTP responses, and
+        // supplying our own handler replaces the driver's default one — which had
+        // decompression enabled. Without this every query fails with
+        // "server returned compressed result but HttpClient did not decompress it".
+        AutomaticDecompression = System.Net.DecompressionMethods.All,
+    });
+
 builder.Services.AddSingleton<IDeviceAnalyticsStore, ClickHouseAnalyticsStore>();
 
 builder.Services.ConfigureHttpJsonOptions(o =>
