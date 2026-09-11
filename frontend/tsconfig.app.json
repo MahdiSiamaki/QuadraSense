@@ -1,0 +1,29 @@
+{
+  "extends": "@vue/tsconfig/tsconfig.dom.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "types": ["vite/client"],
+    "allowArbitraryExtensions": true,
+
+    /* Path alias, mirroring the resolve.alias in vite.config.ts. Both are needed:
+       Vite resolves at bundle time, TypeScript at check time.
+       No baseUrl: it is deprecated in TypeScript 6, and paths resolve relative to
+       this file without it. */
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+
+    /* Strictness beyond the preset. noUncheckedIndexedAccess is the one that
+       matters most here: indexing an array of API rows returns T | undefined,
+       which is the truth, and forces the null handling that dashboards need. */
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"]
+}

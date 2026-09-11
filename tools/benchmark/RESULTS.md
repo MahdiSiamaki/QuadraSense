@@ -88,7 +88,7 @@ for multi-second queries but completely dominant for a point lookup.
 | **Q1** dashboard aggregate | **90,449 ms** | 4,014 ms | **3,481 ms** | 126.2M | **26×** |
 | **Q4** drill-down | **90,821 ms** | 3,182 ms | **2,587 ms** | 126.1M | **35×** |
 | **Q2** churn distribution | **187,876 ms** | 53,409 ms | **52,459 ms** | 125.9M | **3.6×** |
-| **Q3** point lookup | *(index build pending)* | 429 ms | **12 ms** | **278K** | — |
+| **Q3** point lookup | 370 ms | 429 ms | **12 ms** | **278K** | see below |
 
 Both engines returned identical results on every query (e.g. Samsung Korea 52,696,268; Xiaomi 28,090,873),
 which is the correctness check that makes the timings meaningful.
@@ -100,9 +100,20 @@ ClickHouse answered the point lookup in a **median of 12 ms (min 9 ms)** by read
 matters because point lookup is the workload column stores are traditionally *bad* at, and it was the main
 reason to suspect ClickHouse might not be able to serve all three workloads. It can.
 
-PostgreSQL needs a dedicated B-tree on `msisdn` to compete here, and building one on 125.9M rows is itself a
-multi-tens-of-minutes operation plus several GB of index — a cost ClickHouse does not pay at all, because the
-ordering that makes the lookup fast is the same ordering that makes the aggregates fast.
+**PostgreSQL competes on this query once indexed, and that is the honest finding** — 370 ms client-side,
+which is largely the same `docker exec` overhead ClickHouse pays. Point lookup is not where PostgreSQL
+loses.
+
+What it costs to get there is the real difference:
+
+| | PostgreSQL | ClickHouse |
+|---|---:|---:|
+| Index build on 125.9M rows | **400 s** | **0 s** |
+| Extra storage for the index | **2,936 MB** | **0 MB** |
+
+ClickHouse pays nothing because the ordering that makes aggregates fast — `(msisdn, imsi, imei)` — is the
+same ordering that makes the lookup fast. PostgreSQL needs a separate 2.9 GB B-tree, rebuilt on every
+restore, on top of the 8.92 GB table. So the comparison on Q3 is not "faster" but "already paid for".
 
 ---
 
