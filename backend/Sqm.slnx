@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Sqm.Api/Sqm.Api.csproj" />
+    <Project Path="src/Sqm.Application/Sqm.Application.csproj" />
+    <Project Path="src/Sqm.Contracts/Sqm.Contracts.csproj" />
+    <Project Path="src/Sqm.Domain/Sqm.Domain.csproj" />
+    <Project Path="src/Sqm.Infrastructure/Sqm.Infrastructure.csproj" />
+    <Project Path="src/Sqm.Ingestion/Sqm.Ingestion.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Sqm.Application.Tests/Sqm.Application.Tests.csproj" />
+    <Project Path="tests/Sqm.Domain.Tests/Sqm.Domain.Tests.csproj" />
+    <Project Path="tests/Sqm.Integration.Tests/Sqm.Integration.Tests.csproj" />
+  </Folder>
+</Solution>

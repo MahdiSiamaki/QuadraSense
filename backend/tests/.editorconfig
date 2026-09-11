@@ -1,0 +1,14 @@
+; Rules relaxed for test projects only. Production code keeps the full analyser set.
+[*.cs]
+
+; CA1707: "Identifiers should not contain underscores".
+; Test names are documentation. `Remove_of_an_inactive_binding_is_an_idempotent_no_op` tells a reader
+; what the system guarantees; `RemoveOfAnInactiveBindingIsAnIdempotentNoOp` does not, and the failure
+; output is what people actually read when a build goes red.
+dotnet_diagnostic.CA1707.severity = none
+
+; CA1861: constant arrays as arguments — fine in InlineData/test setup.
+dotnet_diagnostic.CA1861.severity = none
+
+; CA2007: ConfigureAwait is not needed in test code.
+dotnet_diagnostic.CA2007.severity = none

@@ -1,0 +1,44 @@
+# ---- secrets -------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pfx
+*.key
+appsettings.*.Local.json
+secrets.json
+
+# ---- data ----------------------------------------------------------------
+# Never commit dataset files. The dumps are gigabytes and contain real PII.
+*.csv
+*.parquet
+*.tsv
+!tests/**/fixtures/*.csv
+data/
+_discovery/
+
+# ---- .NET ----------------------------------------------------------------
+bin/
+obj/
+*.user
+*.suo
+.vs/
+TestResults/
+coverage/
+*.trx
+
+# ---- node / frontend -----------------------------------------------------
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+.eslintcache
+
+# ---- generated -----------------------------------------------------------
+frontend/src/api/generated/
+backend/**/openapi.json
+
+# ---- os / editor ---------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
