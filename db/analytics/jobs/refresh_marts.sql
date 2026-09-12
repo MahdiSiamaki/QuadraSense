@@ -151,3 +151,111 @@ SELECT {seq:UInt16}, NULL, capability, supported, unsupported, unknown FROM (
         sumIf(n, (NOT enriched) OR ims NOT IN ('Y', 'Yes', 'N', 'No'))
     FROM joined
 );
+
+-- --------------------------------------------------------------------------
+-- 5. Per-dimension counts, three ways.
+--
+--    Distinct counts cannot be derived at query time (see migration 009), so they are
+--    materialised here for every dimension a breakdown can group by.
+--
+--    ONE STATEMENT PER DIMENSION, deliberately. Computing all six in a single query with
+--    UNION ALL keeps six HyperLogLog aggregation states alive at once and exhausted a 3 GB
+--    server. Sequential statements re-scan the table but keep peak memory flat, which is
+--    the right trade for a job that runs once a day on hardware we do not control.
+--
+--    The '(unknown device)' and '(unknown TAC)' labels are produced here rather than in the
+--    API, so every consumer of this table sees the same buckets.
+-- --------------------------------------------------------------------------
+ALTER TABLE sqm.agg_dimension_daily DROP PARTITION {seq:UInt16};
+
+INSERT INTO sqm.agg_dimension_daily
+    (seq, data_date, dimension, dim_value, bindings, subscribers, handsets)
+SELECT
+    {seq:UInt16}, NULL, 'vendor',
+    multiIf(b.tac = '', '(unknown device)',
+            t.tac = '',  '(unknown TAC)',
+            coalesce(coalesce(nullIf(v.vendor_canonical, ''), nullIf(t.manufacturer, '')), '(unknown TAC)')) AS dim_value,
+    count()                        AS bindings,
+    uniq(b.msisdn)                 AS subscribers,
+    uniqIf(b.imei, length(b.imei) = 14) AS handsets
+FROM sqm.binding_current AS b
+LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+WHERE b.active = 1
+GROUP BY dim_value;
+
+INSERT INTO sqm.agg_dimension_daily
+    (seq, data_date, dimension, dim_value, bindings, subscribers, handsets)
+SELECT
+    {seq:UInt16}, NULL, 'manufacturer',
+    multiIf(b.tac = '', '(unknown device)',
+            t.tac = '',  '(unknown TAC)',
+            coalesce(nullIf(t.manufacturer, ''), '(unknown TAC)')) AS dim_value,
+    count()                        AS bindings,
+    uniq(b.msisdn)                 AS subscribers,
+    uniqIf(b.imei, length(b.imei) = 14) AS handsets
+FROM sqm.binding_current AS b
+LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+WHERE b.active = 1
+GROUP BY dim_value;
+
+INSERT INTO sqm.agg_dimension_daily
+    (seq, data_date, dimension, dim_value, bindings, subscribers, handsets)
+SELECT
+    {seq:UInt16}, NULL, 'model',
+    multiIf(b.tac = '', '(unknown device)',
+            t.tac = '',  '(unknown TAC)',
+            coalesce(nullIf(t.marketingName, ''), '(unknown TAC)')) AS dim_value,
+    count()                        AS bindings,
+    uniq(b.msisdn)                 AS subscribers,
+    uniqIf(b.imei, length(b.imei) = 14) AS handsets
+FROM sqm.binding_current AS b
+LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+WHERE b.active = 1
+GROUP BY dim_value;
+
+INSERT INTO sqm.agg_dimension_daily
+    (seq, data_date, dimension, dim_value, bindings, subscribers, handsets)
+SELECT
+    {seq:UInt16}, NULL, 'deviceType',
+    multiIf(b.tac = '', '(unknown device)',
+            t.tac = '',  '(unknown TAC)',
+            coalesce(nullIf(t.deviceType, ''), '(unknown TAC)')) AS dim_value,
+    count()                        AS bindings,
+    uniq(b.msisdn)                 AS subscribers,
+    uniqIf(b.imei, length(b.imei) = 14) AS handsets
+FROM sqm.binding_current AS b
+LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+WHERE b.active = 1
+GROUP BY dim_value;
+
+INSERT INTO sqm.agg_dimension_daily
+    (seq, data_date, dimension, dim_value, bindings, subscribers, handsets)
+SELECT
+    {seq:UInt16}, NULL, 'os',
+    multiIf(b.tac = '', '(unknown device)',
+            t.tac = '',  '(unknown TAC)',
+            coalesce(nullIf(trim(t.operatingSystem), ''), '(unknown TAC)')) AS dim_value,
+    count()                        AS bindings,
+    uniq(b.msisdn)                 AS subscribers,
+    uniqIf(b.imei, length(b.imei) = 14) AS handsets
+FROM sqm.binding_current AS b
+LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+WHERE b.active = 1
+GROUP BY dim_value;
+
+INSERT INTO sqm.agg_dimension_daily
+    (seq, data_date, dimension, dim_value, bindings, subscribers, handsets)
+SELECT
+    {seq:UInt16}, NULL, 'tac',
+    if(tac = '', '(unknown device)', tac) AS dim_value,
+    count()                        AS bindings,
+    uniq(msisdn)                   AS subscribers,
+    uniqIf(imei, length(imei) = 14) AS handsets
+FROM sqm.binding_current
+WHERE active = 1
+GROUP BY dim_value;

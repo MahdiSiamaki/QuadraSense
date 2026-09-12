@@ -17,12 +17,28 @@ import DimensionTable from '@/design-system/DimensionTable.vue'
 import { formatFull, formatPercent } from '@/lib/format'
 import { useFilterState, FILTER_LABELS } from './useFilterState'
 
-const { filters, activeFilters, setFilter, toggleUnknownDevice, clearAll } = useFilterState()
+const { filters, activeFilters, setFilter, toggleUnknownDevice, clearAll, countBy, setCountBy } =
+  useFilterState()
+
+/**
+ * The three measures, each with the caveat it carries.
+ *
+ * Subscribers is the one that needs explaining: the values overlap, because a person who
+ * owns a Samsung and an Apple handset is counted under both. The percentages therefore
+ * sum past 100%, which is correct but surprising if left unannounced.
+ */
+const COUNT_BY_OPTIONS = [
+  { value: 'bindings' as const, label: 'Bindings' },
+  { value: 'subscribers' as const, label: 'Subscribers' },
+  { value: 'handsets' as const, label: 'Handsets' },
+]
+
+const countByLabel = computed(() => countBy.value)
 
 const kpi = useKpiSummary(filters)
-const vendors = useTopDimension('vendorCanonical', filters, 10)
-const deviceTypes = useDistribution('deviceType', filters)
-const operatingSystems = useTopDimension('operatingSystem', filters, 8)
+const vendors = useTopDimension('vendorCanonical', filters, 10, countBy)
+const deviceTypes = useDistribution('deviceType', filters, countBy)
+const operatingSystems = useTopDimension('operatingSystem', filters, 8, countBy)
 const classMix = useDeviceClassMix()
 const capabilities = useCapabilities()
 
@@ -38,7 +54,7 @@ const capabilities = useCapabilities()
  * device-type table, where it genuinely is a category.
  */
 const modelFilters = computed(() => ({ ...filters.value, includeUnknownDevice: false }))
-const models = useTopDimension('marketingName', modelFilters, 10)
+const models = useTopDimension('marketingName', modelFilters, 10, countBy)
 
 /** Clicking a bar drills in. The URL changes, so back undoes it. */
 function drillInto(key: keyof typeof FILTER_LABELS, value: string) {
@@ -89,6 +105,32 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
+        <!-- A segmented control rather than a dropdown: three options users switch between
+             constantly, and showing all three keeps the distinction present rather than hidden
+             behind a click. -->
+        <div
+          class="flex rounded-[var(--radius-md)] border p-0.5"
+          role="radiogroup"
+          aria-label="Count breakdowns by"
+        >
+          <button
+            v-for="o in COUNT_BY_OPTIONS"
+            :key="o.value"
+            type="button"
+            role="radio"
+            :aria-checked="countBy === o.value"
+            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-[var(--text-xs)] font-medium transition-colors"
+            :class="
+              countBy === o.value
+                ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
+                : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'
+            "
+            @click="setCountBy(o.value)"
+          >
+            {{ o.label }}
+          </button>
+        </div>
+
         <button
           type="button"
           class="rounded-[var(--radius-md)] border px-2.5 py-1.5 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)]"
@@ -230,7 +272,7 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
 
     <!-- Vendors and models -->
     <div class="grid gap-5 xl:grid-cols-2">
-      <Card title="Top vendors" subtitle="By active bindings, not handsets. Click a bar to filter.">
+      <Card title="Top vendors" :subtitle="`Counted by ${countByLabel}. Click a bar to filter.`">
         <AsyncBoundary
           :is-loading="vendors.isPending.value"
           :is-error="vendors.isError.value"
@@ -239,19 +281,37 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
           min-height="18rem"
           @retry="vendors.refetch()"
         >
-          <BarChart :data="vendors.data.value ?? []" @select="(v) => drillInto('vendor', v)" />
+          <BarChart
+            :data="vendors.data.value ?? []"
+            :unit="countByLabel"
+            @select="(v) => drillInto('vendor', v)"
+          />
         </AsyncBoundary>
 
         <template #footer>
-          <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
-            These are <strong>bindings</strong>, not handsets. A dual-SIM phone serving two numbers
-            counts twice. For Samsung that is 52.7M bindings against 39.3M distinct handsets and
-            40.1M subscribers &mdash; so reading this as a handset count overstates it by about a third.
+          <p v-if="countBy === 'bindings'" class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            <strong>Bindings</strong> are number + SIM + handset combinations. A dual-SIM phone
+            serving two numbers counts twice, so this runs higher than a handset count &mdash; for
+            Samsung, 52.7M bindings against 39.3M handsets.
+          </p>
+          <p
+            v-else-if="countBy === 'subscribers'"
+            class="text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+          >
+            <strong>Subscribers</strong> are distinct phone numbers, and these values
+            <strong>overlap</strong>: someone owning a Samsung and an Apple handset is counted under
+            both. The percentages therefore sum to more than 100%.
+          </p>
+          <p v-else class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            <strong>Handsets</strong> are distinct IMEIs. These do not overlap &mdash; a handset
+            belongs to exactly one vendor &mdash; so the values add up. Excludes the
+            <code class="font-[var(--font-mono)]">000000</code> population, which has no handset to
+            count.
           </p>
         </template>
       </Card>
 
-      <Card title="Top models" subtitle="By active bindings. Excludes unknown devices.">
+      <Card title="Top models" :subtitle="`Counted by ${countByLabel}. Excludes unknown devices.`">
         <AsyncBoundary
           :is-loading="models.isPending.value"
           :is-error="models.isError.value"
@@ -260,14 +320,14 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
           min-height="18rem"
           @retry="models.refetch()"
         >
-          <BarChart :data="models.data.value ?? []" />
+          <BarChart :data="models.data.value ?? []" :unit="countByLabel" />
         </AsyncBoundary>
       </Card>
     </div>
 
     <!-- Types and OS -->
     <div class="grid gap-5 xl:grid-cols-2">
-      <Card title="Device types" subtitle="By active bindings. Click to filter." flush>
+      <Card title="Device types" :subtitle="`Counted by ${countByLabel}. Click to filter.`" flush>
         <AsyncBoundary
           :is-loading="deviceTypes.isPending.value"
           :is-error="deviceTypes.isError.value"
@@ -279,12 +339,13 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
           <DimensionTable
             :rows="(deviceTypes.data.value ?? []).slice(0, 10)"
             header="Device type"
+            :unit="countByLabel"
             @select="(v) => drillInto('deviceType', v)"
           />
         </AsyncBoundary>
       </Card>
 
-      <Card title="Operating systems" subtitle="By active bindings. Normalised for case and whitespace." flush>
+      <Card title="Operating systems" :subtitle="`Counted by ${countByLabel}. Normalised for case and whitespace.`" flush>
         <AsyncBoundary
           :is-loading="operatingSystems.isPending.value"
           :is-error="operatingSystems.isError.value"
@@ -296,6 +357,7 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
           <DimensionTable
             :rows="operatingSystems.data.value ?? []"
             header="Operating system"
+            :unit="countByLabel"
             @select="(v) => drillInto('operatingSystem', v)"
           />
         </AsyncBoundary>

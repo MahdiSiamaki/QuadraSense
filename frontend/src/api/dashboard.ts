@@ -94,10 +94,13 @@ export function useKpiSummary(filters: MaybeRefOrGetter<DashboardFilters>) {
   })
 }
 
+export type CountBy = 'bindings' | 'subscribers' | 'handsets'
+
 export function useTopDimension(
   dimension: MaybeRefOrGetter<Dimension>,
   filters: MaybeRefOrGetter<DashboardFilters>,
   limit: MaybeRefOrGetter<number> = 10,
+  countBy: MaybeRefOrGetter<CountBy> = 'bindings',
 ) {
   return useQuery({
     queryKey: [
@@ -105,11 +108,12 @@ export function useTopDimension(
       computed(() => toValue(dimension)),
       computed(() => toValue(filters)),
       computed(() => toValue(limit)),
+      computed(() => toValue(countBy)),
     ],
     queryFn: ({ signal }) =>
       api.get<DimensionCount[]>(
         `/api/v1/dashboard/top/${toValue(dimension)}`,
-        { limit: toValue(limit), ...toValue(filters) },
+        { limit: toValue(limit), countBy: toValue(countBy), ...toValue(filters) },
         signal,
       ),
     staleTime: DAILY_DATA_STALE_TIME,
@@ -119,13 +123,19 @@ export function useTopDimension(
 export function useDistribution(
   dimension: MaybeRefOrGetter<Dimension>,
   filters: MaybeRefOrGetter<DashboardFilters>,
+  countBy: MaybeRefOrGetter<CountBy> = 'bindings',
 ) {
   return useQuery({
-    queryKey: ['distribution', computed(() => toValue(dimension)), computed(() => toValue(filters))],
+    queryKey: [
+      'distribution',
+      computed(() => toValue(dimension)),
+      computed(() => toValue(filters)),
+      computed(() => toValue(countBy)),
+    ],
     queryFn: ({ signal }) =>
       api.get<DimensionCount[]>(
         `/api/v1/dashboard/distribution/${toValue(dimension)}`,
-        { ...toValue(filters) },
+        { countBy: toValue(countBy), ...toValue(filters) },
         signal,
       ),
     staleTime: DAILY_DATA_STALE_TIME,

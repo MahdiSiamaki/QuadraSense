@@ -16,6 +16,8 @@ import { formatFull, formatPercent } from '@/lib/format'
 const props = defineProps<{
   rows: Array<{ key: string; count: number; percent: number }>
   header: string
+  /** Column heading for the measure, so the figures are never an unlabelled quantity. */
+  unit?: string
 }>()
 
 defineEmits<{ select: [key: string] }>()
@@ -32,7 +34,7 @@ function isUnknown(key: string): boolean {
     <thead>
       <tr class="border-b text-left text-[var(--text-xs)] text-[var(--c-text-muted)]">
         <th class="px-4 py-2 font-medium">{{ header }}</th>
-        <th class="px-4 py-2 text-right font-medium">Bindings</th>
+        <th class="px-4 py-2 text-right font-medium capitalize">{{ unit ?? 'bindings' }}</th>
         <th class="px-4 py-2 text-right font-medium">Share</th>
       </tr>
     </thead>

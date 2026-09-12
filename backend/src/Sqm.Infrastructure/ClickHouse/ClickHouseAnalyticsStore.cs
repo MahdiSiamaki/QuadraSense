@@ -177,47 +177,85 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<DimensionCount>> GetTopDimensionAsync(
-        AnalyticsDimension dimension, DashboardFilter filter, int limit, CancellationToken ct)
+        AnalyticsDimension dimension, DashboardFilter filter, int limit, CountBy countBy,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+
+        return MartRouting.CanUseMart(filter) && !HasDimensionFilter(filter)
+            ? await TopFromMartAsync(dimension, limit, countBy, ct).ConfigureAwait(false)
+            : await TopFromRawAsync(dimension, filter, limit, countBy, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Unfiltered breakdown, read from the per-dimension mart.
+    /// </summary>
+    /// <remarks>
+    /// The mart carries all three measures precomputed, because distinct counts cannot be derived
+    /// at query time: subscribers do not sum across dimension values (one person can own a Samsung
+    /// and an Apple), so there is nothing to add up.
+    /// </remarks>
+    private async Task<IReadOnlyList<DimensionCount>> TopFromMartAsync(
+        AnalyticsDimension dimension, int limit, CountBy countBy, CancellationToken ct)
+    {
+        var measure = AnalyticsSchema.MartColumnFor(countBy);
+        var populationTotal = AnalyticsSchema.PopulationTotalFor(countBy);
+        var take = FilterBuilder.ClampLimit(limit);
+
+        // The percentage denominator is the whole population, taken from the KPI mart — never the
+        // sum of the rows returned. A share of the top-N subtotal changes with the page size.
+        var sql = $$"""
+            SELECT
+                dim_value AS k,
+                {{measure}} AS n,
+                round(100.0 * {{measure}} / nullIf(
+                    (SELECT {{populationTotal}} FROM sqm.agg_kpi_daily ORDER BY seq DESC LIMIT 1), 0), 3) AS pct
+            FROM sqm.agg_dimension_daily
+            WHERE seq = (SELECT max(seq) FROM sqm.agg_dimension_daily)
+              AND dimension = {dimension:String}
+            ORDER BY n DESC
+            LIMIT {{take}}
+            """;
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = CreateCommand(connection, sql);
+
+        var p = command.CreateParameter();
+        p.ParameterName = "dimension";
+        p.Value = AnalyticsSchema.MartKeyFor(dimension);
+        command.Parameters.Add(p);
+
+        return await ReadDimensionCountsAsync(command, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Filtered breakdown. Scans the raw table; measured at several seconds.</summary>
+    private async Task<IReadOnlyList<DimensionCount>> TopFromRawAsync(
+        AnalyticsDimension dimension, DashboardFilter filter, int limit, CountBy countBy,
+        CancellationToken ct)
     {
         var column = AnalyticsSchema.ColumnFor(dimension);
+        var measure = AnalyticsSchema.RawMeasureFor(countBy);
         var f = FilterBuilder.ForCurrentState(filter);
         var take = FilterBuilder.ClampLimit(limit);
 
-        // Read the rollup when the filter allows it (39 ms), the raw table when it does not (3.5 s).
-        // MartRouting explains exactly which filters force the fallback and why.
-        var useMart = MartRouting.CanUseMart(filter);
-
-        var source = useMart
-            ? $"""
-               FROM sqm.agg_device_daily AS b
-               LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-               LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
-               WHERE b.active = 1 AND b.seq = {MartRouting.SnapshotSequence}
-               """
-            : """
-              FROM sqm.binding_current AS b
-              LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-              LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
-              WHERE b.active = 1
-              """;
-
-        // The rollup stores a pre-counted `n`; the raw table counts rows. Same result, different arithmetic.
-        var measure = useMart ? "sum(b.n)" : "count()";
-
-        // The unknown-device population has no dimension value at all, so it is labelled rather than
-        // silently excluded — it would otherwise be a 7% hole in every chart.
-        // Note the doubled `$$`: in a raw string literal `{{ }}` marks interpolation, which leaves single
-        // braces free to carry ClickHouse's own `{name:Type}` parameter syntax verbatim.
+        // Under a filter the population is the filtered population, so the denominator is computed
+        // over the same WHERE clause rather than read from the unfiltered KPI mart.
         var sql = $$"""
-            SELECT
-                multiIf(b.tac = '', {unknown_device:String},
-                        t.tac = '',  {unknown_tac:String},
-                        coalesce(nullIf({{column}}, ''), {unknown_tac:String})) AS dim_key,
-                {{measure}} AS n
-            {{source}} AND {{f.WhereClause}}
-            GROUP BY dim_key
-            ORDER BY n DESC
-            LIMIT {{take}}
+            WITH grouped AS (
+                SELECT
+                    multiIf(b.tac = '', {unknown_device:String},
+                            t.tac = '',  {unknown_tac:String},
+                            coalesce(nullIf({{column}}, ''), {unknown_tac:String})) AS k,
+                    {{measure}} AS n
+                FROM sqm.binding_current AS b
+                LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+                LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+                WHERE b.active = 1 AND {{f.WhereClause}}
+                GROUP BY k
+            )
+            SELECT k, n, round(100.0 * n / nullIf((SELECT sum(n) FROM grouped), 0), 3) AS pct
+            FROM grouped ORDER BY n DESC LIMIT {{take}}
             """;
 
         await using var connection = CreateConnection();
@@ -226,26 +264,38 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         f.Bind(command);
         AddLabelParameters(command);
 
-        var rows = new List<(string Key, long Count)>();
-        await using (var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
-        {
-            while (await reader.ReadAsync(ct).ConfigureAwait(false))
-            {
-                rows.Add((reader.GetString(0), GetInt64(reader, 1)));
-            }
-        }
-
-        var total = rows.Sum(r => r.Count);
-        return rows
-            .Select(r => new DimensionCount(r.Key, r.Count, Percent(r.Count, total)))
-            .ToList();
+        return await ReadDimensionCountsAsync(command, ct).ConfigureAwait(false);
     }
+
+    private static async Task<IReadOnlyList<DimensionCount>> ReadDimensionCountsAsync(
+        ClickHouseCommand command, CancellationToken ct)
+    {
+        var rows = new List<DimensionCount>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            rows.Add(new DimensionCount(
+                reader.GetString(0),
+                GetInt64(reader, 1),
+                reader.IsDBNull(2) ? 0 : GetDouble(reader, 2)));
+        }
+        return rows;
+    }
+
+    /// <summary>True when a filter narrows the population, forcing the raw-table path.</summary>
+    private static bool HasDimensionFilter(DashboardFilter filter) =>
+        !string.IsNullOrWhiteSpace(filter.Manufacturer)
+        || !string.IsNullOrWhiteSpace(filter.VendorCanonical)
+        || !string.IsNullOrWhiteSpace(filter.DeviceType)
+        || !string.IsNullOrWhiteSpace(filter.OperatingSystem)
+        || !string.IsNullOrWhiteSpace(filter.Tac)
+        || !filter.IncludeUnknownDevice;
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<DistributionSlice>> GetDistributionAsync(
-        AnalyticsDimension dimension, DashboardFilter filter, CancellationToken ct)
+        AnalyticsDimension dimension, DashboardFilter filter, CountBy countBy, CancellationToken ct)
     {
-        var top = await GetTopDimensionAsync(dimension, filter, 50, ct).ConfigureAwait(false);
+        var top = await GetTopDimensionAsync(dimension, filter, 50, countBy, ct).ConfigureAwait(false);
         return top.Select(d => new DistributionSlice(d.Key, d.Count, d.Percent)).ToList();
     }
 

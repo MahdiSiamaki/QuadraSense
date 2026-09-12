@@ -83,6 +83,7 @@ public static class DashboardEndpoints
         IDeviceAnalyticsStore store,
         CancellationToken ct,
         int limit = 20,
+        string? countBy = null,
         string? manufacturer = null,
         string? vendor = null,
         string? deviceType = null,
@@ -100,7 +101,13 @@ public static class DashboardEndpoints
             manufacturer, vendor, deviceType, operatingSystem, tac, msisdnPrefix,
             null, null, includeUnknownDevice);
 
-        var rows = await store.GetTopDimensionAsync(parsed, filter, limit, ct).ConfigureAwait(false);
+        if (!TryParseCountBy(countBy, out var measure))
+        {
+            return InvalidCountBy(countBy!);
+        }
+
+        var rows = await store.GetTopDimensionAsync(parsed, filter, limit, measure, ct)
+            .ConfigureAwait(false);
         return Results.Ok(rows);
     }
 
@@ -108,6 +115,7 @@ public static class DashboardEndpoints
         string dimension,
         IDeviceAnalyticsStore store,
         CancellationToken ct,
+        string? countBy = null,
         string? manufacturer = null,
         string? vendor = null,
         bool includeUnknownDevice = true)
@@ -117,10 +125,15 @@ public static class DashboardEndpoints
             return InvalidDimension(dimension);
         }
 
+        if (!TryParseCountBy(countBy, out var measure))
+        {
+            return InvalidCountBy(countBy!);
+        }
+
         var filter = BuildFilter(
             manufacturer, vendor, null, null, null, null, null, null, includeUnknownDevice);
 
-        var rows = await store.GetDistributionAsync(parsed, filter, ct).ConfigureAwait(false);
+        var rows = await store.GetDistributionAsync(parsed, filter, measure, ct).ConfigureAwait(false);
         return Results.Ok(rows);
     }
 
@@ -159,6 +172,32 @@ public static class DashboardEndpoints
     private static bool TryParseDimension(string value, out AnalyticsDimension dimension) =>
         Enum.TryParse(value, ignoreCase: true, out dimension)
         && Enum.IsDefined(dimension);
+
+    /// <summary>
+    /// Parses the measure. Absent means bindings — the historical default, kept so existing links
+    /// and bookmarks keep returning what they always did.
+    /// </summary>
+    private static bool TryParseCountBy(string? value, out CountBy countBy)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            countBy = CountBy.Bindings;
+            return true;
+        }
+        return Enum.TryParse(value, ignoreCase: true, out countBy) && Enum.IsDefined(countBy);
+    }
+
+    private static IResult InvalidCountBy(string value) =>
+        Results.ValidationProblem(
+            new Dictionary<string, string[]>
+            {
+                ["countBy"] =
+                [
+                    $"'{value}' is not a supported measure. Valid values: " +
+                    string.Join(", ", Enum.GetNames<CountBy>()),
+                ],
+            },
+            title: "Unsupported measure");
 
     private static IResult InvalidDimension(string value) =>
         Results.ValidationProblem(

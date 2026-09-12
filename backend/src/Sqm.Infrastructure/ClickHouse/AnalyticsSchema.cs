@@ -44,4 +44,56 @@ internal static class AnalyticsSchema
 
     /// <summary>A label for a well-formed TAC that is absent from the GSMA database. Measured at 0.20%.</summary>
     public const string UnknownTacLabel = "(unknown TAC)";
+
+    /// <summary>The <c>dimension</c> key used in <c>agg_dimension_daily</c>.</summary>
+    public static string MartKeyFor(AnalyticsDimension dimension) => dimension switch
+    {
+        AnalyticsDimension.VendorCanonical => "vendor",
+        AnalyticsDimension.Manufacturer => "manufacturer",
+        AnalyticsDimension.MarketingName => "model",
+        AnalyticsDimension.DeviceType => "deviceType",
+        AnalyticsDimension.OperatingSystem => "os",
+        AnalyticsDimension.Tac => "tac",
+        _ => throw new ArgumentOutOfRangeException(nameof(dimension), dimension, "Unmapped dimension."),
+    };
+
+    /// <summary>Column in <c>agg_dimension_daily</c> holding the requested measure.</summary>
+    public static string MartColumnFor(CountBy countBy) => countBy switch
+    {
+        CountBy.Bindings => "bindings",
+        CountBy.Subscribers => "subscribers",
+        CountBy.Handsets => "handsets",
+        _ => throw new ArgumentOutOfRangeException(nameof(countBy), countBy, "Unmapped measure."),
+    };
+
+    /// <summary>
+    /// Aggregate expression for the raw-table fallback, used when a filter is applied.
+    /// </summary>
+    /// <remarks>
+    /// Handsets exclude non-14-digit IMEIs: the <c>000000</c> sentinel is one literal value shared by
+    /// 8.8M bindings and is not a handset.
+    /// </remarks>
+    public static string RawMeasureFor(CountBy countBy) => countBy switch
+    {
+        CountBy.Bindings => "count()",
+        CountBy.Subscribers => "uniq(b.msisdn)",
+        CountBy.Handsets => "uniqIf(b.imei, length(b.imei) = 14)",
+        _ => throw new ArgumentOutOfRangeException(nameof(countBy), countBy, "Unmapped measure."),
+    };
+
+    /// <summary>
+    /// Column in <c>agg_kpi_daily</c> holding the population total for this measure.
+    /// </summary>
+    /// <remarks>
+    /// Percentages are taken against the whole population, never against the returned page. Computing
+    /// a share of the top-N subtotal makes the percentage depend on how many rows were requested —
+    /// Samsung read 45.27% at limit 10 when its true share of all bindings is 41.85%.
+    /// </remarks>
+    public static string PopulationTotalFor(CountBy countBy) => countBy switch
+    {
+        CountBy.Bindings => "active_bindings",
+        CountBy.Subscribers => "distinct_subscribers",
+        CountBy.Handsets => "distinct_devices",
+        _ => throw new ArgumentOutOfRangeException(nameof(countBy), countBy, "Unmapped measure."),
+    };
 }

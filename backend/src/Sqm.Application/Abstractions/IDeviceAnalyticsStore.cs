@@ -19,13 +19,15 @@ public interface IDeviceAnalyticsStore
     /// <param name="dimension">Which dimension to group by.</param>
     /// <param name="filter">Filters to apply.</param>
     /// <param name="limit">Maximum rows to return (server-capped).</param>
+    /// <param name="countBy">Whether to count bindings, subscribers or handsets.</param>
     /// <param name="ct">Cancellation token.</param>
     Task<IReadOnlyList<DimensionCount>> GetTopDimensionAsync(
-        AnalyticsDimension dimension, DashboardFilter filter, int limit, CancellationToken ct);
+        AnalyticsDimension dimension, DashboardFilter filter, int limit, CountBy countBy,
+        CancellationToken ct);
 
     /// <summary>Distribution across a low-cardinality dimension, e.g. device type.</summary>
     Task<IReadOnlyList<DistributionSlice>> GetDistributionAsync(
-        AnalyticsDimension dimension, DashboardFilter filter, CancellationToken ct);
+        AnalyticsDimension dimension, DashboardFilter filter, CountBy countBy, CancellationToken ct);
 
     /// <summary>Every binding for one subscriber number, active and historical.</summary>
     /// <remarks>

@@ -23,8 +23,10 @@ const props = withDefaults(
     /** Horizontal bars are correct for ranked categories: labels stay readable. */
     horizontal?: boolean
     height?: string
+    /** What the numbers are, named in the tooltip so a bare figure is never ambiguous. */
+    unit?: string
   }>(),
-  { horizontal: true, height: '18rem' },
+  { horizontal: true, height: '18rem', unit: 'bindings' },
 )
 
 const emit = defineEmits<{ select: [key: string] }>()
@@ -69,7 +71,7 @@ function render() {
         // The unit is named explicitly. A bare number here reads as "handsets" to most
         // people, and bindings run ~34% higher than handsets for a big vendor.
         formatter: (p: { name: string; value: number; dataIndex: number }) =>
-          `${p.name}<br/><strong>${formatFull(p.value)}</strong> bindings`
+          `${p.name}<br/><strong>${formatFull(p.value)}</strong> ${props.unit}`
           + ` (${props.data[p.dataIndex]?.percent.toFixed(2)}%)`,
       },
       xAxis: props.horizontal
@@ -131,7 +133,7 @@ onBeforeUnmount(() => {
   chart.value = null
 })
 
-watch(() => props.data, render, { deep: true })
+watch(() => [props.data, props.unit], render, { deep: true })
 watch(isDark, () => requestAnimationFrame(render))
 </script>
 
