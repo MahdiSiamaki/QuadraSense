@@ -80,6 +80,12 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
         <p class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-muted)]">
           Active device–SIM bindings across the network, enriched with GSMA device data.
         </p>
+        <p class="mt-1 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          A <strong>binding</strong> is one number + SIM + handset combination
+          (<code class="font-[var(--font-mono)]">MSISDN</code> +
+          <code class="font-[var(--font-mono)]">IMSI</code> +
+          <code class="font-[var(--font-mono)]">IMEI</code>). One subscriber can hold several.
+        </p>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
@@ -135,21 +141,49 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
         </div>
       </template>
 
-      <div class="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <KpiCard label="Active bindings" :value="kpi.data.value?.activeBindings" />
-        <KpiCard label="Subscribers" :value="kpi.data.value?.distinctSubscribers" hint="approx." />
-        <KpiCard label="Devices" :value="kpi.data.value?.distinctDevices" hint="approx." />
+      <div class="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+        <KpiCard
+          label="Active bindings"
+          :value="kpi.data.value?.activeBindings"
+          identifier="MSISDN + IMSI + IMEI"
+          definition="Rows in the current state: one per distinct number-SIM-handset combination. This is the grain of the whole dataset, not a count of people."
+        />
+        <KpiCard
+          label="Subscribers"
+          :value="kpi.data.value?.distinctSubscribers"
+          identifier="MSISDN"
+          qualifier="approx."
+          definition="Distinct phone numbers with at least one active binding. Estimated with HyperLogLog (~0.5% error); exact counts are available via export."
+        />
+        <KpiCard
+          label="SIM cards"
+          :value="kpi.data.value?.distinctSims"
+          identifier="IMSI"
+          qualifier="approx."
+          definition="Distinct SIM identities. Slightly higher than the number of subscribers because a number that has been swapped to a new SIM has more than one IMSI."
+        />
+        <KpiCard
+          label="Handsets"
+          :value="kpi.data.value?.distinctDevices"
+          identifier="IMEI"
+          qualifier="approx."
+          definition="Distinct 14-digit IMEIs. Excludes the 000000 unknown-device sentinel, which is one literal value shared by 8.8M bindings and is not a handset."
+        />
         <KpiCard
           label="Unknown device"
           :value="kpi.data.value?.unknownDeviceBindings"
           tone="warning"
-          :hint="unknownShare ? `${formatPercent(unknownShare)} of bindings` : undefined"
+          identifier="IMEI = 000000"
+          :qualifier="unknownShare ? `${formatPercent(unknownShare)} of bindings` : undefined"
+          definition="Bindings where the source reports the handset as unknown. A sentinel value, not a data defect - these are real subscribers whose device the operator did not record."
         />
         <KpiCard
           label="TAC coverage"
           :value="kpi.data.value?.tacCoveragePercent"
           percent
-          hint="enriched from GSMA"
+          identifier="TAC"
+          qualifier="of bindings"
+          definition="Share of active bindings whose TAC (the first 8 digits of the IMEI) matched the GSMA device database, so manufacturer and model are known."
         />
       </div>
     </AsyncBoundary>

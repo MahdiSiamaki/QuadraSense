@@ -97,6 +97,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
             SELECT
                 active_bindings,
                 distinct_subscribers,
+                distinct_sims,
                 distinct_devices,
                 unknown_device_bindings,
                 malformed_imei_bindings,
@@ -114,17 +115,18 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            return new KpiSummary(0, 0, 0, 0, 0, 0, 0);
+            return new KpiSummary(0, 0, 0, 0, 0, 0, 0, 0);
         }
 
         return new KpiSummary(
             ActiveBindings: GetInt64(reader, 0),
             DistinctSubscribers: GetInt64(reader, 1),
-            DistinctDevices: GetInt64(reader, 2),
-            UnknownDeviceBindings: GetInt64(reader, 3),
-            MalformedImeiBindings: GetInt64(reader, 4),
-            TacMatchedBindings: GetInt64(reader, 5),
-            TacCoveragePercent: GetDouble(reader, 6));
+            DistinctSims: GetInt64(reader, 2),
+            DistinctDevices: GetInt64(reader, 3),
+            UnknownDeviceBindings: GetInt64(reader, 4),
+            MalformedImeiBindings: GetInt64(reader, 5),
+            TacMatchedBindings: GetInt64(reader, 6),
+            TacCoveragePercent: GetDouble(reader, 7));
     }
 
     /// <summary>Filtered KPIs, which must scan the raw table. Measured at ~6 s.</summary>
@@ -139,7 +141,8 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
             SELECT
                 count()                                        AS active_bindings,
                 uniq(b.msisdn)                                 AS distinct_subscribers,
-                uniq(b.imei)                                   AS distinct_devices,
+                uniq(b.imsi)                                   AS distinct_sims,
+                uniqIf(b.imei, length(b.imei) = 14)            AS distinct_devices,
                 countIf(b.imei = '000000')                     AS unknown_device_bindings,
                 countIf(length(b.imei) != 14 AND b.imei != '000000') AS malformed_imei_bindings,
                 countIf(t.tac != '')                           AS tac_matched_bindings,
@@ -158,17 +161,18 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            return new KpiSummary(0, 0, 0, 0, 0, 0, 0);
+            return new KpiSummary(0, 0, 0, 0, 0, 0, 0, 0);
         }
 
         return new KpiSummary(
             ActiveBindings: GetInt64(reader, 0),
             DistinctSubscribers: GetInt64(reader, 1),
-            DistinctDevices: GetInt64(reader, 2),
-            UnknownDeviceBindings: GetInt64(reader, 3),
-            MalformedImeiBindings: GetInt64(reader, 4),
-            TacMatchedBindings: GetInt64(reader, 5),
-            TacCoveragePercent: GetDouble(reader, 6));
+            DistinctSims: GetInt64(reader, 2),
+            DistinctDevices: GetInt64(reader, 3),
+            UnknownDeviceBindings: GetInt64(reader, 4),
+            MalformedImeiBindings: GetInt64(reader, 5),
+            TacMatchedBindings: GetInt64(reader, 6),
+            TacCoveragePercent: GetDouble(reader, 7));
     }
 
     /// <inheritdoc />

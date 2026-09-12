@@ -44,17 +44,20 @@ GROUP BY tac, active;
 -- --------------------------------------------------------------------------
 INSERT INTO sqm.agg_kpi_daily
     (seq, data_date, active_bindings, distinct_subscribers, distinct_devices,
-     unknown_device_bindings, malformed_imei_bindings, tac_matched_bindings)
+     unknown_device_bindings, malformed_imei_bindings, tac_matched_bindings, distinct_sims)
 SELECT
     {seq:UInt16} AS seq,
     NULL         AS data_date,
     count()                                          AS active_bindings,
     uniq(msisdn)                                     AS distinct_subscribers,
-    uniq(imei)                                       AS distinct_devices,
+    -- Real devices only. '000000' is one literal value shared by 8.8M bindings, so
+    -- counting it would add exactly one phantom handset to the device total.
+    uniqIf(imei, length(imei) = 14)                  AS distinct_devices,
     countIf(imei = '000000')                         AS unknown_device_bindings,
     -- Numeric but not 14 digits, so no TAC can be derived. A defect, unlike the sentinel above.
     countIf(length(imei) != 14 AND imei != '000000')  AS malformed_imei_bindings,
-    countIf(tac != '' AND tac IN (SELECT tac FROM sqm.tac)) AS tac_matched_bindings
+    countIf(tac != '' AND tac IN (SELECT tac FROM sqm.tac)) AS tac_matched_bindings,
+    uniq(imsi)                                       AS distinct_sims
 FROM sqm.binding_current
 WHERE active = 1;
 

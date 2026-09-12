@@ -39,8 +39,21 @@ public sealed record DashboardFilter(
 
 /// <summary>Headline counters for the dashboard.</summary>
 /// <param name="ActiveBindings">Bindings currently active.</param>
-/// <param name="DistinctSubscribers">Distinct MSISDNs with at least one active binding.</param>
-/// <param name="DistinctDevices">Distinct IMEIs currently active.</param>
+/// <param name="DistinctSubscribers">Distinct MSISDNs (phone numbers) with at least one active binding.</param>
+/// <param name="DistinctSims">
+/// Distinct IMSIs (SIM cards) currently active.
+/// <para>
+/// Close to <paramref name="DistinctSubscribers"/> but not equal — measured 79,849,817 SIMs against
+/// 79,461,407 numbers. The gap is the SIM-swap population, so the two are reported separately.
+/// </para>
+/// </param>
+/// <param name="DistinctDevices">
+/// Distinct 14-digit IMEIs (handsets) currently active.
+/// <para>
+/// Excludes the <c>000000</c> sentinel, which is a single literal value shared by 8.8M bindings and
+/// would otherwise contribute one phantom handset to the count.
+/// </para>
+/// </param>
 /// <param name="UnknownDeviceBindings">Active bindings whose IMEI is the <c>000000</c> sentinel.</param>
 /// <param name="MalformedImeiBindings">
 /// Active bindings whose IMEI is numeric but not 14 digits, so no TAC can be derived.
@@ -64,6 +77,7 @@ public sealed record DashboardFilter(
 public sealed record KpiSummary(
     long ActiveBindings,
     long DistinctSubscribers,
+    long DistinctSims,
     long DistinctDevices,
     long UnknownDeviceBindings,
     long MalformedImeiBindings,

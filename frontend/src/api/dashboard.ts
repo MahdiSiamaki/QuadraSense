@@ -10,7 +10,11 @@ import { api } from './client'
 
 export interface KpiSummary {
   activeBindings: number
+  /** Distinct MSISDN - phone numbers. */
   distinctSubscribers: number
+  /** Distinct IMSI - SIM cards. Slightly higher than numbers; the gap is SIM swaps. */
+  distinctSims: number
+  /** Distinct 14-digit IMEI - handsets. Excludes the 000000 sentinel. */
   distinctDevices: number
   unknownDeviceBindings: number
   /** Numeric IMEI that is not 14 digits: a defect, distinct from the 000000 sentinel. */
