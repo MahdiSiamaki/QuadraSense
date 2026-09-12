@@ -158,8 +158,9 @@ means one of them is served badly. This is settled in ADR-002 / ADR-003.
 
 | # | Risk | Impact | Mitigation |
 |---|---|---|---|
-| RK1 | **Delta files carry no date** | no true time-series; cannot detect a missing or re-sent day | ordering validated independently; `seq` used and labelled honestly; `data_date` column ready for backfill; source team must supply dates |
-| RK2 | **Suspected ~27-day gap** after 2026-01-25 | current state is approximate | quantified (19.2% redundant adds); surfaced as a data-quality metric rather than hidden |
+| RK1 | ~~Delta files carry no date~~ | — | **RESOLVED 2026-09-12.** Dated files supplied; the previously-inferred ordering proved exactly correct. See `docs/discovery/03-dated-daily-files.md`. |
+| RK2 | ~~Suspected ~27-day gap after 2026-01-25~~ | — | **RULED OUT.** The first daily file is 2026-01-26, the day after the dump ends. 7 days are missing in May 2026 instead, and can be requested. |
+| RK2b | **19.18% redundant adds no longer explained by a gap** | current state is approximate | Q1 (snapshot vs month-union) is now the sole remaining explanation and needs answering |
 | RK3 | Initial dump is likely a month-union, not a snapshot | baseline state slightly overstated | binding state carries an `unknown-at-baseline` distinction rather than implying false precision |
 | RK4 | 7% of IMEIs are `000000` | enrichment ceiling is 92.8% | modelled as an explicit category and tracked as a KPI |
 | RK5 | Production hardware unknown | sizing unvalidated | benchmark establishes relative behaviour; targets re-checked on real hardware |

@@ -375,6 +375,13 @@ Parquet + zstd compression: initial dump 4.86 GiB → **2.13 GiB** (2.3×); delt
 
 ## 10. Date recovery attempt — ordering confirmed, calendar dates not recoverable
 
+> **SUPERSEDED (2026-09-12).** Dated files were subsequently supplied at `D:\SQM\New CDR\New CDR`,
+> which resolves this section entirely — see `03-dated-daily-files.md`. The ordering inferred below
+> proved **exactly correct**, but two estimates in it were wrong: there is **no gap** after the
+> initial dump, and the true span of these 82 files is **2026-01-26 → 2026-04-17**, roughly four
+> weeks earlier than estimated here. Kept for the record because the inference method, and its
+> stated limits, still stand.
+
 Because the delta files contain no date column (Q2), I attempted to recover the ordering and the dates from
 the data itself, using the TAC `allocationDate` as an independent clock: a device cannot appear on the
 network before its TAC was allocated, so the "newest device allocation date" observed in a file is a lower
@@ -472,5 +479,7 @@ See `02-open-questions.md`.
 - **Team stack:** .NET/C#, Vue.js, JavaScript, MS SQL Server, MongoDB, Kafka, Elasticsearch, Redis. → ADR-001 (.NET) and ADR-005 (Vue).
 - **Q13 — Locale:** English only, LTR only, Gregorian only. → no i18n framework, no RTL work, no Jalali calendar library.
 
-**Still blocking:** Q1 (snapshot vs. union), Q2 (file dates and the suspected ~27-day gap).
+- **Q2 — File dates:** **RESOLVED.** Dated daily files supplied; see `03-dated-daily-files.md`. There is no gap after the initial dump, and 7 days are missing in May 2026.
+
+**Still blocking:** Q1 (snapshot vs. union) — and now more important, since the missing-window explanation for the 19.18% redundant-add rate has been ruled out.
 **Newly raised:** does the organisation already own MS SQL Server licences? (affects ADR-002 only, and only if answered before Phase 2 completes)
