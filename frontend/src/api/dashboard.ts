@@ -148,11 +148,15 @@ export function useDistribution(
  * Read from a pre-computed 8-row table, so this is effectively free (~106 ms end
  * to end, most of it HTTP).
  */
-export function useDeviceClassMix() {
+export function useDeviceClassMix(countBy: MaybeRefOrGetter<CountBy> = 'bindings') {
   return useQuery({
-    queryKey: ['device-class-mix'],
+    queryKey: ['device-class-mix', computed(() => toValue(countBy))],
     queryFn: ({ signal }) =>
-      api.get<DimensionCount[]>('/api/v1/dashboard/device-class-mix', undefined, signal),
+      api.get<DimensionCount[]>(
+        '/api/v1/dashboard/device-class-mix',
+        { countBy: toValue(countBy) },
+        signal,
+      ),
     staleTime: DAILY_DATA_STALE_TIME,
   })
 }
@@ -177,11 +181,15 @@ export interface CapabilitySupport {
  * in 2 rows out of 270,166, and the IMS columns describe emergency calling, not VoLTE.
  * Reporting a guess here would be worse than reporting nothing.
  */
-export function useCapabilities() {
+export function useCapabilities(countBy: MaybeRefOrGetter<CountBy> = 'bindings') {
   return useQuery({
-    queryKey: ['capabilities'],
+    queryKey: ['capabilities', computed(() => toValue(countBy))],
     queryFn: ({ signal }) =>
-      api.get<CapabilitySupport[]>('/api/v1/dashboard/capabilities', undefined, signal),
+      api.get<CapabilitySupport[]>(
+        '/api/v1/dashboard/capabilities',
+        { countBy: toValue(countBy) },
+        signal,
+      ),
     staleTime: DAILY_DATA_STALE_TIME,
   })
 }

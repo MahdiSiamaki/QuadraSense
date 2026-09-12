@@ -39,8 +39,8 @@ const kpi = useKpiSummary(filters)
 const vendors = useTopDimension('vendorCanonical', filters, 10, countBy)
 const deviceTypes = useDistribution('deviceType', filters, countBy)
 const operatingSystems = useTopDimension('operatingSystem', filters, 8, countBy)
-const classMix = useDeviceClassMix()
-const capabilities = useCapabilities()
+const classMix = useDeviceClassMix(countBy)
+const capabilities = useCapabilities(countBy)
 
 /**
  * Top models always excludes the unknown-device bucket.
@@ -233,7 +233,7 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
     <!-- Composition -->
     <Card
       title="Device class mix"
-      subtitle="Handsets versus machines. IoT/M2M is a real segment here, not tail noise."
+      :subtitle="`Counted by ${countByLabel}. IoT/M2M is a real segment here, not tail noise.`"
     >
       <AsyncBoundary
         :is-loading="classMix.isPending.value"
@@ -249,7 +249,7 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
     <!-- Network and SIM capability -->
     <Card
       title="Network & SIM capability"
-      subtitle="What the active device base supports, from the GSMA band list and eUICC records."
+      :subtitle="`Counted by ${countByLabel}, from the GSMA band list and eUICC records.`"
     >
       <AsyncBoundary
         :is-loading="capabilities.isPending.value"

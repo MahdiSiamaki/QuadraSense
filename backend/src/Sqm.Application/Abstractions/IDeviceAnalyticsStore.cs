@@ -47,7 +47,8 @@ public interface IDeviceAnalyticsStore
     /// arbitrary top-5 would hide the IoT segment — measured at 9.56M bindings (7.6%), which is a real
     /// business segment rather than tail noise.
     /// </remarks>
-    Task<IReadOnlyList<DistributionSlice>> GetDeviceClassMixAsync(CancellationToken ct);
+    Task<IReadOnlyList<DistributionSlice>> GetDeviceClassMixAsync(
+        CountBy countBy, CancellationToken ct);
 
     /// <summary>
     /// Network and SIM capability of the active device population: LTE, 5G, eSIM.
@@ -57,7 +58,8 @@ public interface IDeviceAnalyticsStore
     /// <b>VoLTE is not included because the dataset does not contain it</b>: bandDetails mentions it in
     /// 2 rows out of 270,166, and the IMS columns describe emergency calling rather than VoLTE.
     /// </remarks>
-    Task<IReadOnlyList<CapabilitySupport>> GetCapabilitySupportAsync(CancellationToken ct);
+    Task<IReadOnlyList<CapabilitySupport>> GetCapabilitySupportAsync(
+        CountBy countBy, CancellationToken ct);
 }
 
 /// <summary>

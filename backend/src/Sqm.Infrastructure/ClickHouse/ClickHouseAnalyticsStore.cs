@@ -183,7 +183,8 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         ArgumentNullException.ThrowIfNull(filter);
 
         return MartRouting.CanUseMart(filter) && !HasDimensionFilter(filter)
-            ? await TopFromMartAsync(dimension, limit, countBy, ct).ConfigureAwait(false)
+            ? await TopFromMartAsync(dimension, limit, countBy, filter.IncludeUnknownDevice, ct)
+                .ConfigureAwait(false)
             : await TopFromRawAsync(dimension, filter, limit, countBy, ct).ConfigureAwait(false);
     }
 
@@ -196,11 +197,20 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
     /// and an Apple), so there is nothing to add up.
     /// </remarks>
     private async Task<IReadOnlyList<DimensionCount>> TopFromMartAsync(
-        AnalyticsDimension dimension, int limit, CountBy countBy, CancellationToken ct)
+        AnalyticsDimension dimension, int limit, CountBy countBy, bool includeUnknownDevice,
+        CancellationToken ct)
     {
         var measure = AnalyticsSchema.MartColumnFor(countBy);
         var populationTotal = AnalyticsSchema.PopulationTotalFor(countBy);
         var take = FilterBuilder.ClampLimit(limit);
+
+        // Hiding the unknown bucket is one row to skip in a 26k-row rollup, not a reason to
+        // scan 126M rows. Treating it as a filter sent the model breakdown down the raw path,
+        // where grouping by marketing name with a distinct count ran past 100 seconds.
+        var unknownClause = includeUnknownDevice
+            ? string.Empty
+            : $" AND dim_value NOT IN ('{AnalyticsSchema.UnknownDeviceLabel}', "
+              + $"'{AnalyticsSchema.UnknownTacLabel}')";
 
         // The percentage denominator is the whole population, taken from the KPI mart — never the
         // sum of the rows returned. A share of the top-N subtotal changes with the page size.
@@ -212,7 +222,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                     (SELECT {{populationTotal}} FROM sqm.agg_kpi_daily ORDER BY seq DESC LIMIT 1), 0), 3) AS pct
             FROM sqm.agg_dimension_daily
             WHERE seq = (SELECT max(seq) FROM sqm.agg_dimension_daily)
-              AND dimension = {dimension:String}
+              AND dimension = {dimension:String}{{unknownClause}}
             ORDER BY n DESC
             LIMIT {{take}}
             """;
@@ -288,8 +298,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         || !string.IsNullOrWhiteSpace(filter.VendorCanonical)
         || !string.IsNullOrWhiteSpace(filter.DeviceType)
         || !string.IsNullOrWhiteSpace(filter.OperatingSystem)
-        || !string.IsNullOrWhiteSpace(filter.Tac)
-        || !filter.IncludeUnknownDevice;
+        || !string.IsNullOrWhiteSpace(filter.Tac);
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<DistributionSlice>> GetDistributionAsync(
@@ -394,12 +403,17 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<DistributionSlice>> GetDeviceClassMixAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<DistributionSlice>> GetDeviceClassMixAsync(
+        CountBy countBy, CancellationToken ct)
     {
+        // Under bindings and handsets the classes partition the population. Under
+        // subscribers they overlap - someone owning a smartphone and a feature phone is in
+        // both - so the shares sum past 100%. The UI says so rather than hiding it.
         const string Sql = """
             SELECT device_class, sum(n) AS n
             FROM sqm.agg_device_class_daily
             WHERE seq = (SELECT max(seq) FROM sqm.agg_device_class_daily)
+              AND measure = {measure:String}
             GROUP BY device_class
             ORDER BY n DESC
             """;
@@ -407,6 +421,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         await using var connection = CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
         await using var command = CreateCommand(connection, Sql);
+        AddMeasureParameter(command, countBy);
 
         var rows = new List<(string Key, long Count)>();
         await using (var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
@@ -424,18 +439,21 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<CapabilitySupport>> GetCapabilitySupportAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<CapabilitySupport>> GetCapabilitySupportAsync(
+        CountBy countBy, CancellationToken ct)
     {
         const string Sql = """
             SELECT capability, supported, unsupported, unknown
             FROM sqm.agg_capability_daily
             WHERE seq = (SELECT max(seq) FROM sqm.agg_capability_daily)
+              AND measure = {measure:String}
             ORDER BY supported DESC
             """;
 
         await using var connection = CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
         await using var command = CreateCommand(connection, Sql);
+        AddMeasureParameter(command, countBy);
 
         var results = new List<CapabilitySupport>();
         await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -480,6 +498,26 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         command.CommandText = sql;
         command.CommandTimeout = _options.QueryTimeoutSeconds;
         return command;
+    }
+
+    /// <summary>Binds the measure name used by the measure-aware marts.</summary>
+    /// <remarks>
+    /// The value comes from an enum, so it is a literal chosen at compile time rather than
+    /// anything a caller supplies - but it is still bound as a parameter rather than
+    /// interpolated, so there is one rule for reaching SQL and no exceptions to it.
+    /// </remarks>
+    private static void AddMeasureParameter(ClickHouseCommand command, CountBy countBy)
+    {
+        var p = command.CreateParameter();
+        p.ParameterName = "measure";
+        p.Value = countBy switch
+        {
+            CountBy.Bindings => "bindings",
+            CountBy.Subscribers => "subscribers",
+            CountBy.Handsets => "handsets",
+            _ => throw new ArgumentOutOfRangeException(nameof(countBy), countBy, "Unmapped measure."),
+        };
+        command.Parameters.Add(p);
     }
 
     private static void AddLabelParameters(ClickHouseCommand command)

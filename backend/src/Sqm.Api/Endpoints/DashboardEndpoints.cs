@@ -46,16 +46,26 @@ public static class DashboardEndpoints
     }
 
     private static async Task<IResult> GetCapabilitiesAsync(
-        IDeviceAnalyticsStore store, CancellationToken ct)
+        IDeviceAnalyticsStore store, CancellationToken ct, string? countBy = null)
     {
-        var rows = await store.GetCapabilitySupportAsync(ct).ConfigureAwait(false);
+        if (!TryParseCountBy(countBy, out var measure))
+        {
+            return InvalidCountBy(countBy!);
+        }
+
+        var rows = await store.GetCapabilitySupportAsync(measure, ct).ConfigureAwait(false);
         return Results.Ok(rows);
     }
 
     private static async Task<IResult> GetDeviceClassMixAsync(
-        IDeviceAnalyticsStore store, CancellationToken ct)
+        IDeviceAnalyticsStore store, CancellationToken ct, string? countBy = null)
     {
-        var rows = await store.GetDeviceClassMixAsync(ct).ConfigureAwait(false);
+        if (!TryParseCountBy(countBy, out var measure))
+        {
+            return InvalidCountBy(countBy!);
+        }
+
+        var rows = await store.GetDeviceClassMixAsync(measure, ct).ConfigureAwait(false);
         return Results.Ok(rows);
     }
 

@@ -24,7 +24,13 @@ builder.Services.Configure<ClickHouseOptions>(
 // One pooled HttpClient for every ClickHouse call. Without this the driver builds
 // a client per connection, paying a TCP handshake on each query and leaking sockets
 // into TIME_WAIT under load.
-builder.Services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName)
+builder.Services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName, client =>
+    {
+        // Must exceed ClickHouse:QueryTimeoutSeconds. HttpClient defaults to 100s, which was
+        // below the 120s query timeout - so a slow query was abandoned by the client while the
+        // server kept working on it, and the caller saw an opaque 500 instead of a timeout.
+        client.Timeout = TimeSpan.FromSeconds(180);
+    })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
