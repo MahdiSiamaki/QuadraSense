@@ -1,76 +1,47 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import {
-  useKpiSummary,
-  useTopDimension,
-  useDistribution,
-  useDeviceClassMix,
-} from '@/api/dashboard'
-import Card from '@/design-system/Card.vue'
-import KpiCard from '@/design-system/KpiCard.vue'
-import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
-import BarChart from '@/design-system/BarChart.vue'
-import CompositionBar from '@/design-system/CompositionBar.vue'
-import DimensionTable from '@/design-system/DimensionTable.vue'
-import { formatFull, formatPercent } from '@/lib/format'
+import { computed, ref } from 'vue'
+import { GridLayout, GridItem } from 'grid-layout-plus'
+import type { Dimension } from '@/api/dashboard'
 import { useFilterState, FILTER_LABELS } from './useFilterState'
+import { useDashboardLayout } from './useDashboardLayout'
+import { WIDGETS } from './widgets/registry'
+import WidgetFrame from './WidgetFrame.vue'
+import AddWidgetPanel from './AddWidgetPanel.vue'
 
 const { filters, activeFilters, setFilter, toggleUnknownDevice, clearAll } = useFilterState()
+const layout = useDashboardLayout()
 
-const kpi = useKpiSummary(filters)
-const vendors = useTopDimension('vendorCanonical', filters, 10)
-const deviceTypes = useDistribution('deviceType', filters)
-const operatingSystems = useTopDimension('operatingSystem', filters, 8)
-const classMix = useDeviceClassMix()
+const showAddPanel = ref(false)
 
 /**
- * Top models always excludes the unknown-device bucket.
+ * Drill-down from a widget.
  *
- * Not a cosmetic choice. "(unknown device)" is 8.8M bindings — larger than every
- * real model — so including it dwarfs the bars and makes the models
- * incomparable, which is the one thing this chart exists to do. And it is not an
- * answer to "which models are popular": it is the absence of one.
- *
- * The count is not hidden: it stays in the KPI row, the class mix, and the
- * device-type table, where it genuinely is a category.
+ * Only dimensions that exist as filters can be drilled into. Clicking a model name,
+ * for instance, has nothing to narrow to — there is no model filter — so it is
+ * ignored rather than appearing to work and doing nothing.
  */
-const modelFilters = computed(() => ({ ...filters.value, includeUnknownDevice: false }))
-const models = useTopDimension('marketingName', modelFilters, 10)
-
-/** Clicking a bar drills in. The URL changes, so back undoes it. */
-function drillInto(key: keyof typeof FILTER_LABELS, value: string) {
-  if (value.startsWith('(unknown')) return
-  setFilter(key, value)
+const DRILLABLE: Partial<Record<Dimension, keyof typeof FILTER_LABELS>> = {
+  vendorCanonical: 'vendor',
+  deviceType: 'deviceType',
+  operatingSystem: 'operatingSystem',
+  tac: 'tac',
 }
 
-const unknownShare = computed(() => {
-  const k = kpi.data.value
-  if (!k?.activeBindings) return null
-  return (k.unknownDeviceBindings / k.activeBindings) * 100
-})
+function onDrill(dimension: Dimension, value: string) {
+  const key = DRILLABLE[dimension]
+  if (key) setFilter(key, value)
+}
 
-/**
- * Bindings with a well-formed IMEI whose TAC is absent from the GSMA database.
- *
- * Computed from exact counts the API returns, never from the coverage percentage.
- * Deriving it from a figure rounded to three decimals put this ~30,000 rows off
- * the true 255,676 - a rounding artifact presented as a count, on the screen
- * whose whole job is to report data quality accurately.
- */
-const unregisteredTac = computed(() => {
-  const k = kpi.data.value
-  if (!k?.activeBindings) return null
-  return (
-    k.activeBindings - k.tacMatchedBindings - k.unknownDeviceBindings - k.malformedImeiBindings
-  )
-})
-
-/** The filtered path falls back to the raw table and is measurably slower. */
 const isFiltered = computed(() => activeFilters.value.length > 0)
+
+function toggleEdit() {
+  layout.isEditing = !layout.isEditing
+  if (!layout.isEditing) showAddPanel.value = false
+}
 </script>
 
 <template>
-  <div class="space-y-5">
+  <div class="space-y-4">
     <header class="flex flex-wrap items-end justify-between gap-3">
       <div>
         <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Device population</h1>
@@ -88,10 +59,59 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
         >
           {{ filters.includeUnknownDevice ? 'Hide unknown devices' : 'Show unknown devices' }}
         </button>
+
+        <button
+          v-if="layout.isEditing"
+          type="button"
+          class="rounded-[var(--radius-md)] border px-2.5 py-1.5 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)]"
+          :class="showAddPanel ? 'bg-[var(--c-surface-sunken)]' : ''"
+          @click="showAddPanel = !showAddPanel"
+        >
+          Add widget
+        </button>
+
+        <button
+          v-if="layout.isEditing && !layout.isDefault"
+          type="button"
+          class="rounded-[var(--radius-md)] border px-2.5 py-1.5 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)]"
+          @click="layout.reset()"
+        >
+          Reset layout
+        </button>
+
+        <button
+          type="button"
+          class="rounded-[var(--radius-md)] px-3 py-1.5 text-[var(--text-xs)] font-medium"
+          :class="
+            layout.isEditing
+              ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)] hover:bg-[var(--c-accent-hover)]'
+              : 'border hover:bg-[var(--c-surface-hover)]'
+          "
+          @click="toggleEdit"
+        >
+          {{ layout.isEditing ? 'Done editing' : 'Edit dashboard' }}
+        </button>
       </div>
     </header>
 
-    <!-- Active filters. Shown as removable chips so the current view is always legible. -->
+    <!-- Says where the layout lives. "Per browser" is a real limitation a user
+         should be told about, not discover by losing their board on another machine. -->
+    <p
+      v-if="layout.isEditing"
+      class="rounded-[var(--radius-md)] border border-dashed bg-[var(--c-surface-sunken)] px-3 py-2 text-[var(--text-xs)] text-[var(--c-text-secondary)]"
+    >
+      Drag the <span aria-hidden="true">⠿</span> handle to move a widget, drag its bottom-right
+      corner to resize, and use Settings to change what it shows. Changes save automatically —
+      to this browser only, until user accounts exist.
+    </p>
+
+    <AddWidgetPanel
+      :open="layout.isEditing && showAddPanel"
+      @add="layout.add($event)"
+      @close="showAddPanel = false"
+    />
+
+    <!-- Active filters -->
     <div v-if="isFiltered" class="flex flex-wrap items-center gap-2">
       <span class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Filtered by</span>
       <button
@@ -118,191 +138,80 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
       </span>
     </div>
 
-    <!-- KPI row -->
-    <AsyncBoundary
-      :is-loading="kpi.isPending.value"
-      :is-error="kpi.isError.value"
-      :error="kpi.error.value"
-      min-height="5.5rem"
-      @retry="kpi.refetch()"
+    <!--
+      Row height is deliberately small (24px) so heights are expressed in fine
+      increments and resizing feels continuous rather than snapping in large jumps.
+      Vertical compacting pulls widgets up into the gap left by a removal.
+    -->
+    <GridLayout
+      v-model:layout="layout.widgets"
+      :col-num="12"
+      :row-height="24"
+      :margin="[16, 16]"
+      :is-draggable="layout.isEditing"
+      :is-resizable="layout.isEditing"
+      :vertical-compact="true"
+      :use-css-transforms="true"
+      drag-allow-from=".widget-drag-handle"
     >
-      <template #skeleton>
-        <div class="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <div v-for="i in 5" :key="i" class="h-[5.5rem] rounded-[var(--radius-lg)] bg-[var(--c-surface-sunken)]" />
-        </div>
-      </template>
-
-      <div class="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <KpiCard label="Active bindings" :value="kpi.data.value?.activeBindings" />
-        <KpiCard label="Subscribers" :value="kpi.data.value?.distinctSubscribers" hint="approx." />
-        <KpiCard label="Devices" :value="kpi.data.value?.distinctDevices" hint="approx." />
-        <KpiCard
-          label="Unknown device"
-          :value="kpi.data.value?.unknownDeviceBindings"
-          tone="warning"
-          :hint="unknownShare ? `${formatPercent(unknownShare)} of bindings` : undefined"
-        />
-        <KpiCard
-          label="TAC coverage"
-          :value="kpi.data.value?.tacCoveragePercent"
-          percent
-          hint="enriched from GSMA"
-        />
-      </div>
-    </AsyncBoundary>
-
-    <!-- Composition -->
-    <Card
-      title="Device class mix"
-      subtitle="Handsets versus machines. IoT/M2M is a real segment here, not tail noise."
-    >
-      <AsyncBoundary
-        :is-loading="classMix.isPending.value"
-        :is-error="classMix.isError.value"
-        :error="classMix.error.value"
-        min-height="6rem"
-        @retry="classMix.refetch()"
+      <GridItem
+        v-for="item in layout.widgets"
+        :key="item.i"
+        :i="item.i"
+        :x="item.x"
+        :y="item.y"
+        :w="item.w"
+        :h="item.h"
+        :min-w="3"
+        :min-h="3"
       >
-        <CompositionBar :data="classMix.data.value ?? []" />
-      </AsyncBoundary>
-    </Card>
-
-    <!-- Vendors and models -->
-    <div class="grid gap-5 xl:grid-cols-2">
-      <Card title="Top vendors" subtitle="Normalised names. Click a bar to filter.">
-        <AsyncBoundary
-          :is-loading="vendors.isPending.value"
-          :is-error="vendors.isError.value"
-          :error="vendors.error.value"
-          :is-empty="vendors.data.value?.length === 0"
-          min-height="18rem"
-          @retry="vendors.refetch()"
+        <WidgetFrame
+          :type="item.type"
+          :config="item.config"
+          :is-editing="layout.isEditing"
+          @remove="layout.remove(item.i)"
+          @duplicate="layout.duplicate(item.i)"
+          @update="layout.updateConfig(item.i, $event)"
         >
-          <BarChart :data="vendors.data.value ?? []" @select="(v) => drillInto('vendor', v)" />
-        </AsyncBoundary>
-      </Card>
-
-      <Card title="Top models" subtitle="By GSMA marketing name. Excludes unknown devices.">
-        <AsyncBoundary
-          :is-loading="models.isPending.value"
-          :is-error="models.isError.value"
-          :error="models.error.value"
-          :is-empty="models.data.value?.length === 0"
-          min-height="18rem"
-          @retry="models.refetch()"
-        >
-          <BarChart :data="models.data.value ?? []" />
-        </AsyncBoundary>
-      </Card>
-    </div>
-
-    <!-- Types and OS -->
-    <div class="grid gap-5 xl:grid-cols-2">
-      <Card title="Device types" subtitle="Full GSMA taxonomy. Click to filter." flush>
-        <AsyncBoundary
-          :is-loading="deviceTypes.isPending.value"
-          :is-error="deviceTypes.isError.value"
-          :error="deviceTypes.error.value"
-          :is-empty="deviceTypes.data.value?.length === 0"
-          min-height="16rem"
-          @retry="deviceTypes.refetch()"
-        >
-          <DimensionTable
-            :rows="(deviceTypes.data.value ?? []).slice(0, 10)"
-            header="Device type"
-            @select="(v) => drillInto('deviceType', v)"
+          <component
+            :is="WIDGETS[item.type]?.component"
+            :config="item.config"
+            :filters="filters"
+            @drill="onDrill"
           />
-        </AsyncBoundary>
-      </Card>
-
-      <Card title="Operating systems" subtitle="Normalised for case and whitespace." flush>
-        <AsyncBoundary
-          :is-loading="operatingSystems.isPending.value"
-          :is-error="operatingSystems.isError.value"
-          :error="operatingSystems.error.value"
-          :is-empty="operatingSystems.data.value?.length === 0"
-          min-height="16rem"
-          @retry="operatingSystems.refetch()"
-        >
-          <DimensionTable
-            :rows="operatingSystems.data.value ?? []"
-            header="Operating system"
-            @select="(v) => drillInto('operatingSystem', v)"
-          />
-        </AsyncBoundary>
-      </Card>
-    </div>
-
-    <!-- Data quality -->
-    <Card
-      title="Enrichment breakdown"
-      subtitle="Every active binding, accounted for. These are characteristics of the feed, not defects — except where noted."
-    >
-      <AsyncBoundary
-        :is-loading="kpi.isPending.value"
-        :is-error="kpi.isError.value"
-        :error="kpi.error.value"
-        min-height="8rem"
-        @retry="kpi.refetch()"
-      >
-        <div class="space-y-4">
-          <!-- The four categories are shown together, and they sum exactly to the total.
-               Presenting them separately is the point: only one of them is a defect. -->
-          <dl class="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Enriched from GSMA</dt>
-              <dd class="mt-1 text-[var(--text-lg)] font-semibold tabular text-[var(--c-success)]">
-                {{ formatFull(kpi.data.value?.tacMatchedBindings ?? 0) }}
-              </dd>
-              <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
-                {{ formatPercent(kpi.data.value?.tacCoveragePercent ?? 0, 2) }} of active bindings.
-              </dd>
-            </div>
-
-            <div>
-              <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
-                Unknown device (<code class="font-[var(--font-mono)]">000000</code>)
-              </dt>
-              <dd class="mt-1 text-[var(--text-lg)] font-semibold tabular text-[var(--c-warning)]">
-                {{ formatFull(kpi.data.value?.unknownDeviceBindings ?? 0) }}
-              </dd>
-              <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
-                A sentinel the source uses for "device not known". Expected, not a defect.
-              </dd>
-            </div>
-
-            <div>
-              <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Malformed IMEI</dt>
-              <dd class="mt-1 text-[var(--text-lg)] font-semibold tabular text-[var(--c-danger)]">
-                {{ formatFull(kpi.data.value?.malformedImeiBindings ?? 0) }}
-              </dd>
-              <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
-                Numeric but not 14 digits. <strong>The only genuine defect here</strong> — worth raising
-                with the source.
-              </dd>
-            </div>
-
-            <div>
-              <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Unregistered TAC</dt>
-              <dd class="mt-1 text-[var(--text-lg)] font-semibold tabular">
-                {{ formatFull(unregisteredTac ?? 0) }}
-              </dd>
-              <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
-                Well-formed IMEI whose TAC is absent from the GSMA database.
-              </dd>
-            </div>
-          </dl>
-
-          <p class="border-t pt-3 text-[var(--text-xs)] text-[var(--c-text-muted)]">
-            The four figures sum to
-            <span class="tabular font-medium text-[var(--c-text-secondary)]">
-              {{ formatFull(kpi.data.value?.activeBindings ?? 0) }}
-            </span>
-            active bindings. The enrichment ceiling is set by unknown-device rows, not by gaps in the
-            GSMA database.
-          </p>
-        </div>
-      </AsyncBoundary>
-    </Card>
+        </WidgetFrame>
+      </GridItem>
+    </GridLayout>
   </div>
 </template>
+
+<style>
+/* The grid library ships unstyled placeholders and handles. Binding them to our
+   design tokens keeps edit mode looking like part of the product rather than a
+   third-party widget dropped into it. */
+.vgl-item--placeholder {
+  background: var(--c-accent);
+  opacity: 0.12;
+  border-radius: var(--radius-lg);
+}
+
+.vgl-item__resizer {
+  width: 14px;
+  height: 14px;
+  right: 3px;
+  bottom: 3px;
+  opacity: 0.4;
+}
+
+.vgl-item__resizer::after {
+  border-right: 2px solid var(--c-text-muted);
+  border-bottom: 2px solid var(--c-text-muted);
+  width: 7px;
+  height: 7px;
+}
+
+.vgl-item--dragging {
+  z-index: 20;
+  cursor: grabbing;
+}
+</style>

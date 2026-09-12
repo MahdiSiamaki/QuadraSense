@@ -340,19 +340,49 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<DistributionSlice>> GetDeviceClassMixAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<DistributionSlice>> GetSeriesAsync(
+        AnalyticsSeries series, CancellationToken ct)
     {
-        const string Sql = """
-            SELECT device_class, sum(n) AS n
-            FROM sqm.agg_device_class_daily
-            WHERE seq = (SELECT max(seq) FROM sqm.agg_device_class_daily)
-            GROUP BY device_class
-            ORDER BY n DESC
-            """;
+        // Each branch is a literal written here, so a series name from a saved layout selects a
+        // query rather than supplying one.
+        var sql = series switch
+        {
+            AnalyticsSeries.DeviceClass => """
+                SELECT device_class AS k, sum(n) AS n
+                FROM sqm.agg_device_class_daily
+                WHERE seq = (SELECT max(seq) FROM sqm.agg_device_class_daily)
+                GROUP BY k ORDER BY n DESC
+                """,
+
+            // Buckets are 1..9 exact and 10 meaning "10 or more", so the label is built here
+            // rather than pretending bucket 10 is a precise count.
+            AnalyticsSeries.DevicesPerSubscriber => """
+                SELECT if(bucket >= 10, '10+', toString(bucket)) AS k, sum(n_msisdn) AS n
+                FROM sqm.agg_devices_per_subscriber
+                WHERE seq = (SELECT max(seq) FROM sqm.agg_devices_per_subscriber)
+                GROUP BY k, bucket ORDER BY bucket
+                """,
+
+            AnalyticsSeries.SubscribersPerDevice => """
+                SELECT if(bucket >= 10, '10+', toString(bucket)) AS k, sum(n_imei) AS n
+                FROM sqm.agg_subscribers_per_device
+                WHERE seq = (SELECT max(seq) FROM sqm.agg_subscribers_per_device)
+                GROUP BY k, bucket ORDER BY bucket
+                """,
+
+            AnalyticsSeries.MsisdnPrefix => """
+                SELECT prefix4 AS k, sum(n) AS n
+                FROM sqm.agg_msisdn_prefix
+                WHERE seq = (SELECT max(seq) FROM sqm.agg_msisdn_prefix)
+                GROUP BY k ORDER BY n DESC LIMIT 20
+                """,
+
+            _ => throw new ArgumentOutOfRangeException(nameof(series), series, "Unmapped series."),
+        };
 
         await using var connection = CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
-        await using var command = CreateCommand(connection, Sql);
+        await using var command = CreateCommand(connection, sql);
 
         var rows = new List<(string Key, long Count)>();
         await using (var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))

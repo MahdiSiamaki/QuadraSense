@@ -85,3 +85,42 @@ FROM sqm.binding_current AS b
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 WHERE b.active = 1
 GROUP BY device_class;
+
+-- --------------------------------------------------------------------------
+-- 4. Relationship marts.
+--
+--    These are the expensive ones: grouping 126M rows into ~79M distinct
+--    subscribers measured at 52s live. Computed once here, read in milliseconds
+--    by the dashboard.
+-- --------------------------------------------------------------------------
+ALTER TABLE sqm.agg_devices_per_subscriber  DROP PARTITION {seq:UInt16};
+ALTER TABLE sqm.agg_subscribers_per_device  DROP PARTITION {seq:UInt16};
+ALTER TABLE sqm.agg_msisdn_prefix           DROP PARTITION {seq:UInt16};
+
+INSERT INTO sqm.agg_devices_per_subscriber (seq, data_date, bucket, n_msisdn)
+SELECT {seq:UInt16}, NULL, least(d, 10) AS bucket, count() AS n_msisdn
+FROM (
+    SELECT msisdn, uniqExact(imei) AS d
+    FROM sqm.binding_current
+    WHERE active = 1
+    GROUP BY msisdn
+)
+GROUP BY bucket;
+
+INSERT INTO sqm.agg_subscribers_per_device (seq, data_date, bucket, n_imei)
+SELECT {seq:UInt16}, NULL, least(m, 10) AS bucket, count() AS n_imei
+FROM (
+    SELECT imei, uniqExact(msisdn) AS m
+    FROM sqm.binding_current
+    -- Excludes the 000000 sentinel: it is not a device, and counting how many
+    -- subscribers "share" it would produce a meaningless 8.8M outlier.
+    WHERE active = 1 AND length(imei) = 14
+    GROUP BY imei
+)
+GROUP BY bucket;
+
+INSERT INTO sqm.agg_msisdn_prefix (seq, data_date, prefix4, n)
+SELECT {seq:UInt16}, NULL, substring(toString(msisdn), 1, 4) AS prefix4, count() AS n
+FROM sqm.binding_current
+WHERE active = 1
+GROUP BY prefix4;

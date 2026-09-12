@@ -129,16 +129,17 @@ export function useDistribution(
 }
 
 /**
- * The handset-versus-machine mix.
+ * One pre-computed series.
  *
- * Read from a pre-computed 8-row table, so this is effectively free (~106 ms end
- * to end, most of it HTTP).
+ * Each reads a mart of a few dozen rows. The computations behind them are the most
+ * expensive in the system - devices-per-subscriber measured at 52s against raw data -
+ * so they are never run on request.
  */
-export function useDeviceClassMix() {
+export function useSeries(series: MaybeRefOrGetter<string>) {
   return useQuery({
-    queryKey: ['device-class-mix'],
+    queryKey: ['series', computed(() => toValue(series))],
     queryFn: ({ signal }) =>
-      api.get<DimensionCount[]>('/api/v1/dashboard/device-class-mix', undefined, signal),
+      api.get<DimensionCount[]>(`/api/v1/dashboard/series/${toValue(series)}`, undefined, signal),
     staleTime: DAILY_DATA_STALE_TIME,
   })
 }

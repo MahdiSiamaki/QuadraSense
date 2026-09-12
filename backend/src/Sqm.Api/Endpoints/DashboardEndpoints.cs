@@ -34,17 +34,33 @@ public static class DashboardEndpoints
             .WithName("GetChangeSeries")
             .WithSummary("Adds, removes and net change per delivery sequence.");
 
-        group.MapGet("/device-class-mix", GetDeviceClassMixAsync)
-            .WithName("GetDeviceClassMix")
-            .WithSummary("Handset versus machine mix: smartphone, feature phone, tablet, IoT/M2M.");
+        group.MapGet("/series/{series}", GetSeriesAsync)
+            .WithName("GetSeries")
+            .WithSummary("A pre-computed series: device class mix, devices per subscriber, "
+                       + "subscribers per device, or subscriber-number prefixes.");
 
         return app;
     }
 
-    private static async Task<IResult> GetDeviceClassMixAsync(
-        IDeviceAnalyticsStore store, CancellationToken ct)
+    private static async Task<IResult> GetSeriesAsync(
+        string series, IDeviceAnalyticsStore store, CancellationToken ct)
     {
-        var rows = await store.GetDeviceClassMixAsync(ct).ConfigureAwait(false);
+        if (!Enum.TryParse<AnalyticsSeries>(series, ignoreCase: true, out var parsed)
+            || !Enum.IsDefined(parsed))
+        {
+            return Results.ValidationProblem(
+                new Dictionary<string, string[]>
+                {
+                    ["series"] =
+                    [
+                        $"'{series}' is not a supported series. Valid values: "
+                        + string.Join(", ", Enum.GetNames<AnalyticsSeries>()),
+                    ],
+                },
+                title: "Unsupported series");
+        }
+
+        var rows = await store.GetSeriesAsync(parsed, ct).ConfigureAwait(false);
         return Results.Ok(rows);
     }
 
