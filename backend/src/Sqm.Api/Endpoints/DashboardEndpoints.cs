@@ -38,7 +38,18 @@ public static class DashboardEndpoints
             .WithName("GetDeviceClassMix")
             .WithSummary("Handset versus machine mix: smartphone, feature phone, tablet, IoT/M2M.");
 
+        group.MapGet("/capabilities", GetCapabilitiesAsync)
+            .WithName("GetCapabilitySupport")
+            .WithSummary("Network and SIM capability of the active device population: LTE, 5G, eSIM.");
+
         return app;
+    }
+
+    private static async Task<IResult> GetCapabilitiesAsync(
+        IDeviceAnalyticsStore store, CancellationToken ct)
+    {
+        var rows = await store.GetCapabilitySupportAsync(ct).ConfigureAwait(false);
+        return Results.Ok(rows);
     }
 
     private static async Task<IResult> GetDeviceClassMixAsync(

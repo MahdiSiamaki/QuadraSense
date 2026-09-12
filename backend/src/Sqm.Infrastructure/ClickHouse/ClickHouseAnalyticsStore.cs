@@ -369,6 +369,45 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
             .ToList();
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CapabilitySupport>> GetCapabilitySupportAsync(CancellationToken ct)
+    {
+        const string Sql = """
+            SELECT capability, supported, unsupported, unknown
+            FROM sqm.agg_capability_daily
+            WHERE seq = (SELECT max(seq) FROM sqm.agg_capability_daily)
+            ORDER BY supported DESC
+            """;
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = CreateCommand(connection, Sql);
+
+        var results = new List<CapabilitySupport>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            var capability = reader.GetString(0);
+            var supported = GetInt64(reader, 1);
+            var unsupported = GetInt64(reader, 2);
+            var unknown = GetInt64(reader, 3);
+
+            var assessable = supported + unsupported;
+            var total = assessable + unknown;
+
+            results.Add(new CapabilitySupport(
+                Capability: capability,
+                Supported: supported,
+                Unsupported: unsupported,
+                Unknown: unknown,
+                PercentOfAssessable: Percent(supported, assessable),
+                PercentOfAll: Percent(supported, total),
+                CoveragePercent: Percent(assessable, total)));
+        }
+
+        return results;
+    }
+
     /// <summary>
     /// Opens a connection backed by the pooled <see cref="HttpClient"/>.
     /// </summary>

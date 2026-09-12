@@ -85,3 +85,66 @@ FROM sqm.binding_current AS b
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 WHERE b.active = 1
 GROUP BY device_class;
+
+-- --------------------------------------------------------------------------
+-- 4. Network / SIM capability.
+--
+--    Capabilities overlap (a device can be LTE and 5G and eSIM), so each row is an
+--    independent supported/unsupported/unknown split rather than a slice of a whole.
+--
+--    "unknown" is carried explicitly instead of being folded into "unsupported".
+--    Conflating them would claim we know a device lacks 5G when in fact we do not
+--    know what the device is - and that is 7% of the population.
+-- --------------------------------------------------------------------------
+ALTER TABLE sqm.agg_capability_daily DROP PARTITION {seq:UInt16};
+
+INSERT INTO sqm.agg_capability_daily (seq, data_date, capability, supported, unsupported, unknown)
+WITH joined AS (
+    SELECT
+        b.n                                   AS n,
+        t.tac != ''                           AS enriched,
+        t.bandDetails                         AS bands,
+        toUInt8OrZero(t.removableEUICC)
+          + toUInt8OrZero(t.nonremovableEUICC) AS euicc_count,
+        t.authenticatedIMSEmergencyCallSupport AS ims
+    FROM sqm.agg_device_daily AS b
+    LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+    WHERE b.seq = {seq:UInt16} AND b.active = 1
+)
+SELECT {seq:UInt16}, NULL, capability, supported, unsupported, unknown FROM (
+    SELECT
+        'LTE' AS capability,
+        sumIf(n, enriched AND bands ILIKE '%LTE%')     AS supported,
+        sumIf(n, enriched AND bands NOT ILIKE '%LTE%') AS unsupported,
+        sumIf(n, NOT enriched)                         AS unknown
+    FROM joined
+    UNION ALL
+    SELECT
+        '5G',
+        -- Two spellings appear in the source: "5G NR: n2, n66" for handsets and
+        -- "5G NA Options: 5G-5Series" for modules. Matching bare '5G' would also catch
+        -- 135 rows that mention it incidentally.
+        sumIf(n, enriched AND (bands ILIKE '%5G NR%' OR bands ILIKE '%5G NA%')),
+        sumIf(n, enriched AND NOT (bands ILIKE '%5G NR%' OR bands ILIKE '%5G NA%')),
+        sumIf(n, NOT enriched)
+    FROM joined
+    UNION ALL
+    SELECT
+        'eSIM',
+        -- These GSMA fields are eUICC *counts*, not flags: 0 means none, 1+ means the
+        -- device has an embedded UICC. '00' and '0' both occur and both parse to 0.
+        sumIf(n, enriched AND euicc_count > 0),
+        sumIf(n, enriched AND euicc_count = 0),
+        sumIf(n, NOT enriched)
+    FROM joined
+    UNION ALL
+    SELECT
+        -- Deliberately NOT called VoLTE. This is IMS emergency-call support, which is a
+        -- different thing, and it is 'Not Known' for 94% of TACs. It is published so the
+        -- gap is visible rather than silently filled with a guess.
+        'IMS emergency calling',
+        sumIf(n, enriched AND ims IN ('Y', 'Yes')),
+        sumIf(n, enriched AND ims IN ('N', 'No')),
+        sumIf(n, (NOT enriched) OR ims NOT IN ('Y', 'Yes', 'N', 'No'))
+    FROM joined
+);

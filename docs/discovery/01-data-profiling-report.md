@@ -285,7 +285,37 @@ Top manufacturers by enriched initial-dump rows:
 
 The modem vendors (Quectel, Fibocom, SIMCOM ≈ 4.2% combined) indicate a real **IoT/M2M segment** in the subscriber base.
 
-### 6.4 Manufacturer normalisation is required
+### 6.4 Network and SIM capability — what the TAC data does and does not carry
+
+Measured across the 270,166-row GSMA export and weighted by active bindings:
+
+| Capability | Source field | Assessable bindings | Supported | Share of assessable |
+|---|---|---:|---:|---:|
+| **LTE** | `bandDetails` lists LTE bands | 116,876,401 | 99,704,527 | **85.31%** |
+| **5G** | `bandDetails` contains `5G NR:` or `5G NA` | 116,876,401 | 21,947,454 | **18.78%** |
+| **eSIM** | `removableEUICC` + `nonremovableEUICC` counts | 116,876,401 | 6,571,548 | **5.62%** |
+| IMS emergency calling | `authenticatedIMSEmergencyCallSupport` | **426,010** | 326,083 | 76.54% |
+
+**VoLTE is not in this dataset.** Two independent checks:
+
+- `bandDetails` mentions VoLTE in **2 rows out of 270,166**.
+- The three IMS columns describe *emergency calling over IMS*, which is a different capability, and
+  they are `Not Known` for **254,264 TACs (94.1%)**.
+
+There is no honest way to report VoLTE support here. The dashboard says so explicitly rather than
+substituting a proxy — "LTE-capable" is not "VoLTE-capable", and presenting one as the other would look
+like an answer without being one.
+
+The IMS row is published anyway, labelled for what it actually is, and drawn muted with its coverage
+stated: it reads 76.5% supported, but only across **0.34%** of the subscriber base.
+
+Notes on the detection rules:
+
+- Matching bare `5G` instead of `5G NR` / `5G NA` also catches **135 TACs** that mention it incidentally.
+- The eUICC fields are **counts, not flags**. Both `0` and `00` occur and both mean none; `1`, `2` and `3`
+  all appear and all mean the device has an embedded UICC.
+
+### 6.5 Manufacturer normalisation is required
 
 `manufacturer` is a raw free-text GSMA string and is **not dashboard-ready**:
 

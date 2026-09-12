@@ -136,3 +136,34 @@ public sealed record QualitySnapshot(
     long OrphanRemoves,
     long DoubleAdds,
     long UnknownDeviceRows);
+
+/// <summary>Network or SIM capability of the active device population.</summary>
+/// <param name="Capability">Capability name, e.g. <c>LTE</c>, <c>5G</c>, <c>eSIM</c>.</param>
+/// <param name="Supported">Bindings whose device is known to have it.</param>
+/// <param name="Unsupported">Bindings whose device is known not to have it.</param>
+/// <param name="Unknown">
+/// Bindings that cannot be assessed — unknown device, unregistered TAC, or the GSMA record is silent.
+/// Carried separately rather than folded into <paramref name="Unsupported"/>: claiming a device lacks
+/// 5G when we do not know what the device is would be a different, and wrong, statement.
+/// </param>
+/// <param name="PercentOfAssessable">
+/// Share of the devices we can actually assess. The headline figure.
+/// </param>
+/// <param name="PercentOfAll">Share of every active binding, including the unassessable ones.</param>
+/// <param name="CoveragePercent">
+/// How much of the population this capability can be assessed for. Essential context: IMS emergency
+/// calling reads 76.5% supported, but only across 0.34% of the base, which makes the headline
+/// meaningless without it.
+/// </param>
+/// <remarks>
+/// Capabilities <b>overlap</b> — a device can be LTE and 5G and eSIM at once — so these must never be
+/// rendered as slices of a single whole. Each is an independent proportion.
+/// </remarks>
+public sealed record CapabilitySupport(
+    string Capability,
+    long Supported,
+    long Unsupported,
+    long Unknown,
+    double PercentOfAssessable,
+    double PercentOfAll,
+    double CoveragePercent);

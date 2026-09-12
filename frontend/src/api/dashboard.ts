@@ -143,6 +143,35 @@ export function useDeviceClassMix() {
   })
 }
 
+export interface CapabilitySupport {
+  capability: string
+  supported: number
+  unsupported: number
+  /** Cannot be assessed: unknown device, unregistered TAC, or the GSMA record is silent. */
+  unknown: number
+  /** Share of devices we can actually assess. The headline figure. */
+  percentOfAssessable: number
+  percentOfAll: number
+  /** How much of the base this capability is knowable for. Essential context. */
+  coveragePercent: number
+}
+
+/**
+ * Network and SIM capability: LTE, 5G, eSIM.
+ *
+ * VoLTE is absent because the GSMA dataset does not carry it - bandDetails mentions it
+ * in 2 rows out of 270,166, and the IMS columns describe emergency calling, not VoLTE.
+ * Reporting a guess here would be worse than reporting nothing.
+ */
+export function useCapabilities() {
+  return useQuery({
+    queryKey: ['capabilities'],
+    queryFn: ({ signal }) =>
+      api.get<CapabilitySupport[]>('/api/v1/dashboard/capabilities', undefined, signal),
+    staleTime: DAILY_DATA_STALE_TIME,
+  })
+}
+
 /** Subscriber lookup. POST so the number never appears in a URL. */
 export function lookupMsisdn(msisdn: string, signal?: AbortSignal) {
   return api.post<LookupResult>('/api/v1/lookup/msisdn', { msisdn }, signal)

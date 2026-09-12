@@ -5,12 +5,14 @@ import {
   useTopDimension,
   useDistribution,
   useDeviceClassMix,
+  useCapabilities,
 } from '@/api/dashboard'
 import Card from '@/design-system/Card.vue'
 import KpiCard from '@/design-system/KpiCard.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import BarChart from '@/design-system/BarChart.vue'
 import CompositionBar from '@/design-system/CompositionBar.vue'
+import CapabilityBars from '@/design-system/CapabilityBars.vue'
 import DimensionTable from '@/design-system/DimensionTable.vue'
 import { formatFull, formatPercent } from '@/lib/format'
 import { useFilterState, FILTER_LABELS } from './useFilterState'
@@ -22,6 +24,7 @@ const vendors = useTopDimension('vendorCanonical', filters, 10)
 const deviceTypes = useDistribution('deviceType', filters)
 const operatingSystems = useTopDimension('operatingSystem', filters, 8)
 const classMix = useDeviceClassMix()
+const capabilities = useCapabilities()
 
 /**
  * Top models always excludes the unknown-device bucket.
@@ -165,6 +168,30 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
       >
         <CompositionBar :data="classMix.data.value ?? []" />
       </AsyncBoundary>
+    </Card>
+
+    <!-- Network and SIM capability -->
+    <Card
+      title="Network & SIM capability"
+      subtitle="What the active device base supports, from the GSMA band list and eUICC records."
+    >
+      <AsyncBoundary
+        :is-loading="capabilities.isPending.value"
+        :is-error="capabilities.isError.value"
+        :error="capabilities.error.value"
+        min-height="12rem"
+        @retry="capabilities.refetch()"
+      >
+        <CapabilityBars :data="capabilities.data.value ?? []" />
+      </AsyncBoundary>
+
+      <template #footer>
+        <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          <strong>VoLTE is not shown</strong> because the GSMA dataset does not contain it: the band
+          list mentions VoLTE in 2 of 270,166 records, and the IMS fields describe emergency calling
+          rather than VoLTE. A proxy would look like an answer without being one.
+        </p>
+      </template>
     </Card>
 
     <!-- Vendors and models -->
