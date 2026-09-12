@@ -480,6 +480,122 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         return results;
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<DailyChange>> GetDailyChangesAsync(CancellationToken ct)
+    {
+        // The running total is computed in SQL rather than in the client: it is a window
+        // function over ~133 rows, and doing it here keeps the API's shape the same whether
+        // the caller wants one month or the whole history.
+        const string Sql = """
+            SELECT
+                data_date,
+                added,
+                removed,
+                toInt64(added) - toInt64(removed) AS net,
+                (SELECT active_bindings FROM sqm.agg_kpi_daily ORDER BY seq LIMIT 1)
+                    + sum(toInt64(added) - toInt64(removed)) OVER (ORDER BY data_date) AS cumulative,
+                unknown_device_rows
+            FROM sqm.agg_change_summary_daily
+            ORDER BY data_date
+            """;
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = CreateCommand(connection, Sql);
+
+        var rows = new List<DailyChange>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            rows.Add(new DailyChange(
+                Date: DateOnly.FromDateTime(reader.GetDateTime(0)),
+                Added: GetInt64(reader, 1),
+                Removed: GetInt64(reader, 2),
+                Net: GetInt64(reader, 3),
+                Cumulative: GetInt64(reader, 4),
+                UnknownDeviceRows: GetInt64(reader, 5)));
+        }
+        return rows;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<DailyChurn>> GetDailyChurnAsync(CancellationToken ct)
+    {
+        // FULL OUTER would be tidier, but the two marts are keyed identically and both are
+        // ~133 rows, so a union-and-group is simpler to read and costs nothing.
+        const string Sql = """
+            SELECT data_date, sum(sim_changes) AS sim_changes, sum(device_changes) AS device_changes
+            FROM (
+                SELECT data_date, msisdn_changed AS sim_changes, 0 AS device_changes
+                FROM sqm.agg_sim_change_daily
+                UNION ALL
+                SELECT data_date, 0, msisdn_changed
+                FROM sqm.agg_device_change_daily
+            )
+            GROUP BY data_date
+            ORDER BY data_date
+            """;
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = CreateCommand(connection, Sql);
+
+        var rows = new List<DailyChurn>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            rows.Add(new DailyChurn(
+                DateOnly.FromDateTime(reader.GetDateTime(0)),
+                GetInt64(reader, 1),
+                GetInt64(reader, 2)));
+        }
+        return rows;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<GrowthRow>> GetVendorGrowthAsync(int limit, CancellationToken ct)
+    {
+        var take = FilterBuilder.ClampLimit(limit, 50);
+
+        // Both ends of the distribution are returned. A "top movers" chart that shows only
+        // gainers hides the more interesting half: which vendors the network is losing.
+        var sql = $$"""
+            WITH growth AS (
+                SELECT
+                    multiIf(c.tac = '', {unknown_device:String},
+                            t.tac = '',  {unknown_tac:String},
+                            coalesce(nullIf(v.vendor_canonical, ''), nullIf(t.manufacturer, ''),
+                                     {unknown_tac:String})) AS k,
+                    sumIf(c.n, c.label = 'add')    AS added,
+                    sumIf(c.n, c.label = 'remove') AS removed
+                FROM sqm.agg_change_daily AS c
+                LEFT JOIN sqm.tac AS t ON t.tac = c.tac
+                LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+                GROUP BY k
+            )
+            SELECT k, added, removed, toInt64(added) - toInt64(removed) AS net FROM (
+                SELECT * FROM growth ORDER BY toInt64(added) - toInt64(removed) DESC LIMIT {{take}}
+                UNION ALL
+                SELECT * FROM growth ORDER BY toInt64(added) - toInt64(removed) ASC LIMIT {{take}}
+            )
+            ORDER BY net DESC
+            """;
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = CreateCommand(connection, sql);
+        AddLabelParameters(command);
+
+        var rows = new List<GrowthRow>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            rows.Add(new GrowthRow(
+                reader.GetString(0), GetInt64(reader, 1), GetInt64(reader, 2), GetInt64(reader, 3)));
+        }
+        return rows;
+    }
+
     /// <summary>
     /// Opens a connection backed by the pooled <see cref="HttpClient"/>.
     /// </summary>

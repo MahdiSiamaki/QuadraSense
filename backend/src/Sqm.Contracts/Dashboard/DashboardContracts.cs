@@ -110,6 +110,39 @@ public sealed record DistributionSlice(string Key, long Count, double Percent);
 /// <param name="Net">Added minus removed.</param>
 public sealed record ChangePoint(int Sequence, DateOnly? DataDate, long Added, long Removed, long Net);
 
+/// <summary>One day on the change time series.</summary>
+/// <param name="Date">The day the changes actually happened, from the source filename.</param>
+/// <param name="Added">Bindings activated that day.</param>
+/// <param name="Removed">Bindings deactivated that day.</param>
+/// <param name="Net">Added minus removed.</param>
+/// <param name="Cumulative">
+/// Running total of active bindings, starting from the initial dump and applying each day's net.
+/// </param>
+/// <param name="UnknownDeviceRows">Rows carrying the <c>000000</c> sentinel. A data-quality trend.</param>
+public sealed record DailyChange(
+    DateOnly Date,
+    long Added,
+    long Removed,
+    long Net,
+    long Cumulative,
+    long UnknownDeviceRows);
+
+/// <summary>One day of subscriber churn.</summary>
+/// <param name="Date">The day.</param>
+/// <param name="SimChanges">
+/// Subscribers whose number moved to a different SIM. Same-day definition: the number has a
+/// remove carrying one IMSI and an add carrying another on the same date.
+/// </param>
+/// <param name="DeviceChanges">Subscribers who moved to a different handset, same definition.</param>
+public sealed record DailyChurn(DateOnly Date, long SimChanges, long DeviceChanges);
+
+/// <summary>Net growth for one dimension value over a period.</summary>
+/// <param name="Key">Dimension value, e.g. a vendor name.</param>
+/// <param name="Added">Bindings gained.</param>
+/// <param name="Removed">Bindings lost.</param>
+/// <param name="Net">Added minus removed. Negative means the vendor is shrinking.</param>
+public sealed record GrowthRow(string Key, long Added, long Removed, long Net);
+
 /// <summary>One active binding, as returned by subscriber lookup.</summary>
 /// <param name="Msisdn">Subscriber number.</param>
 /// <param name="Imsi">SIM identity.</param>

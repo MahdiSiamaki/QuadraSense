@@ -194,6 +194,67 @@ export function useCapabilities(countBy: MaybeRefOrGetter<CountBy> = 'bindings')
   })
 }
 
+export interface DailyChange {
+  /** The day the changes actually happened, from the source filename. */
+  date: string
+  added: number
+  removed: number
+  net: number
+  /** Running active-binding total, starting from the initial dump. */
+  cumulative: number
+  unknownDeviceRows: number
+}
+
+export interface DailyChurn {
+  date: string
+  /** Numbers that moved to a different SIM that day. */
+  simChanges: number
+  /** Numbers that moved to a different handset that day. */
+  deviceChanges: number
+}
+
+export interface GrowthRow {
+  key: string
+  added: number
+  removed: number
+  /** Negative means the vendor is losing bindings. */
+  net: number
+}
+
+/**
+ * Daily change history, on a real calendar axis.
+ *
+ * Only possible since the source began supplying dated filenames - before that the axis
+ * could only honestly be labelled "delivery sequence".
+ */
+export function useDailyChanges() {
+  return useQuery({
+    queryKey: ['daily-changes'],
+    queryFn: ({ signal }) =>
+      api.get<DailyChange[]>('/api/v1/dashboard/daily-changes', undefined, signal),
+    staleTime: DAILY_DATA_STALE_TIME,
+  })
+}
+
+export function useDailyChurn() {
+  return useQuery({
+    queryKey: ['daily-churn'],
+    queryFn: ({ signal }) =>
+      api.get<DailyChurn[]>('/api/v1/dashboard/daily-churn', undefined, signal),
+    staleTime: DAILY_DATA_STALE_TIME,
+  })
+}
+
+/** Biggest gainers and biggest losers by net binding change over the loaded period. */
+export function useVendorGrowth(limit = 8) {
+  return useQuery({
+    queryKey: ['vendor-growth', limit],
+    queryFn: ({ signal }) =>
+      api.get<GrowthRow[]>('/api/v1/dashboard/vendor-growth', { limit }, signal),
+    staleTime: DAILY_DATA_STALE_TIME,
+  })
+}
+
 /** Subscriber lookup. POST so the number never appears in a URL. */
 export function lookupMsisdn(msisdn: string, signal?: AbortSignal) {
   return api.post<LookupResult>('/api/v1/lookup/msisdn', { msisdn }, signal)

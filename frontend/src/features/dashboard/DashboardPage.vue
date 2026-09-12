@@ -6,6 +6,9 @@ import {
   useDistribution,
   useDeviceClassMix,
   useCapabilities,
+  useDailyChanges,
+  useDailyChurn,
+  useVendorGrowth,
 } from '@/api/dashboard'
 import Card from '@/design-system/Card.vue'
 import KpiCard from '@/design-system/KpiCard.vue'
@@ -13,6 +16,9 @@ import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import BarChart from '@/design-system/BarChart.vue'
 import CompositionBar from '@/design-system/CompositionBar.vue'
 import CapabilityBars from '@/design-system/CapabilityBars.vue'
+import ChangeTimeSeries from '@/design-system/ChangeTimeSeries.vue'
+import ChurnTimeSeries from '@/design-system/ChurnTimeSeries.vue'
+import GrowthChart from '@/design-system/GrowthChart.vue'
 import DimensionTable from '@/design-system/DimensionTable.vue'
 import { formatFull, formatPercent } from '@/lib/format'
 import { useFilterState, FILTER_LABELS } from './useFilterState'
@@ -41,6 +47,21 @@ const deviceTypes = useDistribution('deviceType', filters, countBy)
 const operatingSystems = useTopDimension('operatingSystem', filters, 8, countBy)
 const classMix = useDeviceClassMix(countBy)
 const capabilities = useCapabilities(countBy)
+const dailyChanges = useDailyChanges()
+const dailyChurn = useDailyChurn()
+const vendorGrowth = useVendorGrowth(8)
+
+/** Days the source never delivered. Named so a gap in the chart is explained, not guessed at. */
+const MISSING_DAYS = [
+  '2026-05-08', '2026-05-09', '2026-05-11', '2026-05-12',
+  '2026-05-13', '2026-05-17', '2026-05-18',
+]
+
+const coverage = computed(() => {
+  const rows = dailyChanges.data.value
+  if (!rows?.length) return null
+  return { from: rows[0]!.date, to: rows[rows.length - 1]!.date, days: rows.length }
+})
 
 /**
  * Top models always excludes the unknown-device bucket.
@@ -229,6 +250,86 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
         />
       </div>
     </AsyncBoundary>
+
+    <!-- Daily change over time -->
+    <Card
+      title="Daily change"
+      :subtitle="coverage
+        ? `${coverage.days} days, ${coverage.from} to ${coverage.to}. Bars are the day's flow; the line is the running total.`
+        : 'Daily flow and running total.'"
+    >
+      <AsyncBoundary
+        :is-loading="dailyChanges.isPending.value"
+        :is-error="dailyChanges.isError.value"
+        :error="dailyChanges.error.value"
+        :is-empty="dailyChanges.data.value?.length === 0"
+        empty-message="No daily files loaded yet."
+        min-height="20rem"
+        @retry="dailyChanges.refetch()"
+      >
+        <ChangeTimeSeries :data="dailyChanges.data.value ?? []" />
+      </AsyncBoundary>
+
+      <template #footer>
+        <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          <strong>{{ MISSING_DAYS.length }} days are missing</strong> from the source and appear as
+          gaps rather than interpolated points: {{ MISSING_DAYS.join(', ') }}. They fall in one
+          11-day window in May, overlapping the dates the catch-up exports were generated.
+        </p>
+      </template>
+    </Card>
+
+    <!-- Churn -->
+    <div class="grid gap-5 xl:grid-cols-2">
+      <Card
+        title="SIM and handset changes"
+        subtitle="Subscribers who moved to a different SIM or a different device, per day."
+      >
+        <AsyncBoundary
+          :is-loading="dailyChurn.isPending.value"
+          :is-error="dailyChurn.isError.value"
+          :error="dailyChurn.error.value"
+          :is-empty="dailyChurn.data.value?.length === 0"
+          empty-message="No daily files loaded yet."
+          min-height="18rem"
+          @retry="dailyChurn.refetch()"
+        >
+          <ChurnTimeSeries :data="dailyChurn.data.value ?? []" />
+        </AsyncBoundary>
+
+        <template #footer>
+          <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            Same-day definition: the number has a remove carrying one SIM (or handset) and an add
+            carrying another on the same date. A change spanning midnight is not counted, so these
+            are a floor, not a total.
+          </p>
+        </template>
+      </Card>
+
+      <Card
+        title="Vendor growth"
+        subtitle="Net bindings gained and lost across the whole loaded period."
+      >
+        <AsyncBoundary
+          :is-loading="vendorGrowth.isPending.value"
+          :is-error="vendorGrowth.isError.value"
+          :error="vendorGrowth.error.value"
+          :is-empty="vendorGrowth.data.value?.length === 0"
+          empty-message="No daily files loaded yet."
+          min-height="18rem"
+          @retry="vendorGrowth.refetch()"
+        >
+          <GrowthChart :data="vendorGrowth.data.value ?? []" />
+        </AsyncBoundary>
+
+        <template #footer>
+          <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            Both ends are shown. A chart of only the winners hides the more useful half &mdash;
+            which vendors the network is losing.
+          </p>
+        </template>
+      </Card>
+    </div>
 
     <!-- Composition -->
     <Card

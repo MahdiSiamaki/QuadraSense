@@ -38,11 +38,44 @@ public static class DashboardEndpoints
             .WithName("GetDeviceClassMix")
             .WithSummary("Handset versus machine mix: smartphone, feature phone, tablet, IoT/M2M.");
 
+        group.MapGet("/daily-changes", GetDailyChangesAsync)
+            .WithName("GetDailyChanges")
+            .WithSummary("Daily adds, removes, net change and running active-binding total.");
+
+        group.MapGet("/daily-churn", GetDailyChurnAsync)
+            .WithName("GetDailyChurn")
+            .WithSummary("Daily SIM changes and handset changes.");
+
+        group.MapGet("/vendor-growth", GetVendorGrowthAsync)
+            .WithName("GetVendorGrowth")
+            .WithSummary("Biggest gainers and biggest losers by net binding change.");
+
         group.MapGet("/capabilities", GetCapabilitiesAsync)
             .WithName("GetCapabilitySupport")
             .WithSummary("Network and SIM capability of the active device population: LTE, 5G, eSIM.");
 
         return app;
+    }
+
+    private static async Task<IResult> GetDailyChangesAsync(
+        IDeviceAnalyticsStore store, CancellationToken ct)
+    {
+        var rows = await store.GetDailyChangesAsync(ct).ConfigureAwait(false);
+        return Results.Ok(rows);
+    }
+
+    private static async Task<IResult> GetDailyChurnAsync(
+        IDeviceAnalyticsStore store, CancellationToken ct)
+    {
+        var rows = await store.GetDailyChurnAsync(ct).ConfigureAwait(false);
+        return Results.Ok(rows);
+    }
+
+    private static async Task<IResult> GetVendorGrowthAsync(
+        IDeviceAnalyticsStore store, CancellationToken ct, int limit = 8)
+    {
+        var rows = await store.GetVendorGrowthAsync(limit, ct).ConfigureAwait(false);
+        return Results.Ok(rows);
     }
 
     private static async Task<IResult> GetCapabilitiesAsync(

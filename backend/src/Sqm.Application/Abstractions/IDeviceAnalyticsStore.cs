@@ -40,6 +40,25 @@ public interface IDeviceAnalyticsStore
     Task<IReadOnlyList<ChangePoint>> GetChangeSeriesAsync(DashboardFilter filter, CancellationToken ct);
 
     /// <summary>
+    /// Daily change history with a running active-binding total.
+    /// </summary>
+    /// <remarks>
+    /// Dated from the source filenames, so this is a real calendar series rather than a
+    /// delivery-order one. The running total starts from the initial dump's binding count.
+    /// </remarks>
+    Task<IReadOnlyList<DailyChange>> GetDailyChangesAsync(CancellationToken ct);
+
+    /// <summary>Daily SIM and handset change counts.</summary>
+    Task<IReadOnlyList<DailyChurn>> GetDailyChurnAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Net growth by vendor over the loaded period: who gained bindings and who lost them.
+    /// </summary>
+    /// <param name="limit">Rows to return from each end (biggest gainers and biggest losers).</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<IReadOnlyList<GrowthRow>> GetVendorGrowthAsync(int limit, CancellationToken ct);
+
+    /// <summary>
     /// The handset-versus-machine mix: smartphone, feature phone, tablet, IoT/M2M, wearable.
     /// </summary>
     /// <remarks>
