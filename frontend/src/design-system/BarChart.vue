@@ -66,8 +66,11 @@ function render() {
         backgroundColor: cssVar('--c-surface-raised'),
         borderColor: border,
         textStyle: { color: cssVar('--c-text'), fontSize: 12 },
+        // The unit is named explicitly. A bare number here reads as "handsets" to most
+        // people, and bindings run ~34% higher than handsets for a big vendor.
         formatter: (p: { name: string; value: number; dataIndex: number }) =>
-          `${p.name}<br/><strong>${formatFull(p.value)}</strong> (${props.data[p.dataIndex]?.percent.toFixed(2)}%)`,
+          `${p.name}<br/><strong>${formatFull(p.value)}</strong> bindings`
+          + ` (${props.data[p.dataIndex]?.percent.toFixed(2)}%)`,
       },
       xAxis: props.horizontal
         ? {

@@ -230,7 +230,7 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
 
     <!-- Vendors and models -->
     <div class="grid gap-5 xl:grid-cols-2">
-      <Card title="Top vendors" subtitle="Normalised names. Click a bar to filter.">
+      <Card title="Top vendors" subtitle="By active bindings, not handsets. Click a bar to filter.">
         <AsyncBoundary
           :is-loading="vendors.isPending.value"
           :is-error="vendors.isError.value"
@@ -241,9 +241,17 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
         >
           <BarChart :data="vendors.data.value ?? []" @select="(v) => drillInto('vendor', v)" />
         </AsyncBoundary>
+
+        <template #footer>
+          <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            These are <strong>bindings</strong>, not handsets. A dual-SIM phone serving two numbers
+            counts twice. For Samsung that is 52.7M bindings against 39.3M distinct handsets and
+            40.1M subscribers &mdash; so reading this as a handset count overstates it by about a third.
+          </p>
+        </template>
       </Card>
 
-      <Card title="Top models" subtitle="By GSMA marketing name. Excludes unknown devices.">
+      <Card title="Top models" subtitle="By active bindings. Excludes unknown devices.">
         <AsyncBoundary
           :is-loading="models.isPending.value"
           :is-error="models.isError.value"
@@ -259,7 +267,7 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
 
     <!-- Types and OS -->
     <div class="grid gap-5 xl:grid-cols-2">
-      <Card title="Device types" subtitle="Full GSMA taxonomy. Click to filter." flush>
+      <Card title="Device types" subtitle="By active bindings. Click to filter." flush>
         <AsyncBoundary
           :is-loading="deviceTypes.isPending.value"
           :is-error="deviceTypes.isError.value"
@@ -276,7 +284,7 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
         </AsyncBoundary>
       </Card>
 
-      <Card title="Operating systems" subtitle="Normalised for case and whitespace." flush>
+      <Card title="Operating systems" subtitle="By active bindings. Normalised for case and whitespace." flush>
         <AsyncBoundary
           :is-loading="operatingSystems.isPending.value"
           :is-error="operatingSystems.isError.value"
