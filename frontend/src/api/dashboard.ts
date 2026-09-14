@@ -58,6 +58,15 @@ export interface BindingRow {
   marketingName: string | null
   deviceType: string | null
   isActive: boolean
+  /**
+   * The day a daily file last said anything about this binding, or null when none ever has.
+   *
+   * Null means the binding is active only because the initial dump listed it and nothing has
+   * removed it since. The dump covers a 30-day window rather than an instant, so it can list
+   * several handsets one subscriber used that month — which is why one SIM can legitimately show
+   * more than one active binding.
+   */
+  lastChangeDate: string | null
 }
 
 export interface LookupResult {

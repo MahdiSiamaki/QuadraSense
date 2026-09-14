@@ -40,12 +40,36 @@ public readonly record struct Msisdn
         ? s[..4]
         : string.Empty;
 
+    /// <summary>
+    /// Parses a subscriber number, tolerating the national trunk prefix.
+    /// </summary>
+    /// <remarks>
+    /// A single leading zero is stripped before the digits are counted. Iranian mobile numbers are
+    /// written and dialled as <c>0991…</c>, the feed stores them as <c>991…</c>, and both name the
+    /// same subscriber.
+    ///
+    /// Counting the raw string instead reported every number typed the way a person writes it as
+    /// "unusual length, shown for review" — telling the operator that a perfectly ordinary number
+    /// was suspicious, on the one screen whose job is to flag numbers that genuinely are.
+    ///
+    /// Only one zero, and only a leading one. This feed has no significant leading zeros in the
+    /// MSISDN column (measured: all 125.9M values are numeric with none), unlike IMEI and TAC
+    /// where a leading zero is part of the identifier and stripping it would name a different
+    /// device.
+    /// </remarks>
     public static bool TryParse(string? raw, [NotNullWhen(true)] out Msisdn? msisdn)
     {
         msisdn = null;
         if (string.IsNullOrWhiteSpace(raw)) return false;
 
         var value = raw.Trim();
+
+        // The trunk prefix, not a digit of the number.
+        if (value.Length > 1 && value[0] == '0')
+        {
+            value = value[1..];
+        }
+
         if (value.Length is 0 or > 19) return false;
 
         ulong parsed = 0;

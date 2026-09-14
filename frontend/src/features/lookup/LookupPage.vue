@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { lookupMsisdn, type LookupResult } from '@/api/dashboard'
 import { ApiError } from '@/api/client'
 import Card from '@/design-system/Card.vue'
-import { formatImei, formatMsisdn } from '@/lib/format'
+import { formatDate, formatImei, formatMsisdn } from '@/lib/format'
 
 const input = ref('')
 const result = ref<LookupResult | null>(null)
@@ -135,6 +135,26 @@ function correlationId(e: unknown): string | null {
                   "
                 >
                   {{ b.isActive ? 'Active' : 'Inactive' }}
+                </span>
+                <!--
+                  A binding no daily file has ever mentioned is active only because the initial
+                  dump listed it and nothing has removed it. The dump covers a 30-day window, not
+                  an instant, so it can list several handsets one subscriber used that month -
+                  which is why one SIM can show more than one Active row. Saying so turns a row
+                  that looks like broken data into one that is merely unconfirmed.
+                -->
+                <span
+                  v-if="b.isActive && !b.lastChangeDate"
+                  class="mt-0.5 block text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+                  title="Listed in the initial dump (2025-12-27 to 2026-01-25) and never mentioned by a daily file since. Not confirmed, and not contradicted."
+                >
+                  from initial dump, unconfirmed
+                </span>
+                <span
+                  v-else-if="b.lastChangeDate"
+                  class="mt-0.5 block text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+                >
+                  {{ b.isActive ? 'confirmed' : 'removed' }} {{ formatDate(b.lastChangeDate) }}
                 </span>
               </td>
               <td class="px-4 py-2.5 font-[var(--font-mono)] text-[var(--text-xs)] tabular">

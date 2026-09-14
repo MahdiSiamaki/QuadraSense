@@ -363,7 +363,10 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         const string Sql = """
             SELECT
                 b.msisdn, b.imsi, b.imei, b.tac,
-                t.manufacturer, t.marketingName, t.deviceType, b.active
+                t.manufacturer, t.marketingName, t.deviceType, b.active,
+                -- NULL when no daily file has ever mentioned this binding: it is active only
+                -- because the initial dump listed it and nothing has removed it since.
+                b.last_change_date
             FROM sqm.binding_current AS b FINAL
             LEFT JOIN sqm.tac AS t ON t.tac = b.tac
             WHERE b.msisdn = {msisdn:UInt64}
@@ -393,7 +396,8 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 Manufacturer: NullIfEmpty(reader, 4),
                 MarketingName: NullIfEmpty(reader, 5),
                 DeviceType: NullIfEmpty(reader, 6),
-                IsActive: Convert.ToInt32(reader.GetValue(7), CultureInfo.InvariantCulture) == 1));
+                IsActive: Convert.ToInt32(reader.GetValue(7), CultureInfo.InvariantCulture) == 1,
+                LastChangeDate: GetDateOrNull(reader, 8)));
         }
 
         // Deliberately logs only the count. The MSISDN itself is never written to a log: with UI masking

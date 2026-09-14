@@ -133,3 +133,57 @@ public class ImsiTests
         Assert.False(imsi!.Value.IsWellFormed);
     }
 }
+
+/// <summary>
+/// How a subscriber number is typed, versus how the feed stores it.
+/// </summary>
+/// <remarks>
+/// These exist because the lookup screen reported every number typed the way a person writes it
+/// — <c>09912059464</c> — as "unusual length, shown for review". The parse counted the raw
+/// string, so the national trunk prefix made a perfectly ordinary 10-digit number look like an
+/// 11-digit anomaly, on the one screen whose job is to flag numbers that genuinely are anomalous.
+/// </remarks>
+public class MsisdnTrunkPrefixTests
+{
+    [Theory]
+    [InlineData("9912059464")]   // as the feed stores it
+    [InlineData("09912059464")]  // as a person writes and dials it
+    [InlineData(" 09912059464 ")]
+    public void A_leading_zero_is_a_trunk_prefix_not_a_digit(string typed)
+    {
+        Assert.True(Msisdn.TryParse(typed, out var msisdn));
+
+        Assert.Equal(9912059464UL, msisdn!.Value.Value);
+        Assert.Equal(10, msisdn.Value.DigitCount);
+        Assert.True(msisdn.Value.IsWellFormed);
+    }
+
+    [Fact]
+    public void Both_forms_name_the_same_subscriber()
+    {
+        Assert.True(Msisdn.TryParse("9912059464", out var stored));
+        Assert.True(Msisdn.TryParse("09912059464", out var typed));
+
+        Assert.Equal(stored!.Value.Value, typed!.Value.Value);
+    }
+
+    [Theory]
+    // Genuinely unusual lengths still are. Measured: 24 of 125,939,523 rows have lengths
+    // 8, 9, 12, 13 and 15, and those are the ones this flag exists for.
+    [InlineData("991205946")]         // 9
+    [InlineData("99120594640000")]    // 14
+    public void A_real_length_anomaly_is_still_reported(string typed)
+    {
+        Assert.True(Msisdn.TryParse(typed, out var msisdn));
+        Assert.False(msisdn!.Value.IsWellFormed);
+    }
+
+    [Fact]
+    public void Only_one_leading_zero_is_stripped()
+    {
+        // "00…" is not a trunk prefix this feed uses. Stripping greedily would turn a genuine
+        // anomaly into a number that looks fine.
+        Assert.True(Msisdn.TryParse("009912059464", out var msisdn));
+        Assert.False(msisdn!.Value.IsWellFormed);
+    }
+}

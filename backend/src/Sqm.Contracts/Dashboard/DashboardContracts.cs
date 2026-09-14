@@ -167,6 +167,21 @@ public sealed record GrowthRow(string Key, long Added, long Removed, long Net);
 /// <param name="MarketingName">GSMA marketing name, null when unenriched.</param>
 /// <param name="DeviceType">GSMA device type, null when unenriched.</param>
 /// <param name="IsActive">Whether the binding is currently active.</param>
+/// <param name="LastChangeDate">
+/// The day a daily file last said anything about this binding, or <see langword="null"/> when no
+/// daily file ever has.
+/// <para>
+/// Null matters more than it looks. Such a binding is active only because the initial dump listed
+/// it and nothing has removed it since - and the dump covers a 30-day window rather than an
+/// instant, so it can list several handsets one subscriber used during that month. Measured on a
+/// sample: 26% of SIMs have more than one active handset, and for a fifth of those every binding
+/// is dump-only.
+/// </para>
+/// <para>
+/// The lookup screen shows the difference, because two rows both reading "Active" for one SIM
+/// invite the reader to conclude the data is broken when it is simply unconfirmed.
+/// </para>
+/// </param>
 public sealed record BindingRow(
     string Msisdn,
     string Imsi,
@@ -175,7 +190,8 @@ public sealed record BindingRow(
     string? Manufacturer,
     string? MarketingName,
     string? DeviceType,
-    bool IsActive);
+    bool IsActive,
+    DateOnly? LastChangeDate);
 
 /// <summary>Data-quality counters for one delivery.</summary>
 /// <param name="Sequence">Delivery sequence.</param>
