@@ -12,6 +12,20 @@ namespace Sqm.Integration.Tests;
 /// </remarks>
 public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncLifetime
 {
+    /// <summary>
+    /// Passwords for test accounts, sharing nothing with their names.
+    /// </summary>
+    /// <remarks>
+    /// The obvious choice - "TestPassword!Long12345" - is rejected, because these accounts are
+    /// called "Test &lt;something&gt;" and the policy refuses a password containing the user's
+    /// name. That is the rule working; it cost one confusing test run to notice, which is a
+    /// reasonable price for a rule that stops the single most common weak password.
+    /// </remarks>
+    private const string InitialPassword = "Vx9-quiet-owl-lantern";
+
+    /// <summary>What a password is changed TO in these tests.</summary>
+    private const string ChangedPassword = "Zq4-amber-river-stone";
+
     private readonly IdentityFixture _fixture;
     private readonly List<long> _users = [];
     private readonly List<long> _roles = [];
@@ -44,7 +58,7 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
         var id = await _fixture.Users.CreateAsync(
             new NewUser(IdentityFixture.UniqueUsername(hint), $"Test {hint}",
                 null, null, null, roles, MustChangePassword: false),
-            "TestPassword!Long12345", "tests", IdentityFixture.Context, TestContext.Current.CancellationToken);
+            InitialPassword, "tests", IdentityFixture.Context, TestContext.Current.CancellationToken);
 
         _users.Add(id);
         return id;
@@ -223,8 +237,8 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
         // deny at the same time, or the screen is describing a different system from the one
         // enforcing access.
         Assert.Equal(fromPage, fromSession);
-        Assert.Contains(Permissions.AuditView, resolved.User.Permissions);
-        Assert.DoesNotContain(Permissions.LookupSubscriber, resolved.User.Permissions);
+        Assert.True(resolved.User.Can(Permissions.AuditView));
+        Assert.False(resolved.User.Can(Permissions.LookupSubscriber));
     }
 
     [Fact]
@@ -284,7 +298,7 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
         var theirs = await _fixture.Sessions.CreateAsync(id, "10.0.0.9", "other device", ct);
 
         var changed = await _fixture.Users.ChangeOwnPasswordAsync(
-            id, "TestPassword!Long12345", "AnotherPassword!Long9", mine.SessionId,
+            id, InitialPassword, ChangedPassword, mine.SessionId,
             IdentityFixture.Context, ct);
 
         Assert.True(changed);
@@ -306,13 +320,13 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
         var ct = TestContext.Current.CancellationToken;
 
         var changed = await _fixture.Users.ChangeOwnPasswordAsync(
-            id, "not-the-password", "AnotherPassword!Long9", Guid.NewGuid(),
+            id, "not-the-password", ChangedPassword, Guid.NewGuid(),
             IdentityFixture.Context, ct);
 
         Assert.False(changed);
 
         var outcome = await _fixture.Authenticator.AuthenticateAsync(
-            (await _fixture.Users.GetAsync(id, ct))!.Username, "TestPassword!Long12345",
+            (await _fixture.Users.GetAsync(id, ct))!.Username, InitialPassword,
             IdentityFixture.Context, ct);
 
         Assert.True(outcome.Succeeded);
@@ -341,7 +355,7 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
         }
 
         var locked = await _fixture.Authenticator.AuthenticateAsync(
-            username, "TestPassword!Long12345", IdentityFixture.Context, ct);
+            username, InitialPassword, IdentityFixture.Context, ct);
 
         Assert.Equal(LoginStatus.AccountLocked, locked.Status);
         Assert.NotNull(locked.LockedUntil);
@@ -349,7 +363,7 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
         await _fixture.Users.UnlockAsync(id, "tests", IdentityFixture.Context, ct);
 
         var after = await _fixture.Authenticator.AuthenticateAsync(
-            username, "TestPassword!Long12345", IdentityFixture.Context, ct);
+            username, InitialPassword, IdentityFixture.Context, ct);
 
         Assert.True(after.Succeeded);
     }
@@ -370,7 +384,7 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
             id, false, "test", "tests", IdentityFixture.Context, ct);
 
         var outcome = await _fixture.Authenticator.AuthenticateAsync(
-            username, "TestPassword!Long12345", IdentityFixture.Context, ct);
+            username, InitialPassword, IdentityFixture.Context, ct);
 
         Assert.Equal(LoginStatus.AccountDisabled, outcome.Status);
 
@@ -491,7 +505,7 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
         await Assert.ThrowsAsync<DuplicateUsernameException>(() =>
             _fixture.Users.CreateAsync(
                 new NewUser(username.ToUpperInvariant(), "Clash", null, null, null, ["viewer"]),
-                "TestPassword!Long12345", "tests", IdentityFixture.Context, ct));
+                InitialPassword, "tests", IdentityFixture.Context, ct));
     }
 
     [Fact]
