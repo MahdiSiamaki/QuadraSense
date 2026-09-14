@@ -1,0 +1,14 @@
+<clickhouse>
+    <!--
+      The server-level memory tracker in this containerised setup over-counts badly: it
+      reports 5.40 GiB committed while process RSS sits at 1.15 GiB, and a restart clears
+      it. Queries were then killed non-deterministically by the OvercommitTracker while
+      the container had gigabytes free.
+
+      Real safety comes from the PER-QUERY ceiling the refresh job sets
+      (max_memory_usage=3 GB with spill-to-disk below that), which bounds what any single
+      query can actually use. This ratio gives the over-counting server tracker enough
+      headroom that it stops arbitrating.
+    -->
+    <max_server_memory_usage_to_ram_ratio>4</max_server_memory_usage_to_ram_ratio>
+</clickhouse>

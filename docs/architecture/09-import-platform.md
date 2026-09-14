@@ -346,27 +346,59 @@ lease expiries.
 
 ---
 
-## 11. Questions
+## 11. Decisions
 
-**Q1 — TAC activation.** Should an uploaded TAC file become active automatically once it
-validates, or should it stop at `READY` for a human to review the diff and activate? The brief
-asks me not to assume this one. **Recommendation: manual activation**, because TAC changes the
-manufacturer and model shown on every screen, and a review step costs one click a month.
+All four open questions were answered on 2026-09-13, each as recommended.
 
-**Q2 — SQM import ordering.** Must daily files be imported in date order? **Technically they do
-not have to be**: the fold takes the last event per binding ordered by business date, so import
-order does not affect the result. The only thing a gap breaks is the running "active bindings"
-line, which needs every prior day to be right. I would allow out-of-order import and simply
-flag gaps — but confirm that matches your expectation.
+### D1 — TAC activation: **manual**
 
-**Q3 — Original file retention.** How long should uploaded originals be kept? They are the
-ultimate backup — the whole system is rebuildable from them — but 133 SQM files is 47 GB and
-grows ~12 GB/month.
+An uploaded TAC file is validated, processed and diffed, and then stops at `READY`. The
+production mapping does not change until an administrator activates it.
 
-**Q4 — File storage.** MinIO is already running in your environment. Should imported originals
-go to object storage, or to a plain directory on the server? Object storage is tidier for
-retention and access control; a directory is one less moving part.
+The reasoning: TAC determines the manufacturer and model shown on every screen in the product.
+A bad source file that activates itself is wrong everywhere at once, and the review it replaces
+costs one click a month against a measured change rate of 1,000-1,650 rows.
 
-**Q5 — Who may import?** The roles in `04-security-model.md` give upload rights to Data
-Operator and Administrator only, with Analyst and Viewer excluded. Confirm, and say whether
-TAC activation should require Administrator specifically.
+### D2 — Storage: **a directory on the server**
+
+Original files are written to a configured directory, outside the web root, never served
+directly. The database holds metadata and a reference only.
+
+MinIO was the alternative and is already running in the environment, but object storage earns
+its keep when compute and storage are separate or when many services need the same blobs.
+Here one worker reads files on the machine they landed on. It stays behind an
+`IImportFileStore` interface, so moving to object storage later is an implementation swap
+rather than a rewrite.
+
+### D3 — Retention: **keep originals indefinitely**
+
+~144 GB/year, and the files are the ultimate backup: every table in the system is rebuildable
+from them plus the pipeline. Deleting them would convert a recoverable mistake into an
+unrecoverable one for the sake of disk that costs less than the recovery would.
+
+Retention remains a configuration value rather than an assumption baked into code.
+
+### D4 — Permissions: **Operator imports, Administrator activates**
+
+| Action | Viewer | Analyst | Data Operator | Administrator |
+|---|---|---|---|---|
+| View import history | - | yes | yes | yes |
+| Upload / import | - | - | **yes** | yes |
+| Cancel / reprocess | - | - | **yes** | yes |
+| **Activate or roll back a TAC version** | - | - | - | **yes** |
+| Delete an import record | - | - | - | yes |
+
+Activation is separated from import for the same reason it is manual: it is the only action
+here that changes what every user sees.
+
+---
+
+## 12. Still open
+
+**A second TAC file.** Only one exists (`DeviceDatabase_TAC1Sep2026.csv`), so the diff and
+activation flow can be built and unit-tested against synthetic versions, but not verified
+against two real ones. Worth obtaining a second before the feature is considered done.
+
+**Delivery lag.** The observed files arrived roughly four weeks behind the data they describe.
+That figure drives the freshness alert thresholds in §10, which are currently set from a single
+observation.

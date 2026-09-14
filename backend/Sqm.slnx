@@ -6,6 +6,7 @@
     <Project Path="src/Sqm.Domain/Sqm.Domain.csproj" />
     <Project Path="src/Sqm.Infrastructure/Sqm.Infrastructure.csproj" />
     <Project Path="src/Sqm.Ingestion/Sqm.Ingestion.csproj" />
+    <Project Path="src/Sqm.Migrator/Sqm.Migrator.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Sqm.Application.Tests/Sqm.Application.Tests.csproj" />

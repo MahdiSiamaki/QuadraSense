@@ -1,0 +1,725 @@
+using System.Data;
+using System.Text.Json;
+using Dapper;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Npgsql;
+using Sqm.Application.DataImport;
+
+namespace Sqm.Infrastructure.DataImport;
+
+/// <summary>
+/// PostgreSQL-backed job store and queue.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Enum values cross the boundary as text with an explicit <c>::imports.job_status</c> cast
+/// rather than through Npgsql's CLR enum mapping. The mapping is convenient but couples the
+/// driver's global type registry to this one schema, and a mismatch surfaces as a startup-time
+/// failure in unrelated code. Casting is explicit and local.
+/// </para>
+/// <para>
+/// Every statement here is parameterised. There is no string concatenation of values anywhere in
+/// this class; the filter builder in <c>ListJobsAsync</c> concatenates clause *fragments* whose
+/// text is fixed at compile time, and binds every value.
+/// </para>
+/// </remarks>
+public sealed partial class PostgresImportJobRepository : IImportJobRepository
+{
+    [LoggerMessage(EventId = 3000, Level = LogLevel.Information,
+        Message = "Worker {WorkerId} claimed job {JobId} ({SourceCode}, attempt {Attempt})")]
+    private partial void LogClaimed(string workerId, long jobId, string sourceCode, int attempt);
+
+    [LoggerMessage(EventId = 3001, Level = LogLevel.Warning,
+        Message = "Recovered {Count} job(s) whose worker lease had expired")]
+    private partial void LogLeasesRecovered(int count);
+
+    [LoggerMessage(EventId = 3002, Level = LogLevel.Information,
+        Message = "File {FileName} is already known by content hash; existing job {JobId}")]
+    private partial void LogDuplicateFile(string fileName, long? jobId);
+
+    private readonly NpgsqlDataSource _dataSource;
+    private readonly int _commandTimeout;
+    private readonly ILogger<PostgresImportJobRepository> _logger;
+
+    public PostgresImportJobRepository(
+        IOptions<PostgresOptions> options,
+        ILogger<PostgresImportJobRepository> logger)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var settings = options.Value;
+
+        if (string.IsNullOrWhiteSpace(settings.ConnectionString))
+        {
+            throw new InvalidOperationException(
+                $"{PostgresOptions.SectionName}:ConnectionString is not configured.");
+        }
+
+        // A data source, not bare connection strings: it owns the pool and the type mappings, so
+        // every connection in the process shares one warmed-up configuration.
+        _dataSource = new NpgsqlDataSourceBuilder(settings.ConnectionString).Build();
+        _commandTimeout = settings.CommandTimeoutSeconds;
+        _logger = logger;
+    }
+
+    private async Task<NpgsqlConnection> OpenAsync(CancellationToken ct) =>
+        await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+
+    private CommandDefinition Command(
+        string sql, object? parameters, CancellationToken ct, IDbTransaction? transaction = null) =>
+        new(sql, parameters, transaction, _commandTimeout, cancellationToken: ct);
+
+    // =======================================================================
+    // Intake
+    // =======================================================================
+
+    public async Task<RegisteredFile> RegisterFileAsync(
+        string sourceCode,
+        string originalFileName,
+        StoredFile stored,
+        string uploadedBy,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(stored);
+
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+
+        // ON CONFLICT DO NOTHING rather than a SELECT-then-INSERT. Two operators uploading the
+        // same file at the same moment both pass a prior existence check; only one can win a
+        // unique index. The loser gets an empty result here and falls through to the lookup.
+        const string InsertSql = """
+            INSERT INTO imports.import_file
+                (source_code, original_file_name, stored_path, file_bytes, sha256, uploaded_by)
+            VALUES (@source, @name, @path, @bytes, @sha, @by)
+            ON CONFLICT (source_code, sha256) DO NOTHING
+            RETURNING id
+            """;
+
+        var inserted = await connection.ExecuteScalarAsync<long?>(Command(InsertSql, new
+        {
+            source = sourceCode,
+            name = originalFileName,
+            path = stored.StoredPath,
+            bytes = stored.SizeBytes,
+            sha = stored.Sha256,
+            by = uploadedBy,
+        }, ct)).ConfigureAwait(false);
+
+        if (inserted is { } newId)
+        {
+            return new RegisteredFile(newId, stored.Sha256, IsNew: true, null, null);
+        }
+
+        const string ExistingSql = """
+            SELECT f.id                                      AS FileId,
+                   f.original_file_name                      AS OriginalName,
+                   (SELECT j.id
+                      FROM imports.import_job j
+                     WHERE j.file_id = f.id
+                     ORDER BY j.created_at DESC
+                     LIMIT 1)                                AS ExistingJobId
+              FROM imports.import_file f
+             WHERE f.source_code = @source AND f.sha256 = @sha
+            """;
+
+        var existing = await connection.QuerySingleAsync<ExistingFileRow>(
+            Command(ExistingSql, new { source = sourceCode, sha = stored.Sha256 }, ct))
+            .ConfigureAwait(false);
+
+        LogDuplicateFile(originalFileName, existing.ExistingJobId);
+
+        return new RegisteredFile(
+            existing.FileId, stored.Sha256, IsNew: false,
+            existing.ExistingJobId, existing.OriginalName);
+    }
+
+    private sealed record ExistingFileRow(long FileId, string OriginalName, long? ExistingJobId);
+
+    public async Task<long> EnqueueAsync(
+        string sourceCode,
+        long fileId,
+        DateOnly? businessDate,
+        string createdBy,
+        int priority = 0,
+        long? reprocessOfJobId = null,
+        CancellationToken ct = default)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        const string Sql = """
+            INSERT INTO imports.import_job
+                (source_code, file_id, status, business_date, priority, created_by,
+                 reprocess_of_job_id, revision)
+            VALUES (@source, @file, 'QUEUED', @date, @priority, @by, @reprocess,
+                    COALESCE((SELECT MAX(revision) + 1
+                                FROM imports.import_job
+                               WHERE source_code = @source AND business_date = @date), 1))
+            RETURNING id
+            """;
+
+        var jobId = await connection.ExecuteScalarAsync<long>(Command(Sql, new
+        {
+            source = sourceCode,
+            file = fileId,
+            date = businessDate,
+            priority,
+            by = createdBy,
+            reprocess = reprocessOfJobId,
+        }, ct, transaction)).ConfigureAwait(false);
+
+        await AppendEventCoreAsync(
+            connection, transaction, jobId, "info", null,
+            reprocessOfJobId is null
+                ? "Queued for import"
+                : $"Queued as a reprocess of job {reprocessOfJobId}",
+            null, ct).ConfigureAwait(false);
+
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
+        return jobId;
+    }
+
+    // =======================================================================
+    // Worker loop
+    // =======================================================================
+
+    public async Task<ClaimedJob?> ClaimNextAsync(
+        string workerId, TimeSpan leaseDuration, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+
+        // SKIP LOCKED is the whole point: a second worker running this statement at the same
+        // instant steps over the row the first one locked instead of blocking behind it. Without
+        // it, N workers serialise into one.
+        //
+        // Ordering, in order of precedence:
+        //   priority DESC     - an operator can push a job to the front
+        //   business_date     - oldest day first, so a backlog drains in calendar order
+        //   created_at        - stable tiebreak
+        //
+        // Calendar order matters for presentation rather than correctness: the fold was proven to
+        // depend only on the last event per binding, not the path taken to it, so a day imported
+        // out of order still converges. What it would disturb is the daily change series, which
+        // reads as a timeline and should be built in the order the days happened.
+        const string Sql = """
+            WITH claimed AS (
+                SELECT j.id
+                  FROM imports.import_job j
+                 WHERE j.status IN ('QUEUED', 'RETRYING')
+                   AND (j.run_after IS NULL OR j.run_after <= now())
+                   AND NOT j.cancel_requested
+                 ORDER BY j.priority DESC, j.business_date NULLS LAST, j.created_at
+                   FOR UPDATE SKIP LOCKED
+                 LIMIT 1
+            )
+            UPDATE imports.import_job j
+               SET status           = 'VALIDATING',
+                   current_stage    = 'VALIDATING',
+                   worker_id        = @worker,
+                   lease_expires_at = now() + @lease,
+                   attempt          = j.attempt + 1,
+                   started_at       = COALESCE(j.started_at, now()),
+                   stage_started_at = now()
+              FROM claimed c, imports.import_file f
+             WHERE j.id = c.id
+               AND f.id = j.file_id
+            RETURNING j.id                  AS JobId,
+                      j.source_code         AS SourceCode,
+                      j.file_id             AS FileId,
+                      f.stored_path         AS StoredPath,
+                      f.original_file_name  AS OriginalFileName,
+                      f.sha256              AS Sha256,
+                      f.file_bytes          AS FileBytes,
+                      j.business_date       AS BusinessDate,
+                      j.attempt             AS Attempt,
+                      j.max_attempts        AS MaxAttempts,
+                      j.priority            AS Priority,
+                      j.reprocess_of_job_id AS ReprocessOfJobId
+            """;
+
+        var job = await connection.QuerySingleOrDefaultAsync<ClaimedJob>(
+            Command(Sql, new { worker = workerId, lease = leaseDuration }, ct)).ConfigureAwait(false);
+
+        if (job is not null)
+        {
+            LogClaimed(workerId, job.JobId, job.SourceCode, job.Attempt);
+            await AppendEventAsync(
+                job.JobId, "info", "VALIDATING",
+                $"Claimed by worker {workerId} (attempt {job.Attempt} of {job.MaxAttempts})",
+                null, ct).ConfigureAwait(false);
+        }
+
+        return job;
+    }
+
+    public async Task<bool> RenewLeaseAsync(
+        long jobId, string workerId, TimeSpan leaseDuration, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+
+        // The worker_id predicate is what makes this safe. If the lease expired and another
+        // worker took the job over, this update matches nothing and the caller learns it has
+        // lost the job - rather than two workers renewing the same lease forever.
+        const string Sql = """
+            UPDATE imports.import_job
+               SET lease_expires_at = now() + @lease
+             WHERE id = @job AND worker_id = @worker AND lease_expires_at IS NOT NULL
+            """;
+
+        var rows = await connection.ExecuteAsync(
+            Command(Sql, new { job = jobId, worker = workerId, lease = leaseDuration }, ct))
+            .ConfigureAwait(false);
+
+        return rows == 1;
+    }
+
+    public async Task SetStageAsync(long jobId, ImportJobStatus status, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+
+        const string Sql = """
+            UPDATE imports.import_job
+               SET status           = @status::imports.job_status,
+                   current_stage    = @stage,
+                   stage_started_at = now()
+             WHERE id = @job
+            """;
+
+        var label = status.ToDatabaseValue();
+        await connection.ExecuteAsync(
+            Command(Sql, new { job = jobId, status = label, stage = label }, ct)).ConfigureAwait(false);
+    }
+
+    public async Task ReportProgressAsync(
+        long jobId, string stage, long rowsProcessed, long? rowsExpected, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+
+        // Percent is computed here rather than by the UI so that every consumer - the progress
+        // bar, an alert, a log line - agrees on one number. Capped at 100: a row estimate from
+        // file size can be low, and a progress bar that reads 104% destroys confidence in the
+        // rest of the screen.
+        const string Sql = """
+            INSERT INTO imports.import_progress
+                (job_id, stage, rows_processed, rows_expected, percent, updated_at)
+            VALUES (@job, @stage, @processed, @expected,
+                    CASE WHEN @expected IS NULL OR @expected = 0 THEN NULL
+                         ELSE LEAST(100, ROUND(@processed::numeric * 100 / @expected, 2)) END,
+                    now())
+            ON CONFLICT (job_id) DO UPDATE
+               SET stage          = EXCLUDED.stage,
+                   rows_processed = EXCLUDED.rows_processed,
+                   rows_expected  = EXCLUDED.rows_expected,
+                   percent        = EXCLUDED.percent,
+                   updated_at     = EXCLUDED.updated_at
+            """;
+
+        await connection.ExecuteAsync(Command(Sql, new
+        {
+            job = jobId,
+            stage,
+            processed = rowsProcessed,
+            expected = rowsExpected,
+        }, ct)).ConfigureAwait(false);
+    }
+
+    public async Task AppendEventAsync(
+        long jobId, string severity, string? stage, string message, object? detail, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await AppendEventCoreAsync(connection, null, jobId, severity, stage, message, detail, ct)
+            .ConfigureAwait(false);
+    }
+
+    private async Task AppendEventCoreAsync(
+        NpgsqlConnection connection,
+        IDbTransaction? transaction,
+        long jobId,
+        string severity,
+        string? stage,
+        string message,
+        object? detail,
+        CancellationToken ct)
+    {
+        const string Sql = """
+            INSERT INTO imports.import_event (job_id, severity, stage, message, detail)
+            VALUES (@job, @severity, @stage, @message, @detail::jsonb)
+            """;
+
+        await connection.ExecuteAsync(Command(Sql, new
+        {
+            job = jobId,
+            severity,
+            stage,
+            message,
+            detail = detail is null ? null : JsonSerializer.Serialize(detail),
+        }, ct, transaction)).ConfigureAwait(false);
+    }
+
+    public async Task RecordQuarantineAsync(
+        long jobId, IReadOnlyList<QuarantineWrite> groups, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+        if (groups.Count == 0)
+        {
+            return;
+        }
+
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        const string GroupSql = """
+            INSERT INTO imports.quarantine_rule_summary
+                (job_id, rule_code, column_name, severity, occurrence_count, first_row_number, message)
+            VALUES (@job, @rule, @column, @severity, @count, @firstRow, @message)
+            ON CONFLICT (job_id, rule_code, column_name) DO UPDATE
+               SET occurrence_count = EXCLUDED.occurrence_count,
+                   first_row_number = LEAST(quarantine_rule_summary.first_row_number,
+                                            EXCLUDED.first_row_number)
+            RETURNING id
+            """;
+
+        const string SampleSql = """
+            INSERT INTO imports.quarantine_sample (summary_id, row_number, raw_line, offending_value)
+            VALUES (@summary, @row, @line, @value)
+            """;
+
+        foreach (var group in groups)
+        {
+            var summaryId = await connection.ExecuteScalarAsync<long>(Command(GroupSql, new
+            {
+                job = jobId,
+                rule = group.RuleCode,
+                column = group.ColumnName,
+                severity = group.Severity,
+                count = group.OccurrenceCount,
+                firstRow = group.FirstRowNumber,
+                message = group.Message,
+            }, ct, transaction)).ConfigureAwait(false);
+
+            foreach (var sample in group.Samples)
+            {
+                await connection.ExecuteAsync(Command(SampleSql, new
+                {
+                    summary = summaryId,
+                    row = sample.RowNumber,
+                    line = sample.RawLine,
+                    value = sample.OffendingValue,
+                }, ct, transaction)).ConfigureAwait(false);
+            }
+        }
+
+        // Counted from distinct rules, not from rows. "31,209 rows failed one rule" and
+        // "31,209 rows failed 400 different rules" are very different situations, and the second
+        // number is the one that tells an operator the file is structurally wrong.
+        const string CountSql = """
+            UPDATE imports.import_job
+               SET warning_count = (SELECT COUNT(*) FROM imports.quarantine_rule_summary
+                                     WHERE job_id = @job AND severity = 'warning'),
+                   error_count   = (SELECT COUNT(*) FROM imports.quarantine_rule_summary
+                                     WHERE job_id = @job AND severity = 'error')
+             WHERE id = @job
+            """;
+
+        await connection.ExecuteAsync(Command(CountSql, new { job = jobId }, ct, transaction))
+            .ConfigureAwait(false);
+
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
+    }
+
+    public async Task CompleteAsync(
+        long jobId,
+        ImportJobStatus status,
+        ImportCounters counters,
+        bool makeEffective,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(counters);
+
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        long? superseded = null;
+
+        if (makeEffective)
+        {
+            // Demote first, promote second, in one transaction. A partial unique index allows at
+            // most one effective job per (source, business_date), so doing this in the other
+            // order would violate it rather than silently produce two.
+            const string DemoteSql = """
+                UPDATE imports.import_job
+                   SET is_effective = false
+                 WHERE is_effective
+                   AND source_code = (SELECT source_code FROM imports.import_job WHERE id = @job)
+                   AND business_date IS NOT DISTINCT FROM
+                       (SELECT business_date FROM imports.import_job WHERE id = @job)
+                   AND id <> @job
+                RETURNING id
+                """;
+
+            superseded = await connection.ExecuteScalarAsync<long?>(
+                Command(DemoteSql, new { job = jobId }, ct, transaction)).ConfigureAwait(false);
+        }
+
+        const string CompleteSql = """
+            UPDATE imports.import_job
+               SET status          = @status::imports.job_status,
+                   current_stage   = NULL,
+                   finished_at     = now(),
+                   lease_expires_at= NULL,
+                   worker_id       = NULL,
+                   is_effective    = @effective,
+                   supersedes_job_id = COALESCE(@superseded, supersedes_job_id),
+                   rows_input      = @input,
+                   rows_valid      = @valid,
+                   rows_invalid    = @invalid,
+                   rows_inserted   = @inserted,
+                   rows_updated    = @updated,
+                   rows_duplicate  = @duplicate,
+                   rows_rejected   = @rejected,
+                   rows_committed  = @inserted
+             WHERE id = @job
+            """;
+
+        await connection.ExecuteAsync(Command(CompleteSql, new
+        {
+            job = jobId,
+            status = status.ToDatabaseValue(),
+            effective = makeEffective,
+            superseded,
+            input = counters.RowsInput,
+            valid = counters.RowsValid,
+            invalid = counters.RowsInvalid,
+            inserted = counters.RowsInserted,
+            updated = counters.RowsUpdated,
+            duplicate = counters.RowsDuplicate,
+            rejected = counters.RowsRejected,
+        }, ct, transaction)).ConfigureAwait(false);
+
+        var message = superseded is { } previous
+            ? $"Finished as {status.ToDatabaseValue()}; now the effective import for this day, "
+              + $"replacing job {previous}"
+            : $"Finished as {status.ToDatabaseValue()}";
+
+        await AppendEventCoreAsync(
+            connection, transaction, jobId,
+            status is ImportJobStatus.Completed ? "info" : "warning",
+            null, message, counters, ct).ConfigureAwait(false);
+
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
+    }
+
+    public async Task<bool> FailAsync(
+        long jobId, string errorSummary, bool isRetryable, TimeSpan retryDelay, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        // Whether another attempt happens is decided in SQL, against the row's own attempt count,
+        // rather than in the worker. The worker that just failed is the least trustworthy place
+        // to make that decision - it may be the thing that is broken.
+        const string Sql = """
+            UPDATE imports.import_job
+               SET status = CASE
+                       WHEN @retryable AND attempt < max_attempts THEN 'RETRYING'::imports.job_status
+                       ELSE 'FAILED'::imports.job_status
+                   END,
+                   run_after = CASE
+                       WHEN @retryable AND attempt < max_attempts THEN now() + @delay
+                       ELSE NULL
+                   END,
+                   finished_at = CASE
+                       WHEN @retryable AND attempt < max_attempts THEN NULL
+                       ELSE now()
+                   END,
+                   current_stage    = NULL,
+                   worker_id        = NULL,
+                   lease_expires_at = NULL,
+                   error_summary    = @error
+             WHERE id = @job
+            RETURNING status = 'RETRYING'::imports.job_status
+            """;
+
+        var willRetry = await connection.ExecuteScalarAsync<bool>(Command(Sql, new
+        {
+            job = jobId,
+            retryable = isRetryable,
+            delay = retryDelay,
+            error = errorSummary,
+        }, ct, transaction)).ConfigureAwait(false);
+
+        await AppendEventCoreAsync(
+            connection, transaction, jobId, "error", null,
+            willRetry
+                ? $"Failed: {errorSummary}. Retrying in {retryDelay.TotalSeconds:F0}s."
+                : $"Failed: {errorSummary}. No attempts remain.",
+            null, ct).ConfigureAwait(false);
+
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
+        return willRetry;
+    }
+
+    public async Task MarkCancelledAsync(long jobId, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        const string Sql = """
+            UPDATE imports.import_job
+               SET status = 'CANCELLED', finished_at = now(), current_stage = NULL,
+                   worker_id = NULL, lease_expires_at = NULL
+             WHERE id = @job
+            """;
+
+        await connection.ExecuteAsync(Command(Sql, new { job = jobId }, ct, transaction))
+            .ConfigureAwait(false);
+        await AppendEventCoreAsync(
+            connection, transaction, jobId, "warning", null,
+            "Cancelled at a stage boundary; nothing partial was left behind", null, ct)
+            .ConfigureAwait(false);
+
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
+    }
+
+    public async Task<bool> IsCancellationRequestedAsync(long jobId, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        return await connection.ExecuteScalarAsync<bool>(Command(
+            "SELECT cancel_requested FROM imports.import_job WHERE id = @job",
+            new { job = jobId }, ct)).ConfigureAwait(false);
+    }
+
+    public async Task<int> RecoverExpiredLeasesAsync(CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+
+        // A worker that died mid-job left its row in a working status with a lease that stopped
+        // being renewed. Returning it to RETRYING rather than QUEUED keeps the distinction
+        // visible: this job has been attempted, and the attempt counter already reflects it.
+        const string Sql = """
+            UPDATE imports.import_job
+               SET status = CASE WHEN attempt < max_attempts
+                                 THEN 'RETRYING'::imports.job_status
+                                 ELSE 'FAILED'::imports.job_status END,
+                   worker_id = NULL,
+                   lease_expires_at = NULL,
+                   current_stage = NULL,
+                   run_after = now(),
+                   finished_at = CASE WHEN attempt < max_attempts THEN NULL ELSE now() END,
+                   error_summary = COALESCE(error_summary,
+                       'Worker stopped responding; the lease expired while the job was ' || status)
+             WHERE lease_expires_at IS NOT NULL
+               AND lease_expires_at < now()
+            RETURNING id
+            """;
+
+        var recovered = (await connection.QueryAsync<long>(Command(Sql, null, ct))
+            .ConfigureAwait(false)).ToList();
+
+        if (recovered.Count > 0)
+        {
+            LogLeasesRecovered(recovered.Count);
+            foreach (var jobId in recovered)
+            {
+                await AppendEventAsync(
+                    jobId, "error", null,
+                    "Worker lease expired; the job was returned to the queue", null, ct)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        return recovered.Count;
+    }
+
+    // =======================================================================
+    // Operator actions
+    // =======================================================================
+
+    public async Task<bool> RequestCancellationAsync(long jobId, string actor, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        // A queued job is cancelled outright - no worker holds it, so there is nothing to ask.
+        // A running job only gets the flag set; the worker acts on it at the next stage boundary,
+        // which is what keeps a cancellation from tearing a write in half.
+        const string Sql = """
+            UPDATE imports.import_job
+               SET cancel_requested = true,
+                   status = CASE WHEN status IN ('QUEUED', 'RETRYING', 'UPLOADED')
+                                 THEN 'CANCELLED'::imports.job_status ELSE status END,
+                   finished_at = CASE WHEN status IN ('QUEUED', 'RETRYING', 'UPLOADED')
+                                      THEN now() ELSE finished_at END
+             WHERE id = @job
+               AND status NOT IN ('COMPLETED', 'PARTIALLY_COMPLETED', 'DUPLICATE',
+                                  'FAILED', 'QUARANTINED', 'CANCELLED')
+            RETURNING id
+            """;
+
+        var affected = await connection.ExecuteScalarAsync<long?>(
+            Command(Sql, new { job = jobId }, ct, transaction)).ConfigureAwait(false);
+
+        if (affected is null)
+        {
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
+            return false;
+        }
+
+        await AppendEventCoreAsync(
+            connection, transaction, jobId, "warning", null,
+            $"Cancellation requested by {actor}", null, ct).ConfigureAwait(false);
+
+        await WriteAuditCoreAsync(
+            connection, transaction, actor, "import.cancel", jobId, null, null, null, null, ct)
+            .ConfigureAwait(false);
+
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
+        return true;
+    }
+
+    public async Task WriteAuditAsync(
+        string actor,
+        string action,
+        long? jobId,
+        long? fileId,
+        long? tacVersionId,
+        string? correlationId,
+        object? detail,
+        CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await WriteAuditCoreAsync(
+            connection, null, actor, action, jobId, fileId, tacVersionId, correlationId, detail, ct)
+            .ConfigureAwait(false);
+    }
+
+    private async Task WriteAuditCoreAsync(
+        NpgsqlConnection connection,
+        IDbTransaction? transaction,
+        string actor,
+        string action,
+        long? jobId,
+        long? fileId,
+        long? tacVersionId,
+        string? correlationId,
+        object? detail,
+        CancellationToken ct)
+    {
+        const string Sql = """
+            INSERT INTO imports.import_audit
+                (actor, action, job_id, file_id, tac_version_id, correlation_id, detail)
+            VALUES (@actor, @action, @job, @file, @tac, @correlation, @detail::jsonb)
+            """;
+
+        await connection.ExecuteAsync(Command(Sql, new
+        {
+            actor,
+            action,
+            job = jobId,
+            file = fileId,
+            tac = tacVersionId,
+            correlation = correlationId,
+            detail = detail is null ? null : JsonSerializer.Serialize(detail),
+        }, ct, transaction)).ConfigureAwait(false);
+    }
+}

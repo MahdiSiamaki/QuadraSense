@@ -2,7 +2,9 @@ using System.Text.Json.Serialization;
 using Sqm.Api.Endpoints;
 using Sqm.Api.Infrastructure;
 using Sqm.Application.Abstractions;
+using Sqm.Application.DataImport;
 using Sqm.Infrastructure.ClickHouse;
+using Sqm.Infrastructure.DataImport;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +21,10 @@ builder.Logging.AddJsonConsole(o =>
 // ---------------------------------------------------------------- options
 builder.Services.Configure<ClickHouseOptions>(
     builder.Configuration.GetSection(ClickHouseOptions.SectionName));
+builder.Services.Configure<PostgresOptions>(
+    builder.Configuration.GetSection(PostgresOptions.SectionName));
+builder.Services.Configure<ImportStorageOptions>(
+    builder.Configuration.GetSection(ImportStorageOptions.SectionName));
 
 // ---------------------------------------------------------------- services
 // One pooled HttpClient for every ClickHouse call. Without this the driver builds
@@ -44,6 +50,13 @@ builder.Services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName, client =
     });
 
 builder.Services.AddSingleton<IDeviceAnalyticsStore, ClickHouseAnalyticsStore>();
+
+// The import platform's operational store and file store. The API can queue work and read
+// history; it deliberately has no way to write to the analytics store - that is the worker's
+// alone, so a bug in an endpoint cannot drop a day's data.
+builder.Services.AddSingleton<IImportJobRepository, PostgresImportJobRepository>();
+builder.Services.AddSingleton<IImportFileStore, DirectoryImportFileStore>();
+builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
@@ -95,6 +108,7 @@ app.MapHealthChecks("/health/ready", new()
 });
 
 app.MapDashboardEndpoints();
+app.MapImportEndpoints();
 app.MapLookupEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);

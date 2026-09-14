@@ -1,0 +1,58 @@
+# Development environment for the SQM device-intelligence platform.
+#
+# Two stores, for two different jobs (see docs/adr/ADR-002 and ADR-003):
+#   clickhouse - the analytics store; ~1.1 billion binding events and the marts built from them
+#   postgres   - the operational store; import jobs, TAC versions, audit, users
+#
+# Source files are bind-mounted read-only. ClickHouse reads the daily dumps directly from
+# /srcdata during bulk loads, which is an order of magnitude faster than streaming them
+# through a client, and read-only means a bug in a job cannot damage the originals.
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    container_name: sqm-clickhouse
+    ports:
+      - "18123:8123" # HTTP; the native port is deliberately not published
+    volumes:
+      - chdata:/var/lib/clickhouse
+      - ./clickhouse/memory.xml:/etc/clickhouse-server/config.d/memory.xml:ro
+      - ${SQM_SOURCE_DIR:-D:/SQM}:/srcdata/sqm:ro
+      - ${TAC_SOURCE_DIR:-D:/TAC}:/srcdata/tac:ro
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: sqm-postgres
+    environment:
+      POSTGRES_DB: sqm
+      POSTGRES_USER: sqm
+      # Development only. Production credentials come from the environment, never from a file
+      # in the repository - see .env.example.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sqm_dev}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale-provider=icu --icu-locale=und-x-icu"
+    ports:
+      - "15432:5432" # not 5432: another project on this machine already holds it
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sqm -d sqm"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  # Named volumes, not bind mounts to the Windows filesystem. Measured during the Phase 0
+  # benchmark: a bind-mounted data directory made PostgreSQL look 9% slower than it is, and
+  # the numbers from that run were discarded. See docs/adr/ADR-003.
+  chdata:
+    name: bench_chdata # the volume the benchmark data already lives in
+  pgdata:
+    name: sqm_pgdata
