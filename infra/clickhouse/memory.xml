@@ -1,37 +1,59 @@
 <clickhouse>
     <!--
-      An explicit server memory ceiling, set below the container's own limit.
+      Memory configuration for a container-limited ClickHouse.
 
-      HISTORY. This file first set max_server_memory_usage_to_ram_ratio to 4, to work around a
-      server-level memory tracker that over-counted badly: it reported 5.40 GiB committed while
-      the process RSS sat at 1.15 GiB, and queries were killed non-deterministically by the
-      OvercommitTracker while the container had gigabytes free.
+      THE ROOT CAUSE, found the long way round.
 
-      That fixed the symptom and created a worse problem. A ratio of 4 tells the server it may
-      use four times the VM's RAM, so it does not self-limit at all - and background merges after
-      the daily-partitioning migration grew until the container reached its 6 GiB cgroup limit
-      and the whole server stopped responding. Nothing was killed; it simply thrashed, and even
-      `SELECT 1` timed out for minutes.
+      ClickHouse's default cache limits are sized for a dedicated server: 5 GiB of marks, 5 GiB
+      of index marks and 8 GiB of uncompressed blocks - 18 GiB of cache ceilings on a container
+      limited to 6 GiB. Those caches are counted by the server's memory tracker, which is why the
+      tracker kept reporting figures that had no relationship to what the process was actually
+      using: 5.40 GiB committed against 1.15 GiB RSS, and later 4.51 GiB against 2.15 GiB.
 
-      A server that consumes everything and then stops answering is misconfigured, not unlucky.
+      That single misconfiguration produced every memory symptom this project chased:
 
-      THE FIX. An absolute ceiling, below the container limit, so ClickHouse throttles itself
-      rather than being throttled by the kernel. 4.5 GiB against a 6 GiB container leaves the
-      remainder for page cache and the OS.
+        * queries killed non-deterministically by the OvercommitTracker while the container had
+          gigabytes free (the tracker was full of cache, the machine was not);
+        * a workaround setting max_server_memory_usage_to_ram_ratio to 4, which stopped the
+          killing by telling the server it could use four times the VM's RAM - so it never
+          self-limited, and background merges after the daily-partitioning migration grew until
+          the container thrashed and `SELECT 1` timed out for minutes;
+        * and then, after replacing the ratio with a hard ceiling, queries being killed again -
+          because the caches were still allowed to fill 18 GiB of that ceiling.
 
-      Per-query ceilings still matter and are still set by the jobs (max_memory_usage with
-      spill-to-disk below it). This bounds the server as a whole, including merges, which no
-      per-query setting can reach.
+      Sizing the caches to the container fixes the cause rather than the symptom. The tracker
+      then reports something close to reality, the hard ceiling becomes meaningful, and per-query
+      limits do what they say.
 
-      WHAT IS DELIBERATELY NOT HERE. An earlier revision also lowered background_pool_size to
-      reduce merge concurrency. ClickHouse refused to start: merge_tree's
-      number_of_free_entries_in_pool_to_execute_mutation defaults to 20 and must not exceed the
-      pool, so shrinking the pool means retuning several coupled settings. The ceiling above
-      already makes the server throttle its own merges as it approaches the limit, which is the
-      behaviour that was wanted - so the pool is left alone rather than tuned into a knot.
-
-      IN PRODUCTION this should be roughly 70-80% of the container's limit, expressed the same
-      way: an explicit number, matched to the memory the container is actually given.
+      IN PRODUCTION, scale all four numbers with the memory the container is actually given -
+      roughly 10-15% of it for marks, and the server ceiling at 70-80%.
     -->
-    <max_server_memory_usage>4831838208</max_server_memory_usage>
+
+    <!--
+      5.2 GiB against a 6 GiB container.
+
+      This was first set to 4.5 GiB, which was too tight once background merges ran alongside a
+      job: the per-query limits held, each aggregate stayed under 1 GiB, and the server total
+      still reached the ceiling and the OvercommitTracker started stopping queries. 4.5 was
+      chosen while the caches could still claim 18 GiB; with them bounded to well under a
+      gigabyte, the remaining headroom is real and the ceiling can sit closer to the container
+      limit.
+    -->
+    <max_server_memory_usage>5583457484</max_server_memory_usage>
+
+    <!--
+      Marks are the primary index in memory: keeping them cached is what makes a point lookup
+      read 278K rows out of a billion in 12 ms. 512 MiB is ample for 25 GiB of data with a
+      sparse index, and it is a bound rather than a reservation.
+    -->
+    <mark_cache_size>536870912</mark_cache_size>
+    <index_mark_cache_size>268435456</index_mark_cache_size>
+
+    <!--
+      The uncompressed cache is off by the per-query default (use_uncompressed_cache = 0) and
+      helps only workloads that re-read the same small ranges repeatedly. This one does not: the
+      marts scan wide and the dashboard reads the marts. An 8 GiB ceiling for a cache nothing
+      asks for is 8 GiB of tracked memory for nothing.
+    -->
+    <uncompressed_cache_size>134217728</uncompressed_cache_size>
 </clickhouse>

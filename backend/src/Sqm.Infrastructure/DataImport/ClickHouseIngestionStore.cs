@@ -68,34 +68,6 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
     private ClickHouseConnection CreateConnection() =>
         new(_options.ConnectionString, _httpClientFactory, ClickHouseAnalyticsStore.HttpClientName);
 
-    /// <summary>
-    /// A connection whose queries are bounded in memory and spill to disk rather than grow.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// For the aggregates: the fold and the churn marts both group by a high-cardinality key, and
-    /// without a ceiling they take as much as the server will give them. The server now has its
-    /// own ceiling, so an unbounded query no longer brings the whole process down - but it does
-    /// starve everything else for as long as it runs, which on a single-node deployment means
-    /// the dashboard stops answering while a nightly job works.
-    /// </para>
-    /// <para>
-    /// The spill threshold sits well below the ceiling so a heavy GROUP BY starts writing to disk
-    /// long before it approaches being killed. Slower, and always correct - the same trade the
-    /// batch jobs make.
-    /// </para>
-    /// </remarks>
-    private ClickHouseConnection CreateBoundedConnection()
-    {
-        var connection = CreateConnection();
-
-        connection.CustomSettings["max_memory_usage"] = 2_000_000_000L;
-        connection.CustomSettings["max_bytes_before_external_group_by"] = 600_000_000L;
-        connection.CustomSettings["max_threads"] = 3;
-
-        return connection;
-    }
-
     public async Task<long> CountEventsForDateAsync(DateOnly businessDate, CancellationToken ct)
     {
         await using var connection = CreateConnection();
@@ -243,13 +215,10 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
 
     public async Task<long> FoldDayAsync(DateOnly businessDate, CancellationToken ct)
     {
-        await using var connection = CreateBoundedConnection();
-        await using var command = connection.CreateCommand();
-
         // No delete first, and no replay. binding_current is a ReplacingMergeTree versioned by
         // last_change_seq, so a row written for a later day wins over an earlier one on merge -
         // which is exactly the fold, expressed as a write rather than as a computation.
-        command.CommandText = $$"""
+        var sql = $$"""
             INSERT INTO {{_database}}.binding_current
                 (msisdn, imsi, imei, active, last_change_seq, last_change_date)
             SELECT
@@ -262,10 +231,7 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             GROUP BY msisdn, imsi, imei
             """;
 
-        AddDateParameter(command, "businessDate", businessDate);
-        command.CommandTimeout = 0;
-
-        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        await ExecuteBoundedAsync(sql, businessDate, ct).ConfigureAwait(false);
 
         return await CountFoldedAsync(businessDate, ct).ConfigureAwait(false);
     }
@@ -384,17 +350,74 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
 
         foreach (var sql in statements)
         {
-            await using var connection = CreateBoundedConnection();
-            await using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            command.CommandTimeout = 0;
+            await ExecuteBoundedAsync(sql, businessDate, ct).ConfigureAwait(false);
+        }
+    }
 
-            if (sql.Contains("businessDate", StringComparison.Ordinal))
-            {
-                AddDateParameter(command, "businessDate", businessDate);
-            }
+    /// <summary>
+    /// Runs one statement over HTTP with its resource limits as query parameters.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The limits have to travel outside the SQL because three ways of attaching them to it did
+    /// not survive the driver. <c>CustomSettings</c> did nothing; <c>set_*</c> in the connection
+    /// string did nothing; and a trailing <c>SETTINGS</c> clause - which demonstrably works when
+    /// the same statement is run by <c>clickhouse-client</c> - arrived at the server without it.
+    /// </para>
+    /// <para>
+    /// Each was found the same way, and it is worth naming because a memory limit that is not
+    /// applied looks exactly like a limit that is generous: by watching
+    /// <c>system.processes.memory_usage</c> while the job ran. The aggregates were reaching
+    /// 2.66 GiB against a declared cap of 1.2 GiB.
+    /// </para>
+    /// <para>
+    /// URL parameters are the mechanism the bulk insert already uses, and the one path in this
+    /// class that was never in doubt: the server reads settings from the query string before it
+    /// parses anything, so no client library sits between the intent and the effect.
+    /// </para>
+    /// </remarks>
+    private async Task ExecuteBoundedAsync(string sql, DateOnly businessDate, CancellationToken ct)
+    {
+        var query = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["query"] = sql,
+            ["database"] = _database,
+            ["param_businessDate"] = businessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
 
-            await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            // Measured, not guessed. ClickHouse builds one hash table per thread, so the thread
+            // count multiplies what a GROUP BY needs: the churn aggregate over one day takes
+            // ~1.9 GiB at three threads and 565 MiB at one, in 3.9 seconds either way. Three
+            // times the memory for no useful speed-up, on a job that runs once a day.
+            ["max_threads"] = "1",
+            ["max_memory_usage"] = "1200000000",
+
+            // Spill well before the ceiling, so a heavy GROUP BY writes to disk rather than
+            // approaching the limit. The spill count in ProfileEvents is also the proof that
+            // these settings arrived: 122 external parts cannot happen if they did not.
+            ["max_bytes_before_external_group_by"] = "300000000",
+            ["max_bytes_before_external_sort"] = "300000000",
+        };
+
+        var url = new UriBuilder(_httpEndpoint)
+        {
+            Query = string.Join('&', query.Select(kv =>
+                $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}")),
+        }.Uri;
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        if (_authentication is not null)
+        {
+            request.Headers.Authorization = _authentication;
+        }
+
+        var client = _httpClientFactory.CreateClient(ClickHouseAnalyticsStore.HttpClientName);
+
+        using var response = await client.SendAsync(request, ct).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var detail = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            throw new InvalidOperationException(FirstLine(detail));
         }
     }
 
