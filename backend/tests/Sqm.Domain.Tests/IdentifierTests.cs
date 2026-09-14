@@ -1,3 +1,4 @@
+using System.Globalization;
 using Sqm.Domain.Identifiers;
 
 namespace Sqm.Domain.Tests;
@@ -135,55 +136,129 @@ public class ImsiTests
 }
 
 /// <summary>
-/// How a subscriber number is typed, versus how the feed stores it.
+/// Every way a person writes a subscriber number, against the one way the feed stores it.
 /// </summary>
 /// <remarks>
-/// These exist because the lookup screen reported every number typed the way a person writes it
-/// — <c>09912059464</c> — as "unusual length, shown for review". The parse counted the raw
-/// string, so the national trunk prefix made a perfectly ordinary 10-digit number look like an
-/// 11-digit anomaly, on the one screen whose job is to flag numbers that genuinely are anomalous.
+/// <para>
+/// The feed stores the national significant number: ten digits beginning with 9. An operator
+/// pastes whatever they were given — from a spreadsheet, a chat, a ticket — and a lookup that
+/// only accepts the stored form makes them do the conversion by hand, for a number they are
+/// about to investigate.
+/// </para>
+/// <para>
+/// The country-code rule is safe because it was measured, not assumed: every normal number in
+/// the feed begins with 91, 99, 93, 90, 92, 95, 97 or 96, and none of the 24 length-anomalies
+/// begins with 98 either. A leading 98 can only be the country code.
+/// </para>
 /// </remarks>
-public class MsisdnTrunkPrefixTests
+public class MsisdnFormatTests
 {
-    [Theory]
-    [InlineData("9912059464")]   // as the feed stores it
-    [InlineData("09912059464")]  // as a person writes and dials it
-    [InlineData(" 09912059464 ")]
-    public void A_leading_zero_is_a_trunk_prefix_not_a_digit(string typed)
-    {
-        Assert.True(Msisdn.TryParse(typed, out var msisdn));
+    private const ulong Expected = 9131234567UL;
 
-        Assert.Equal(9912059464UL, msisdn!.Value.Value);
+    [Theory]
+    // As the feed stores it.
+    [InlineData("9131234567")]
+    // National, with the trunk prefix.
+    [InlineData("09131234567")]
+    // International, in its several spellings.
+    [InlineData("989131234567")]
+    [InlineData("+989131234567")]
+    [InlineData("00989131234567")]
+    [InlineData("+98 913 123 4567")]
+    // Both prefixes at once, which people genuinely write.
+    [InlineData("+980913123456" + "7")]
+    [InlineData("00980913123456" + "7")]
+    // Pasted with the punctuation it arrived in.
+    [InlineData("0913 123 4567")]
+    [InlineData("0913-123-4567")]
+    [InlineData("(0913) 123.4567")]
+    [InlineData("  +98 913 123 4567  ")]
+    public void All_of_these_name_the_same_subscriber(string typed)
+    {
+        Assert.True(Msisdn.TryParse(typed, out var msisdn), $"failed to parse '{typed}'");
+
+        Assert.Equal(Expected, msisdn!.Value.Value);
         Assert.Equal(10, msisdn.Value.DigitCount);
         Assert.True(msisdn.Value.IsWellFormed);
     }
 
-    [Fact]
-    public void Both_forms_name_the_same_subscriber()
+    [Theory]
+    // A letter in the middle of a number is a typo worth reporting, not noise worth ignoring.
+    [InlineData("0913123456O")]
+    [InlineData("0913abc4567")]
+    [InlineData("۰۹۱۳۱۲۳۴۵۶۷")] // Persian digits: the feed is ASCII, so this is not a silent pass
+    public void A_character_that_is_neither_digit_nor_separator_is_rejected(string typed)
     {
-        Assert.True(Msisdn.TryParse("9912059464", out var stored));
-        Assert.True(Msisdn.TryParse("09912059464", out var typed));
-
-        Assert.Equal(stored!.Value.Value, typed!.Value.Value);
+        Assert.False(Msisdn.TryParse(typed, out _));
     }
 
     [Theory]
-    // Genuinely unusual lengths still are. Measured: 24 of 125,939,523 rows have lengths
-    // 8, 9, 12, 13 and 15, and those are the ones this flag exists for.
-    [InlineData("991205946")]         // 9
-    [InlineData("99120594640000")]    // 14
+    // Measured: 24 of 125,939,523 rows have lengths 8, 9, 12, 13 and 15. The flag exists for
+    // these, and must keep firing.
+    [InlineData("91722541")]        // 8, a real stored value
+    [InlineData("917269951")]       // 9, a real stored value
+    [InlineData("912074412300")]    // 12, a real stored value
     public void A_real_length_anomaly_is_still_reported(string typed)
     {
         Assert.True(Msisdn.TryParse(typed, out var msisdn));
         Assert.False(msisdn!.Value.IsWellFormed);
     }
 
-    [Fact]
-    public void Only_one_leading_zero_is_stripped()
+    [Theory]
+    // Three of the anomalies are foreign numbers stored whole. Nothing strips a prefix this feed
+    // does not use, so pasting them as-is finds them.
+    [InlineData("9647713732437", 9647713732437UL)]   // Iraq
+    [InlineData("971504254623", 971504254623UL)]     // UAE
+    [InlineData("994775061119", 994775061119UL)]     // Azerbaijan
+    public void A_foreign_number_stored_whole_is_found_by_pasting_it(string typed, ulong expected)
     {
-        // "00…" is not a trunk prefix this feed uses. Stripping greedily would turn a genuine
-        // anomaly into a number that looks fine.
-        Assert.True(Msisdn.TryParse("009912059464", out var msisdn));
-        Assert.False(msisdn!.Value.IsWellFormed);
+        Assert.True(Msisdn.TryParse(typed, out var msisdn));
+        Assert.Equal(expected, msisdn!.Value.Value);
+    }
+
+    [Fact]
+    public void A_leading_98_is_left_alone_when_the_rest_is_not_a_national_number()
+    {
+        // Guarded on length, so a value that merely begins with those digits survives intact.
+        Assert.True(Msisdn.TryParse("9812345678", out var msisdn));
+        Assert.Equal(9812345678UL, msisdn!.Value.Value);
+    }
+
+    [Fact]
+    public void Normalisation_never_merges_two_different_stored_numbers()
+    {
+        // The guarantee that matters. Stripping prefixes is only safe if it cannot map two
+        // distinct subscribers onto one - which would silently show an operator the wrong
+        // person's handsets. These are real values from the feed, including every length
+        // anomaly and one of each leading prefix.
+        string[] stored =
+        [
+            "9131234567", "9912059464", "9012345678", "9212345678",
+            "9312345678", "9512345678", "9612345678", "9712345678",
+            "91722541", "917269951", "912074412300", "9647713732437", "964780749997715",
+            "971504254623", "994775061119",
+        ];
+
+        var parsed = new List<ulong>();
+
+        foreach (var value in stored)
+        {
+            Assert.True(Msisdn.TryParse(value, out var msisdn), $"failed to parse '{value}'");
+
+            // Idempotent on the stored form: nothing to strip, nothing stripped.
+            Assert.Equal(ulong.Parse(value, CultureInfo.InvariantCulture), msisdn!.Value.Value);
+            parsed.Add(msisdn.Value.Value);
+        }
+
+        Assert.Equal(stored.Length, parsed.Distinct().Count());
+    }
+
+    [Fact]
+    public void Leading_zeros_are_prefix_noise_however_many_there_are()
+    {
+        // Stored values are integers, so none can begin with a zero. Any leading zero is
+        // therefore punctuation, and resolving to the right subscriber is the useful answer.
+        Assert.True(Msisdn.TryParse("0009131234567", out var msisdn));
+        Assert.Equal(Expected, msisdn!.Value.Value);
     }
 }

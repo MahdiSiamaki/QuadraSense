@@ -66,11 +66,26 @@ function correlationId(e: unknown): string | null {
           <input
             id="msisdn"
             v-model="input"
-            inputmode="numeric"
+            inputmode="tel"
             autocomplete="off"
-            placeholder="9140257910"
+            placeholder="0913 123 4567"
+            aria-describedby="msisdn-formats"
             class="mt-1.5 w-full rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-3 py-2 font-[var(--font-mono)] text-[var(--text-sm)] tabular placeholder:text-[var(--c-text-muted)]"
           />
+          <!--
+            The accepted forms are stated rather than left to be discovered. An operator pastes
+            whatever they were given - a spreadsheet cell, a ticket, a chat message - and the one
+            thing they should not have to do is convert it by hand for a number they are about to
+            investigate.
+          -->
+          <p id="msisdn-formats" class="mt-1.5 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            National or international, with or without separators —
+            <code class="font-[var(--font-mono)]">0913…</code>,
+            <code class="font-[var(--font-mono)]">913…</code>,
+            <code class="font-[var(--font-mono)]">+98 913…</code>,
+            <code class="font-[var(--font-mono)]">0098913…</code>
+            all find the same subscriber.
+          </p>
         </div>
         <button
           type="submit"
