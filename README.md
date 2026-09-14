@@ -1,52 +1,146 @@
 # Device Intelligence Platform
 
-Analytics platform for mobile device / SIM / subscriber binding data, enriched with the GSMA TAC device
-database.
+Analytics platform for mobile device / SIM / subscriber binding data, enriched with the GSMA TAC
+device database.
 
-> **Status: Phase 1 — Architecture.** No application code yet. Discovery is complete and the data is fully
-> profiled; see `docs/discovery/`.
+> **Status: Phase 3–4.** The data platform is loaded and the application runs against it. The
+> import platform — upload, queue, worker, validation, TAC versioning — is built and tested;
+> authentication is not yet wired up.
 
 ---
 
 ## What this system does
 
-A mobile operator delivers a daily feed describing which **handset** each **SIM** and **phone number** is
-currently bound to. This platform ingests that feed, enriches it with device metadata from the GSMA TAC
-database, and answers questions like:
+A mobile operator delivers a daily feed describing which **handset** each **SIM** and **phone
+number** is currently bound to. This platform ingests that feed, enriches it with device metadata
+from the GSMA TAC database, and answers:
 
 - What is the active device population by manufacturer, model, OS and device type?
-- How is it changing — which brands are growing, which are losing users, and to whom?
+- How is it changing — which brands are growing, which are losing users?
 - Which subscribers changed device or swapped SIM, and how often?
-- What is the health of the incoming data?
+- How healthy is the incoming data, and how current is it?
 
 ## Scale (measured, not estimated)
 
 | | |
 |---|---:|
-| Initial load | **125,939,523** bindings (4.86 GiB) |
-| Change history available | **677,580,701** events (32.2 GiB, 82 days) |
-| Daily volume | **~8.26M** events/day |
-| Current active state | **~108M** bindings over **~73.3M** numbers |
-| Growth | **~3.0B** events/year |
+| Initial dump | **125,939,523** bindings (4.86 GiB, 2025-12-27 → 2026-01-25) |
+| Daily change history | **1,051,743,000** events over **133 days** (2026-01-26 → 2026-06-14) |
+| Days expected but never delivered | **7** (all within one window in May) |
+| Daily volume | ~7.4M – 9.6M events/day |
 | Device reference data | 270,166 TACs |
-| TAC enrichment coverage | **92.8%** |
+| TAC enrichment coverage | **92.8%** of active bindings |
+
+## The four things a newcomer should understand first
+
+**1. The grain is a *binding*, not a subscriber.**
+`(msisdn, imsi, imei)` — a phone number, a SIM and a handset. Zero duplicates across 125.9M rows,
+so it is a genuine natural key. 51.3% of numbers were seen on more than one device, so "one row per
+subscriber" is not a shape this data has. Every count in the product therefore states its unit:
+Samsung is 52,704,438 **bindings**, 40,070,800 **subscribers** or 39,320,516 **handsets**, and all
+three are correct answers to different questions.
+
+**2. The feed has set semantics, and that is load-bearing.**
+`add` and `remove` toggle a binding, and its final state depends only on its **last** event, not on
+the path taken to it — verified over 8,062,257 transitions with **zero** repeated adds.
+
+This is not a curiosity. It is what lets a daily import fold only its own day into current state
+instead of replaying the whole event log. Measured: the full replay takes about **45 minutes**; one
+day takes **seconds**. Without the proof, the 45-minute path would be the only correct one.
+
+**3. The dates were recovered, and two earlier conclusions were wrong.**
+The original 82 files carried no dates, which was the project's largest open risk. The source then
+began supplying dated filenames, and all 82 old files matched dated ones by exact byte size with
+**zero unmatched**. The inferred ordering turned out to be exactly right — but the *span* was wrong
+(2026-01-26 → 2026-04-17, not 2026-02-23 → 2026-05-16), and the supposed gap did not exist. See
+`docs/discovery/03-dated-daily-files.md`.
+
+**4. Dashboards cannot be served from raw data, by either engine.**
+The Phase 0 benchmark measured 3.5 s for a dashboard-shaped query against a 500 ms budget. The mart
+layer is therefore **load-bearing architecture, not an optimisation** — see ADR-003.
+
+## Running it
+
+### 1. Infrastructure
+
+```bash
+docker compose -f infra/docker-compose.yml up -d
+```
+
+ClickHouse on `localhost:18123`, PostgreSQL on `localhost:15432`. Source directories are
+bind-mounted read-only, so a bug in a job cannot damage the originals.
+
+### 2. Configuration
+
+```bash
+cp .env.example .env
+```
+
+Every variable the stack reads is listed there. Nothing is committed with a credential in it.
+
+### 3. Schema
+
+```bash
+dotnet run --project backend/src/Sqm.Migrator -- --target postgres   --dir db/operational/migrations
+dotnet run --project backend/src/Sqm.Migrator -- --target clickhouse --dir db/analytics/migrations
+```
+
+Forward-only. The runner refuses to start if an already-applied migration's checksum has changed —
+an edited migration is a different migration, and the database it ran against no longer matches the
+repository.
+
+### 4. The application
+
+```bash
+dotnet run --project backend/src/Sqm.Api        # API on :8080
+dotnet run --project backend/src/Sqm.Ingestion  # import worker
+cd frontend && npm install && npm run dev       # UI on :5173
+```
+
+The worker checks the analytics schema at startup and refuses to run against the wrong partition
+key, because day-level idempotency is implemented as a partition drop.
+
+### 5. Tests
+
+```bash
+dotnet test backend/Sqm.slnx
+```
+
+Integration tests run against a real PostgreSQL and **skip with a reason** when none is reachable,
+rather than failing. They found three bugs a mocked repository could not have: Dapper cannot bind
+`DateOnly` at all, `smallint` columns do not match `int` parameters, and Npgsql surfaces
+`timestamptz` as `DateTime` where the models use `DateTimeOffset`.
 
 ## Repository layout
 
 ```
 docs/
-  discovery/     Phase 0 — what the data actually is, measured
+  discovery/       Phase 0 — what the data actually is, measured
     01-data-profiling-report.md    full profiling results
     02-open-questions.md           questions + documented assumptions
-  architecture/  Phase 1 — how the system is built
-    01-overview.md                 requirements, diagrams, risks
+    03-dated-daily-files.md        how the date risk was closed
+  architecture/    Phase 1 — how the system is built
+    01-overview.md                 requirements, diagrams, risk register
     03-data-model.md               entities, tables, quality rules
     04-security-model.md           roles, controls, audit
-    05-roadmap.md                  phased delivery plan
-  adr/           Architecture Decision Records
+    07-testing-strategy.md         what is tested and why
+    09-import-platform.md          the import platform, design and build
+  adr/             Architecture Decision Records
+backend/
+  src/Sqm.Domain          the binding fold and identifier rules
+  src/Sqm.Application     abstractions, query shapes, import contracts
+  src/Sqm.Infrastructure  ClickHouse and PostgreSQL implementations
+  src/Sqm.Api            minimal-API endpoints
+  src/Sqm.Ingestion      the import worker
+  src/Sqm.Migrator       forward-only schema migrator for both stores
+frontend/          Vue 3 SPA: dashboard, Import Center, subscriber lookup
+db/
+  analytics/       ClickHouse migrations and batch jobs
+  operational/     PostgreSQL migrations and the backfill of the pre-platform load
+infra/             the development environment as a compose file
 tools/
-  profiling/     reproducible data-profiling scripts (DuckDB)
-  benchmark/     storage-engine benchmark harness
+  profiling/       reproducible data-profiling scripts (DuckDB)
+  benchmark/       storage-engine benchmark harness
 ```
 
 ## Architecture decisions
@@ -54,30 +148,15 @@ tools/
 | ADR | Decision | Status |
 |---|---|---|
 | [ADR-001](docs/adr/ADR-001-backend-technology.md) | Backend: **.NET 10 / C#** | Accepted |
-| ADR-002 | Operational (OLTP) store | Pending |
-| ADR-003 | Analytics store | Pending benchmark |
-| [ADR-004](docs/adr/ADR-004-ingestion-strategy.md) | Ingestion: immutable event log, TAC joined at query time | Accepted |
+| [ADR-002](docs/adr/ADR-002-operational-database.md) | Operational store: **PostgreSQL 17** | Proposed |
+| [ADR-003](docs/adr/ADR-003-analytics-store.md) | Analytics store: **ClickHouse** — 26–35× on dashboard shapes, 3.4× smaller | Accepted |
+| [ADR-004](docs/adr/ADR-004-ingestion-strategy.md) | Ingestion: immutable event log, SHA-256 idempotency, TAC joined at query time | Accepted |
 | [ADR-005](docs/adr/ADR-005-frontend-architecture.md) | Frontend: **Vue 3** + Vite + Tailwind + headless primitives | Accepted |
 | ADR-006 | Authentication | Pending |
 | ADR-007 | Deployment | Pending infrastructure decision |
 
-## The three things a newcomer should understand first
-
-**1. The grain is a *binding*, not a subscriber.**
-`(msisdn, imsi, imei)` — a phone number, a SIM, and a handset. Zero duplicates across 125.9M rows, so it is a
-genuine natural key. 51.3% of numbers were seen on more than one device, so "one row per subscriber" is not
-a shape this data has.
-
-**2. The feed is set-semantic and order-dependent.**
-Daily files carry `add` / `remove` labels that toggle a binding. Verified over 8,062,257 transitions:
-0.383% violations, **all of them repeated removes, zero repeated adds**. Applying files out of order produces
-a wrong answer, so ingestion order is tracked explicitly.
-
-**3. The feed has no dates.**
-This is the project's largest open risk. File ordering was validated independently (the TAC allocation-date
-frontier advances monotonically across all 82 files), but calendar dates cannot be recovered from the data.
-Until the source supplies them, time axes are labelled **delivery sequence**, not date — the schema already
-has a `data_date` column ready to backfill.
+Every one of these was decided against measurement on the real dataset, not on reputation. Where a
+claim appears in these documents, the number behind it is there too.
 
 ## Reproducing the profiling
 
@@ -89,4 +168,5 @@ python tools/profiling/to_parquet_base.py
 python tools/profiling/q.py tools/profiling/a1.py
 ```
 
-Scripts read from `D:\SQM` and `D:\TAC` and write working Parquet projections outside the repository.
+Scripts read from `D:\SQM` and `D:\TAC` and write working Parquet projections outside the
+repository.
