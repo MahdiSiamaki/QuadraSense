@@ -64,12 +64,20 @@ export function useQuarantineSamples(
   })
 }
 
-export function useFreshness() {
+/**
+ * How current each source is.
+ *
+ * `enabled` exists because the header shows this to everyone, and a Viewer without `import.view`
+ * would otherwise poll an endpoint that answers 403 every thirty seconds - filling the audit log
+ * with denials that mean nothing and are indistinguishable from someone probing.
+ */
+export function useFreshness(options: { enabled?: MaybeRefOrGetter<boolean> } = {}) {
   return useQuery({
     queryKey: ['imports', 'freshness'],
     queryFn: ({ signal }) => importsApi.freshness(signal),
     staleTime: FRESHNESS_STALE_MS,
     refetchInterval: FRESHNESS_STALE_MS,
+    enabled: computed(() => toValue(options.enabled ?? true)),
   })
 }
 

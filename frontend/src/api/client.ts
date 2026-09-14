@@ -7,6 +7,41 @@
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
+/**
+ * Name of the CSRF cookie, which the server sets on sign-in and the SPA echoes back.
+ *
+ * The `__Host-` prefix is browser-enforced and requires a Secure cookie, so the server drops it
+ * on a plain-HTTP development origin - a browser would otherwise reject the cookie silently.
+ * Both spellings are looked for here, rather than the client needing to know which environment
+ * it is in.
+ */
+const CSRF_COOKIE_NAMES = ['__Host-sqm_csrf', 'sqm_csrf']
+const CSRF_HEADER = 'X-CSRF-Token'
+
+const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+function readCsrfToken(): string | null {
+  for (const name of CSRF_COOKIE_NAMES) {
+    const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
+    if (match?.[1]) return decodeURIComponent(match[1])
+  }
+  return null
+}
+
+/**
+ * Called when the server says the session is gone.
+ *
+ * Set once by the auth layer. The client cannot import the router without a cycle, and a module
+ * that reaches into navigation from inside a fetch wrapper is the kind of hidden coupling that
+ * makes a 401 impossible to trace.
+ */
+let onUnauthenticated: (() => void) | null = null
+
+/** Registers what to do when a request comes back 401. */
+export function setUnauthenticatedHandler(handler: () => void): void {
+  onUnauthenticated = handler
+}
+
 /** RFC 9110 problem details, which is what the API returns for every failure. */
 export interface ProblemDetails {
   type?: string
@@ -48,16 +83,33 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? 'GET').toUpperCase()
+
+  // Double-submit CSRF: the server sets a token in a cookie the page CAN read, and every
+  // state-changing request echoes it in a header. A cross-site page can make the browser SEND
+  // the session cookie but cannot READ this one, so it cannot produce the header.
+  const csrf = UNSAFE_METHODS.has(method) ? readCsrfToken() : null
+
   const response = await fetch(`${BASE}${path}`, {
     ...init,
+    // The session lives in an HttpOnly cookie, which fetch does not send cross-origin without
+    // this. In development the SPA is on :5173 and the API on :5202, so it is always cross-origin.
+    credentials: 'include',
     headers: {
       Accept: 'application/json',
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(csrf ? { [CSRF_HEADER]: csrf } : {}),
       ...init?.headers,
     },
   })
 
   const correlationId = response.headers.get('X-Correlation-Id')
+
+  if (response.status === 401) {
+    // The session expired, was revoked, or the account was deactivated. The app cannot recover
+    // by retrying, so it hands control to the auth layer, which shows the login page.
+    onUnauthenticated?.()
+  }
 
   if (!response.ok) {
     let problem: ProblemDetails | null = null
@@ -96,4 +148,10 @@ export const api = {
 
   post: <T>(path: string, body: unknown, signal?: AbortSignal) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(body), signal }),
+
+  put: <T>(path: string, body: unknown, signal?: AbortSignal) =>
+    request<T>(path, { method: 'PUT', body: JSON.stringify(body), signal }),
+
+  delete: <T>(path: string, signal?: AbortSignal) =>
+    request<T>(path, { method: 'DELETE', signal }),
 }
