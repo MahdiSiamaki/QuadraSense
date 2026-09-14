@@ -108,6 +108,59 @@ same view; export above threshold → background job → download; a Viewer cann
 
 ---
 
+## 4b. What exists today, and what it caught
+
+The plan above is the target. This is the state of it.
+
+| Project | Tests | What it covers |
+|---|---:|---|
+| `Sqm.Domain.Tests` | 19 | The binding fold and the identifier rules. Every case cites a discovery measurement. |
+| `Sqm.Ingestion.Tests` | 22 | Row validation and schema-change classification. |
+| `Sqm.Integration.Tests` | 6 | The import queue's guarantees, against a real PostgreSQL. |
+
+### The integration tests earned their cost on the first run
+
+All six failed, and none of the failures were in the tests. Each was a defect that would have
+reached production and each is invisible to a mocked repository:
+
+| Defect | How it would have shown up |
+|---|---|
+| Dapper cannot bind `DateOnly` at all | Every enqueue carrying a business date throws at runtime. |
+| `attempt`, `max_attempts`, `priority` are `smallint`, the models say `int` | Dapper cannot match the record constructor; no job can ever be claimed. |
+| Npgsql surfaces `timestamptz` as `DateTime`, the models use `DateTimeOffset` | "A parameterless default constructor is required" — a message that says nothing about the real mismatch. |
+
+This is the argument for the rule in section 4 stated as a result rather than a principle: a fake
+that returns what we expect tests our expectations. The behaviour under test here is
+PostgreSQL's — `FOR UPDATE SKIP LOCKED`, partial unique indexes, transaction isolation — and a
+mock cannot be wrong in the ways a database is wrong.
+
+### Skipping is not failing
+
+When no database is reachable the integration tests skip with the reason. A developer without
+the container running should see "skipped: no database", not a wall of red that trains them to
+stop reading test output.
+
+### The reorder test
+
+`SchemaFingerprintTests.Reordering_is_rejected_even_though_every_column_is_present` exists
+because of a specific afternoon. Eleven TAC columns were renamed to placeholders; ClickHouse's
+`CSVWithNames` matches by header name, so the load reported exactly the right row count and
+those eleven columns silently received nothing. It surfaced weeks later, when an eSIM query
+returned zero.
+
+That is the shape of the worst bug this system can have: not a crash, but a number that is
+wrong and looks fine. Tests that only assert "the import succeeded" would have passed
+throughout.
+
+### Still missing
+
+- **API contract tests.** Waiting on authentication, since most of what they assert is authz.
+- **Frontend component tests.** The four async states and filter→URL round-tripping.
+- **E2E.** The short critical-path list in section 4.
+- **The reconciliation test of section 2**, as an automated job rather than a manual query.
+
+---
+
 ## 5. Security tests
 
 - Every endpoint asserted to reject unauthenticated requests.
