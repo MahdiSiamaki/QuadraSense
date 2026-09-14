@@ -59,7 +59,7 @@ internal sealed partial class TacSnapshotProcessor(
             ImportJobStatus.Validating, $"Checking the column contract of {job.OriginalFileName}", ct)
             .ConfigureAwait(false);
 
-        await ValidateHeaderAsync(context, ct).ConfigureAwait(false);
+        await ValidateHeaderAsync(job, context, ct).ConfigureAwait(false);
 
         var versionId = await store.AllocateVersionIdAsync(ct).ConfigureAwait(false);
         var activeVersionId = await store.GetActiveVersionIdAsync(ct).ConfigureAwait(false);
@@ -174,7 +174,8 @@ internal sealed partial class TacSnapshotProcessor(
     }
 
     /// <summary>Reads the header and checks it against the GSMA contract.</summary>
-    private static async Task ValidateHeaderAsync(IImportContext context, CancellationToken ct)
+    private async Task ValidateHeaderAsync(
+        ClaimedJob job, IImportContext context, CancellationToken ct)
     {
         await using var stream = await context.OpenFileAsync(ct).ConfigureAwait(false);
         using var reader = new StreamReader(
@@ -185,14 +186,30 @@ internal sealed partial class TacSnapshotProcessor(
 
         var columns = header.Split(',').Select(c => c.Trim().Trim('"')).ToArray();
 
-        if (columns.Length != ClickHouseTacVersionStore.Columns.Length)
+        // GSMA has extended this export before and will again, so the header is matched against
+        // the contracts on record. An appended column is recorded as a new schema version and
+        // imported; a removed or reordered one is refused.
+        var schema = await repository
+            .ResolveSchemaAsync(job.JobId, job.SourceCode, columns, ct).ConfigureAwait(false);
+
+        if (schema.Verdict == SchemaVerdict.Rejected)
         {
-            throw new ImportRejectedException(
-                $"Expected {ClickHouseTacVersionStore.Columns.Length} columns, the file has "
-                + $"{columns.Length}. The GSMA export format has changed, or this is not a TAC file.");
+            throw new ImportRejectedException(schema.Explanation);
         }
 
-        for (var i = 0; i < columns.Length; i++)
+        if (schema.Verdict == SchemaVerdict.AcceptedWithWarning)
+        {
+            await context.NoteAsync("warning", schema.Explanation, null, ct).ConfigureAwait(false);
+        }
+
+        if (columns.Length < ClickHouseTacVersionStore.Columns.Length)
+        {
+            throw new ImportRejectedException(
+                $"Expected at least {ClickHouseTacVersionStore.Columns.Length} columns, the file "
+                + $"has {columns.Length}. This is not a GSMA TAC export.");
+        }
+
+        for (var i = 0; i < ClickHouseTacVersionStore.Columns.Length; i++)
         {
             if (!string.Equals(columns[i], ClickHouseTacVersionStore.Columns[i],
                 StringComparison.OrdinalIgnoreCase))

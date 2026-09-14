@@ -93,6 +93,17 @@ public interface IImportJobRepository
     Task AppendEventAsync(
         long jobId, string severity, string? stage, string message, object? detail, CancellationToken ct);
 
+    /// <summary>
+    /// Matches a file's header against the known column contracts for its source.
+    /// </summary>
+    /// <remarks>
+    /// Registers a new version when the header is a compatible extension, so schema evolution is
+    /// recorded as it happens rather than discovered later from a column that stopped being
+    /// populated. Attaches the resolved version to the job either way.
+    /// </remarks>
+    Task<SchemaResolution> ResolveSchemaAsync(
+        long jobId, string sourceCode, IReadOnlyList<string> columns, CancellationToken ct);
+
     /// <summary>Records validation failures, grouped by rule, with a capped sample per group.</summary>
     Task RecordQuarantineAsync(
         long jobId, IReadOnlyList<QuarantineWrite> groups, CancellationToken ct);

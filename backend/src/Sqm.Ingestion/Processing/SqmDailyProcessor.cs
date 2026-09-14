@@ -25,6 +25,7 @@ namespace Sqm.Ingestion.Processing;
 /// </remarks>
 internal sealed partial class SqmDailyProcessor(
     IAnalyticsIngestionStore analytics,
+    IImportJobRepository repository,
     ILogger<SqmDailyProcessor> logger) : IImportProcessor
 {
     [LoggerMessage(EventId = 3300, Level = LogLevel.Information,
@@ -63,7 +64,7 @@ internal sealed partial class SqmDailyProcessor(
             $"Checking the column contract and every row of {job.OriginalFileName}", ct)
             .ConfigureAwait(false);
 
-        var validation = await ValidateAsync(job, context, ct).ConfigureAwait(false);
+        var validation = await ValidateAsync(job, context, repository, ct).ConfigureAwait(false);
         LogValidated(job.OriginalFileName, validation.TotalRows, validation.RejectedRows,
             validation.WarnedRows);
 
@@ -239,7 +240,7 @@ internal sealed partial class SqmDailyProcessor(
 
     /// <summary>Reads the whole file, checking every row, writing nothing.</summary>
     private static async Task<ValidationResult> ValidateAsync(
-        ClaimedJob job, IImportContext context, CancellationToken ct)
+        ClaimedJob job, IImportContext context, IImportJobRepository repository, CancellationToken ct)
     {
         await using var stream = await context.OpenFileAsync(ct).ConfigureAwait(false);
         using var reader = new StreamReader(
@@ -250,13 +251,36 @@ internal sealed partial class SqmDailyProcessor(
 
         var columns = header.Split(',').Select(c => c.Trim().Trim('"')).ToArray();
 
-        if (!columns.SequenceEqual(SqmRowValidator.ExpectedColumns, StringComparer.OrdinalIgnoreCase))
+        // The header is matched against the contracts on record rather than against a constant.
+        // A source's columns will change one day, and the platform should record that it happened
+        // and decide whether it is survivable - not fail with "unexpected columns" and leave
+        // someone to work out which.
+        var schema = await repository
+            .ResolveSchemaAsync(job.JobId, job.SourceCode, columns, ct).ConfigureAwait(false);
+
+        if (schema.Verdict == SchemaVerdict.Rejected)
         {
-            // Order is checked, not just membership. A file whose columns were reordered but
-            // correctly named would otherwise pass and load every value into the wrong column.
-            throw new ImportRejectedException(
-                $"Unexpected columns. Expected [{string.Join(", ", SqmRowValidator.ExpectedColumns)}], "
-                + $"the file has [{string.Join(", ", columns)}].");
+            throw new ImportRejectedException(schema.Explanation);
+        }
+
+        if (schema.Verdict == SchemaVerdict.AcceptedWithWarning)
+        {
+            await context.NoteAsync("warning", schema.Explanation, null, ct).ConfigureAwait(false);
+        }
+
+        // Beyond the contract, this processor can only read the four columns it knows how to
+        // validate. A compatible extension that appends columns is fine; a file that does not
+        // start with these four is not something this code can parse at all.
+        foreach (var (expected, index) in SqmRowValidator.ExpectedColumns.Select((c, i) => (c, i)))
+        {
+            if (index >= columns.Length
+                || !string.Equals(columns[index], expected, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ImportRejectedException(
+                    $"Column {index + 1} must be '{expected}'. This importer reads "
+                    + $"[{string.Join(", ", SqmRowValidator.ExpectedColumns)}] and cannot parse a "
+                    + "file shaped differently.");
+            }
         }
 
         var result = new ValidationResult();

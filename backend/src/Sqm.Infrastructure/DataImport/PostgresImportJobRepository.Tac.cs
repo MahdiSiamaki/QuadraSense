@@ -1,4 +1,5 @@
 using Dapper;
+using Npgsql;
 using Sqm.Application.DataImport;
 
 namespace Sqm.Infrastructure.DataImport;
@@ -230,4 +231,138 @@ public sealed partial class PostgresImportJobRepository
             RowCount, DiffAgainstId, TacsAdded, TacsUpdated, TacsRemoved, TacsUnchanged,
             CreatedAt, ActivatedAt, ActivatedBy, SupersededAt);
     }
+}
+
+/// <summary>Schema-version resolution.</summary>
+public sealed partial class PostgresImportJobRepository
+{
+    public async Task<SchemaResolution> ResolveSchemaAsync(
+        long jobId, string sourceCode, IReadOnlyList<string> columns, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(columns);
+
+        var hash = SchemaFingerprint.Compute(columns);
+
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        const string MatchSql = """
+            SELECT id, version FROM imports.schema_version
+             WHERE source_code = @source AND header_hash = @hash
+            """;
+
+        var match = await connection.QuerySingleOrDefaultAsync<SchemaRow>(
+            Command(MatchSql, new { source = sourceCode, hash }, ct, transaction))
+            .ConfigureAwait(false);
+
+        if (match is not null)
+        {
+            await AttachSchemaAsync(connection, transaction, jobId, match.id, ct).ConfigureAwait(false);
+            await transaction.CommitAsync(ct).ConfigureAwait(false);
+
+            return new SchemaResolution(
+                SchemaVerdict.Known, match.id, match.version,
+                $"Header matches schema {match.version}.");
+        }
+
+        const string CurrentSql = """
+            SELECT id, version, columns FROM imports.schema_version
+             WHERE source_code = @source AND is_current
+             ORDER BY id DESC LIMIT 1
+            """;
+
+        var current = await connection.QuerySingleOrDefaultAsync<CurrentSchemaRow>(
+            Command(CurrentSql, new { source = sourceCode }, ct, transaction)).ConfigureAwait(false);
+
+        // Nothing on record yet. The first file a source ever delivers defines its contract;
+        // there is nothing to compare it against and refusing it would mean no source could ever
+        // be onboarded.
+        if (current is null)
+        {
+            var firstId = await RegisterSchemaAsync(
+                connection, transaction, sourceCode, "v1", columns, hash, ct).ConfigureAwait(false);
+
+            await AttachSchemaAsync(connection, transaction, jobId, firstId, ct).ConfigureAwait(false);
+            await transaction.CommitAsync(ct).ConfigureAwait(false);
+
+            return new SchemaResolution(
+                SchemaVerdict.Known, firstId, "v1",
+                $"First file for {sourceCode}; its {columns.Count} columns are now the contract.");
+        }
+
+        var (verdict, explanation) = SchemaFingerprint.Compare(current.columns, columns);
+
+        if (verdict == SchemaVerdict.Rejected)
+        {
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
+            return new SchemaResolution(verdict, null, null, explanation);
+        }
+
+        var label = NextLabel(current.version);
+        var newId = await RegisterSchemaAsync(
+            connection, transaction, sourceCode, label, columns, hash, ct).ConfigureAwait(false);
+
+        await AttachSchemaAsync(connection, transaction, jobId, newId, ct).ConfigureAwait(false);
+        await AppendEventCoreAsync(
+            connection, transaction, jobId, "warning", "VALIDATING",
+            $"New schema version {label}. {explanation}",
+            new { previous = current.version, added = columns.Skip(current.columns.Length) }, ct)
+            .ConfigureAwait(false);
+
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
+        return new SchemaResolution(verdict, newId, label, explanation);
+    }
+
+    private async Task<int> RegisterSchemaAsync(
+        NpgsqlConnection connection,
+        System.Data.IDbTransaction transaction,
+        string sourceCode,
+        string version,
+        IReadOnlyList<string> columns,
+        string hash,
+        CancellationToken ct)
+    {
+        // The previous version stops being current but is not deleted: a job imported under it
+        // should still be explainable years later, and that needs the contract it ran against.
+        await connection.ExecuteAsync(Command(
+            "UPDATE imports.schema_version SET is_current = false WHERE source_code = @source",
+            new { source = sourceCode }, ct, transaction)).ConfigureAwait(false);
+
+        const string Sql = """
+            INSERT INTO imports.schema_version
+                (source_code, version, columns, header_hash, is_current)
+            VALUES (@source, @version, @columns, @hash, true)
+            RETURNING id
+            """;
+
+        return await connection.ExecuteScalarAsync<int>(Command(Sql, new
+        {
+            source = sourceCode,
+            version,
+            columns = columns.ToArray(),
+            hash,
+        }, ct, transaction)).ConfigureAwait(false);
+    }
+
+    private async Task AttachSchemaAsync(
+        NpgsqlConnection connection,
+        System.Data.IDbTransaction transaction,
+        long jobId,
+        int schemaVersionId,
+        CancellationToken ct)
+    {
+        await connection.ExecuteAsync(Command(
+            "UPDATE imports.import_job SET schema_version_id = @schema WHERE id = @job",
+            new { job = jobId, schema = schemaVersionId }, ct, transaction)).ConfigureAwait(false);
+    }
+
+    /// <summary>v1 -> v2. Falls back to a timestamp if the label is not in that shape.</summary>
+    private static string NextLabel(string current) =>
+        current.StartsWith('v') && int.TryParse(current[1..], out var n)
+            ? $"v{n + 1}"
+            : $"v{DateTime.UtcNow:yyyyMMddHHmmss}";
+
+    private sealed record SchemaRow(int id, string version);
+
+    private sealed record CurrentSchemaRow(int id, string version, string[] columns);
 }
