@@ -507,12 +507,19 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
         await using var command = connection.CreateCommand();
 
         // ReplacingMergeTree keyed on seq, so publishing is an insert and withdrawing is a
-        // partition-free delete of one row. The reader uses FINAL, so the newest row wins even
-        // before a merge collapses them.
+        // delete of one row. max(seq) is unaffected by a duplicate row that has not merged yet,
+        // so the reader needs no FINAL.
+        //
+        // mutations_sync=2 on the withdraw is the part that matters. ALTER ... DELETE is an
+        // asynchronous mutation: without waiting for it, this method would return while the
+        // delivery was still published, and the refresh would start dropping partitions out
+        // from under a dashboard that was still reading them. Waiting costs milliseconds on a
+        // table of a few rows.
         command.CommandText = ready
             ? $"INSERT INTO {_database}.mart_ready (seq, completed_at, statements) "
               + $"VALUES ({sequence}, now64(3), {statements})"
-            : $"ALTER TABLE {_database}.mart_ready DELETE WHERE seq = {sequence}";
+            : $"ALTER TABLE {_database}.mart_ready DELETE WHERE seq = {sequence} "
+              + "SETTINGS mutations_sync = 2";
 
         command.CommandTimeout = 0;
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
