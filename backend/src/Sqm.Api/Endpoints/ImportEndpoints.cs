@@ -3,6 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using Sqm.Api.Infrastructure;
 using Sqm.Application.DataImport;
 
+using Sqm.Api.Auth;
+using Sqm.Application.Identity;
+
 namespace Sqm.Api.Endpoints;
 
 /// <summary>Import Center endpoints: upload, history, detail, operator actions.</summary>
@@ -13,8 +16,13 @@ public static class ImportEndpoints
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        var group = app.MapGroup("/api/v1/imports").WithTags("Imports");
+        // Per route rather than per group: reading import history and submitting a gigabyte of
+        // subscriber data are not the same risk, and a Data Operator has one without the other.
+        var group = app.MapGroup("/api/v1/imports").WithTags("Imports")
+            .RequireAuthorization(PermissionPolicyProvider.Prefix + Permissions.ImportView);
 
+        // The source code decides which upload permission applies, so it is checked inside the
+        // handler rather than declared here - see UploadAsync.
         group.MapPost("/{sourceCode}/upload", UploadAsync)
             .WithName("UploadImportFile")
             .WithSummary("Uploads a file and queues it for import.")
@@ -38,10 +46,12 @@ public static class ImportEndpoints
             .WithSummary("Example rows for one quarantine rule.");
 
         group.MapPost("/{jobId:long}/cancel", CancelAsync)
+            .RequireAuthorization(PermissionPolicyProvider.Prefix + Permissions.ImportCancel)
             .WithName("CancelImport")
             .WithSummary("Asks a queued or running import to stop at the next stage boundary.");
 
         group.MapPost("/{jobId:long}/reprocess", ReprocessAsync)
+            .RequireAuthorization(PermissionPolicyProvider.Prefix + Permissions.ImportReprocess)
             .WithName("ReprocessImport")
             .WithSummary("Queues the same stored file again as a new job.");
 
@@ -60,6 +70,7 @@ public static class ImportEndpoints
         string sourceCode,
         IImportFileStore fileStore,
         IImportJobRepository repository,
+        IAuditLog audit,
         HttpContext http,
         CancellationToken ct)
     {
@@ -67,6 +78,48 @@ public static class ImportEndpoints
 
         var source = sourceCode.ToUpperInvariant();
         var actor = CurrentActor(http);
+
+        // Which permission applies depends on the source, so it cannot be declared on the route.
+        // Checked here, before a single byte is read: an unauthorised upload should not be
+        // allowed to write a gigabyte to disk first and be rejected afterwards.
+        var required = source switch
+        {
+            "SQM" => Permissions.ImportUploadSqm,
+            "TAC" => Permissions.ImportUploadTac,
+            _ => null,
+        };
+
+        if (required is null)
+        {
+            return Results.Problem(
+                title: "Unknown source",
+                detail: $"'{sourceCode}' is not a source this platform accepts.",
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        var user = CurrentUser.Require(http);
+
+        if (!user.Can(required))
+        {
+            // Audited here, because a check made inside a handler never reaches the pipeline's
+            // authorisation result handler - so without this the one refusal that matters most
+            // in the import platform would be the only one leaving no trace.
+            await audit.WriteAsync(new Sqm.Application.Identity.AuditEntry(
+                ActorName: user.Username,
+                Action: required,
+                Category: Sqm.Application.Identity.AuditCategory.Import,
+                Outcome: Sqm.Application.Identity.AuditOutcome.Denied,
+                ActorUserId: user.UserId,
+                TargetType: "source",
+                TargetId: source,
+                Ip: http.Connection.RemoteIpAddress?.ToString(),
+                CorrelationId: http.TraceIdentifier), ct).ConfigureAwait(false);
+
+            return Results.Problem(
+                title: "Not permitted",
+                detail: $"Uploading {source} files requires the '{required}' permission.",
+                statusCode: StatusCodes.Status403Forbidden);
+        }
 
         if (!StreamedUpload.IsMultipart(http.Request))
         {

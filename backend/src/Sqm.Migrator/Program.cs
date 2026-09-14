@@ -27,6 +27,13 @@ catch (Exception ex)
 
 static async Task<int> Run(string[] args, CancellationToken cancellationToken)
 {
+    // Handled before the migration options are parsed: it is a different command that happens to
+    // need the same connection string, not a variation on migrating.
+    if (args.Contains("--create-admin"))
+    {
+        return await BootstrapAdmin.RunAsync(args, cancellationToken).ConfigureAwait(false);
+    }
+
     var options = CommandLine.Parse(args);
     if (options is null)
     {
@@ -168,6 +175,9 @@ internal static class CommandLine
         adopting a schema that was built before this tool existed.
 
         The connection string falls back to SQM_POSTGRES_CONNECTION or SQM_CLICKHOUSE_CONNECTION.
+
+        Sqm.Migrator --create-admin --username <name> [--display-name <name>]
+            creates the first administrator on a database that has none. See BootstrapAdmin.
         """;
 
     public static Options? Parse(string[] args)

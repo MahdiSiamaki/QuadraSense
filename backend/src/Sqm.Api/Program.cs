@@ -1,10 +1,17 @@
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
+using Microsoft.AspNetCore.RateLimiting;
+using Sqm.Api.Auth;
 using Sqm.Api.Endpoints;
 using Sqm.Api.Infrastructure;
 using Sqm.Application.Abstractions;
 using Sqm.Application.DataImport;
+using Sqm.Application.Identity;
 using Sqm.Infrastructure.ClickHouse;
 using Sqm.Infrastructure.DataImport;
+using Sqm.Infrastructure.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +32,8 @@ builder.Services.Configure<PostgresOptions>(
     builder.Configuration.GetSection(PostgresOptions.SectionName));
 builder.Services.Configure<ImportStorageOptions>(
     builder.Configuration.GetSection(ImportStorageOptions.SectionName));
+builder.Services.Configure<AuthOptions>(
+    builder.Configuration.GetSection(AuthOptions.SectionName));
 
 // ---------------------------------------------------------------- services
 // One pooled HttpClient for every ClickHouse call. Without this the driver builds
@@ -58,6 +67,52 @@ builder.Services.AddSingleton<IImportJobRepository, PostgresImportJobRepository>
 builder.Services.AddSingleton<IImportFileStore, DirectoryImportFileStore>();
 builder.Services.AddSingleton<ITacVersionStore, ClickHouseTacVersionStore>();
 builder.Services.AddSingleton(TimeProvider.System);
+
+// ---------------------------------------------------------------- identity
+// One pool for every identity repository, rather than one per repository.
+builder.Services.AddSingleton<IdentityDataSource>();
+builder.Services.AddSingleton<IPasswordHasher, Argon2PasswordHasher>();
+builder.Services.AddSingleton<IPasswordAuthenticator, LocalPasswordAuthenticator>();
+builder.Services.AddSingleton<ISessionStore, PostgresSessionStore>();
+builder.Services.AddSingleton<IUserDirectory, PostgresUserDirectory>();
+builder.Services.AddSingleton<IRoleDirectory, PostgresRoleDirectory>();
+builder.Services.AddSingleton<IAuditLog, PostgresAuditLog>();
+builder.Services.AddHostedService<SessionSweeper>();
+
+builder.Services.AddAuthentication(SessionAuthenticationHandler.SchemeName)
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions,
+        SessionAuthenticationHandler>(SessionAuthenticationHandler.SchemeName, null);
+
+// The policy provider builds a policy for any permission code on demand, and - the part that
+// matters - supplies a non-null FALLBACK policy. An endpoint added without RequireAuthorization
+// is therefore protected anyway; the ones that must be anonymous say so explicitly, which is
+// visible in review where a missing call is not.
+builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+builder.Services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler,
+    AuditingAuthorizationResultHandler>();
+builder.Services.AddAuthorization();
+
+// Bounds what an unauthenticated caller can make the server spend.
+//
+// Argon2id is deliberately expensive - 79 ms and 19 MiB per verification - and the login endpoint
+// runs it for usernames that do not exist too, so that a missing account cannot be told from a
+// wrong password by timing. Without a limiter, that property is also a way for anyone on the
+// network to occupy the process. Six attempts a minute per address is far above what a person
+// types and far below what an attack needs.
+builder.Services.AddRateLimiter(o =>
+{
+    o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    o.AddPolicy(AuthEndpoints.LoginRateLimiter, http =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 6,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+});
 
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
@@ -103,10 +158,19 @@ app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseCors();
+app.UseRateLimiter();
+
+// Order: authenticate, then check the CSRF token, then authorise. The CSRF check reads the
+// session cookie rather than the authenticated principal, so it could sit either side of
+// authentication - it sits after it so that an expired session produces a 401 rather than a
+// confusing 403 about a token.
+app.UseAuthentication();
+app.UseMiddleware<CsrfMiddleware>();
+app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
 }
 
 // Liveness deliberately does not touch dependencies: a database blip should not
@@ -114,11 +178,16 @@ if (app.Environment.IsDevelopment())
 app.MapHealthChecks("/health/live", new()
 {
     Predicate = _ => false,
-});
+}).AllowAnonymous();
 app.MapHealthChecks("/health/ready", new()
 {
     Predicate = c => c.Tags.Contains("ready"),
-});
+}).AllowAnonymous();
+
+app.MapAuthEndpoints();
+app.MapUserEndpoints();
+app.MapRoleEndpoints();
+app.MapAuditEndpoints();
 
 app.MapDashboardEndpoints();
 app.MapImportEndpoints();

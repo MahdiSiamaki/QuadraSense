@@ -1,6 +1,9 @@
 using Sqm.Application.Abstractions;
 using Sqm.Domain.Identifiers;
 
+using Sqm.Api.Auth;
+using Sqm.Application.Identity;
+
 namespace Sqm.Api.Endpoints;
 
 /// <summary>Request body for a subscriber lookup.</summary>
@@ -15,7 +18,10 @@ public static class LookupEndpoints
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        var group = app.MapGroup("/api/v1/lookup").WithTags("Lookup");
+        // Withheld from Viewer by design: aggregate analytics needs no ability to identify an
+        // individual, and this is the route that resolves a named person to their SIM and handset.
+        var group = app.MapGroup("/api/v1/lookup").WithTags("Lookup")
+            .RequireAuthorization(PermissionPolicyProvider.Prefix + Permissions.LookupSubscriber);
 
         // POST, not GET, and the number travels in the body.
         //
@@ -30,9 +36,21 @@ public static class LookupEndpoints
         return app;
     }
 
+    /// <remarks>
+    /// Audited, always. With masking off by product decision, this audit entry is the primary
+    /// record of who looked at whom - which is why the permission is separate from dashboards and
+    /// why the entry is written even though the request only reads.
+    /// <para>
+    /// The number searched for is NOT in the entry. An audit log full of MSISDNs would be a
+    /// second copy of the data it exists to protect, and the useful questions - who is running
+    /// lookups, how many, how often - are all answerable without it.
+    /// </para>
+    /// </remarks>
     private static async Task<IResult> LookupByMsisdnAsync(
         LookupRequest request,
         IDeviceAnalyticsStore store,
+        IAuditLog audit,
+        HttpContext http,
         CancellationToken ct)
     {
         if (request is null || !Msisdn.TryParse(request.Msisdn, out var msisdn))
@@ -48,6 +66,24 @@ public static class LookupEndpoints
         // A well-formed lookup is 10 digits. Others are accepted so operators can investigate the 24
         // known malformed rows, but the response tells the UI the input was unusual.
         var rows = await store.GetBindingsForMsisdnAsync(msisdn.Value.Value, ct).ConfigureAwait(false);
+
+        var user = CurrentUser.Require(http);
+
+        await audit.WriteAsync(new AuditEntry(
+            ActorName: user.Username,
+            Action: Permissions.LookupSubscriber,
+            Category: AuditCategory.Data,
+            Outcome: AuditOutcome.Success,
+            ActorUserId: user.UserId,
+            TargetType: "subscriber",
+            Ip: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            CorrelationId: http.TraceIdentifier,
+            Detail: new Dictionary<string, object?>
+            {
+                ["results"] = rows.Count,
+                ["wellFormed"] = msisdn.Value.IsWellFormed,
+            }), ct).ConfigureAwait(false);
 
         return Results.Ok(new
         {

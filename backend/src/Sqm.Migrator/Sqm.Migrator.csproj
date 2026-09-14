@@ -6,7 +6,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Sqm.Application\Sqm.Application.csproj" />
+    <!--
+      Infrastructure, for the create-admin command only. The migrator is the tool that runs once
+      against a fresh database, which is exactly when the first administrator has to exist; the
+      alternatives were a seeded account with a known password, or an API endpoint that creates
+      an administrator when none exists: a backdoor and an unauthenticated escalation path
+      respectively.
+    -->
+    <ProjectReference Include="..\Sqm.Infrastructure\Sqm.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

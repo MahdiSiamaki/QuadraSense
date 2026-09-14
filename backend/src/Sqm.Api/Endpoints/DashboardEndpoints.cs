@@ -1,6 +1,9 @@
 using Sqm.Application.Abstractions;
 using Sqm.Contracts.Dashboard;
 
+using Sqm.Api.Auth;
+using Sqm.Application.Identity;
+
 namespace Sqm.Api.Endpoints;
 
 /// <summary>Dashboard read endpoints.</summary>
@@ -15,7 +18,10 @@ public static class DashboardEndpoints
     {
         ArgumentNullException.ThrowIfNull(app);
 
+        // One permission for the whole group. Every route here reads the same aggregate marts,
+        // so splitting them would produce permissions nobody could explain the difference between.
         var group = app.MapGroup("/api/v1/dashboard")
+            .RequireAuthorization(PermissionPolicyProvider.Prefix + Permissions.DashboardView)
             .WithTags("Dashboard");
 
         group.MapGet("/kpi", GetKpiAsync)

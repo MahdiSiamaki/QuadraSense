@@ -1,5 +1,8 @@
 using Sqm.Application.DataImport;
 
+using Sqm.Api.Auth;
+using Sqm.Application.Identity;
+
 namespace Sqm.Api.Endpoints;
 
 /// <summary>TAC version review and activation.</summary>
@@ -21,13 +24,17 @@ public static partial class TacEndpoints
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        var group = app.MapGroup("/api/v1/tac-versions").WithTags("TAC");
+        var group = app.MapGroup("/api/v1/tac-versions").WithTags("TAC")
+            .RequireAuthorization(PermissionPolicyProvider.Prefix + Permissions.ImportView);
 
         group.MapGet("/", ListAsync)
             .WithName("ListTacVersions")
             .WithSummary("Every TAC version, with its diff against the one it would replace.");
 
+        // Activation is an Administrator's decision, not an operator's - decision D4 of the
+        // import platform, and the reason the permission is separate from uploading.
         group.MapPost("/{id:long}/activate", ActivateAsync)
+            .RequireAuthorization(PermissionPolicyProvider.Prefix + Permissions.TacActivate)
             .WithName("ActivateTacVersion")
             .WithSummary("Makes a version the one the product resolves TACs against.");
 

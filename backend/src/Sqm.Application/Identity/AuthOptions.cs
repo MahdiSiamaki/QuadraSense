@@ -16,7 +16,7 @@ public sealed class AuthOptions
     public PasswordOptions Password { get; init; } = new();
 
     /// <summary>Session lifetime and cookie behaviour.</summary>
-    public SessionOptions Session { get; init; } = new();
+    public SessionSettings Session { get; init; } = new();
 
     /// <summary>Lockout policy.</summary>
     public LockoutOptions Lockout { get; init; } = new();
@@ -62,7 +62,13 @@ public sealed class PasswordOptions
 }
 
 /// <summary>Session lifetime and cookie behaviour.</summary>
-public sealed class SessionOptions
+/// <remarks>
+/// Named Settings rather than Options, unlike its siblings, because
+/// <c>Microsoft.AspNetCore.Builder.SessionOptions</c> exists and is in scope wherever ASP.NET's
+/// implicit usings are on. Two types with one name, distinguished only by namespace, in the file
+/// that decides how sessions work, is a trap worth one inconsistent suffix.
+/// </remarks>
+public sealed class SessionSettings
 {
     /// <summary>
     /// How long a session survives without use.
