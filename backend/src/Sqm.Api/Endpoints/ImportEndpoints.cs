@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
+using Sqm.Api.Infrastructure;
 using Sqm.Application.DataImport;
 
 namespace Sqm.Api.Endpoints;
@@ -7,14 +8,6 @@ namespace Sqm.Api.Endpoints;
 /// <summary>Import Center endpoints: upload, history, detail, operator actions.</summary>
 public static class ImportEndpoints
 {
-    /// <summary>Largest multipart body the upload endpoint accepts.</summary>
-    /// <remarks>
-    /// The store enforces its own limit while writing, which is the one that counts - a client
-    /// controls the declared content length and can lie about it. This is the cheaper outer gate
-    /// that stops an oversized body before it reaches disk at all.
-    /// </remarks>
-    private const long MaxUploadBytes = 10L * 1024 * 1024 * 1024;
-
     /// <summary>Registers the import routes.</summary>
     public static IEndpointRouteBuilder MapImportEndpoints(this IEndpointRouteBuilder app)
     {
@@ -26,7 +19,7 @@ public static class ImportEndpoints
             .WithName("UploadImportFile")
             .WithSummary("Uploads a file and queues it for import.")
             .DisableAntiforgery()
-            .WithMetadata(new RequestSizeLimitAttribute(MaxUploadBytes));
+            .WithMetadata(new DisableRequestSizeLimitAttribute());
 
         group.MapGet("/", ListAsync)
             .WithName("ListImports")
@@ -61,32 +54,49 @@ public static class ImportEndpoints
 
     private static async Task<IResult> UploadAsync(
         string sourceCode,
-        IFormFile file,
         IImportFileStore fileStore,
         IImportJobRepository repository,
         HttpContext http,
         CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(file);
         ArgumentNullException.ThrowIfNull(http);
 
         var source = sourceCode.ToUpperInvariant();
         var actor = CurrentActor(http);
 
-        if (file.Length == 0)
+        if (!StreamedUpload.IsMultipart(http.Request))
         {
             return Results.Problem(
-                title: "Empty file",
-                detail: "The uploaded file had no content.",
+                title: "Not a file upload",
+                detail: "Send the file as a multipart/form-data request.",
+                statusCode: StatusCodes.Status415UnsupportedMediaType);
+        }
+
+        // The bytes are streamed from the socket into the file store and hashed on the way past.
+        // Binding an IFormFile would have the framework buffer the whole body first, writing a
+        // gigabyte import to disk twice.
+        var received = await StreamedUpload.ReadFileSectionAsync(
+            http.Request,
+            async (fileName, body, token) =>
+            {
+                var stored = await fileStore
+                    .SaveAsync(source, fileName, body, token).ConfigureAwait(false);
+                return new ReceivedFile(fileName, stored);
+            },
+            ct).ConfigureAwait(false);
+
+        if (received is null)
+        {
+            return Results.Problem(
+                title: "No file",
+                detail: "The request carried no file.",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
-        await using var content = file.OpenReadStream();
-        var stored = await fileStore
-            .SaveAsync(source, file.FileName, content, ct).ConfigureAwait(false);
+        var (originalName, stored) = received;
 
         var registered = await repository
-            .RegisterFileAsync(source, file.FileName, stored, actor, ct).ConfigureAwait(false);
+            .RegisterFileAsync(source, originalName, stored, actor, ct).ConfigureAwait(false);
 
         if (!registered.IsNew)
         {
@@ -97,7 +107,7 @@ public static class ImportEndpoints
             await repository.WriteAuditAsync(
                 actor, "import.upload.duplicate", registered.ExistingJobId, registered.FileId,
                 null, http.TraceIdentifier,
-                new { fileName = file.FileName, sha256 = stored.Sha256 }, ct).ConfigureAwait(false);
+                new { fileName = originalName, sha256 = stored.Sha256 }, ct).ConfigureAwait(false);
 
             // 409, not an error page. A duplicate upload is a normal thing for an operator to do
             // - the same file sent twice, or a retry after a lost connection - and the useful
@@ -105,7 +115,7 @@ public static class ImportEndpoints
             return Results.Conflict(new DuplicateUploadResponse(
                 registered.FileId,
                 registered.ExistingJobId,
-                registered.ExistingOriginalName ?? file.FileName,
+                registered.ExistingOriginalName ?? originalName,
                 stored.Sha256,
                 "This file's content has already been uploaded for this source."));
         }
@@ -115,11 +125,11 @@ public static class ImportEndpoints
 
         await repository.WriteAuditAsync(
             actor, "import.upload", jobId, registered.FileId, null, http.TraceIdentifier,
-            new { fileName = file.FileName, bytes = stored.SizeBytes, sha256 = stored.Sha256 },
+            new { fileName = originalName, bytes = stored.SizeBytes, sha256 = stored.Sha256 },
             ct).ConfigureAwait(false);
 
         return Results.Created($"/api/v1/imports/{jobId}", new UploadAcceptedResponse(
-            jobId, registered.FileId, file.FileName, stored.SizeBytes, stored.Sha256));
+            jobId, registered.FileId, originalName, stored.SizeBytes, stored.Sha256));
     }
 
     private static async Task<IResult> ListAsync(
@@ -289,6 +299,11 @@ public static class ImportEndpoints
     private static string CurrentActor(HttpContext http) =>
         http.User.Identity?.Name is { Length: > 0 } name ? name : "anonymous@pre-auth";
 }
+
+/// <summary>A file that arrived and was stored.</summary>
+/// <param name="OriginalName">The name the client sent.</param>
+/// <param name="Stored">Where it went, how big it was, and what it hashed to.</param>
+internal sealed record ReceivedFile(string OriginalName, StoredFile Stored);
 
 /// <summary>A page of import history.</summary>
 /// <param name="Items">The jobs on this page.</param>

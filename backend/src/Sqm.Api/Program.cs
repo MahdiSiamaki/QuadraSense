@@ -65,6 +65,11 @@ builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
+// Kestrel refuses a body over 30 MB by default. Daily imports reach a gigabyte, so the limit is
+// lifted here and enforced where it can actually be enforced: the file store counts bytes as it
+// writes them, against a configured maximum. A declared content length is a client's claim.
+builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = null);
+
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 
