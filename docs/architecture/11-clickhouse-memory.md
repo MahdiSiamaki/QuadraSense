@@ -125,23 +125,56 @@ Per statement, as URL parameters:
 roughly 10–15% of it, the server ceiling at 70–80%, and per-query limits low enough that two
 concurrent jobs plus background merges still fit underneath.
 
-## 6. What remains, honestly
+## 6. The last piece: merges were the whole story
 
-Even with all of the above, the mart backfill still loses the occasional day to the
-`OvercommitTracker` when background merges coincide with an aggregate. The tracker still reports
-more than RSS during a run — 5.20 GiB against 1.39 GiB in one case — and that residual gap is
-not explained.
+After the caches were sized, the limits were actually applied and `max_threads` was lowered,
+batch jobs *still* lost the occasional statement to the `OvercommitTracker` — reporting 5.20 GiB
+against an RSS of 1.3 GiB. That gap was left unexplained here for a while. It has an answer.
 
-The batch job is built to converge rather than to be perfect: **every day is idempotent** (drop
-the partition, rebuild it), failures are reported with the exact range to re-run, and repeating
-the pass finishes the stragglers. That is a legitimate strategy because of the idempotency, not
-in spite of it.
+Sampling the server every four seconds during a run showed nothing wrong:
 
-This is an environment limit rather than a design one. The machine is running a billion-row
-analytics store, an operational database, a browser and an IDE in 15.7 GiB. A production node
-with 32–64 GiB would not meet any of this.
+| tracked | RSS | merges | queries | query memory |
+|---:|---:|---:|---:|---:|
+| 790 MiB | 726 MiB | 0 | 2 | 94 MiB |
+| 895 MiB | 757 MiB | 0 | 2 | 167 MiB |
 
----
+And `system.query_log` confirmed it from the other direction: **no query in a full hour exceeded
+500 MiB**, while `QueryMemoryLimitExceeded` counted in the thousands.
+
+A query that never grows cannot exhaust a 5.2 GiB ceiling. Something else was reaching it
+briefly enough to fall between four-second samples — and the earlier probe had already caught it
+once, holding **3.99 GiB in a single merge**:
+
+```
+tracked   RSS      merges  merge_mem  queries  query_mem
+4.41 GiB  1.24 GiB      1   3.99 GiB        2   509 MiB
+```
+
+A merge of the 25 GiB event log takes gigabytes for a few seconds. It pushes the server total to
+the ceiling, the `OvercommitTracker` then has to stop *something*, and it picks the running
+query — which is a 90 MiB mart aggregate that did nothing wrong. The error names the victim, not
+the cause, which is why this took so long to see.
+
+With `--pause-merges`, the same job ran **9 statements with 0 failures** where a third had been
+failing before.
+
+So the ordering of the whole investigation, from cause to symptom:
+
+1. Cache ceilings of 18 GiB on a 6 GiB container inflated the tracker → non-deterministic kills.
+2. The ratio workaround removed self-limiting entirely → thrashing under merge load.
+3. Per-query limits silently not applied → aggregates ran unbounded.
+4. `max_threads` multiplying hash-table memory → 1.9 GiB where 565 MiB would do.
+5. **Merges spiking to 4 GiB** → the tracker hits the ceiling and an innocent query is stopped.
+
+Only the last one survives all the other fixes, and it is the one that needs an operational
+answer rather than a configuration one: on a node this size, a heavy batch job and a merge of a
+25 GiB table cannot both run. On a production node with 32–64 GiB they can, and
+`--pause-merges` should never be needed.
+
+The batch jobs are still built to converge — every day and every mart statement is idempotent,
+failures are reported with the exact range to re-run, and repeating a pass finishes the
+stragglers. That safety net stays regardless, because it costs nothing and the alternative to
+having it is finding out you needed it.
 
 ## Related
 
