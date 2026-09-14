@@ -500,6 +500,34 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
         }
     }
 
+    public async Task<IReadOnlyList<DateOnly>> GetBuiltMartDatesAsync(CancellationToken ct)
+    {
+        await using var connection = CreateConnection();
+        await using var command = connection.CreateCommand();
+
+        // agg_change_summary_daily is the last of the four day-level marts a refresh writes, so
+        // a day present here had all four succeed. Checking the cheapest one would report days
+        // as done that are only partly built.
+        command.CommandText =
+            $"SELECT DISTINCT toString(data_date) FROM {_database}.agg_change_summary_daily "
+            + "ORDER BY data_date";
+
+        var dates = new List<DateOnly>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            if (DateOnly.TryParseExact(
+                reader.GetString(0), "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var date))
+            {
+                dates.Add(date);
+            }
+        }
+
+        return dates;
+    }
+
     public async Task<IReadOnlyList<DateOnly>> GetBusinessDatesAsync(
         DateOnly? fromDate, DateOnly? toDate, CancellationToken ct)
     {

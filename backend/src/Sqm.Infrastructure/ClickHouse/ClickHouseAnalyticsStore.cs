@@ -161,7 +161,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 countIf(length(b.imei) != 14 AND b.imei != '000000') AS malformed_imei_bindings,
                 countIf(t.tac != '')                           AS tac_matched_bindings,
                 round(100.0 * countIf(t.tac != '') / count(), 3) AS tac_coverage_pct
-            FROM sqm.binding_current FINAL AS b
+            FROM sqm.binding_current AS b FINAL
             LEFT JOIN sqm.tac AS t ON t.tac = b.tac
             LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
             WHERE b.active = 1 AND {f.WhereClause}
@@ -272,7 +272,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                             t.tac = '',  {unknown_tac:String},
                             coalesce(nullIf({{column}}, ''), {unknown_tac:String})) AS k,
                     {{measure}} AS n
-                FROM sqm.binding_current FINAL AS b
+                FROM sqm.binding_current AS b FINAL
                 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
                 LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
                 WHERE b.active = 1 AND {{f.WhereClause}}
@@ -332,7 +332,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
             SELECT
                 b.msisdn, b.imsi, b.imei, b.tac,
                 t.manufacturer, t.marketingName, t.deviceType, b.active
-            FROM sqm.binding_current FINAL AS b
+            FROM sqm.binding_current AS b FINAL
             LEFT JOIN sqm.tac AS t ON t.tac = b.tac
             WHERE b.msisdn = {msisdn:UInt64}
             ORDER BY b.active DESC, b.imsi, b.imei

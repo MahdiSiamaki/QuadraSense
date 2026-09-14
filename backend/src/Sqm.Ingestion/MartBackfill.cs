@@ -34,6 +34,7 @@ internal static class MartBackfill
         IAnalyticsIngestionStore analytics,
         DateOnly? from,
         DateOnly? to,
+        bool force,
         CancellationToken ct)
     {
         var days = await analytics.GetBusinessDatesAsync(from, to, ct).ConfigureAwait(false);
@@ -42,6 +43,32 @@ internal static class MartBackfill
         {
             Console.WriteLine("no days in the event log for that range");
             return 0;
+        }
+
+        var total = days.Count;
+
+        // Skip what is already built, unless asked not to.
+        //
+        // On a constrained machine a pass can lose a handful of days to memory pressure, and
+        // converging then means running again. Rebuilding all 133 to redo four is fifty minutes
+        // of work for four minutes of it - and it is why this loop was taking passes rather than
+        // finishing. --force is there for the case that actually needs it: the aggregates
+        // themselves changed, so every day has to be recomputed.
+        if (!force)
+        {
+            var built = (await analytics.GetBuiltMartDatesAsync(ct).ConfigureAwait(false)).ToHashSet();
+            days = [.. days.Where(d => !built.Contains(d))];
+
+            if (days.Count == 0)
+            {
+                Console.WriteLine($"all {total} day(s) already built; pass --force to rebuild them");
+                return 0;
+            }
+
+            if (days.Count < total)
+            {
+                Console.WriteLine($"{total - days.Count} day(s) already built, skipping them");
+            }
         }
 
         Console.WriteLine($"rebuilding day-level marts for {days.Count} day(s), "
@@ -71,9 +98,9 @@ internal static class MartBackfill
             }
         }
 
-        var total = (DateTime.UtcNow - started).TotalMinutes;
+        var minutes = (DateTime.UtcNow - started).TotalMinutes;
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"finished in {total:F1} minutes, {failures.Count} failed"));
+            $"finished in {minutes:F1} minutes, {failures.Count} failed"));
 
         if (failures.Count > 0)
         {

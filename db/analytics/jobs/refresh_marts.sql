@@ -130,7 +130,7 @@ SELECT
         'Other'
     ) AS device_class,
     count() AS n
-FROM sqm.binding_current FINAL AS b
+FROM sqm.binding_current AS b FINAL
 LEFT JOIN (SELECT tac, deviceType FROM sqm.tac) AS t ON t.tac = b.tac
 WHERE b.active = 1
 GROUP BY device_class;
@@ -151,7 +151,7 @@ SELECT
         'Other'
     ) AS device_class,
     uniq(b.msisdn) AS n
-FROM sqm.binding_current FINAL AS b
+FROM sqm.binding_current AS b FINAL
 LEFT JOIN (SELECT tac, deviceType FROM sqm.tac) AS t ON t.tac = b.tac
 WHERE b.active = 1
 GROUP BY device_class;
@@ -172,7 +172,7 @@ SELECT
         'Other'
     ) AS device_class,
     uniqIf(b.imei, length(b.imei) = 14) AS n
-FROM sqm.binding_current FINAL AS b
+FROM sqm.binding_current AS b FINAL
 LEFT JOIN (SELECT tac, deviceType FROM sqm.tac) AS t ON t.tac = b.tac
 WHERE b.active = 1
 GROUP BY device_class;
@@ -221,7 +221,7 @@ FROM (
             countIf(c.tac != '' AND c.ims_emergency = 1) AS s3,
             countIf(c.tac != '' AND c.ims_emergency = 0) AS u3,
             countIf(c.tac = '' OR c.ims_emergency = 2) AS x3
-        FROM sqm.binding_current FINAL AS b
+        FROM sqm.binding_current AS b FINAL
         LEFT JOIN sqm.tac_capability AS c ON c.tac = b.tac
         WHERE b.active = 1
     )
@@ -251,7 +251,7 @@ FROM (
             uniqIf(b.msisdn, c.tac != '' AND c.ims_emergency = 1) AS s3,
             uniqIf(b.msisdn, c.tac != '' AND c.ims_emergency = 0) AS u3,
             uniqIf(b.msisdn, c.tac = '' OR c.ims_emergency = 2) AS x3
-        FROM sqm.binding_current FINAL AS b
+        FROM sqm.binding_current AS b FINAL
         LEFT JOIN sqm.tac_capability AS c ON c.tac = b.tac
         WHERE b.active = 1
     )
@@ -281,7 +281,7 @@ FROM (
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.ims_emergency = 1)) AS s3,
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.ims_emergency = 0)) AS u3,
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac = '' OR c.ims_emergency = 2)) AS x3
-        FROM sqm.binding_current FINAL AS b
+        FROM sqm.binding_current AS b FINAL
         LEFT JOIN sqm.tac_capability AS c ON c.tac = b.tac
         WHERE b.active = 1
     )
@@ -316,7 +316,7 @@ SELECT
     count()                        AS bindings,
     uniq(b.msisdn)                 AS subscribers,
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current FINAL AS b
+FROM sqm.binding_current AS b FINAL
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
@@ -332,7 +332,7 @@ SELECT
     count()                        AS bindings,
     uniq(b.msisdn)                 AS subscribers,
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current FINAL AS b
+FROM sqm.binding_current AS b FINAL
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
@@ -348,7 +348,7 @@ SELECT
     count()                        AS bindings,
     uniq(b.msisdn)                 AS subscribers,
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current FINAL AS b
+FROM sqm.binding_current AS b FINAL
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
@@ -364,7 +364,7 @@ SELECT
     count()                        AS bindings,
     uniq(b.msisdn)                 AS subscribers,
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current FINAL AS b
+FROM sqm.binding_current AS b FINAL
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
@@ -380,7 +380,7 @@ SELECT
     count()                        AS bindings,
     uniq(b.msisdn)                 AS subscribers,
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current FINAL AS b
+FROM sqm.binding_current AS b FINAL
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1

@@ -40,10 +40,63 @@ internal sealed partial class MartRefresh(
 
     private const string ResourceName = "Sqm.Ingestion.refresh_marts.sql";
 
-    /// <summary>Runs the refresh, reporting each statement as it goes.</summary>
-    /// <returns>How many statements failed.</returns>
+    /// <summary>How many times to run the whole script before giving up.</summary>
+    /// <remarks>
+    /// <para>
+    /// The script is idempotent by construction: every mart drops its own partition before
+    /// inserting into it, which is what makes re-running the whole thing safe rather than
+    /// hopeful. That property was put there to stop a re-run doubling the counts - an
+    /// insert-only version once doubled agg_device_daily to 251,879,046 against a real
+    /// 125,939,523 - and it turns out to buy this as well.
+    /// </para>
+    /// <para>
+    /// It is needed because statements run back to back and ClickHouse releases memory lazily:
+    /// each aggregate runs comfortably under its 1.2 GiB cap in isolation, and a run of them
+    /// together can push the server total to its ceiling even though no single one is close.
+    /// Retrying the pass lets the stragglers through once the previous ones have let go.
+    /// </para>
+    /// </remarks>
+    private const int MaxPasses = 3;
+
+    private static readonly TimeSpan BetweenStatements = TimeSpan.FromMilliseconds(750);
+
+    private static readonly TimeSpan BetweenPasses = TimeSpan.FromSeconds(20);
+
+    /// <summary>Runs the refresh, retrying the whole script until nothing fails.</summary>
+    /// <returns>How many statements still failed after the last pass.</returns>
     public async Task<int> RunAsync(
         int sequence, Func<string, Task>? onProgress, CancellationToken ct)
+    {
+        var failures = 0;
+
+        for (var pass = 1; pass <= MaxPasses; pass++)
+        {
+            failures = await RunPassAsync(sequence, pass, onProgress, ct).ConfigureAwait(false);
+
+            if (failures == 0)
+            {
+                return 0;
+            }
+
+            if (pass < MaxPasses)
+            {
+                if (onProgress is not null)
+                {
+                    await onProgress(
+                        $"{failures} statement(s) failed on pass {pass}; retrying the whole script "
+                        + "- it drops each partition before rebuilding it, so a re-run is safe")
+                        .ConfigureAwait(false);
+                }
+
+                await Task.Delay(BetweenPasses, ct).ConfigureAwait(false);
+            }
+        }
+
+        return failures;
+    }
+
+    private async Task<int> RunPassAsync(
+        int sequence, int pass, Func<string, Task>? onProgress, CancellationToken ct)
     {
         var statements = SqlScript.Split(LoadScript());
         var started = DateTime.UtcNow;
@@ -51,6 +104,14 @@ internal sealed partial class MartRefresh(
 
         for (var i = 0; i < statements.Count; i++)
         {
+            // A breath between statements. ClickHouse frees a query's memory after it reports
+            // completion, and starting the next aggregate the same millisecond means competing
+            // with the previous one's tail.
+            if (i > 0)
+            {
+                await Task.Delay(BetweenStatements, ct).ConfigureAwait(false);
+            }
+
             var label = SqlScript.Label(statements[i], i + 1);
 
             try
@@ -77,6 +138,7 @@ internal sealed partial class MartRefresh(
 
         var seconds = (long)(DateTime.UtcNow - started).TotalSeconds;
         LogFinished(sequence, statements.Count - failures, statements.Count, seconds);
+        _ = pass;
 
         return failures;
     }

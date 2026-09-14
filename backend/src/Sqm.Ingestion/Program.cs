@@ -93,7 +93,8 @@ if (args.Contains("--refresh-marts"))
 {
     var analytics = host.Services.GetRequiredService<IAnalyticsIngestionStore>();
     var (from, to) = MartBackfill.ParseRange(args);
-    return await MartBackfill.RunAsync(analytics, from, to, CancellationToken.None)
+    return await MartBackfill
+        .RunAsync(analytics, from, to, args.Contains("--force"), CancellationToken.None)
         .ConfigureAwait(false);
 }
 

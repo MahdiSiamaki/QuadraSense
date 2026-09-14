@@ -103,6 +103,16 @@ public interface IAnalyticsIngestionStore
     /// </remarks>
     Task ExecuteMartStatementAsync(string sql, int sequence, CancellationToken ct);
 
+    /// <summary>
+    /// Business dates whose day-level marts are already built.
+    /// </summary>
+    /// <remarks>
+    /// Lets a backfill skip the days it has already done. Without it, converging on a run that
+    /// lost four days to memory pressure means rebuilding all 133 again - about fifty minutes of
+    /// work to redo four minutes of it.
+    /// </remarks>
+    Task<IReadOnlyList<DateOnly>> GetBuiltMartDatesAsync(CancellationToken ct);
+
     /// <summary>Every business date present in the event log, oldest first.</summary>
     Task<IReadOnlyList<DateOnly>> GetBusinessDatesAsync(
         DateOnly? fromDate, DateOnly? toDate, CancellationToken ct);
