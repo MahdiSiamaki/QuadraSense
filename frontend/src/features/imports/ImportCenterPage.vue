@@ -4,6 +4,7 @@ import Card from '@/design-system/Card.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import UploadDropzone from './UploadDropzone.vue'
 import ImportHistoryTable from './ImportHistoryTable.vue'
+import TacVersionPanel from './TacVersionPanel.vue'
 import { useImportHistory, useWorkerHealth, useFreshness } from './useImportQueries'
 import { formatDate, formatRelative, formatDateTime } from '@/lib/format'
 import type { ImportHistoryQuery } from '@/api/imports'
@@ -232,6 +233,8 @@ function resetPaging() {
             @uploaded="history.refetch()"
           />
         </Card>
+
+        <TacVersionPanel />
       </div>
     </div>
   </div>

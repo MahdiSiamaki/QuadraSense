@@ -20,6 +20,8 @@ import ChangeTimeSeries from '@/design-system/ChangeTimeSeries.vue'
 import ChurnTimeSeries from '@/design-system/ChurnTimeSeries.vue'
 import GrowthChart from '@/design-system/GrowthChart.vue'
 import DimensionTable from '@/design-system/DimensionTable.vue'
+import DataFreshnessCard from './DataFreshnessCard.vue'
+import { useFreshness } from '@/features/imports/useImportQueries'
 import { formatFull, formatPercent } from '@/lib/format'
 import { useFilterState, FILTER_LABELS } from './useFilterState'
 
@@ -51,11 +53,19 @@ const dailyChanges = useDailyChanges()
 const dailyChurn = useDailyChurn()
 const vendorGrowth = useVendorGrowth(8)
 
-/** Days the source never delivered. Named so a gap in the chart is explained, not guessed at. */
-const MISSING_DAYS = [
-  '2026-05-08', '2026-05-09', '2026-05-11', '2026-05-12',
-  '2026-05-13', '2026-05-17', '2026-05-18',
-]
+/**
+ * Days the source never delivered, from the platform's own calendar of expected days.
+ *
+ * This was a hard-coded list of seven dates. It happened to be right, which is exactly the
+ * problem: it would have stayed right-looking after the eighth day went missing. The calendar
+ * lives in imports.expected_business_date and the gap is computed against what actually
+ * imported, so the chart's footnote cannot drift away from the chart.
+ */
+const freshness = useFreshness()
+
+const missingDays = computed(
+  () => freshness.data.value?.find((f) => f.sourceCode === 'SQM')?.missingBusinessDates ?? [],
+)
 
 const coverage = computed(() => {
   const rows = dailyChanges.data.value
@@ -162,6 +172,16 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
         </button>
       </div>
     </header>
+
+    <!--
+      Data freshness, directly under the title.
+
+      Every figure on this page is only as trustworthy as the date this card reports. A vendor
+      share means one thing if it describes yesterday and something else entirely if the last
+      successful import was six weeks ago, and nothing else on the screen can tell the reader
+      which - so it goes above the numbers rather than in a footer under them.
+    -->
+    <DataFreshnessCard />
 
     <!-- Active filters. Shown as removable chips so the current view is always legible. -->
     <div v-if="isFiltered" class="flex flex-wrap items-center gap-2">
@@ -272,9 +292,11 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
 
       <template #footer>
         <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
-          <strong>{{ MISSING_DAYS.length }} days are missing</strong> from the source and appear as
-          gaps rather than interpolated points: {{ MISSING_DAYS.join(', ') }}. They fall in one
-          11-day window in May, overlapping the dates the catch-up exports were generated.
+          <template v-if="missingDays.length">
+            <strong>{{ missingDays.length }} days are missing</strong> from the source and appear as
+            gaps rather than interpolated points: {{ [...missingDays].sort().join(', ') }}.
+          </template>
+          <template v-else>Every expected day in this range was delivered and imported.</template>
         </p>
       </template>
     </Card>
