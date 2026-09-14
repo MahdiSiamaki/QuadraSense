@@ -50,6 +50,20 @@ builder.Services.AddHostedService<LeaseRecoveryService>();
 
 var host = builder.Build();
 
+// A batch entry point into the same code the daily import uses.
+//
+//   dotnet run --project backend/src/Sqm.Ingestion -- --refresh-marts [--from d] [--to d]
+//
+// Rebuilding the historical marts with a separate SQL script would be a second implementation
+// of the same aggregates, and the two would drift the first time one was corrected.
+if (args.Contains("--refresh-marts"))
+{
+    var analytics = host.Services.GetRequiredService<IAnalyticsIngestionStore>();
+    var (from, to) = MartBackfill.ParseRange(args);
+    return await MartBackfill.RunAsync(analytics, from, to, CancellationToken.None)
+        .ConfigureAwait(false);
+}
+
 // Fail at startup, not at the first corrected file.
 //
 // Day-level idempotency is implemented as a partition drop, so the worker requires
@@ -60,3 +74,4 @@ await host.Services.GetRequiredService<IAnalyticsIngestionStore>()
     .EnsureSchemaAsync(CancellationToken.None).ConfigureAwait(false);
 
 await host.RunAsync().ConfigureAwait(false);
+return 0;

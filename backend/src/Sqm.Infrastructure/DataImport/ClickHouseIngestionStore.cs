@@ -68,6 +68,34 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
     private ClickHouseConnection CreateConnection() =>
         new(_options.ConnectionString, _httpClientFactory, ClickHouseAnalyticsStore.HttpClientName);
 
+    /// <summary>
+    /// A connection whose queries are bounded in memory and spill to disk rather than grow.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For the aggregates: the fold and the churn marts both group by a high-cardinality key, and
+    /// without a ceiling they take as much as the server will give them. The server now has its
+    /// own ceiling, so an unbounded query no longer brings the whole process down - but it does
+    /// starve everything else for as long as it runs, which on a single-node deployment means
+    /// the dashboard stops answering while a nightly job works.
+    /// </para>
+    /// <para>
+    /// The spill threshold sits well below the ceiling so a heavy GROUP BY starts writing to disk
+    /// long before it approaches being killed. Slower, and always correct - the same trade the
+    /// batch jobs make.
+    /// </para>
+    /// </remarks>
+    private ClickHouseConnection CreateBoundedConnection()
+    {
+        var connection = CreateConnection();
+
+        connection.CustomSettings["max_memory_usage"] = 2_000_000_000L;
+        connection.CustomSettings["max_bytes_before_external_group_by"] = 600_000_000L;
+        connection.CustomSettings["max_threads"] = 3;
+
+        return connection;
+    }
+
     public async Task<long> CountEventsForDateAsync(DateOnly businessDate, CancellationToken ct)
     {
         await using var connection = CreateConnection();
@@ -215,7 +243,7 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
 
     public async Task<long> FoldDayAsync(DateOnly businessDate, CancellationToken ct)
     {
-        await using var connection = CreateConnection();
+        await using var connection = CreateBoundedConnection();
         await using var command = connection.CreateCommand();
 
         // No delete first, and no replay. binding_current is a ReplacingMergeTree versioned by
@@ -265,11 +293,22 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
         // Drop before insert, every time. The marts are SummingMergeTree and ReplacingMergeTree,
         // and an insert-only refresh doubled every count in agg_device_daily once already -
         // silently, because a SummingMergeTree sums duplicates without complaint.
+        // All four day-level marts, dropped then rebuilt. Drop before insert, every time: they
+        // are SummingMergeTree and ReplacingMergeTree, and an insert-only refresh doubled every
+        // count in agg_device_daily once already - silently, because a SummingMergeTree sums
+        // duplicates without complaint.
+        //
+        // This method is the single implementation. The batch backfill runs the same code over a
+        // range of days rather than a second copy of these statements, so the marts built for
+        // the 133 historical days cannot drift from the ones a daily import builds tomorrow.
         string[] statements =
         [
             $"ALTER TABLE {_database}.agg_change_daily DROP PARTITION '{partition}'",
             $"ALTER TABLE {_database}.agg_change_summary_daily DROP PARTITION '{partition}'",
+            $"ALTER TABLE {_database}.agg_sim_change_daily DROP PARTITION '{partition}'",
+            $"ALTER TABLE {_database}.agg_device_change_daily DROP PARTITION '{partition}'",
 
+            // Change counts per TAC, for vendor- and model-level growth.
             $$"""
             INSERT INTO {{_database}}.agg_change_daily (seq, data_date, tac, label, n)
             SELECT any(seq), data_date, tac, label, count()
@@ -278,6 +317,8 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             GROUP BY data_date, tac, label
             """,
 
+            // Per-day totals, kept separate so the headline series does not have to aggregate
+            // the TAC-level table to draw one point.
             $$"""
             INSERT INTO {{_database}}.agg_change_summary_daily
                 (seq, data_date, added, removed, redundant_adds, orphan_removes,
@@ -286,11 +327,10 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
                 any(seq), data_date,
                 countIf(label = 'add')     AS added,
                 countIf(label = 'remove')  AS removed,
-                -- Left at zero here on purpose. Deriving them needs each binding's state before
-                -- the day, which is a window function over the whole event log - a different
-                -- order of cost from everything else in this statement. They are measured in
-                -- discovery (19.18% and 1.77%) and belong to the fold, which already knows the
-                -- prior state.
+                -- Left at zero on purpose. Deriving them needs each binding's state before the
+                -- day, which is a window function over the whole event log - a different order
+                -- of cost from everything else here. They are measured in discovery (19.18% and
+                -- 1.77%) and belong to the fold, which already knows the prior state.
                 0, 0,
                 countIf(imei = '000000')   AS unknown_device_rows,
                 count()                    AS rows_total
@@ -298,11 +338,53 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             WHERE data_date = {businessDate:Date}
             GROUP BY data_date
             """,
+
+            // SIM changes: a number that on this day had a remove carrying one IMSI and an add
+            // carrying a different one.
+            $$"""
+            INSERT INTO {{_database}}.agg_sim_change_daily (data_date, msisdn_changed)
+            SELECT data_date, count()
+            FROM (
+                SELECT
+                    data_date,
+                    msisdn,
+                    groupUniqArrayIf(imsi, label = 'add')    AS added_sims,
+                    groupUniqArrayIf(imsi, label = 'remove') AS removed_sims
+                FROM {{_database}}.binding_event
+                WHERE data_date = {businessDate:Date}
+                GROUP BY data_date, msisdn
+                HAVING length(added_sims) > 0
+                   AND length(removed_sims) > 0
+                   AND length(arrayFilter(x -> NOT has(removed_sims, x), added_sims)) > 0
+            )
+            GROUP BY data_date
+            """,
+
+            // Handset changes: the same shape, on IMEI. Measured over the whole window at 51.3%
+            // of subscribers, so this is the largest churn signal in the dataset.
+            $$"""
+            INSERT INTO {{_database}}.agg_device_change_daily (data_date, msisdn_changed)
+            SELECT data_date, count()
+            FROM (
+                SELECT
+                    data_date,
+                    msisdn,
+                    groupUniqArrayIf(imei, label = 'add')    AS added_devices,
+                    groupUniqArrayIf(imei, label = 'remove') AS removed_devices
+                FROM {{_database}}.binding_event
+                WHERE data_date = {businessDate:Date}
+                GROUP BY data_date, msisdn
+                HAVING length(added_devices) > 0
+                   AND length(removed_devices) > 0
+                   AND length(arrayFilter(x -> NOT has(removed_devices, x), added_devices)) > 0
+            )
+            GROUP BY data_date
+            """,
         ];
 
         foreach (var sql in statements)
         {
-            await using var connection = CreateConnection();
+            await using var connection = CreateBoundedConnection();
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
             command.CommandTimeout = 0;
@@ -345,6 +427,48 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
                 + "re-importing it is implemented as DROP PARTITION. Apply migration "
                 + "015_daily_partitioning.sql.");
         }
+    }
+
+    public async Task<IReadOnlyList<DateOnly>> GetBusinessDatesAsync(
+        DateOnly? fromDate, DateOnly? toDate, CancellationToken ct)
+    {
+        await using var connection = CreateConnection();
+        await using var command = connection.CreateCommand();
+
+        // Reads the partition list rather than the data. With one partition per day, the set of
+        // days is metadata: this answers in milliseconds where a DISTINCT over the column would
+        // read a billion rows.
+        var clauses = new List<string>();
+        if (fromDate is { } lower)
+        {
+            clauses.Add($"partition >= '{lower:yyyy-MM-dd}'");
+        }
+
+        if (toDate is { } upper)
+        {
+            clauses.Add($"partition <= '{upper:yyyy-MM-dd}'");
+        }
+
+        var where = clauses.Count > 0 ? " AND " + string.Join(" AND ", clauses) : string.Empty;
+
+        command.CommandText =
+            $"SELECT DISTINCT partition FROM system.parts WHERE database = '{_database}' "
+            + $"AND table = 'binding_event' AND active{where} ORDER BY partition";
+
+        var dates = new List<DateOnly>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            if (DateOnly.TryParseExact(
+                reader.GetString(0), "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var date))
+            {
+                dates.Add(date);
+            }
+        }
+
+        return dates;
     }
 
     public async Task<int> GetMaxSequenceAsync(CancellationToken ct)

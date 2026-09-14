@@ -93,6 +93,10 @@ public interface IAnalyticsIngestionStore
     /// </remarks>
     Task EnsureSchemaAsync(CancellationToken ct);
 
+    /// <summary>Every business date present in the event log, oldest first.</summary>
+    Task<IReadOnlyList<DateOnly>> GetBusinessDatesAsync(
+        DateOnly? fromDate, DateOnly? toDate, CancellationToken ct);
+
     /// <summary>Highest sequence number currently in the event log.</summary>
     Task<int> GetMaxSequenceAsync(CancellationToken ct);
 
