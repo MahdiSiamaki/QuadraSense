@@ -1,14 +1,29 @@
 <script setup lang="ts">
 import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { computed } from 'vue'
 import { useTheme } from '@/lib/theme'
+import { useFreshness } from '@/features/imports/useImportQueries'
+import { formatDate } from '@/lib/format'
 
 const { isDark, toggle } = useTheme()
 const route = useRoute()
 
 const nav = [
   { to: '/', label: 'Dashboard' },
+  { to: '/imports', label: 'Imports' },
   { to: '/lookup', label: 'Lookup' },
 ]
+
+/*
+  The header carries data freshness, not a clock.
+
+  It used to read "delivery sequence - no source dates", which was true of the first delivery
+  and stopped being true when the source began dating its files. A header that describes the
+  data as it was is worse than one that says nothing, so this now reads the real latest
+  imported day.
+*/
+const freshness = useFreshness()
+const sqm = computed(() => freshness.data.value?.find((f) => f.sourceCode === 'SQM') ?? null)
 </script>
 
 <template>
@@ -51,13 +66,24 @@ const nav = [
         </nav>
 
         <div class="ml-auto flex items-center gap-3">
-          <!--
-            The data has no dates, so the product says so rather than showing a
-            fabricated "as of" timestamp. Honest beats reassuring.
-          -->
-          <span class="hidden text-[var(--text-2xs)] text-[var(--c-text-muted)] sm:inline">
-            delivery sequence · no source dates
-          </span>
+          <RouterLink
+            v-if="sqm?.latestBusinessDate"
+            to="/imports"
+            class="hidden items-center gap-1.5 text-[var(--text-2xs)] text-[var(--c-text-muted)] hover:text-[var(--c-text-secondary)] sm:inline-flex"
+            :title="`Latest successfully imported day. ${sqm.missingBusinessDates.length} expected day(s) missing.`"
+          >
+            <span
+              class="size-1.5 rounded-full"
+              :style="{
+                backgroundColor:
+                  sqm.missingBusinessDates.length || (sqm.daysBehind ?? 0) > 45
+                    ? 'var(--c-warning)'
+                    : 'var(--c-success)',
+              }"
+              aria-hidden="true"
+            />
+            data through {{ formatDate(sqm.latestBusinessDate) }}
+          </RouterLink>
 
           <button
             type="button"

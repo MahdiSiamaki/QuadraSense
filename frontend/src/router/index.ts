@@ -12,6 +12,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Device population' },
   },
   {
+    path: '/imports',
+    name: 'imports',
+    component: () => import('@/features/imports/ImportCenterPage.vue'),
+    meta: { title: 'Import Center' },
+  },
+  {
+    path: '/imports/:jobId(\d+)',
+    name: 'import-detail',
+    component: () => import('@/features/imports/ImportDetailPage.vue'),
+    meta: { title: 'Import' },
+  },
+  {
     path: '/lookup',
     name: 'lookup',
     component: () => import('@/features/lookup/LookupPage.vue'),

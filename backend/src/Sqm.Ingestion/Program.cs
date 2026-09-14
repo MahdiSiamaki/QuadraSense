@@ -39,9 +39,11 @@ builder.Services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName, client =
 builder.Services.AddSingleton<IImportJobRepository, PostgresImportJobRepository>();
 builder.Services.AddSingleton<IImportFileStore, DirectoryImportFileStore>();
 builder.Services.AddSingleton<IAnalyticsIngestionStore, ClickHouseIngestionStore>();
+builder.Services.AddSingleton<ITacVersionStore, ClickHouseTacVersionStore>();
 
 // One processor per data source, resolved by source code at claim time.
 builder.Services.AddSingleton<IImportProcessor, SqmDailyProcessor>();
+builder.Services.AddSingleton<IImportProcessor, TacSnapshotProcessor>();
 
 builder.Services.AddHostedService<ImportWorker>();
 builder.Services.AddHostedService<LeaseRecoveryService>();

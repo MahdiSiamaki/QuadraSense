@@ -80,3 +80,94 @@ export function formatSequence(sequence: number, dataDate: string | null): strin
   }
   return `#${sequence}`
 }
+
+/** 1073741824 -> "1.0 GB". Binary units, because that is what a file system reports. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`
+}
+
+/**
+ * A duration in words, at one level of precision.
+ *
+ * "4m 12s" rather than "4 minutes and 12.31 seconds": the reader of an import list is
+ * scanning for outliers, and every extra digit is one more thing to skip past.
+ */
+export function formatDuration(ms: number | null): string {
+  if (ms === null) return '—'
+  if (ms < 1000) return `${ms} ms`
+
+  const seconds = Math.round(ms / 1000)
+  if (seconds < 60) return `${seconds}s`
+
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`
+
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
+
+const dateTime = new Intl.DateTimeFormat(LOCALE, {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+
+const timeOnly = new Intl.DateTimeFormat(LOCALE, {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+})
+
+/** "14 Jun 2026, 08:31" — absolute, for anything that will be quoted or compared. */
+export function formatDateTime(iso: string | null): string {
+  return iso ? dateTime.format(new Date(iso)) : '—'
+}
+
+/** "08:31:07" — for a timeline where the date is already established by context. */
+export function formatTime(iso: string): string {
+  return timeOnly.format(new Date(iso))
+}
+
+/** "3 Feb 2026" — a business date, which has no time of day to show. */
+export function formatDate(iso: string | null): string {
+  if (!iso) return '—'
+  return new Intl.DateTimeFormat(LOCALE, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(`${iso}T00:00:00Z`))
+}
+
+const relative = new Intl.RelativeTimeFormat(LOCALE, { numeric: 'auto' })
+
+/**
+ * "2 hours ago". Paired with an absolute time in a tooltip, never used alone.
+ *
+ * Relative time answers "is this current?" at a glance, which is the question the freshness
+ * widgets exist to answer. It is a poor answer to "exactly when?", which is why the absolute
+ * form is always one hover away.
+ */
+export function formatRelative(iso: string | null, now: Date = new Date()): string {
+  if (!iso) return 'never'
+
+  const seconds = (new Date(iso).getTime() - now.getTime()) / 1000
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ['year', 31_536_000],
+    ['month', 2_592_000],
+    ['day', 86_400],
+    ['hour', 3600],
+    ['minute', 60],
+  ]
+
+  for (const [unit, size] of units) {
+    if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit)
+  }
+
+  return 'just now'
+}

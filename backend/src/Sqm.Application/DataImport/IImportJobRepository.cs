@@ -167,6 +167,43 @@ public interface IImportJobRepository
     /// </summary>
     Task<bool> RequestCancellationAsync(long jobId, string actor, CancellationToken ct);
 
+    // -----------------------------------------------------------------------
+    // TAC versions
+    // -----------------------------------------------------------------------
+
+    /// <summary>Records a loaded TAC version as READY for review.</summary>
+    /// <remarks>
+    /// READY rather than DRAFT: by the time this is called the worker has loaded, checked and
+    /// diffed the version, so there is nothing left to do but decide. A DRAFT status would
+    /// suggest work is still outstanding.
+    /// </remarks>
+    Task CreateTacVersionAsync(
+        long jobId,
+        int analyticsVersionId,
+        string versionLabel,
+        DateOnly? datasetDate,
+        int rowCount,
+        int? diffAgainstAnalyticsVersionId,
+        TacVersionDiff? diff,
+        CancellationToken ct);
+
+    /// <summary>Every TAC version, newest first.</summary>
+    Task<IReadOnlyList<TacVersion>> ListTacVersionsAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Makes one version active and demotes the one it replaces.
+    /// </summary>
+    /// <returns>
+    /// What changed, or <see langword="null"/> when there is no such version. The analytics
+    /// version number comes back so the caller can point the analytics store at it.
+    /// </returns>
+    Task<TacActivationResult?> ActivateTacVersionAsync(
+        long tacVersionId, string actor, CancellationToken ct);
+
+    /// <summary>Undoes an activation whose analytics-side switch then failed.</summary>
+    Task RevertTacActivationAsync(
+        long tacVersionId, long? previouslyActiveId, string actor, string reason, CancellationToken ct);
+
     /// <summary>Records an action in the append-only audit log.</summary>
     Task WriteAuditAsync(
         string actor,

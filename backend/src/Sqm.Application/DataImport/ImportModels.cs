@@ -289,3 +289,16 @@ public sealed record WorkerHealth(
     DateTimeOffset? OldestQueuedAt,
     int ActiveWorkers,
     int StaleLeases);
+
+/// <summary>What an activation changed.</summary>
+/// <param name="TacVersionId">The operational row that is now active.</param>
+/// <param name="AnalyticsVersionId">The version number the analytics store must point at.</param>
+/// <param name="VersionLabel">Its human label.</param>
+/// <param name="PreviousTacVersionId">The row that was demoted, if any.</param>
+/// <param name="PreviousVersionLabel">Its label.</param>
+public sealed record TacActivationResult(
+    long TacVersionId,
+    int AnalyticsVersionId,
+    string VersionLabel,
+    long? PreviousTacVersionId,
+    string? PreviousVersionLabel);

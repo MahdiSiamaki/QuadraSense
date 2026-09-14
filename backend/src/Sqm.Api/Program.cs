@@ -56,6 +56,7 @@ builder.Services.AddSingleton<IDeviceAnalyticsStore, ClickHouseAnalyticsStore>()
 // alone, so a bug in an endpoint cannot drop a day's data.
 builder.Services.AddSingleton<IImportJobRepository, PostgresImportJobRepository>();
 builder.Services.AddSingleton<IImportFileStore, DirectoryImportFileStore>();
+builder.Services.AddSingleton<ITacVersionStore, ClickHouseTacVersionStore>();
 builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -109,6 +110,7 @@ app.MapHealthChecks("/health/ready", new()
 
 app.MapDashboardEndpoints();
 app.MapImportEndpoints();
+app.MapTacEndpoints();
 app.MapLookupEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);

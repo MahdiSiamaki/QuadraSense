@@ -11,6 +11,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Sqm.Application.Tests/Sqm.Application.Tests.csproj" />
     <Project Path="tests/Sqm.Domain.Tests/Sqm.Domain.Tests.csproj" />
+    <Project Path="tests/Sqm.Ingestion.Tests/Sqm.Ingestion.Tests.csproj" />
     <Project Path="tests/Sqm.Integration.Tests/Sqm.Integration.Tests.csproj" />
   </Folder>
 </Solution>
