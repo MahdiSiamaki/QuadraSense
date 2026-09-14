@@ -49,4 +49,14 @@ builder.Services.AddHostedService<ImportWorker>();
 builder.Services.AddHostedService<LeaseRecoveryService>();
 
 var host = builder.Build();
+
+// Fail at startup, not at the first corrected file.
+//
+// Day-level idempotency is implemented as a partition drop, so the worker requires
+// binding_event to be partitioned by day. On a monthly-partitioned table the same statement
+// removes a whole month - a failure that would look like a successful import and be noticed
+// weeks later, if at all.
+await host.Services.GetRequiredService<IAnalyticsIngestionStore>()
+    .EnsureSchemaAsync(CancellationToken.None).ConfigureAwait(false);
+
 await host.RunAsync().ConfigureAwait(false);

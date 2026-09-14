@@ -213,6 +213,140 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
         return 0;
     }
 
+    public async Task<long> FoldDayAsync(DateOnly businessDate, CancellationToken ct)
+    {
+        await using var connection = CreateConnection();
+        await using var command = connection.CreateCommand();
+
+        // No delete first, and no replay. binding_current is a ReplacingMergeTree versioned by
+        // last_change_seq, so a row written for a later day wins over an earlier one on merge -
+        // which is exactly the fold, expressed as a write rather than as a computation.
+        command.CommandText = $$"""
+            INSERT INTO {{_database}}.binding_current
+                (msisdn, imsi, imei, active, last_change_seq, last_change_date)
+            SELECT
+                msisdn, imsi, imei,
+                argMax(label, seq) = 'add' AS active,
+                max(seq)                   AS last_change_seq,
+                argMax(data_date, seq)     AS last_change_date
+            FROM {{_database}}.binding_event
+            WHERE data_date = {businessDate:Date}
+            GROUP BY msisdn, imsi, imei
+            """;
+
+        AddDateParameter(command, "businessDate", businessDate);
+        command.CommandTimeout = 0;
+
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+        return await CountFoldedAsync(businessDate, ct).ConfigureAwait(false);
+    }
+
+    private async Task<long> CountFoldedAsync(DateOnly businessDate, CancellationToken ct)
+    {
+        await using var connection = CreateConnection();
+        await using var command = connection.CreateCommand();
+
+        command.CommandText = $$"""
+            SELECT uniqExact(msisdn, imsi, imei) FROM {{_database}}.binding_event
+            WHERE data_date = {businessDate:Date}
+            """;
+
+        AddDateParameter(command, "businessDate", businessDate);
+        var scalar = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return Convert.ToInt64(scalar, CultureInfo.InvariantCulture);
+    }
+
+    public async Task RefreshChangeMartsForDayAsync(
+        DateOnly businessDate, int sequence, CancellationToken ct)
+    {
+        var partition = businessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        // Drop before insert, every time. The marts are SummingMergeTree and ReplacingMergeTree,
+        // and an insert-only refresh doubled every count in agg_device_daily once already -
+        // silently, because a SummingMergeTree sums duplicates without complaint.
+        string[] statements =
+        [
+            $"ALTER TABLE {_database}.agg_change_daily DROP PARTITION '{partition}'",
+            $"ALTER TABLE {_database}.agg_change_summary_daily DROP PARTITION '{partition}'",
+
+            $$"""
+            INSERT INTO {{_database}}.agg_change_daily (seq, data_date, tac, label, n)
+            SELECT any(seq), data_date, tac, label, count()
+            FROM {{_database}}.binding_event
+            WHERE data_date = {businessDate:Date}
+            GROUP BY data_date, tac, label
+            """,
+
+            $$"""
+            INSERT INTO {{_database}}.agg_change_summary_daily
+                (seq, data_date, added, removed, redundant_adds, orphan_removes,
+                 unknown_device_rows, rows_total)
+            SELECT
+                any(seq), data_date,
+                countIf(label = 'add')     AS added,
+                countIf(label = 'remove')  AS removed,
+                -- Left at zero here on purpose. Deriving them needs each binding's state before
+                -- the day, which is a window function over the whole event log - a different
+                -- order of cost from everything else in this statement. They are measured in
+                -- discovery (19.18% and 1.77%) and belong to the fold, which already knows the
+                -- prior state.
+                0, 0,
+                countIf(imei = '000000')   AS unknown_device_rows,
+                count()                    AS rows_total
+            FROM {{_database}}.binding_event
+            WHERE data_date = {businessDate:Date}
+            GROUP BY data_date
+            """,
+        ];
+
+        foreach (var sql in statements)
+        {
+            await using var connection = CreateConnection();
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandTimeout = 0;
+
+            if (sql.Contains("businessDate", StringComparison.Ordinal))
+            {
+                AddDateParameter(command, "businessDate", businessDate);
+            }
+
+            await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    public async Task EnsureSchemaAsync(CancellationToken ct)
+    {
+        await using var connection = CreateConnection();
+        await using var command = connection.CreateCommand();
+
+        command.CommandText =
+            $"SELECT partition_key FROM system.tables WHERE database = '{_database}' "
+            + "AND name = 'binding_event'";
+
+        var key = await command.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
+
+        if (key is null)
+        {
+            throw new InvalidOperationException(
+                $"{_database}.binding_event does not exist. Apply the analytics migrations first.");
+        }
+
+        // Day-level idempotency is a partition drop. On a monthly-partitioned table the same
+        // statement removes a whole month, so this refuses to start rather than discovering it
+        // when a corrected file for one day deletes the other thirty.
+        if (!key.Contains("data_date", StringComparison.Ordinal)
+            || key.Contains("toYYYYMM", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"{_database}.binding_event is partitioned by '{key}'. The import worker needs it "
+                + "partitioned by day (PARTITION BY data_date), because removing a day before "
+                + "re-importing it is implemented as DROP PARTITION. Apply migration "
+                + "015_daily_partitioning.sql.");
+        }
+    }
+
     public async Task<int> GetMaxSequenceAsync(CancellationToken ct)
     {
         await using var connection = CreateConnection();

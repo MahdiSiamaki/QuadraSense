@@ -153,6 +153,27 @@ internal sealed partial class SqmDailyProcessor(
                 businessDate, sequence, filtered, null, ct).ConfigureAwait(false);
         }
 
+        // ---------------------------------------------------------------- fold
+        // The import is not finished when the rows land. Current state and the marts are derived
+        // from the event log, and until they are rebuilt the dashboard is showing yesterday while
+        // the event log holds today - the most confusing state the system can be in, because
+        // nothing on screen says so.
+        await context.EnterStageAsync(
+            ImportJobStatus.Aggregating,
+            $"Folding {businessDate:yyyy-MM-dd} into current state", ct).ConfigureAwait(false);
+
+        var folded = await analytics.FoldDayAsync(businessDate, ct).ConfigureAwait(false);
+
+        await context.NoteAsync(
+            "info",
+            $"{folded:N0} bindings had their state updated by this day. Only the new day was "
+            + "aggregated, not the full history - the last event decides a binding's state, so "
+            + "replaying the rest would produce the same answer at a thousand times the cost.",
+            new { bindingsTouched = folded }, ct).ConfigureAwait(false);
+
+        await analytics.RefreshChangeMartsForDayAsync(businessDate, sequence, ct)
+            .ConfigureAwait(false);
+
         // ---------------------------------------------------------------- verify
         await context.EnterStageAsync(
             ImportJobStatus.Finalizing, "Verifying what landed", ct).ConfigureAwait(false);

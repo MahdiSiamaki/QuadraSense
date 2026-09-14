@@ -393,7 +393,125 @@ here that changes what every user sees.
 
 ---
 
-## 12. Still open
+## 12. What was built, and what the build changed
+
+The design above survived implementation mostly intact. Four things did not, and each was
+changed for a measured reason rather than a preference.
+
+### D5 — The fold is incremental, not a replay
+
+The design said current state is rebuilt by folding the event log. That is what the backfill
+does, and on the real data it takes **about 45 minutes**, in sixteen chunks, because an
+aggregate over 1.05 billion rows grouping into ~227 million bindings does not fit in the
+development machine's memory. Two attempts failed before the chunked one worked:
+
+| Attempt | Settings | Result |
+|---|---|---|
+| 1 | `optimize_aggregation_in_order=1`, 2.5 GB ceiling | `MEMORY_LIMIT_EXCEEDED` at 2.33 GiB. Aggregation-in-order **disables** spill-to-disk, so the hash table grew unbounded. |
+| 2 | external aggregation, 3 GB ceiling, 900 MB spill | Spilled correctly, then exceeded the ceiling in the **merge** phase. |
+| 3 | sixteen MSISDN ranges, 2.2 GB ceiling | Worked. `msisdn` leads the sort key, so a range predicate prunes through the primary index and the sixteen chunks cost one full scan between them. |
+
+A daily import does not do any of that. It folds **only the new day**:
+
+```sql
+INSERT INTO binding_current
+SELECT msisdn, imsi, imei, argMax(label, seq) = 'add', max(seq), argMax(data_date, seq)
+FROM binding_event WHERE data_date = ? GROUP BY msisdn, imsi, imei
+```
+
+This is correct because `binding_current` is a `ReplacingMergeTree` versioned by
+`last_change_seq`: the new day carries the highest sequence, so its row wins on merge over
+anything written before it. Nothing is deleted, nothing is replayed.
+
+It rests entirely on the set semantics proven in Phase 0 — a binding's final state is decided
+by its last event alone, verified over 8,062,257 transitions with zero double-adds. Without
+that proof, the incremental fold would be unsound and the 45-minute replay would be the only
+correct option. This is the clearest case in the project of a discovery measurement paying for
+itself in architecture.
+
+### D6 — Daily partitioning, now required rather than recommended
+
+Section 6 argued for it. It is now a hard dependency: `RemoveDayAsync` is implemented as
+`DROP PARTITION`, which on a monthly-partitioned table would remove a whole month. The worker
+therefore **checks the partition key at startup and refuses to run** if it is wrong, rather
+than discovering it when a corrected file for one day silently deletes the other thirty
+(`015_daily_partitioning.sql`).
+
+### D7 — Validation reads the file twice, and the second read has two forms
+
+A single pass would mean either writing rows before knowing the file is sound, or parsing
+eight million rows into the worker so they can be inspected and re-serialised. So the file is
+read twice: once to validate and count, once to load.
+
+The second read has two forms, and the first decides which:
+
+* **No rejected rows** — the common case, and the case for every file delivered so far — the
+  file is copied to the socket verbatim, at disk speed.
+* **Some rejected rows** the worker writes the CSV itself, line by line, through a pipe, so
+  the good rows from a partly-bad file can still be imported. Slower, and only paid when it
+  buys something.
+
+The accept/warn/reject split follows the measured data, not a convention. `000000` is the
+source's unknown-device sentinel on 8,776,237 bindings and is **accepted silently**; 31,209
+bindings carry an IMEI that is neither 14 digits nor the sentinel and are **imported with a
+warning**; only a non-numeric MSISDN or IMSI is **rejected**, because those columns are UInt64
+in the analytics store and such a row cannot be represented at all.
+
+A file where more than 5% of rows are rejected is quarantined whole rather than partly
+imported. That usually means the format changed or the wrong file was sent, and importing the
+remainder would produce a day that looks complete and is not.
+
+### D8 — TAC versions live in one table behind a view
+
+`sqm.tac` is now a view onto whichever version `sqm.tac_active` names, with every version in
+`sqm.tac_all` partitioned by `version_id`. Three consequences, all of which the activation
+workflow needs:
+
+* Activation is a one-row insert. It is instant and atomic from a reader's point of view.
+* Rollback is activation pointed at an earlier version — the same operation, no special path.
+* A failed load is undone by dropping its own partition, which cannot touch a version that is
+  fine.
+
+Every existing query against `sqm.tac` kept working unchanged.
+
+Activation crosses two databases with no transaction spanning them, so the order is chosen for
+which failure is survivable: **PostgreSQL commits first**, then the analytics store switches.
+If the switch fails, the operational record is reverted and the caller is told plainly that
+nothing changed. The opposite order would change the manufacturer shown on every screen before
+anything recorded that it had happened.
+
+### What the platform is made of
+
+| Piece | Where |
+|---|---|
+| Operational schema | `db/operational/migrations/001`, `002` |
+| Analytics schema | `db/analytics/migrations/014` (TAC versioning), `015` (daily partitioning) |
+| Migration runner | `backend/src/Sqm.Migrator` |
+| Job store and queue | `backend/src/Sqm.Infrastructure/DataImport/PostgresImportJobRepository*.cs` |
+| File store | `.../DirectoryImportFileStore.cs` |
+| Analytics writes | `.../ClickHouseIngestionStore.cs`, `.../ClickHouseTacVersionStore.cs` |
+| Worker | `backend/src/Sqm.Ingestion` |
+| API | `backend/src/Sqm.Api/Endpoints/ImportEndpoints.cs`, `TacEndpoints.cs` |
+| Import Center | `frontend/src/features/imports` |
+| Freshness on the dashboard | `frontend/src/features/dashboard/DataFreshnessCard.vue` |
+| Backfill of the pre-platform load | `db/operational/jobs/backfill_bulk_load_history.py` |
+
+### Three guarantees the database enforces, not the application
+
+```sql
+CREATE UNIQUE INDEX ux_import_file_sha ON imports.import_file (source_code, sha256);
+CREATE UNIQUE INDEX ux_import_job_effective ON imports.import_job (source_code, business_date)
+    WHERE is_effective;
+CREATE UNIQUE INDEX ux_tac_version_active ON imports.tac_version ((status = 'ACTIVE'))
+    WHERE status = 'ACTIVE';
+```
+
+Each replaces a check that a race could defeat. Two concurrent uploads of the same file both
+pass an application-level existence check; only one can win an index.
+
+---
+
+## 13. Still open
 
 **A second TAC file.** Only one exists (`DeviceDatabase_TAC1Sep2026.csv`), so the diff and
 activation flow can be built and unit-tested against synthetic versions, but not verified
