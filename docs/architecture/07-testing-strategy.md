@@ -114,9 +114,12 @@ The plan above is the target. This is the state of it.
 
 | Project | Tests | What it covers |
 |---|---:|---|
-| `Sqm.Domain.Tests` | 19 | The binding fold and the identifier rules. Every case cites a discovery measurement. |
+| `Sqm.Domain.Tests` | 62 | The binding fold and the identifier rules. Every case cites a discovery measurement. |
 | `Sqm.Ingestion.Tests` | 22 | Row validation and schema-change classification. |
-| `Sqm.Integration.Tests` | 6 | The import queue's guarantees, against a real PostgreSQL. |
+| `Sqm.Integration.Tests` | 32 | The import queue's guarantees, the authorisation rule, and endpoint coverage - against a real PostgreSQL. |
+| `Sqm.Application.Tests` | 1 | Placeholder. |
+
+**117 passing.**
 
 ### The integration tests earned their cost on the first run
 
@@ -172,24 +175,63 @@ it; a mart that disagrees with the headline figure shows a plausible number and 
 
 ---
 
+### The test that makes "enforced in the backend" checkable
+
+The brief was explicit: do not merely hide permissions in the frontend. The difficulty with that
+requirement is that the failure mode is an *absence* - somebody adds an endpoint and does not add
+the authorisation call - and absences are exactly what code review misses.
+
+`EndpointAuthorizationTests` enumerates the application's own `EndpointDataSource`, which is the
+list the router actually serves from rather than one maintained by hand, and fails on any route
+that is neither authorised nor on a four-entry allow-list where each entry carries the reason it
+has to be anonymous. It also asserts that the fallback policy is non-null, which is what turns a
+forgotten `RequireAuthorization` into a 401 rather than an open door.
+
+Three more assertions sit alongside it: that every permission an endpoint names exists in the
+catalogue, that the catalogue and the C# constants agree in both directions against the real
+database, and that the four routes touching subscriber data name the permission that guards them.
+
+### The authorisation rule is tested against PostgreSQL, as the application role
+
+`AccessControlTests` connects as `sqm_app` - the least-privilege role - not as the owner.
+Connecting as the owner would leave the append-only guarantee untested while appearing to pass;
+as it is, the suite asserts that `UPDATE` and `DELETE` on both audit tables are refused with
+SQLSTATE 42501.
+
+The rule itself is written twice - as SQL for the request pipeline, as C# for the user detail
+page's provenance - so one test asserts they agree for a user holding a role, a direct grant and a
+direct deny at the same time. If they ever diverged, the screen would be describing a different
+system from the one enforcing access.
+
+On the first run the password policy rejected the fixture's own passwords: "TestPassword!Long12345"
+for accounts named "Test something". The rule was right and the test data was wrong, which is the
+better way round.
+
+---
+
 ### Still missing
 
-- **API contract tests.** Waiting on authentication, since most of what they assert is authz.
+- **API contract tests.** The authorisation half is now covered; the shape-of-the-payload half is
+  not, and waits on openapi-typescript generating the client types.
 - **Frontend component tests.** The four async states and filter→URL round-tripping.
-- **E2E.** The short critical-path list in section 4.
+- **E2E.** The short critical-path list in section 4. The sign-in through deny-a-permission path
+  was walked by hand in a browser and is written up in the commit; it is not automated.
 - **The reconciliation test of section 2**, as an automated job rather than a manual query.
+- **Upload security cases** from section 5: path traversal, oversized file, wrong content type.
 
 ---
 
 ## 5. Security tests
 
-- Every endpoint asserted to reject unauthenticated requests.
-- Each role asserted against every endpoint, including the negatives (Viewer must be denied lookup).
-- Upload: path traversal, oversized file, wrong content type, zip bomb.
-- Injection: parameterisation verified; filters rejecting non-allow-listed column names.
-- Audit: every audited action asserted to write exactly one entry, and the audit role asserted to be unable
-  to `UPDATE` or `DELETE`.
-- Assertion that no log line and no URL ever contains an MSISDN, IMSI or IMEI.
+| | Status |
+|---|---|
+| Every endpoint rejects unauthenticated requests | **Done** - by route enumeration, not by a hand-kept list |
+| Roles asserted against endpoints, negatives included | **Done** - the seeded roles are asserted to hold and to lack specific permissions; Viewer is asserted not to have `lookup.subscriber` |
+| Audit role cannot `UPDATE` or `DELETE` | **Done** - asserted against the running database as that role |
+| Lockout, timing equality, session revocation | **Done** |
+| Injection: parameterisation, allow-listed columns | Partly - every statement is parameterised and sorts come from enums, but nothing asserts it |
+| Upload: path traversal, oversized file, wrong content type, zip bomb | Not yet |
+| No log line or URL ever contains an MSISDN, IMSI or IMEI | Not yet - the rule is followed and unenforced |
 
 ---
 

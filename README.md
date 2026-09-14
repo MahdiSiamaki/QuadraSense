@@ -4,8 +4,10 @@ Analytics platform for mobile device / SIM / subscriber binding data, enriched w
 device database.
 
 > **Status: Phase 3–4.** The data platform is loaded and the application runs against it. The
-> import platform — upload, queue, worker, validation, TAC versioning — is built and tested;
-> authentication is not yet wired up.
+> import platform — upload, queue, worker, validation, TAC versioning — is built and tested, and
+> so is identity: local sign-in, server-side sessions, permission-based RBAC and an append-only
+> audit trail. Every endpoint requires a permission, and a test enumerates the router to prove
+> none escapes it.
 
 ---
 
@@ -89,7 +91,28 @@ Forward-only. The runner refuses to start if an already-applied migration's chec
 an edited migration is a different migration, and the database it ran against no longer matches the
 repository.
 
-### 4. The application
+### 4. Grants, and the first administrator
+
+```bash
+psql -U sqm -d sqm -v app_password="a-strong-password" \
+     -f db/operational/grants/003_least_privilege.sql
+```
+
+Creates the `sqm_app` role the application connects as. It holds INSERT and SELECT on the audit
+tables and nothing else, which is what makes the audit trail append-only in fact rather than by
+convention — `UPDATE` and `DELETE` on it are refused by PostgreSQL.
+
+```bash
+SQM_BOOTSTRAP_PASSWORD='...' \
+dotnet run --project backend/src/Sqm.Migrator -- \
+  --create-admin --username admin --display-name "System Administrator"
+```
+
+Refuses to run if any active user can already manage users and roles. The password is read from
+stdin or the environment, never from an argument — arguments appear in shell history and in the
+process list. Everyone else is created from the Users page.
+
+### 5. The application
 
 ```bash
 dotnet run --project backend/src/Sqm.Api        # API on :8080
@@ -100,7 +123,7 @@ cd frontend && npm install && npm run dev       # UI on :5173
 The worker checks the analytics schema at startup and refuses to run against the wrong partition
 key, because day-level idempotency is implemented as a partition drop.
 
-### 5. Batch operations
+### 6. Batch operations
 
 The worker doubles as the batch entry point, so the historical jobs and the daily import run the
 same code rather than two implementations that can drift.
@@ -133,16 +156,22 @@ collide with a single merge of the 25 GiB event log, which can hold 4 GiB. Merge
 resumed afterwards, including when the job fails. See
 `docs/architecture/11-clickhouse-memory.md`.
 
-### 6. Tests
+### 7. Tests
 
 ```bash
 dotnet test backend/Sqm.slnx
 ```
 
-Integration tests run against a real PostgreSQL and **skip with a reason** when none is reachable,
-rather than failing. They found three bugs a mocked repository could not have: Dapper cannot bind
-`DateOnly` at all, `smallint` columns do not match `int` parameters, and Npgsql surfaces
-`timestamptz` as `DateTime` where the models use `DateTimeOffset`.
+117 tests. Integration tests run against a real PostgreSQL and **skip with a reason** when none is
+reachable, rather than failing. They connect as `sqm_app`, not as the owner: connecting as the
+owner would leave the append-only guarantee untested while appearing to pass.
+
+They have earned it repeatedly. Three bugs a mocked repository could not have found: Dapper cannot
+bind `DateOnly` at all, `smallint` columns do not match `int` parameters, and Npgsql surfaces
+`timestamptz` as `DateTime` where the models use `DateTimeOffset`. Three more from the identity
+work: Dapper strips underscores when mapping to properties but not when matching a constructor,
+Npgsql reports a `text[]` column as `System.Array`, and a non-nullable `int` is a *required* query
+parameter to a minimal API.
 
 ## Repository layout
 
@@ -159,6 +188,7 @@ docs/
     07-testing-strategy.md         what is tested and why
     09-import-platform.md          the import platform, design and build
     11-clickhouse-memory.md        container memory: what went wrong and what the settings mean
+    12-identity-and-access.md      how auth, RBAC and audit are built, and how to operate them
   adr/             Architecture Decision Records
 backend/
   src/Sqm.Domain          the binding fold and identifier rules
@@ -167,10 +197,13 @@ backend/
   src/Sqm.Api            minimal-API endpoints
   src/Sqm.Ingestion      the import worker
   src/Sqm.Migrator       forward-only schema migrator for both stores
-frontend/          Vue 3 SPA: dashboard, Import Center, subscriber lookup
+frontend/          Vue 3 SPA: dashboard, Import Center, lookup, users, roles, audit
 db/
   analytics/       ClickHouse migrations and batch jobs
-  operational/     PostgreSQL migrations and the backfill of the pre-platform load
+  operational/
+    migrations/    PostgreSQL migrations
+    grants/        the least-privilege role, and what makes the audit log append-only
+    jobs/          the backfill of the pre-platform load
 infra/             the development environment as a compose file
 tools/
   profiling/       reproducible data-profiling scripts (DuckDB)
@@ -186,7 +219,7 @@ tools/
 | [ADR-003](docs/adr/ADR-003-analytics-store.md) | Analytics store: **ClickHouse** — 26–35× on dashboard shapes, 3.4× smaller | Accepted |
 | [ADR-004](docs/adr/ADR-004-ingestion-strategy.md) | Ingestion: immutable event log, SHA-256 idempotency, TAC joined at query time | Accepted |
 | [ADR-005](docs/adr/ADR-005-frontend-architecture.md) | Frontend: **Vue 3** + Vite + Tailwind + headless primitives | Accepted |
-| ADR-006 | Authentication | Pending |
+| [ADR-006](docs/adr/ADR-006-authentication-and-access-control.md) | Auth: **local accounts, server-side sessions, permission-based RBAC** | Accepted |
 | ADR-007 | Deployment | Pending infrastructure decision |
 
 Every one of these was decided against measurement on the real dataset, not on reputation. Where a

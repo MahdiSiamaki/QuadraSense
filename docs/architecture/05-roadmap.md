@@ -21,7 +21,7 @@ undated events into a state that reconciles. Everything else is well-understood 
 | 2.5 | Health / readiness / liveness endpoints | container orchestration can act on them |
 | 2.6 | Test infrastructure: unit, integration with real containers | `dotnet test` runs green from a clean clone |
 | 2.7 | CI: lint, type check, unit, integration, build, dependency scan | pipeline fails on high/critical vulnerabilities |
-| 2.8 | Authentication foundation (roles, session, RBAC middleware) | an unauthenticated request cannot reach any data endpoint |
+| 2.8 | Authentication foundation (roles, session, RBAC middleware) | **Done.** An unauthenticated request cannot reach any data endpoint, and `EndpointAuthorizationTests` enumerates the router to prove it rather than asserting it |
 
 **Exit criterion:** a new developer is productive in under 30 minutes from `git clone`.
 
@@ -73,7 +73,7 @@ reprocessing, late data, empty file, very large file.
 | # | Deliverable |
 |---|---|
 | 4.1 | Design system: tokens, typography, spacing, the four async states |
-| 4.2 | App shell: navigation, auth flow, error boundaries |
+| 4.2 | App shell: navigation, auth flow, error boundaries. **Done**, including permission-filtered navigation, the forced password change, and a no-access page that names the permission to ask for |
 | 4.3 | Dashboard: KPI cards, time series, distributions, top-N |
 | 4.4 | Global filters with URL state, shareable links |
 | 4.5 | Virtualised server-paginated tables |
@@ -136,12 +136,11 @@ flowchart LR
     Q1["Q1 — snapshot vs union"] -.affects.-> P3["Phase 3 reconciliation tolerance"]
     INF["Infrastructure decision"] -.blocks.-> P6["Phase 6 deployment"]
     INF -.affects.-> ADR3["ADR-003 final sizing"]
-    Q9["Q9 — auth mechanism"] -.blocks.-> P28["2.8 authentication"]
     P3 --> P4["Phase 4"]
     P2["Phase 2"] --> P3
     P4 --> P5["Phase 5"] --> P6
 ```
 
-**None of these block starting Phase 2.** Q9 is needed before 2.8 completes; Q1 affects only the tolerance of
+**None of these block starting Phase 2.** Q9 is answered and 2.8 is built; Q1 affects only the tolerance of
 the reconciliation assertion; Q2 affects the axis label, not the schema; the infrastructure decision is needed
 by Phase 6.

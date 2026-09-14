@@ -1,6 +1,9 @@
 # Security Model
 
-**Status:** Draft — Phase 1. Authentication mechanism pending (LDAP/AD vs local) — see Q9.
+**Status:** Implemented. Authentication, RBAC and audit are built and verified. The decisions and
+their evidence are in `docs/adr/ADR-006-authentication-and-access-control.md`; how to operate them
+is in `docs/architecture/12-identity-and-access.md`. Q9 is answered: local accounts now with an
+AD seam, a strictly internal deployment, and no MFA at go-live.
 
 ---
 
@@ -36,34 +39,63 @@ control that is actually load-bearing.
 
 ## 3. Roles
 
-| Role | Dashboards | Subscriber lookup | Export | Upload / import | TAC management | Admin |
+| Role | Dashboards | Subscriber lookup | Export | Upload / import | TAC activation | Admin |
 |---|---|---|---|---|---|---|
 | **Viewer** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Analyst** | ✅ | ✅ | ✅ (audited) | ❌ | ❌ | ❌ |
-| **Data Operator** | ✅ | ✅ | ✅ (audited) | ✅ | ✅ | ❌ |
+| **Data Operator** | ✅ | ✅ | ✅ (audited) | ✅ | ❌ | ❌ |
 | **Administrator** | ✅ | ✅ | ✅ (audited) | ✅ | ✅ | ✅ |
 
-Permissions are checked **server-side on every request**. The UI hides what a user cannot do, but hiding is a
-usability feature, never a security control.
+**Corrected since this table was drafted.** Data Operator uploads a TAC snapshot but does not
+activate it - that is decision D4 of the import platform, which arrived after this row was written.
+Operator imports; administrator decides the product should believe it.
+
+Roles are not the unit of enforcement. An endpoint requires a **permission**, and a role is a named
+set of them that an administrator can edit without a deployment. A user may hold several roles and,
+separately, individual grants and denies layered over them; a deny always wins. The full catalogue
+is in `docs/architecture/12-identity-and-access.md` section 2.
+
+Permissions are checked **server-side on every request**. The UI hides what a user cannot do, but
+hiding is a usability feature, never a security control - and that is not merely asserted here:
+`EndpointAuthorizationTests` enumerates the API's own route table and fails the build on any
+endpoint that is neither authorised nor on a four-entry reviewed allow-list.
 
 Subscriber lookup is deliberately withheld from Viewer: aggregate analytics needs no ability to resolve an
 individual, and most users only need aggregates.
 
 ## 4. Authentication
 
-Pending the answer to Q9 (LDAP/AD vs local accounts). The design accommodates both behind one interface:
+**Local accounts**, per the product owner's answer to Q9, behind an `IPasswordAuthenticator` seam so
+that Active Directory becomes a second implementation rather than a rewrite. Argon2id at OWASP's
+m=19 MiB, t=2, p=1 - measured at 79 ms per verification - stored as a self-describing PHC string, so
+the work factor can be raised later without invalidating a single existing password.
 
-- **Local accounts:** Argon2id password hashing, per-user salt, configurable work factor.
-- **LDAP / Active Directory:** bind-based authentication, directory groups mapped to application roles.
+**Server-side sessions, not tokens.** This replaces the short-lived-JWT sketch that stood here, and
+the reason is a requirement rather than a preference: deactivating a user has to take effect. A
+signed token stays valid until it expires unless a revocation list is added - which is the same
+per-request lookup the token was chosen to avoid, with none of its simplicity left. ADR-006 has the
+full comparison.
 
-Session handling either way:
+- A 256-bit random value in an **`HttpOnly`, `Secure`, `SameSite=Strict`, `__Host-` prefixed**
+  cookie. The database stores its SHA-256, never the value itself.
+- Never `localStorage`, which is readable by any injected script.
+- 8-hour idle timeout; 24-hour absolute ceiling that no amount of activity extends.
+- Sessions are revoked, not merely expired, on deactivation, password change or reset, and explicit
+  revocation - and deactivation does it in the same transaction as the account change.
+- **CSRF**: double-submit token on every state-changing request, compared in constant time.
+- Brute force: 5 failures, then a lockout doubling from 1 minute to a 15-minute ceiling, per
+  account. Per-IP backoff is the control for an internet-facing deployment and is the first thing
+  to add if the exposure ever changes.
+- A username that does not exist costs the same time as a wrong password, because the login path
+  runs a real Argon2 derivation either way. Measured: 176 / 162 / 179 / 136 ms across existing and
+  non-existent accounts. Without it the endpoint is a username oracle, and knowing which accounts
+  exist is what makes a password spray cheap.
+- The endpoint is rate-limited to 6 attempts per minute per address. That is not about guessing -
+  the lockout handles that - it bounds the memory an unauthenticated caller can make the server
+  allocate, since each attempt costs 19 MiB.
 
-- Short-lived access token (15 min) plus a refresh token in an **`HttpOnly`, `Secure`, `SameSite=Strict`**
-  cookie. Tokens are never placed in `localStorage`, which is readable by any injected script.
-- Refresh tokens rotate on use, with reuse detection — a replayed refresh token invalidates the whole family.
-- Because the refresh token is a cookie, **CSRF protection is required**: double-submit token on every
-  state-changing request.
-- Brute-force protection: per-account and per-IP exponential backoff, lockout with administrator alert.
+**MFA is not built**, per the product owner's answer for a strictly internal deployment. No unused
+columns were added for it; the four steps to add it are recorded in ADR-006.
 
 ## 5. Upload security
 
@@ -113,10 +145,20 @@ user and role changes, and configuration changes.
 
 Each entry carries: timestamp, user, source IP, action, target, outcome, and correlation ID.
 
-The audit log is written to the operational store under a database role that can `INSERT` but not `UPDATE` or
-`DELETE`. Administrators can read it through the UI; no application path can modify it. This is what makes it
-evidence rather than decoration — and it matters more here precisely because raw identifiers are visible, so
-the audit trail is the primary record of who looked at whom.
+The audit log is written under a database role that holds `INSERT` and `SELECT` and nothing else
+(`db/operational/grants/003_least_privilege.sql`). Administrators read it through the UI; no
+application path can modify it. This is what makes it evidence rather than decoration - and it
+matters more here precisely because raw identifiers are visible, so the audit trail is the primary
+record of who looked at whom.
+
+That was an aspiration when it was first written here, and the application connected as the schema
+owner. It is now true, and verified rather than asserted: `UPDATE` and `DELETE` on both audit tables
+are refused by PostgreSQL, and an integration test connects as that role and proves it.
+
+Two additions worth naming. **Every 403 is recorded**, with the permission that was required - a
+refusal that leaves no trace is how someone probing for what they can reach stays invisible. And
+**role and permission changes record before and after**, because "roles are now Viewer" does not
+tell a reviewer what was taken away, which is the half that matters.
 
 ## 9. Secrets
 

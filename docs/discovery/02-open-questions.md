@@ -118,14 +118,28 @@ Also: is `1.config` guaranteed to be present on every future delivery? I would l
 
 Can the build machine and the production servers reach public package registries (npm, PyPI, Docker Hub, Maven Central)? If access is restricted or unreliable, that is not a minor inconvenience — it changes how I pin dependencies, whether I vendor them, and whether I build fully self-contained images. Please tell me early; it is much cheaper to design for than to retrofit.
 
-### Q9 [IMPORTANT] Users, roles and concurrency
+### Q9 [ANSWERED] Users, roles and concurrency
 
-- How many named users in total?
-- How many concurrent users at peak?
-- What roles do you need? My starting proposal: **Viewer** (dashboards only), **Analyst** (dashboards + filtered export), **Data Operator** (upload/import/reprocess), **Administrator** (users, permissions, configuration). Does that match your organisation?
-- Authentication: local accounts, LDAP/Active Directory, or SSO? If AD/LDAP, I need the directory details and whether group membership should drive roles.
-- Is the system internet-facing or strictly internal?
-- Multi-tenancy: all data is one operator (MCC/MNC 43211), so I am assuming **single-tenant** unless you tell me otherwise.
+Answered 2026-09-14. Built accordingly; see `docs/adr/ADR-006-authentication-and-access-control.md`.
+
+| Question | Answer |
+|---|---|
+| Authentication source | **Local accounts**, behind an interface so LDAP/AD can be added later without a rewrite |
+| SSO / LDAP / AD / OIDC in future | Likely. `provider` and `external_id` are in the schema from the first migration for that reason |
+| Network exposure | **Strictly internal.** No internet path |
+| Session mechanism | **Server-side sessions** rather than JWT, after the trade-off was put to the product owner |
+| MFA at go-live | **Not required.** No dead columns were added; the four steps to add it are recorded |
+| Roles | The four proposed were accepted, with one correction: Data Operator uploads a TAC snapshot but does not activate it (decision D4) |
+| Multi-tenancy | Single-tenant, as assumed |
+
+Still unanswered, and not blocking: how many named users, and peak concurrency. Nothing in the
+design depends on the answer at the scale this deployment implies - sessions are one indexed
+lookup and the user list pages from the first request - but a figure in the hundreds rather than
+the tens would be worth knowing before the first load test.
+
+**What would change the design:** if the deployment ever becomes internet-facing, three decisions
+are wrong, in this order - per-IP lockout (absent), the 8-hour idle timeout (too long), and MFA
+(not built).
 
 ---
 
