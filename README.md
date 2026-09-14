@@ -125,6 +125,7 @@ docs/
     04-security-model.md           roles, controls, audit
     07-testing-strategy.md         what is tested and why
     09-import-platform.md          the import platform, design and build
+    11-clickhouse-memory.md        container memory: what went wrong and what the settings mean
   adr/             Architecture Decision Records
 backend/
   src/Sqm.Domain          the binding fold and identifier rules

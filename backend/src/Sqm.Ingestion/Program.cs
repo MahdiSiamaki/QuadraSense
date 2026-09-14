@@ -57,6 +57,38 @@ var host = builder.Build();
 //
 // Rebuilding the historical marts with a separate SQL script would be a second implementation
 // of the same aggregates, and the two would drift the first time one was corrected.
+// Rebuild the dashboard marts for one delivery, without importing anything.
+//
+//   dotnet run --project backend/src/Sqm.Ingestion -- --refresh-dashboard [--seq N]
+//
+// Needed after a bulk load, and after activating a TAC version: both change what the marts
+// would compute without any file arriving. Defaults to the highest sequence in the event log,
+// which is the delivery the dashboard reads.
+if (args.Contains("--refresh-dashboard"))
+{
+    var analytics = host.Services.GetRequiredService<IAnalyticsIngestionStore>();
+    var refresh = host.Services.GetRequiredService<MartRefresh>();
+
+    var index = Array.IndexOf(args, "--seq");
+    var sequence = index >= 0 && index + 1 < args.Length
+        && int.TryParse(args[index + 1], out var parsed)
+        ? parsed
+        : await analytics.GetMaxSequenceAsync(CancellationToken.None).ConfigureAwait(false);
+
+    Console.WriteLine($"rebuilding dashboard marts for delivery {sequence}");
+
+    var failed = await refresh.RunAsync(
+        sequence,
+        message => { Console.WriteLine("  " + message); return Task.CompletedTask; },
+        CancellationToken.None).ConfigureAwait(false);
+
+    Console.WriteLine(failed == 0
+        ? "dashboard marts rebuilt"
+        : $"{failed} statement(s) failed; re-run to finish them");
+
+    return failed == 0 ? 0 : 1;
+}
+
 if (args.Contains("--refresh-marts"))
 {
     var analytics = host.Services.GetRequiredService<IAnalyticsIngestionStore>();
