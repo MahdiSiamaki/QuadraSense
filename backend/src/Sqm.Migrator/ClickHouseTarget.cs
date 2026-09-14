@@ -30,9 +30,36 @@ internal sealed class ClickHouseTarget(string connectionString) : IMigrationTarg
     private ClickHouseConnection Connection =>
         _connection ?? throw new InvalidOperationException("connection not opened");
 
+    /// <summary>
+    /// One HTTP client, with no timeout at all.
+    /// </summary>
+    /// <remarks>
+    /// The driver's default client gives up after 120 seconds. A migration that rebuilds a
+    /// billion-row table to change its partition key takes far longer than that, and when the
+    /// client abandons it the server carries on working — so the tool reports a failure for a
+    /// statement that is still running and may yet succeed. That is the worst possible answer: it
+    /// invites the operator to re-run a migration that is mid-flight.
+    ///
+    /// Cancellation still works, through the token. What is removed is the arbitrary wall clock.
+    /// </remarks>
+    private static readonly HttpClient LongRunningClient = new(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(30),
+        AutomaticDecompression = System.Net.DecompressionMethods.All,
+    })
+    {
+        Timeout = Timeout.InfiniteTimeSpan,
+    };
+
+    private sealed class SingleClientFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => LongRunningClient;
+    }
+
     public async Task OpenAsync(CancellationToken cancellationToken)
     {
-        _connection = new ClickHouseConnection(connectionString);
+        _connection = new ClickHouseConnection(
+            connectionString, new SingleClientFactory(), "migrator");
         await _connection.OpenAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -110,6 +137,16 @@ internal sealed class ClickHouseTarget(string connectionString) : IMigrationTarg
             + $"VALUES ('{Escape(migration.Version)}', '{Escape(migration.Name)}', "
             + $"'{Escape(migration.Checksum)}', now64(3), "
             + total.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture) + ")",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task RecordWithoutRunningAsync(
+        Migration migration, CancellationToken cancellationToken)
+    {
+        await ExecuteAsync(
+            "INSERT INTO sqm.schema_migration (version, name, checksum, applied_at, duration_ms) "
+            + $"VALUES ('{Escape(migration.Version)}', '{Escape(migration.Name)}', "
+            + $"'{Escape(migration.Checksum)}', now64(3), 0)",
             cancellationToken).ConfigureAwait(false);
     }
 

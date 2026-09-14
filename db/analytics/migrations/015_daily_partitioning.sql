@@ -44,9 +44,17 @@ ENGINE = MergeTree
 PARTITION BY data_date
 ORDER BY (msisdn, imsi, imei, seq);
 
+-- The guard makes the rebuild re-runnable.
+--
+-- ClickHouse has no DDL transactions, so a migration can fail partway; this one reads a billion
+-- rows and takes tens of minutes, which is long enough for a client to give up on a statement
+-- the server is still happily running. Without the guard, a second run would append a second
+-- copy of every event - and a SummingMergeTree downstream would sum the duplicates without
+-- complaint, exactly as happened once before in this project.
 INSERT INTO sqm.binding_event_daily (seq, data_date, msisdn, imsi, imei, label)
 SELECT seq, data_date, msisdn, imsi, imei, label
-FROM sqm.binding_event;
+FROM sqm.binding_event
+WHERE (SELECT count() FROM sqm.binding_event_daily) = 0;
 
 -- EXCHANGE, not two renames. It is atomic: no window exists in which the name refers to
 -- nothing, so a query running at the moment of the swap sees one table or the other.

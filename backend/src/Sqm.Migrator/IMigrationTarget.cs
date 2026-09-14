@@ -26,4 +26,14 @@ internal interface IMigrationTarget : IAsyncDisposable
 
     /// <summary>Applies one migration and records it. Throws on failure.</summary>
     Task ApplyAsync(Migration migration, Action<string> progress, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Records a migration as applied without executing it.
+    /// </summary>
+    /// <remarks>
+    /// For adopting a schema that already exists. Both stores here were built by applying SQL
+    /// files by hand before this tool was written, and re-running those files would at best be a
+    /// no-op and at worst drop a populated table.
+    /// </remarks>
+    Task RecordWithoutRunningAsync(Migration migration, CancellationToken cancellationToken);
 }

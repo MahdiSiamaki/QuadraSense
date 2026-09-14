@@ -1,0 +1,34 @@
+<clickhouse>
+  <!--
+    The application's own ClickHouse user.
+
+    The official image restricts the built-in 'default' user to loopback, so traffic arriving
+    through the published port is refused. Widening 'default' would fix the symptom and leave
+    the application running as the administrative account; a dedicated user is the same amount
+    of work and is what production needs anyway.
+
+    Two users, because they need different things:
+      sqm_app  - the API. Reads, and writes only the marts it refreshes.
+      sqm_ingest - the worker. Additionally inserts into the event log and alters partitions.
+
+    In development both carry the same password from the environment. In production they are
+    separate secrets, and the API's inability to drop a partition is the point.
+  -->
+  <users>
+    <sqm_app>
+      <password_sha256_hex>900631580f97d0814ff93c41108591cf7564cc10b2979d459ad4bfce063177a4</password_sha256_hex>
+      <networks><ip>::/0</ip></networks>
+      <profile>default</profile>
+      <quota>default</quota>
+      <access_management>0</access_management>
+    </sqm_app>
+
+    <sqm_ingest>
+      <password_sha256_hex>900631580f97d0814ff93c41108591cf7564cc10b2979d459ad4bfce063177a4</password_sha256_hex>
+      <networks><ip>::/0</ip></networks>
+      <profile>default</profile>
+      <quota>default</quota>
+      <access_management>0</access_management>
+    </sqm_ingest>
+  </users>
+</clickhouse>

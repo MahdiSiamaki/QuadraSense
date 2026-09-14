@@ -79,6 +79,40 @@ static async Task<int> Run(string[] args, CancellationToken cancellationToken)
         return 1;
     }
 
+    // Adopting a schema that already exists.
+    //
+    // These stores were built before this tool did, by applying SQL files by hand. Running those
+    // migrations again would at best be a no-op and at worst destroy data, so --baseline records
+    // everything up to a version as applied without executing it. The checksums are recorded
+    // from the files as they stand, which is the point: from here on, editing any of them is
+    // caught.
+    if (options.BaselineThrough is { } baseline)
+    {
+        var adopt = migrations
+            .Where(m => string.CompareOrdinal(m.Version.PadLeft(8, '0'), baseline.PadLeft(8, '0')) <= 0)
+            .Where(m => !applied.ContainsKey(m.Version))
+            .ToList();
+
+        if (adopt.Count == 0)
+        {
+            Console.WriteLine($"  nothing to baseline through {baseline}");
+            return 0;
+        }
+
+        Console.WriteLine($"  recording {adopt.Count} migration(s) as already applied, without "
+            + "running them:");
+
+        foreach (var migration in adopt)
+        {
+            Console.WriteLine($"    {migration.Name}");
+            await target.RecordWithoutRunningAsync(migration, cancellationToken).ConfigureAwait(false);
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("baseline recorded. Run again without --baseline to apply what is left.");
+        return 0;
+    }
+
     var pending = migrations.Where(m => !applied.ContainsKey(m.Version)).ToList();
 
     if (pending.Count == 0)
@@ -120,13 +154,18 @@ internal enum TargetKind
 }
 
 internal sealed record Options(
-    TargetKind Target, string Directory, string ConnectionString, bool DryRun);
+    TargetKind Target, string Directory, string ConnectionString, bool DryRun,
+    string? BaselineThrough = null);
 
 internal static class CommandLine
 {
     public const string Usage = """
         usage: Sqm.Migrator --target postgres|clickhouse --dir <migrations-directory>
                             [--connection <connection-string>] [--dry-run]
+                            [--baseline <version>]
+
+        --baseline records every migration up to <version> as applied WITHOUT running it, for
+        adopting a schema that was built before this tool existed.
 
         The connection string falls back to SQM_POSTGRES_CONNECTION or SQM_CLICKHOUSE_CONNECTION.
         """;
@@ -136,6 +175,7 @@ internal static class CommandLine
         string? target = null;
         string? directory = null;
         string? connection = null;
+        string? baseline = null;
         var dryRun = false;
 
         for (var i = 0; i < args.Length; i++)
@@ -153,6 +193,9 @@ internal static class CommandLine
                     break;
                 case "--dry-run":
                     dryRun = true;
+                    break;
+                case "--baseline" when i + 1 < args.Length:
+                    baseline = args[++i];
                     break;
                 default:
                     Console.Error.WriteLine($"unrecognised argument: {args[i]}");
@@ -195,6 +238,7 @@ internal static class CommandLine
             kind.Value,
             Path.GetFullPath(directory, Directory.GetCurrentDirectory()),
             connection,
-            dryRun);
+            dryRun,
+            baseline);
     }
 }

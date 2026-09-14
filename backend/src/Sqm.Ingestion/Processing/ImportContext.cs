@@ -16,29 +16,43 @@ internal sealed class ImportContext(
     IImportFileStore fileStore,
     ClaimedJob job) : IImportContext
 {
-    private static readonly TimeSpan ProgressInterval = TimeSpan.FromSeconds(1);
+    private const long ProgressIntervalTicks = TimeSpan.TicksPerSecond;
 
-    private readonly System.Diagnostics.Stopwatch _sinceLastProgress =
-        System.Diagnostics.Stopwatch.StartNew();
+    // Progress is reported from the stream's read path, which is not the thread that drives the
+    // stages, so both of these are touched concurrently. A Stopwatch would not survive that; a
+    // timestamp moved with CompareExchange does, and it also makes the throttle a real
+    // test-and-set rather than a read followed by a write that another caller can slip between.
+    private long _lastProgressTicks = DateTime.UtcNow.Ticks;
 
-    private string _stage = ImportJobStatus.Validating.ToDatabaseValue();
+    private volatile string _stage = ImportJobStatus.Validating.ToDatabaseValue();
 
     public async Task EnterStageAsync(ImportJobStatus stage, string message, CancellationToken ct)
     {
-        _stage = stage.ToDatabaseValue();
+        var label = stage.ToDatabaseValue();
+        _stage = label;
+
         await repository.SetStageAsync(job.JobId, stage, ct).ConfigureAwait(false);
-        await repository.AppendEventAsync(job.JobId, "info", _stage, message, null, ct)
+        await repository.AppendEventAsync(job.JobId, "info", label, message, null, ct)
             .ConfigureAwait(false);
     }
 
     public async Task ReportProgressAsync(long rowsProcessed, long? rowsExpected, CancellationToken ct)
     {
-        if (_sinceLastProgress.Elapsed < ProgressInterval)
+        var now = DateTime.UtcNow.Ticks;
+        var last = Interlocked.Read(ref _lastProgressTicks);
+
+        if (now - last < ProgressIntervalTicks)
         {
             return;
         }
 
-        _sinceLastProgress.Restart();
+        // Only the caller that wins the exchange writes. Without it, a burst of concurrent
+        // reports would all see the same stale timestamp and all write.
+        if (Interlocked.CompareExchange(ref _lastProgressTicks, now, last) != last)
+        {
+            return;
+        }
+
         await repository.ReportProgressAsync(job.JobId, _stage, rowsProcessed, rowsExpected, ct)
             .ConfigureAwait(false);
     }

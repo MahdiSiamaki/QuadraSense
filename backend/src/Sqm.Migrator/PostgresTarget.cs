@@ -88,6 +88,22 @@ internal sealed class PostgresTarget(string connectionString) : IMigrationTarget
         progress($"    {stopwatch.ElapsedMilliseconds,6} ms  applied in one transaction");
     }
 
+    public async Task RecordWithoutRunningAsync(
+        Migration migration, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            INSERT INTO schema_migration (version, name, checksum, duration_ms)
+            VALUES (@version, @name, @checksum, 0)
+            ON CONFLICT (version) DO NOTHING
+            """, Connection);
+
+        command.Parameters.AddWithValue("version", migration.Version);
+        command.Parameters.AddWithValue("name", migration.Name);
+        command.Parameters.AddWithValue("checksum", migration.Checksum);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_connection is not null)
