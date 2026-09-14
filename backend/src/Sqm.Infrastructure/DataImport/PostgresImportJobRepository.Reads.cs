@@ -287,7 +287,10 @@ public sealed partial class PostgresImportJobRepository
             SELECT ds.code AS SourceCode,
                    latest.business_date AS LatestBusinessDate,
                    latest.finished_at   AS LatestImportedAt,
-                   (SELECT COUNT(*) FROM imports.import_job j
+                   -- ::int on every COUNT. PostgreSQL counts in bigint, and Dapper matches a
+                   -- record constructor on the reader's types, so an int property against a
+                   -- bigint column fails to materialise with a message that names neither.
+                   (SELECT COUNT(*)::int FROM imports.import_job j
                      WHERE j.source_code = ds.code
                        AND j.status = 'FAILED'
                        AND j.finished_at > now() - interval '7 days') AS FailedLast7Days
@@ -349,15 +352,19 @@ public sealed partial class PostgresImportJobRepository
     {
         const string Sql = """
             SELECT
-                COUNT(*) FILTER (WHERE status = 'QUEUED')                       AS Queued,
-                COUNT(*) FILTER (WHERE worker_id IS NOT NULL)                   AS Running,
-                COUNT(*) FILTER (WHERE status = 'RETRYING')                     AS Retrying,
+                -- ::int on every COUNT, for the same reason as above: PostgreSQL counts in
+                -- bigint and these are small numbers the model holds as int.
+                COUNT(*) FILTER (WHERE status = 'QUEUED')::int                  AS Queued,
+                COUNT(*) FILTER (WHERE worker_id IS NOT NULL)::int              AS Running,
+                COUNT(*) FILTER (WHERE status = 'RETRYING')::int                AS Retrying,
                 COUNT(*) FILTER (WHERE status = 'FAILED'
-                                   AND finished_at > now() - interval '24 hours') AS FailedLast24Hours,
+                                   AND finished_at > now() - interval '24 hours')::int
+                                                                                AS FailedLast24Hours,
                 MIN(created_at) FILTER (WHERE status = 'QUEUED')                AS OldestQueuedAt,
-                COUNT(DISTINCT worker_id) FILTER (WHERE lease_expires_at > now()) AS ActiveWorkers,
+                COUNT(DISTINCT worker_id) FILTER (WHERE lease_expires_at > now())::int
+                                                                                AS ActiveWorkers,
                 COUNT(*) FILTER (WHERE lease_expires_at IS NOT NULL
-                                   AND lease_expires_at < now())                AS StaleLeases
+                                   AND lease_expires_at < now())::int           AS StaleLeases
               FROM imports.import_job
             """;
 

@@ -17,4 +17,16 @@
     <InternalsVisibleTo Include="Sqm.Ingestion.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      The mart refresh is embedded rather than read from disk.
+
+      It stays a .sql file in db/analytics/jobs so it is reviewable as SQL and runnable by hand,
+      and it is compiled into the worker so deployment does not depend on a file being copied to
+      a path the worker happens to look in. One copy, two ways to run it.
+    -->
+    <EmbeddedResource Include="../../../db/analytics/jobs/refresh_marts.sql"
+                      LogicalName="Sqm.Ingestion.refresh_marts.sql" />
+  </ItemGroup>
+
 </Project>

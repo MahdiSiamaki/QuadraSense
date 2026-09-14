@@ -93,6 +93,16 @@ public interface IAnalyticsIngestionStore
     /// </remarks>
     Task EnsureSchemaAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Runs one statement from the mart refresh script, with <c>{seq}</c> bound.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately narrow: it takes a statement from the embedded script and a sequence number,
+    /// not arbitrary SQL from a caller. The script is a reviewed file in the repository, which is
+    /// what makes running it from code acceptable at all.
+    /// </remarks>
+    Task ExecuteMartStatementAsync(string sql, int sequence, CancellationToken ct);
+
     /// <summary>Every business date present in the event log, oldest first.</summary>
     Task<IReadOnlyList<DateOnly>> GetBusinessDatesAsync(
         DateOnly? fromDate, DateOnly? toDate, CancellationToken ct);

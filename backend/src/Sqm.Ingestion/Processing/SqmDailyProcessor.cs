@@ -26,6 +26,7 @@ namespace Sqm.Ingestion.Processing;
 internal sealed partial class SqmDailyProcessor(
     IAnalyticsIngestionStore analytics,
     IImportJobRepository repository,
+    MartRefresh martRefresh,
     ILogger<SqmDailyProcessor> logger) : IImportProcessor
 {
     [LoggerMessage(EventId = 3300, Level = LogLevel.Information,
@@ -174,6 +175,32 @@ internal sealed partial class SqmDailyProcessor(
 
         await analytics.RefreshChangeMartsForDayAsync(businessDate, sequence, ct)
             .ConfigureAwait(false);
+
+        // The dashboard's headline figures come from the seq-partitioned marts, not from the
+        // day-level ones above. Skipping this would leave the event log holding today and every
+        // KPI showing yesterday, with nothing on screen to say which - the most confusing state
+        // the system can be in, which is why it runs as part of the import rather than as a job
+        // someone has to remember.
+        await context.NoteAsync(
+            "info", $"Rebuilding the dashboard marts for delivery {sequence}", null, ct)
+            .ConfigureAwait(false);
+
+        var martFailures = await martRefresh.RunAsync(
+            sequence,
+            message => context.NoteAsync("warning", message, null, ct),
+            ct).ConfigureAwait(false);
+
+        if (martFailures > 0)
+        {
+            // Not a failed import. The data landed and is correct in the event log and current
+            // state; what is stale is a derived view, and it can be rebuilt without re-importing
+            // anything. Saying so precisely is more useful than failing the whole job.
+            await context.NoteAsync(
+                "warning",
+                $"{martFailures} mart statement(s) failed. The day's data is imported and correct; "
+                + "some dashboard figures will be stale until the marts are rebuilt.",
+                null, ct).ConfigureAwait(false);
+        }
 
         // ---------------------------------------------------------------- verify
         await context.EnterStageAsync(

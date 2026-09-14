@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace Sqm.Migrator;
+namespace Sqm.Application.Sql;
 
 /// <summary>
 /// Splits a SQL script into individual statements.
@@ -15,8 +15,13 @@ namespace Sqm.Migrator;
 /// PostgreSQL does not need this - Npgsql sends a whole multi-statement script as one command.
 /// ClickHouse does: its HTTP interface takes one statement per request. The splitter also buys
 /// per-statement timing and a failure that names the statement that failed.
+///
+/// It lives in the application layer because two things need it: the migrator, which applies
+/// schema files, and the ingestion worker, which runs the mart refresh script after an import.
+/// One parser, so a script that the migrator splits correctly cannot be split differently by
+/// the worker.
 /// </remarks>
-internal static class SqlScript
+public static class SqlScript
 {
     public static IReadOnlyList<string> Split(string sql)
     {

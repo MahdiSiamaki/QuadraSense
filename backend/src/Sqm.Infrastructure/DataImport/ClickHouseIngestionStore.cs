@@ -376,13 +376,45 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
     /// parses anything, so no client library sits between the intent and the effect.
     /// </para>
     /// </remarks>
-    private async Task ExecuteBoundedAsync(string sql, DateOnly businessDate, CancellationToken ct)
+    private Task ExecuteBoundedAsync(string sql, DateOnly businessDate, CancellationToken ct) =>
+        ExecuteHttpAsync(
+            sql,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["param_businessDate"] =
+                    businessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            },
+            ct);
+
+    /// <summary>
+    /// POSTs one statement, with its resource limits as query parameters.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The limits travel outside the SQL because three ways of attaching them to it did not
+    /// survive the driver. <c>CustomSettings</c> did nothing; <c>set_*</c> in the connection
+    /// string did nothing; and a trailing <c>SETTINGS</c> clause - which demonstrably works when
+    /// the same statement is run by <c>clickhouse-client</c> - arrived at the server without it.
+    /// </para>
+    /// <para>
+    /// Each was found the same way, and it is worth naming because a memory limit that is not
+    /// applied looks exactly like a limit that is generous: by watching
+    /// <c>system.processes.memory_usage</c> while the job ran. The aggregates were reaching
+    /// 2.66 GiB against a declared cap of 1.2 GiB.
+    /// </para>
+    /// <para>
+    /// URL parameters are the mechanism the bulk insert already uses, and the one path in this
+    /// class that was never in doubt: the server reads settings from the query string before it
+    /// parses anything, so no client library sits between the intent and the effect.
+    /// </para>
+    /// </remarks>
+    private async Task ExecuteHttpAsync(
+        string sql, IReadOnlyDictionary<string, string> extraParameters, CancellationToken ct)
     {
         var query = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["query"] = sql,
             ["database"] = _database,
-            ["param_businessDate"] = businessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
 
             // Measured, not guessed. ClickHouse builds one hash table per thread, so the thread
             // count multiplies what a GROUP BY needs: the churn aggregate over one day takes
@@ -397,6 +429,11 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             ["max_bytes_before_external_group_by"] = "300000000",
             ["max_bytes_before_external_sort"] = "300000000",
         };
+
+        foreach (var (key, value) in extraParameters)
+        {
+            query[key] = value;
+        }
 
         var url = new UriBuilder(_httpEndpoint)
         {
@@ -420,6 +457,17 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             throw new InvalidOperationException(FirstLine(detail));
         }
     }
+
+    public Task ExecuteMartStatementAsync(string sql, int sequence, CancellationToken ct) =>
+        // The script's statements carry {seq:UInt16}; it is bound as a ClickHouse query
+        // parameter, the same as everywhere else, rather than substituted into the text.
+        ExecuteHttpAsync(
+            sql,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["param_seq"] = sequence.ToString(CultureInfo.InvariantCulture),
+            },
+            ct);
 
     public async Task EnsureSchemaAsync(CancellationToken ct)
     {

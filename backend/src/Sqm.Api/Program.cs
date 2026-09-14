@@ -61,7 +61,14 @@ builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
-    o.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+    // Nulls are written, not omitted.
+    //
+    // Omitting them saves a few bytes and costs a type lie: the TypeScript client declares
+    // `daysBehind: number | null`, so a check for `!== null` narrows it to `number` - and the
+    // value that actually arrives is `undefined`, which passes that check and renders as
+    // "undefined days behind". Every such field becomes a small trap of the same shape.
+    //
+    // These payloads are counters and short lists. The bytes were never worth it.
     o.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 

@@ -299,3 +299,104 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
         }
     }
 }
+
+/// <summary>
+/// The read paths the dashboard and Import Center call on every page load.
+/// </summary>
+/// <remarks>
+/// These exist because the queue tests did not cover them, and both shipped broken for the same
+/// reason the queue tests had already caught once: PostgreSQL counts in <c>bigint</c>, the models
+/// hold small counts as <c>int</c>, and Dapper matches a record constructor on the reader's
+/// types. The failure is an <c>InvalidOperationException</c> naming neither the column nor the
+/// mismatch, surfacing as a 500 on a page that had been working.
+///
+/// A test that only asserts "the query runs" is enough to catch every bug of this shape, which
+/// is the argument for having one per read method rather than per interesting behaviour.
+/// </remarks>
+[Collection("import-queue")]
+public sealed class ImportReadTests(ImportQueueFixture fixture) : IClassFixture<ImportQueueFixture>
+{
+    [Fact]
+    public async Task Freshness_materialises_for_every_configured_source()
+    {
+        if (!fixture.IsAvailable)
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        var today = new DateOnly(2026, 9, 14);
+        var freshness = await fixture.Repository
+            .GetFreshnessAsync(today, TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        // Both seeded sources must appear even when neither has imported anything: a source with
+        // no data is exactly the case an operator needs to see.
+        Assert.Contains(freshness, f => f.SourceCode == "SQM");
+        Assert.Contains(freshness, f => f.SourceCode == "TAC");
+
+        foreach (var row in freshness)
+        {
+            Assert.True(row.FailedLast7Days >= 0);
+            Assert.NotNull(row.MissingBusinessDates);
+
+            // Days behind is measured from the business date, not the import time. A file
+            // imported an hour ago describing last month is stale data however recently it
+            // arrived, and this is the number that has to say so.
+            if (row.LatestBusinessDate is { } date)
+            {
+                Assert.Equal(today.DayNumber - date.DayNumber, row.DaysBehind);
+            }
+            else
+            {
+                Assert.Null(row.DaysBehind);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Worker_health_materialises_on_an_idle_queue()
+    {
+        if (!fixture.IsAvailable)
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        var health = await fixture.Repository
+            .GetWorkerHealthAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(health.Queued >= 0);
+        Assert.True(health.Running >= 0);
+        Assert.True(health.StaleLeases >= 0);
+        Assert.True(health.ActiveWorkers >= 0);
+    }
+
+    [Fact]
+    public async Task Listing_and_counting_agree_with_each_other()
+    {
+        if (!fixture.IsAvailable)
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var filter = new ImportHistoryFilter();
+
+        var total = await fixture.Repository.CountJobsAsync(filter, ct).ConfigureAwait(true);
+        var page = await fixture.Repository.ListJobsAsync(filter, 500, 0, ct).ConfigureAwait(true);
+
+        // The count drives the pager; the list fills the table. If they disagree the UI shows a
+        // page number that cannot be reached.
+        Assert.Equal(Math.Min(total, 500), page.Count);
+
+        foreach (var job in page)
+        {
+            var detail = await fixture.Repository.GetJobAsync(job.JobId, ct).ConfigureAwait(true);
+
+            Assert.NotNull(detail);
+            Assert.Equal(job.Status, detail.Summary.Status);
+            break; // one is enough to prove the detail projection materialises
+        }
+    }
+}

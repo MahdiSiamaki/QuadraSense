@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using ClickHouse.Client.ADO;
+using Sqm.Application.Sql;
 
 namespace Sqm.Migrator;
 

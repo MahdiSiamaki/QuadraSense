@@ -42,6 +42,7 @@ builder.Services.AddSingleton<IAnalyticsIngestionStore, ClickHouseIngestionStore
 builder.Services.AddSingleton<ITacVersionStore, ClickHouseTacVersionStore>();
 
 // One processor per data source, resolved by source code at claim time.
+builder.Services.AddSingleton<MartRefresh>();
 builder.Services.AddSingleton<IImportProcessor, SqmDailyProcessor>();
 builder.Services.AddSingleton<IImportProcessor, TacSnapshotProcessor>();
 
