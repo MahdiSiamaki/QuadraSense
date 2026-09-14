@@ -36,6 +36,22 @@ public static class Permissions
     /// <summary>Download query results as a file.</summary>
     public const string DataExport = "data.export";
 
+    /// <summary>Find the numbers and handsets bound to a SIM, by IMSI or IMSI prefix.</summary>
+    /// <remarks>
+    /// Separate from <see cref="LookupSubscriber"/> because the two answer different questions for
+    /// different people: "which handset is this SIM in" is SIM operations, "which SIM does this
+    /// person have" is subscriber support. Neither implies the other.
+    /// </remarks>
+    public const string LookupImsi = "lookup.imsi";
+
+    /// <summary>See MSISDN, IMSI and IMEI in full rather than masked.</summary>
+    /// <remarks>
+    /// Enforced on the server: a caller without this receives the masked string, and the complete
+    /// value is never in the response. Masking in the browser would leave the raw value one
+    /// developer-tools panel away, and in every proxy log on the way there.
+    /// </remarks>
+    public const string IdentifierReveal = "identifier.reveal";
+
     // ------------------------------------------------------------------ imports
     /// <summary>Open the Import Center and read job history.</summary>
     public const string ImportView = "import.view";
@@ -83,7 +99,7 @@ public static class Permissions
     /// <summary>Every permission code known to this build.</summary>
     public static readonly FrozenSet<string> All = new[]
     {
-        DashboardView, LookupSubscriber, DataExport,
+        DashboardView, LookupSubscriber, DataExport, LookupImsi, IdentifierReveal,
         ImportView, ImportUploadSqm, ImportUploadTac, ImportReprocess, ImportCancel, ImportDelete,
         TacActivate, TacRollback,
         UserView, UserManage, RoleView, RoleManage, AuditView, SystemAdmin,

@@ -12,6 +12,8 @@ export const Permission = {
   DashboardView: 'dashboard.view',
   LookupSubscriber: 'lookup.subscriber',
   DataExport: 'data.export',
+  LookupImsi: 'lookup.imsi',
+  IdentifierReveal: 'identifier.reveal',
   ImportView: 'import.view',
   ImportUploadSqm: 'import.upload.sqm',
   ImportUploadTac: 'import.upload.tac',

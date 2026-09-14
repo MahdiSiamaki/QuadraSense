@@ -145,6 +145,16 @@ if (args.Contains("--refresh-marts"))
         .ConfigureAwait(false);
 }
 
+// Populates the IMSI-ordered copy of current state. Run once after migration 018, and again
+// after any rebuild of binding_current that bypasses the materialized view - see ADR-008.
+if (args.Contains("--backfill-imsi"))
+{
+    var analytics = host.Services.GetRequiredService<IAnalyticsIngestionStore>();
+    return await ImsiBackfill
+        .RunAsync(analytics, args.Contains("--truncate"), CancellationToken.None)
+        .ConfigureAwait(false);
+}
+
 // Fail at startup, not at the first corrected file.
 //
 // Day-level idempotency is implemented as a partition drop, so the worker requires

@@ -142,6 +142,8 @@ public sealed class EndpointAuthorizationTests : IClassFixture<WebApplicationFac
         // split exists to draw: the route that resolves an individual must never be reachable
         // with dashboard access alone.
         AssertRequires(endpoints, "/api/v1/lookup/msisdn", Permissions.LookupSubscriber);
+        AssertRequires(endpoints, "/api/v1/lookup/imsi/search", Permissions.LookupImsi);
+        AssertRequires(endpoints, "/api/v1/lookup/imsi/history", Permissions.LookupImsi);
         AssertRequires(endpoints, "/api/v1/users/", Permissions.UserView, Permissions.UserManage);
         AssertRequires(endpoints, "/api/v1/audit/", Permissions.AuditView);
         AssertRequires(endpoints, "/api/v1/tac-versions/{id:long}/activate", Permissions.TacActivate);

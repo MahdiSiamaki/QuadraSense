@@ -37,6 +37,7 @@ const nav = computed(() =>
     { to: '/', label: 'Dashboard', show: can(Permission.DashboardView) },
     { to: '/imports', label: 'Imports', show: can(Permission.ImportView) },
     { to: '/lookup', label: 'Lookup', show: can(Permission.LookupSubscriber) },
+    { to: '/lookup/imsi', label: 'IMSI', show: can(Permission.LookupImsi) },
     {
       to: '/admin/users',
       label: 'Users',
@@ -50,6 +51,8 @@ const nav = computed(() =>
 function isCurrent(to: string): boolean {
   if (to === '/') return route.path === '/'
   if (to === '/admin/users') return route.path.startsWith('/admin/users') || route.path.startsWith('/admin/roles')
+  // /lookup must not claim /lookup/imsi, which is its own destination.
+  if (to === '/lookup') return route.path === '/lookup'
   return route.path.startsWith(to)
 }
 

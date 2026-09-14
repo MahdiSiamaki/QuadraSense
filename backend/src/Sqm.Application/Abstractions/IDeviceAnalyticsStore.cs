@@ -36,6 +36,33 @@ public interface IDeviceAnalyticsStore
     /// </remarks>
     Task<IReadOnlyList<BindingRow>> GetBindingsForMsisdnAsync(ulong msisdn, CancellationToken ct);
 
+    /// <summary>Bindings matching a complete IMSI or a prefix, filtered and paged.</summary>
+    /// <remarks>
+    /// <para>
+    /// Served from <c>sqm.binding_by_imsi</c>, a second copy of the current state ordered by IMSI.
+    /// The primary table is ordered by <c>(msisdn, imsi, imei)</c>, where a filter on the second
+    /// key column prunes nothing: measured over five real IMSIs, four read all 36,013 granules -
+    /// the entire 295-million-row table, 2.2 GiB, ~1.3 s each. See ADR-008.
+    /// </para>
+    /// <para>
+    /// A prefix is a numeric RANGE, not a string match, which is why it is fast: the term
+    /// <c>4321139917</c> is <c>[432113991700000, 432113991799999]</c> and the primary index seeks
+    /// straight to it. <c>LIKE '4321139917%'</c> would read the same 2.2 GiB.
+    /// </para>
+    /// </remarks>
+    Task<ImsiSearchOutcome> SearchByImsiAsync(
+        ImsiSearchCriteria criteria, CancellationToken ct);
+
+    /// <summary>Dated add/remove events for one IMSI over a date range.</summary>
+    /// <remarks>
+    /// Reads the event log, which is partitioned by day, so a date range prunes partitions before
+    /// anything is decompressed. Within the surviving partitions a bloom-filter skip index on
+    /// <c>imsi</c> does the rest - the log is ordered by MSISDN and a second copy of 25 GiB was
+    /// not worth what it would buy.
+    /// </remarks>
+    Task<ImsiHistoryOutcome> GetImsiHistoryAsync(
+        ulong imsi, DateOnly? fromDate, DateOnly? toDate, int limit, CancellationToken ct);
+
     /// <summary>Adds, removes and net change per delivery sequence.</summary>
     Task<IReadOnlyList<ChangePoint>> GetChangeSeriesAsync(DashboardFilter filter, CancellationToken ct);
 

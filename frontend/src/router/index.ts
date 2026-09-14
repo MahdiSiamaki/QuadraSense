@@ -48,6 +48,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Subscriber lookup', permission: Permission.LookupSubscriber },
   },
   {
+    path: '/lookup/imsi',
+    name: 'imsi-search',
+    component: () => import('@/features/lookup/ImsiSearchPage.vue'),
+    meta: { title: 'IMSI search', permission: Permission.LookupImsi },
+  },
+  {
     path: '/profile',
     name: 'profile',
     component: () => import('@/features/profile/ProfilePage.vue'),

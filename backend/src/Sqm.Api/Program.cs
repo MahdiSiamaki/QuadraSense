@@ -193,6 +193,7 @@ app.MapDashboardEndpoints();
 app.MapImportEndpoints();
 app.MapTacEndpoints();
 app.MapLookupEndpoints();
+app.MapImsiEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);
 
