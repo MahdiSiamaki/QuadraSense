@@ -29,6 +29,10 @@ public static class ImportEndpoints
             .WithName("GetImport")
             .WithSummary("One import: timeline, progress, quarantine and lineage.");
 
+        group.MapGet("/{jobId:long}/preview", PreviewAsync)
+            .WithName("PreviewImportFile")
+            .WithSummary("The first rows of the stored file, exactly as delivered.");
+
         group.MapGet("/{jobId:long}/quarantine/{summaryId:long}", GetQuarantineSamplesAsync)
             .WithName("GetQuarantineSamples")
             .WithSummary("Example rows for one quarantine rule.");
@@ -177,6 +181,69 @@ public static class ImportEndpoints
         return detail is null ? Results.NotFound() : Results.Ok(detail);
     }
 
+    /// <summary>
+    /// Reads the first few lines of a stored file.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Reads exactly as many lines as it needs and stops. These files reach a gigabyte, so a
+    /// preview that opened the whole thing would be a way to take the server down by clicking a
+    /// link twenty times.
+    /// </para>
+    /// <para>
+    /// The rows are returned raw, unparsed and unformatted. The point of a preview is to see what
+    /// the source actually sent - a stray quote, a shifted column, a header that changed - and
+    /// any tidying the API did on the way past would hide precisely the thing being looked for.
+    /// </para>
+    /// </remarks>
+    private static async Task<IResult> PreviewAsync(
+        long jobId,
+        IImportJobRepository repository,
+        IImportFileStore fileStore,
+        CancellationToken ct,
+        int lines = 20)
+    {
+        var detail = await repository.GetJobAsync(jobId, ct).ConfigureAwait(false);
+
+        if (detail is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!detail.IsBlobPresent
+            || !await fileStore.ExistsAsync(detail.StoredPath, ct).ConfigureAwait(false))
+        {
+            return Results.Problem(
+                title: "Original file is gone",
+                detail: "The stored file has been deleted, so it cannot be previewed.",
+                statusCode: StatusCodes.Status410Gone);
+        }
+
+        var take = Math.Clamp(lines, 1, 200);
+
+        await using var stream = await fileStore
+            .OpenReadAsync(detail.StoredPath, ct).ConfigureAwait(false);
+        using var reader = new StreamReader(
+            stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true,
+            bufferSize: 64 * 1024);
+
+        var header = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+        var rows = new List<string>(take);
+
+        while (rows.Count < take
+               && await reader.ReadLineAsync(ct).ConfigureAwait(false) is { } line)
+        {
+            rows.Add(line.Length > 1000 ? line[..1000] : line);
+        }
+
+        return Results.Ok(new FilePreview(
+            detail.Summary.OriginalFileName,
+            detail.Summary.FileBytes,
+            header?.Split(',').Select(c => c.Trim().Trim('"')).ToArray() ?? [],
+            rows,
+            detail.Summary.RowsInput));
+    }
+
     private static async Task<IResult> GetQuarantineSamplesAsync(
         long jobId, long summaryId, IImportJobRepository repository, CancellationToken ct)
     {
@@ -299,6 +366,16 @@ public static class ImportEndpoints
     private static string CurrentActor(HttpContext http) =>
         http.User.Identity?.Name is { Length: > 0 } name ? name : "anonymous@pre-auth";
 }
+
+/// <summary>The first rows of a stored file, as delivered.</summary>
+/// <param name="FileName">The name it arrived under.</param>
+/// <param name="FileBytes">Its size.</param>
+/// <param name="Columns">The header, split on commas.</param>
+/// <param name="Rows">The first data lines, raw.</param>
+/// <param name="TotalRows">Rows the import counted, or 0 if it has not run yet.</param>
+public sealed record FilePreview(
+    string FileName, long FileBytes, IReadOnlyList<string> Columns,
+    IReadOnlyList<string> Rows, long TotalRows);
 
 /// <summary>A file that arrived and was stored.</summary>
 /// <param name="OriginalName">The name the client sent.</param>

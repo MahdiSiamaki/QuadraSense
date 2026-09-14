@@ -6,6 +6,7 @@ import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import StatusBadge from '@/design-system/StatusBadge.vue'
 import ProgressBar from '@/design-system/ProgressBar.vue'
 import EventTimeline from '@/design-system/EventTimeline.vue'
+import FilePreview from './FilePreview.vue'
 import { useImportDetail, useQuarantineSamples, useImportActions } from './useImportQueries'
 import { isTerminal } from '@/api/imports'
 import {
@@ -31,6 +32,7 @@ const detail = useImportDetail(jobId)
 const { cancel, reprocess } = useImportActions()
 
 const openRule = ref<number | null>(null)
+const showPreview = ref(false)
 const samples = useQuarantineSamples(jobId, openRule)
 
 const summary = computed(() => detail.data.value?.summary)
@@ -154,6 +156,23 @@ function toggleRule(summaryId: number) {
 
         <div class="grid gap-5 lg:grid-cols-[1fr_20rem]">
           <div class="space-y-5">
+            <Card title="The file as delivered" subtitle="The first rows, exactly as they arrived">
+              <template #actions>
+                <button
+                  type="button"
+                  class="text-[var(--text-xs)] font-medium text-[var(--c-accent)] hover:underline"
+                  :aria-expanded="showPreview"
+                  @click="showPreview = !showPreview"
+                >
+                  {{ showPreview ? 'Hide' : 'Show first rows' }}
+                </button>
+              </template>
+              <FilePreview :job-id="jobId" :open="showPreview" />
+              <p v-if="!showPreview" class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+                Not loaded until asked for — these files reach a gigabyte.
+              </p>
+            </Card>
+
             <Card title="What happened" subtitle="Recorded by the worker as it ran">
               <EventTimeline :events="detail.data.value.events" />
             </Card>
