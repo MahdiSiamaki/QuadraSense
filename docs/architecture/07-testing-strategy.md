@@ -152,6 +152,26 @@ That is the shape of the worst bug this system can have: not a crash, but a numb
 wrong and looks fine. Tests that only assert "the import succeeded" would have passed
 throughout.
 
+### The check that only existed after it was needed
+
+`--verify-marts` was written because a report of "the dashboard is fully current" was wrong. The
+check that had been made was "does each mart have a partition for this delivery", and it passed
+while a third of the refresh had failed: the device-class mart held one of three measures, the
+capability mart one of three, and the dimension mart was missing `vendor` — which is the one the
+Top Vendors widget reads.
+
+The lesson generalises past this bug. **Existence is a much weaker property than completeness**,
+and a verification that asserts the weaker one reads as if it asserted the stronger one. The
+check now asserts both halves that matter:
+
+- every slice the refresh is supposed to write is present, named individually
+- the totals reconcile against the KPI mart's active-binding count
+
+The second is the one with teeth. A missing mart shows an empty chart and somebody asks about
+it; a mart that disagrees with the headline figure shows a plausible number and nobody does.
+
+---
+
 ### Still missing
 
 - **API contract tests.** Waiting on authentication, since most of what they assert is authz.

@@ -100,7 +100,40 @@ cd frontend && npm install && npm run dev       # UI on :5173
 The worker checks the analytics schema at startup and refuses to run against the wrong partition
 key, because day-level idempotency is implemented as a partition drop.
 
-### 5. Tests
+### 5. Batch operations
+
+The worker doubles as the batch entry point, so the historical jobs and the daily import run the
+same code rather than two implementations that can drift.
+
+```bash
+cd backend/src/Sqm.Ingestion
+
+# Rebuild the per-day marts. Skips days already built; --force redoes them all.
+dotnet run -- --refresh-marts [--from 2026-01-26] [--to 2026-06-14] [--force]
+
+# Rebuild the dashboard marts for one delivery. Defaults to the newest.
+dotnet run -- --refresh-dashboard [--seq 133] [--pause-merges]
+
+# Check a delivery's marts are complete, not merely present.
+dotnet run -- --verify-marts [--seq 133]
+```
+
+**`--verify-marts` is the one worth knowing about.** The refresh writes fifteen INSERTs across
+six marts, so a partly-failed run leaves every mart holding rows for the delivery while several
+slices are missing. It checks every expected slice and reconciles the totals against the KPI
+mart's active-binding count — because a mart that disagrees with the headline figure is worse
+than a missing one, it will be believed.
+
+The dashboard only ever reads a delivery listed in `sqm.mart_ready`, which the refresh writes
+**after** every statement succeeds. During a rebuild it serves the previous complete delivery and
+says so on the freshness card.
+
+`--pause-merges` is for an undersized node. The mart statements use 34–73 MiB each and still
+collide with a single merge of the 25 GiB event log, which can hold 4 GiB. Merges are always
+resumed afterwards, including when the job fails. See
+`docs/architecture/11-clickhouse-memory.md`.
+
+### 6. Tests
 
 ```bash
 dotnet test backend/Sqm.slnx
