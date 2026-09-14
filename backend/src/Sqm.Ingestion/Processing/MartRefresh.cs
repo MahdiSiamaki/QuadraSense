@@ -68,6 +68,12 @@ internal sealed partial class MartRefresh(
         int sequence, Func<string, Task>? onProgress, CancellationToken ct)
     {
         var failures = 0;
+        var statements = SqlScript.Split(LoadScript()).Count;
+
+        // Withdraw the delivery before touching it. From here until the refresh finishes, the
+        // dashboard reads the previous complete delivery rather than a mart that is being
+        // dropped and rebuilt underneath it.
+        await analytics.SetMartsReadyAsync(sequence, false, 0, ct).ConfigureAwait(false);
 
         for (var pass = 1; pass <= MaxPasses; pass++)
         {
@@ -75,6 +81,10 @@ internal sealed partial class MartRefresh(
 
             if (failures == 0)
             {
+                // Published only now. Completion is a fact the refresh records, not something
+                // inferred from rows existing.
+                await analytics.SetMartsReadyAsync(sequence, true, statements, ct)
+                    .ConfigureAwait(false);
                 return 0;
             }
 

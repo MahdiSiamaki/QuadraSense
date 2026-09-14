@@ -48,6 +48,14 @@ public sealed class ClickHouseOptions
 /// These are the fallback paths that read raw rows; the marts, which the dashboard uses for
 /// almost everything, are built from FINAL reads in the refresh job for the same reason.
 /// </para>
+/// <para>
+/// Every mart read picks its delivery from <c>sqm.mart_ready</c> rather than from
+/// <c>max(seq)</c> of the mart itself. A refresh writes fifteen statements across six marts, so
+/// a partly-failed run leaves the new sequence present in every one of them while several
+/// slices are missing - and <c>max(seq)</c> would then select that half-built delivery and
+/// return empty charts. <c>mart_ready</c> holds only sequences whose refresh finished, so the
+/// dashboard serves the newest delivery that is actually whole.
+/// </para>
 /// </remarks>
 public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
 {
@@ -116,8 +124,14 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 unknown_device_bindings,
                 malformed_imei_bindings,
                 tac_matched_bindings,
-                round(100.0 * tac_matched_bindings / nullIf(active_bindings, 0), 3) AS tac_coverage_pct
+                round(100.0 * tac_matched_bindings / nullIf(active_bindings, 0), 3) AS tac_coverage_pct,
+                seq,
+                -- The delivery's own day, so the caller can say which delivery these figures
+                -- describe rather than implying they are the newest data imported.
+                (SELECT max(data_date) FROM sqm.agg_change_summary_daily AS d
+                  WHERE d.seq = agg_kpi_daily.seq) AS delivery_date
             FROM sqm.agg_kpi_daily
+            WHERE seq = (SELECT max(seq) FROM sqm.mart_ready)
             ORDER BY seq DESC
             LIMIT 1
             """;
@@ -129,7 +143,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            return new KpiSummary(0, 0, 0, 0, 0, 0, 0, 0);
+            return new KpiSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, null);
         }
 
         return new KpiSummary(
@@ -140,8 +154,18 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
             UnknownDeviceBindings: GetInt64(reader, 4),
             MalformedImeiBindings: GetInt64(reader, 5),
             TacMatchedBindings: GetInt64(reader, 6),
-            TacCoveragePercent: GetDouble(reader, 7));
+            TacCoveragePercent: GetDouble(reader, 7),
+            DeliverySequence: (int)GetInt64(reader, 8),
+            DeliveryDate: GetDateOrNull(reader, 9));
     }
+
+    /// <summary>Reads a nullable Date column.</summary>
+    /// <remarks>
+    /// The initial dump has no delivery date - it covers 2025-12-27 to 2026-01-25, a window
+    /// rather than a day - so null here is a real answer and not a missing one.
+    /// </remarks>
+    private static DateOnly? GetDateOrNull(DbDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : DateOnly.FromDateTime(reader.GetDateTime(ordinal));
 
     /// <summary>Filtered KPIs, which must scan the raw table. Measured at ~6 s.</summary>
     private async Task<KpiSummary> GetKpiFromRawAsync(DashboardFilter filter, CancellationToken ct)
@@ -160,7 +184,13 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 countIf(b.imei = '000000')                     AS unknown_device_bindings,
                 countIf(length(b.imei) != 14 AND b.imei != '000000') AS malformed_imei_bindings,
                 countIf(t.tac != '')                           AS tac_matched_bindings,
-                round(100.0 * countIf(t.tac != '') / count(), 3) AS tac_coverage_pct
+                round(100.0 * countIf(t.tac != '') / count(), 3) AS tac_coverage_pct,
+                -- The raw path reads current state, which already has every delivery folded in,
+                -- so it reports the newest delivery rather than whichever one the marts serve.
+                -- agg_change_summary_daily is 133 rows; reading max(seq) off binding_event would
+                -- be a full column scan of a billion.
+                (SELECT max(seq) FROM sqm.agg_change_summary_daily)       AS delivery_seq,
+                (SELECT max(data_date) FROM sqm.agg_change_summary_daily) AS delivery_date
             FROM sqm.binding_current AS b FINAL
             LEFT JOIN sqm.tac AS t ON t.tac = b.tac
             LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
@@ -175,7 +205,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            return new KpiSummary(0, 0, 0, 0, 0, 0, 0, 0);
+            return new KpiSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, null);
         }
 
         return new KpiSummary(
@@ -186,7 +216,9 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
             UnknownDeviceBindings: GetInt64(reader, 4),
             MalformedImeiBindings: GetInt64(reader, 5),
             TacMatchedBindings: GetInt64(reader, 6),
-            TacCoveragePercent: GetDouble(reader, 7));
+            TacCoveragePercent: GetDouble(reader, 7),
+            DeliverySequence: (int)GetInt64(reader, 8),
+            DeliveryDate: GetDateOrNull(reader, 9));
     }
 
     /// <inheritdoc />
@@ -233,9 +265,9 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 dim_value AS k,
                 {{measure}} AS n,
                 round(100.0 * {{measure}} / nullIf(
-                    (SELECT {{populationTotal}} FROM sqm.agg_kpi_daily ORDER BY seq DESC LIMIT 1), 0), 3) AS pct
+                    (SELECT {{populationTotal}} FROM sqm.agg_kpi_daily WHERE seq = (SELECT max(seq) FROM sqm.mart_ready) LIMIT 1), 0), 3) AS pct
             FROM sqm.agg_dimension_daily
-            WHERE seq = (SELECT max(seq) FROM sqm.agg_dimension_daily)
+            WHERE seq = (SELECT max(seq) FROM sqm.mart_ready)
               AND dimension = {dimension:String}{{unknownClause}}
             ORDER BY n DESC
             LIMIT {{take}}
@@ -426,7 +458,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         const string Sql = """
             SELECT device_class, sum(n) AS n
             FROM sqm.agg_device_class_daily
-            WHERE seq = (SELECT max(seq) FROM sqm.agg_device_class_daily)
+            WHERE seq = (SELECT max(seq) FROM sqm.mart_ready)
               AND measure = {measure:String}
             GROUP BY device_class
             ORDER BY n DESC
@@ -459,7 +491,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         const string Sql = """
             SELECT capability, supported, unsupported, unknown
             FROM sqm.agg_capability_daily
-            WHERE seq = (SELECT max(seq) FROM sqm.agg_capability_daily)
+            WHERE seq = (SELECT max(seq) FROM sqm.mart_ready)
               AND measure = {measure:String}
             ORDER BY supported DESC
             """;

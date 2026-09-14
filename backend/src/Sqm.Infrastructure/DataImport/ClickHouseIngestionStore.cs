@@ -500,6 +500,35 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
         }
     }
 
+    public async Task SetMartsReadyAsync(
+        int sequence, bool ready, int statements, CancellationToken ct)
+    {
+        await using var connection = CreateConnection();
+        await using var command = connection.CreateCommand();
+
+        // ReplacingMergeTree keyed on seq, so publishing is an insert and withdrawing is a
+        // partition-free delete of one row. The reader uses FINAL, so the newest row wins even
+        // before a merge collapses them.
+        command.CommandText = ready
+            ? $"INSERT INTO {_database}.mart_ready (seq, completed_at, statements) "
+              + $"VALUES ({sequence}, now64(3), {statements})"
+            : $"ALTER TABLE {_database}.mart_ready DELETE WHERE seq = {sequence}";
+
+        command.CommandTimeout = 0;
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    public async Task<long?> ScalarAsync(string sql, CancellationToken ct)
+    {
+        await using var connection = CreateConnection();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.CommandTimeout = _options.QueryTimeoutSeconds;
+
+        var value = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return value is null or DBNull ? null : Convert.ToInt64(value, CultureInfo.InvariantCulture);
+    }
+
     public async Task SetMergesEnabledAsync(bool enabled, CancellationToken ct)
     {
         await using var connection = CreateConnection();

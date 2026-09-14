@@ -73,6 +73,19 @@ public sealed record DashboardFilter(
 /// data-quality screen presents as a count.
 /// </para>
 /// </param>
+/// <param name="DeliverySequence">
+/// Which delivery these figures were computed from.
+/// <para>
+/// Reported because the marts and the import history can legitimately disagree for a while. The
+/// dashboard serves the newest delivery whose marts are <i>complete</i>, so during a rebuild it
+/// shows the previous one while the import history already lists the newer day. Without this the
+/// page would show yesterday's numbers under today's heading and say nothing.
+/// </para>
+/// </param>
+/// <param name="DeliveryDate">
+/// The business date of that delivery, or <see langword="null"/> for the initial dump, which
+/// covers a window rather than a day.
+/// </param>
 /// <param name="TacCoveragePercent">Share of active bindings that enrich against the TAC database.</param>
 public sealed record KpiSummary(
     long ActiveBindings,
@@ -82,7 +95,9 @@ public sealed record KpiSummary(
     long UnknownDeviceBindings,
     long MalformedImeiBindings,
     long TacMatchedBindings,
-    double TacCoveragePercent);
+    double TacCoveragePercent,
+    int DeliverySequence,
+    DateOnly? DeliveryDate);
 
 /// <summary>One row of a "top N by dimension" result.</summary>
 /// <param name="Key">The dimension value, e.g. a manufacturer name.</param>

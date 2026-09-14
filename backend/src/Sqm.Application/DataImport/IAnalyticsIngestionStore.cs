@@ -135,6 +135,34 @@ public interface IAnalyticsIngestionStore
     /// </remarks>
     Task SetMergesEnabledAsync(bool enabled, CancellationToken ct);
 
+    /// <summary>
+    /// Runs a counting query and returns the single number it produces.
+    /// </summary>
+    /// <remarks>
+    /// For verification only: the caller passes a <c>SELECT count()</c> or <c>SELECT sum()</c>
+    /// built from fixed text, never from user input. Narrow on purpose - a general "run this SQL"
+    /// on the ingestion store would be a way for any caller to write to the analytics store.
+    /// </remarks>
+    Task<long?> ScalarAsync(string sql, CancellationToken ct);
+
+    /// <summary>
+    /// Records, or withdraws, a delivery's marts as complete.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The dashboard selects its delivery from this register rather than from <c>max(seq)</c> of
+    /// a mart, because the presence of rows does not mean the refresh finished. Fifteen
+    /// statements across six marts: a run where a third fail still leaves the new sequence
+    /// present everywhere, with several slices missing and the widgets that read them empty.
+    /// </para>
+    /// <para>
+    /// Withdrawn when a rebuild starts, restored only when every statement has succeeded. While
+    /// a rebuild is in flight the dashboard serves the previous delivery - a day older,
+    /// internally consistent, and the freshness card says how old it is.
+    /// </para>
+    /// </remarks>
+    Task SetMartsReadyAsync(int sequence, bool ready, int statements, CancellationToken ct);
+
     /// <summary>Every business date present in the event log, oldest first.</summary>
     Task<IReadOnlyList<DateOnly>> GetBusinessDatesAsync(
         DateOnly? fromDate, DateOnly? toDate, CancellationToken ct);

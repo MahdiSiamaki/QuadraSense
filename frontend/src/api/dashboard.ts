@@ -22,6 +22,16 @@ export interface KpiSummary {
   /** Exact count, not derived from the percentage - see the contract for why. */
   tacMatchedBindings: number
   tacCoveragePercent: number
+  /**
+   * Which delivery these figures were computed from.
+   *
+   * The dashboard serves the newest delivery whose marts are *complete*, so during a rebuild it
+   * shows the previous one while the import history already lists the newer day. Without this the
+   * page would show older numbers under a newer heading and say nothing about it.
+   */
+  deliverySequence: number
+  /** That delivery's business date. Null for the initial dump, which covers a window. */
+  deliveryDate: string | null
 }
 
 export interface DimensionCount {

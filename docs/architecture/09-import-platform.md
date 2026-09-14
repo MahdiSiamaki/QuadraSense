@@ -480,6 +480,37 @@ If the switch fails, the operational record is reverted and the caller is told p
 nothing changed. The opposite order would change the manufacturer shown on every screen before
 anything recorded that it had happened.
 
+### D9 — A delivery is served only once its marts are complete
+
+Every dashboard query used to select its delivery with
+`WHERE seq = (SELECT max(seq) FROM <mart>)`. That is correct only if the newest sequence present
+is also finished — and the refresh writes **fifteen INSERTs across six marts**: three measures
+into the device-class mart, three into the capability mart, six dimensions into the dimension
+mart.
+
+A run where a third of them failed still left the new sequence present in every mart. So
+`max(seq)` selected the half-built delivery, and the widgets whose slice had failed returned
+nothing. Not an error, not a fallback to the previous good delivery — an empty chart on a screen
+that had been working a minute earlier.
+
+Observed exactly that: `agg_device_class_daily` holding only the subscribers measure,
+`agg_capability_daily` only bindings, and the dimension mart missing `vendor`, which is the one
+Top Vendors reads. Every partition existed. Checking that a partition exists is a much weaker
+statement than it sounds.
+
+`sqm.mart_ready` makes completion a fact the refresh **records** rather than something inferred
+from rows existing. A sequence is withdrawn when its rebuild starts and published only when every
+statement has succeeded, so the dashboard always reads the newest delivery that is actually
+whole. During a rebuild it serves the previous one — a day older, internally consistent, and the
+freshness card says how old it is.
+
+This is the analytics-store twin of `imports.import_job.is_effective`: in both halves of the
+system, **the newest thing that exists is not necessarily the thing to serve.**
+
+`--verify-marts` checks the same property from the outside — every expected slice present, and
+the totals reconciling against the KPI mart's active-binding count. A mart that disagrees with
+the headline figure is worse than a missing one, because it will be believed.
+
 ### What the platform is made of
 
 | Piece | Where |

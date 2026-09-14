@@ -64,6 +64,29 @@ var host = builder.Build();
 // Needed after a bulk load, and after activating a TAC version: both change what the marts
 // would compute without any file arriving. Defaults to the highest sequence in the event log,
 // which is the delivery the dashboard reads.
+// Check that a delivery's marts are complete, not merely present.
+//
+//   dotnet run --project backend/src/Sqm.Ingestion -- --verify-marts [--seq N]
+//
+// "The partition exists" is a much weaker statement than it sounds: the refresh writes 15
+// INSERTs across 6 marts, so a run where a third of them failed still leaves every mart holding
+// rows for the delivery. This checks every slice and reconciles the totals against the KPI.
+if (args.Contains("--verify-marts"))
+{
+    var analytics = host.Services.GetRequiredService<IAnalyticsIngestionStore>();
+
+    var index = Array.IndexOf(args, "--seq");
+    var sequence = index >= 0 && index + 1 < args.Length
+        && int.TryParse(args[index + 1], out var wanted)
+        ? wanted
+        : await analytics.GetMaxSequenceAsync(CancellationToken.None).ConfigureAwait(false);
+
+    var problems = await MartVerification
+        .RunAsync(analytics, sequence, CancellationToken.None).ConfigureAwait(false);
+
+    return problems == 0 ? 0 : 1;
+}
+
 if (args.Contains("--refresh-dashboard"))
 {
     var analytics = host.Services.GetRequiredService<IAnalyticsIngestionStore>();

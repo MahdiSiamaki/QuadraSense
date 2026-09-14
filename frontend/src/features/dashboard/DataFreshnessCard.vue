@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import Card from '@/design-system/Card.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import { useFreshness, useWorkerHealth } from '@/features/imports/useImportQueries'
+import { useKpiSummary } from '@/api/dashboard'
 import { useTacVersions } from '@/features/imports/useTacVersions'
 import { formatDate, formatDateTime, formatRelative } from '@/lib/format'
 
@@ -25,6 +26,25 @@ const tacVersions = useTacVersions()
 const sqm = computed(() => freshness.data.value?.find((f) => f.sourceCode === 'SQM') ?? null)
 const activeTac = computed(() => tacVersions.data.value?.find((v) => v.status === 'Active') ?? null)
 const pendingTac = computed(() => tacVersions.data.value?.filter((v) => v.status === 'Ready') ?? [])
+
+/*
+  The figures on this page and the day named above it come from two different places: the KPI
+  marts, and the import history. They agree almost always, and during a mart rebuild they do not
+  - the dashboard serves the newest delivery whose marts are complete, which may be a day behind
+  what has been imported.
+
+  Saying so is the whole point. A page that shows one delivery's numbers under another
+  delivery's date is exactly the kind of quiet wrongness this product is built to avoid.
+*/
+const kpi = useKpiSummary(() => ({}))
+
+const martBehind = computed(() => {
+  const served = kpi.data.value?.deliveryDate ?? null
+  const imported = sqm.value?.latestBusinessDate ?? null
+  if (!imported) return null
+  if (served === imported) return null
+  return { served, imported }
+})
 
 /**
  * How to read the days-behind figure.
@@ -78,6 +98,14 @@ const missingSummary = computed(() => {
               {{ sqm.daysBehind }} days behind today
             </template>
             <template v-else>no successful import yet</template>
+          </dd>
+          <dd
+            v-if="martBehind"
+            class="mt-1 text-[var(--text-xs)] text-[var(--c-warning)]"
+            :title="`The marts are being rebuilt. Figures below are from the last complete delivery.`"
+          >
+            figures below are from
+            {{ martBehind.served ? formatDate(martBehind.served) : 'the initial dump' }}
           </dd>
         </div>
 
