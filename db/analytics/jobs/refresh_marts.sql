@@ -15,6 +15,23 @@
 --
 -- `seq` 0 is the initial snapshot; later deliveries write their own sequence.
 
+-- --------------------------------------------------------------------------
+-- WHY EVERY READ OF binding_current USES FINAL.
+--
+-- binding_current is a ReplacingMergeTree keyed on (msisdn, imsi, imei) and versioned by
+-- last_change_seq. A daily fold inserts one row per binding the day touched, and those rows
+-- duplicate keys already in the table until a background merge collapses them. Merges happen
+-- when ClickHouse decides, not when the mart refresh runs.
+--
+-- Without FINAL, a mart built between the fold and the merge counts BOTH rows for every binding
+-- that changed that day. Not an error, not a warning - just quietly larger numbers on every
+-- screen. This project has already shipped that bug once, when an insert-only mart refresh
+-- doubled agg_device_daily to 251,879,046 against a real 125,939,523.
+--
+-- FINAL costs a merge-on-read over ~295M rows. These marts are built once per delivery, so the
+-- trade is a slower daily job against figures that cannot silently double. It is not close.
+-- --------------------------------------------------------------------------
+
 ALTER TABLE sqm.agg_device_daily DROP PARTITION {seq:UInt16};
 ALTER TABLE sqm.agg_kpi_daily    DROP PARTITION {seq:UInt16};
 
@@ -30,7 +47,7 @@ SELECT
     tac,
     active,
     count()       AS n
-FROM sqm.binding_current
+FROM sqm.binding_current FINAL
 GROUP BY tac, active;
 
 -- --------------------------------------------------------------------------
@@ -57,7 +74,7 @@ SELECT
     countIf(length(imei) != 14 AND imei != '000000')  AS malformed_imei_bindings,
     countIf(tac != '' AND tac IN (SELECT tac FROM sqm.tac)) AS tac_matched_bindings,
     uniq(imsi)                                       AS distinct_sims
-FROM sqm.binding_current
+FROM sqm.binding_current FINAL
 WHERE active = 1;
 
 -- --------------------------------------------------------------------------
@@ -113,7 +130,7 @@ SELECT
         'Other'
     ) AS device_class,
     count() AS n
-FROM sqm.binding_current AS b
+FROM sqm.binding_current FINAL AS b
 LEFT JOIN (SELECT tac, deviceType FROM sqm.tac) AS t ON t.tac = b.tac
 WHERE b.active = 1
 GROUP BY device_class;
@@ -134,7 +151,7 @@ SELECT
         'Other'
     ) AS device_class,
     uniq(b.msisdn) AS n
-FROM sqm.binding_current AS b
+FROM sqm.binding_current FINAL AS b
 LEFT JOIN (SELECT tac, deviceType FROM sqm.tac) AS t ON t.tac = b.tac
 WHERE b.active = 1
 GROUP BY device_class;
@@ -155,7 +172,7 @@ SELECT
         'Other'
     ) AS device_class,
     uniqIf(b.imei, length(b.imei) = 14) AS n
-FROM sqm.binding_current AS b
+FROM sqm.binding_current FINAL AS b
 LEFT JOIN (SELECT tac, deviceType FROM sqm.tac) AS t ON t.tac = b.tac
 WHERE b.active = 1
 GROUP BY device_class;
@@ -204,7 +221,7 @@ FROM (
             countIf(c.tac != '' AND c.ims_emergency = 1) AS s3,
             countIf(c.tac != '' AND c.ims_emergency = 0) AS u3,
             countIf(c.tac = '' OR c.ims_emergency = 2) AS x3
-        FROM sqm.binding_current AS b
+        FROM sqm.binding_current FINAL AS b
         LEFT JOIN sqm.tac_capability AS c ON c.tac = b.tac
         WHERE b.active = 1
     )
@@ -234,7 +251,7 @@ FROM (
             uniqIf(b.msisdn, c.tac != '' AND c.ims_emergency = 1) AS s3,
             uniqIf(b.msisdn, c.tac != '' AND c.ims_emergency = 0) AS u3,
             uniqIf(b.msisdn, c.tac = '' OR c.ims_emergency = 2) AS x3
-        FROM sqm.binding_current AS b
+        FROM sqm.binding_current FINAL AS b
         LEFT JOIN sqm.tac_capability AS c ON c.tac = b.tac
         WHERE b.active = 1
     )
@@ -264,7 +281,7 @@ FROM (
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.ims_emergency = 1)) AS s3,
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.ims_emergency = 0)) AS u3,
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac = '' OR c.ims_emergency = 2)) AS x3
-        FROM sqm.binding_current AS b
+        FROM sqm.binding_current FINAL AS b
         LEFT JOIN sqm.tac_capability AS c ON c.tac = b.tac
         WHERE b.active = 1
     )
@@ -299,7 +316,7 @@ SELECT
     count()                        AS bindings,
     uniq(b.msisdn)                 AS subscribers,
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current AS b
+FROM sqm.binding_current FINAL AS b
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
@@ -315,7 +332,7 @@ SELECT
     count()                        AS bindings,
     uniq(b.msisdn)                 AS subscribers,
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current AS b
+FROM sqm.binding_current FINAL AS b
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
@@ -331,7 +348,7 @@ SELECT
     count()                        AS bindings,
     uniq(b.msisdn)                 AS subscribers,
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current AS b
+FROM sqm.binding_current FINAL AS b
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
@@ -347,7 +364,7 @@ SELECT
     count()                        AS bindings,
     uniq(b.msisdn)                 AS subscribers,
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current AS b
+FROM sqm.binding_current FINAL AS b
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
@@ -363,7 +380,7 @@ SELECT
     count()                        AS bindings,
     uniq(b.msisdn)                 AS subscribers,
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current AS b
+FROM sqm.binding_current FINAL AS b
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
@@ -377,6 +394,6 @@ SELECT
     count()                        AS bindings,
     uniq(msisdn)                   AS subscribers,
     uniqIf(imei, length(imei) = 14) AS handsets
-FROM sqm.binding_current
+FROM sqm.binding_current FINAL
 WHERE active = 1
 GROUP BY dim_value;
