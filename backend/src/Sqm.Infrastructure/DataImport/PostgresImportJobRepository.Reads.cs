@@ -21,7 +21,7 @@ public sealed partial class PostgresImportJobRepository
                    j.business_date      AS BusinessDate,
                    j.revision           AS Revision,
                    j.is_effective       AS IsEffective,
-                   j.attempt            AS Attempt,
+                   j.attempt::int       AS Attempt,
                    j.rows_input         AS RowsInput,
                    j.rows_inserted      AS RowsInserted,
                    j.rows_invalid       AS RowsInvalid,

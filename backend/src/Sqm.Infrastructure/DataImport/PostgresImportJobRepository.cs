@@ -1,4 +1,5 @@
 using System.Data;
+using System.Globalization;
 using System.Text.Json;
 using Dapper;
 using Microsoft.Extensions.Logging;
@@ -37,6 +38,76 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
     [LoggerMessage(EventId = 3002, Level = LogLevel.Information,
         Message = "File {FileName} is already known by content hash; existing job {JobId}")]
     private partial void LogDuplicateFile(string fileName, long? jobId);
+
+    /// <summary>
+    /// Teaches Dapper how to bind a <see cref="DateOnly"/>.
+    /// </summary>
+    /// <remarks>
+    /// Dapper does not know the type and throws "cannot be used as a parameter value" for every
+    /// business date, which is most statements in this class. Npgsql maps it natively, so the
+    /// handler only has to name the DbType and hand the value straight through.
+    ///
+    /// Registered in a static constructor rather than at startup, so a caller cannot construct
+    /// this repository without it. It was found by an integration test against a real database;
+    /// a mocked repository would have been perfectly happy.
+    /// </remarks>
+    private sealed class DateOnlyTypeHandler : SqlMapper.TypeHandler<DateOnly>
+    {
+        public override void SetValue(System.Data.IDbDataParameter parameter, DateOnly value)
+        {
+            parameter.DbType = DbType.Date;
+            parameter.Value = value;
+        }
+
+        public override DateOnly Parse(object value) => value switch
+        {
+            DateOnly date => date,
+            DateTime timestamp => DateOnly.FromDateTime(timestamp),
+            string text => DateOnly.Parse(text, CultureInfo.InvariantCulture),
+            _ => throw new InvalidCastException(
+                $"cannot read a date from {value?.GetType().Name ?? "null"}"),
+        };
+    }
+
+    /// <summary>
+    /// Teaches Dapper how to read a <c>timestamptz</c> into a <see cref="DateTimeOffset"/>.
+    /// </summary>
+    /// <remarks>
+    /// Npgsql surfaces <c>timestamptz</c> as a UTC <see cref="DateTime"/>, and Dapper matches a
+    /// record's constructor by comparing parameter types against the reader's field types - so
+    /// every model using DateTimeOffset failed to materialise with "a parameterless default
+    /// constructor ... is required", which says nothing about the actual mismatch.
+    ///
+    /// The models keep DateTimeOffset rather than bending to the driver: these values cross an
+    /// HTTP boundary and reach a browser in another timezone, and a DateTime that merely
+    /// promises to be UTC is one careless conversion away from being wrong by hours.
+    /// </remarks>
+    private sealed class DateTimeOffsetTypeHandler : SqlMapper.TypeHandler<DateTimeOffset>
+    {
+        public override void SetValue(System.Data.IDbDataParameter parameter, DateTimeOffset value)
+        {
+            parameter.DbType = DbType.DateTimeOffset;
+            parameter.Value = value;
+        }
+
+        public override DateTimeOffset Parse(object value) => value switch
+        {
+            DateTimeOffset offset => offset,
+            DateTime timestamp => new DateTimeOffset(
+                DateTime.SpecifyKind(timestamp, DateTimeKind.Utc)),
+            string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
+            _ => throw new InvalidCastException(
+                $"cannot read a timestamp from {value?.GetType().Name ?? "null"}"),
+        };
+    }
+
+    static PostgresImportJobRepository()
+    {
+        // Dapper registers the nullable form alongside the value type, so the nullable
+        // counterparts are covered too.
+        SqlMapper.AddTypeHandler(new DateOnlyTypeHandler());
+        SqlMapper.AddTypeHandler(new DateTimeOffsetTypeHandler());
+    }
 
     private readonly NpgsqlDataSource _dataSource;
     private readonly int _commandTimeout;
@@ -231,9 +302,9 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                       f.sha256              AS Sha256,
                       f.file_bytes          AS FileBytes,
                       j.business_date       AS BusinessDate,
-                      j.attempt             AS Attempt,
-                      j.max_attempts        AS MaxAttempts,
-                      j.priority            AS Priority,
+                      j.attempt::int        AS Attempt,
+                      j.max_attempts::int   AS MaxAttempts,
+                      j.priority::int       AS Priority,
                       j.reprocess_of_job_id AS ReprocessOfJobId
             """;
 
