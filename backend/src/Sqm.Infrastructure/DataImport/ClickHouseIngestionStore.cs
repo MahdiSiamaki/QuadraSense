@@ -500,6 +500,14 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
         }
     }
 
+    public async Task SetMergesEnabledAsync(bool enabled, CancellationToken ct)
+    {
+        await using var connection = CreateConnection();
+        await using var command = connection.CreateCommand();
+        command.CommandText = enabled ? "SYSTEM START MERGES" : "SYSTEM STOP MERGES";
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<DateOnly>> GetBuiltMartDatesAsync(CancellationToken ct)
     {
         await using var connection = CreateConnection();

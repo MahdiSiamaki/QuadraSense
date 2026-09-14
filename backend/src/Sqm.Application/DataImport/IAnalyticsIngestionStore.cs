@@ -113,6 +113,28 @@ public interface IAnalyticsIngestionStore
     /// </remarks>
     Task<IReadOnlyList<DateOnly>> GetBuiltMartDatesAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Pauses or resumes background merges.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A measure for an undersized node, not a good idea in general. Measured on the development
+    /// machine: the mart statements use 34–73 MiB each and still failed against a 5.2 GiB server
+    /// ceiling, because a single merge of the 25 GiB event log can hold 4 GiB and the batch job
+    /// and the merge reach the ceiling together.
+    /// </para>
+    /// <para>
+    /// Pausing merges for the duration of a batch run removes that collision. The cost is that
+    /// parts accumulate while it is off, so it must always be turned back on — the caller does
+    /// that in a <c>finally</c>, including when the job fails.
+    /// </para>
+    /// <para>
+    /// On a node with enough memory this is never needed, which is why it is opt-in rather than
+    /// something the batch jobs do for themselves.
+    /// </para>
+    /// </remarks>
+    Task SetMergesEnabledAsync(bool enabled, CancellationToken ct);
+
     /// <summary>Every business date present in the event log, oldest first.</summary>
     Task<IReadOnlyList<DateOnly>> GetBusinessDatesAsync(
         DateOnly? fromDate, DateOnly? toDate, CancellationToken ct);

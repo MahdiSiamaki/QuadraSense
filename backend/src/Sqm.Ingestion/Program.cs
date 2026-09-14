@@ -77,10 +77,34 @@ if (args.Contains("--refresh-dashboard"))
 
     Console.WriteLine($"rebuilding dashboard marts for delivery {sequence}");
 
-    var failed = await refresh.RunAsync(
-        sequence,
-        message => { Console.WriteLine("  " + message); return Task.CompletedTask; },
-        CancellationToken.None).ConfigureAwait(false);
+    // --pause-merges is for an undersized node. The mart statements use tens of megabytes each
+    // and still collide with a single merge of the 25 GiB event log, which can hold 4 GiB. It is
+    // always turned back on, including when the job fails, because parts accumulate while it is
+    // off.
+    var pauseMerges = args.Contains("--pause-merges");
+
+    if (pauseMerges)
+    {
+        Console.WriteLine("  pausing background merges for the duration");
+        await analytics.SetMergesEnabledAsync(false, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    int failed;
+    try
+    {
+        failed = await refresh.RunAsync(
+            sequence,
+            message => { Console.WriteLine("  " + message); return Task.CompletedTask; },
+            CancellationToken.None).ConfigureAwait(false);
+    }
+    finally
+    {
+        if (pauseMerges)
+        {
+            Console.WriteLine("  resuming background merges");
+            await analytics.SetMergesEnabledAsync(true, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
 
     Console.WriteLine(failed == 0
         ? "dashboard marts rebuilt"
