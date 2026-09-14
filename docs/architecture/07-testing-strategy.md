@@ -114,12 +114,12 @@ The plan above is the target. This is the state of it.
 
 | Project | Tests | What it covers |
 |---|---:|---|
-| `Sqm.Domain.Tests` | 62 | The binding fold and the identifier rules. Every case cites a discovery measurement. |
+| `Sqm.Domain.Tests` | 98 | The binding fold, the identifier rules, the IMSI search term, and masking. Every case cites a discovery measurement. |
 | `Sqm.Ingestion.Tests` | 22 | Row validation and schema-change classification. |
 | `Sqm.Integration.Tests` | 32 | The import queue's guarantees, the authorisation rule, and endpoint coverage - against a real PostgreSQL. |
 | `Sqm.Application.Tests` | 1 | Placeholder. |
 
-**117 passing.**
+**153 passing.**
 
 ### The integration tests earned their cost on the first run
 
@@ -136,6 +136,17 @@ This is the argument for the rule in section 4 stated as a result rather than a 
 that returns what we expect tests our expectations. The behaviour under test here is
 PostgreSQL's — `FOR UPDATE SKIP LOCKED`, partial unique indexes, transaction isolation — and a
 mock cannot be wrong in the ways a database is wrong.
+
+### Tests that assert a property rather than a string
+
+`IdentifierMaskTests` could have pinned `43211******1332` and stopped. Most of it asserts the
+property instead — that the masked value does not contain the digits it is meant to hide, and that
+two SIMs differing only in the hidden middle mask to the same string. A format test passes when
+someone changes the format and breaks the guarantee; a property test does not.
+
+`ImsiQueryTests` does the same for the search term: that two prefixes of equal length select
+disjoint ranges, and that a longer prefix is contained by its shorter one. Those are what make
+paging correct, and neither is visible in a test that only checks one parse result.
 
 ### Skipping is not failing
 

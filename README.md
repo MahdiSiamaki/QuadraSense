@@ -139,6 +139,9 @@ dotnet run -- --refresh-dashboard [--seq 133] [--pause-merges]
 
 # Check a delivery's marts are complete, not merely present.
 dotnet run -- --verify-marts [--seq 133]
+
+# Populate the IMSI-ordered copy of current state. Run once after migration 018.
+dotnet run -- --backfill-imsi [--truncate]
 ```
 
 **`--verify-marts` is the one worth knowing about.** The refresh writes fifteen INSERTs across
@@ -155,6 +158,15 @@ says so on the freshness card.
 collide with a single merge of the 25 GiB event log, which can hold 4 GiB. Merges are always
 resumed afterwards, including when the job fails. See
 `docs/architecture/11-clickhouse-memory.md`.
+
+**`--backfill-imsi` has to be run again after any rebuild of `binding_current` that is not an
+INSERT.** The IMSI-ordered table is kept in step by a materialized view, and a materialized view
+fires on INSERT and on nothing else — an `EXCHANGE TABLES` swap, which migration 015 used on the
+event log, bypasses it entirely and leaves IMSI search describing the old data. The command
+reconciles row counts and active counts against the source before reporting success, and exits
+non-zero if they differ. That check earned itself on its first run: every chunk reported success
+and the copy was short by five rows, because the chunk loop stopped at ten digits and five MSISDNs
+in the data have twelve, thirteen and fifteen. See `docs/adr/ADR-008-imsi-search.md`.
 
 ### 7. Tests
 

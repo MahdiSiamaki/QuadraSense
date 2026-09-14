@@ -45,6 +45,8 @@ SQL forms produce the same set for a user holding a role, a direct grant and a d
 | Analytics | `dashboard.view` | Aggregate figures and breakdowns |
 | | `lookup.subscriber` | Resolve one MSISDN to its SIMs and handsets |
 | | `data.export` | Download results as a file |
+| | `lookup.imsi` | Resolve one SIM, by full IMSI or a prefix of ten digits or more |
+| | `identifier.reveal` | See MSISDN, IMSI and IMEI in full rather than masked |
 | Imports | `import.view` | The Import Center |
 | | `import.upload.sqm` / `import.upload.tac` | Submit a file |
 | | `import.reprocess`, `import.cancel`, `import.delete` | Act on a job |
@@ -59,13 +61,27 @@ Seeded roles:
 | Role | Permissions |
 |---|---|
 | **Viewer** | `dashboard.view`, `import.view` |
-| **Analyst** | + `lookup.subscriber`, `data.export` |
+| **Analyst** | + `lookup.subscriber`, `lookup.imsi`, `identifier.reveal`, `data.export` |
 | **Data Operator** | + both uploads, `import.reprocess`, `import.cancel` |
-| **Administrator** | all 17 |
+| **Administrator** | all 19 |
 
 Data Operator does **not** hold `tac.activate`. That is decision D4 of the import platform —
 operator imports, administrator activates — and it corrects the table in
 `04-security-model.md` §3, which predates it.
+
+`lookup.imsi` is separate from `lookup.subscriber` because the two answer different questions for
+different people: *which handset is this SIM in* is SIM operations, *which SIM does this person
+have* is subscriber support. Neither implies the other, and an organisation can now grant one
+without the other.
+
+`identifier.reveal` is the masking switch. Without it the API returns redacted identifiers and the
+raw values are never in the response — see `04-security-model.md` §2. It is granted to every role
+that could already see them, so nothing a user could do yesterday stopped working; what is new is
+that it can be taken away from one person, and that a new role starts without it.
+
+These two were added by `db/operational/migrations/004_imsi_search_permissions.sql` and are the
+demonstration that the catalogue really is extensible by INSERT: no enum widened, no type altered,
+and no frontend deployed for them to appear in the permission matrix and be grantable.
 
 ### Adding a permission
 

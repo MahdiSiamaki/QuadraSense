@@ -25,8 +25,8 @@ controls that make the decision reversible and accountable.
 
 | Control | Decision | Rationale |
 |---|---|---|
-| Display masking | **Off** | Product owner's explicit decision |
-| Masking capability | **Built, disabled by default** | Costs nothing now; a config flag rather than a rewrite if a regulator later requires it |
+| Display masking | **Off by default** | Product owner's explicit decision |
+| Masking capability | **Built, and real** | No longer a config flag: it is the `identifier.reveal` permission, applied server-side. See below |
 | Export audit | **On, mandatory** | Required by the original brief |
 | RBAC | **On from day one** | Not optional at this data sensitivity |
 | Transport | **TLS required** | Including on internal networks |
@@ -34,17 +34,52 @@ controls that make the decision reversible and accountable.
 | Identifiers in URLs | **Never** | Lookups use POST bodies, so numbers do not land in access logs, browser history or referrers |
 
 The last two matter more than they look. A system that masks the UI but writes MSISDNs into an unrotated
-nginx access log has achieved nothing. Since masking is off, keeping identifiers out of logs and URLs is the
-control that is actually load-bearing.
+nginx access log has achieved nothing. Since masking is off by default, keeping identifiers out of logs and
+URLs is the control that is actually load-bearing.
+
+### Masking, as built
+
+The row above used to read "built, disabled by default", meaning a configuration flag nobody had
+written yet. It is now a permission, `identifier.reveal`, and it is **applied on the server**: a
+caller without it receives the redacted string and the complete value is never in the response.
+Masking performed in the browser would be the same mistake as hiding a button the API would have
+honoured - the raw value sits one developer-tools panel away, and in every proxy log between here
+and there.
+
+What is kept is chosen per identifier from what the digits mean, not from a uniform rule:
+
+| Identifier | Masked | Kept | Hidden | Why |
+|---|---|---|---|---|
+| IMSI | `43211******1332` | MCC+MNC and last 4 | 6 digits, 10⁶ candidates | `43211` is identical on all 295M rows, so keeping it discloses nothing |
+| MSISDN | `912*****02` | operator prefix and last 2 | 5 digits, 10⁵ candidates | The prefix is public; everyone knows 0912 is MCI |
+| IMEI | `35586412******` | the TAC in full | the serial entirely | A TAC identifies a device **model**, which is this product's subject and is not personal. The serial identifies one physical handset, which is |
+
+Two deliberate exceptions:
+
+- **The `000000` sentinel is never masked.** 5,522,495 bindings carry it. It is not an identifier,
+  and redacting it would turn a meaningful value into a meaningless one.
+- **A search term is echoed back unmasked.** Redacting an identifier to the person who just typed
+  it protects nothing and makes the result unreadable. What needs masking is what the search
+  *revealed* - the rest of the IMSI on a prefix search, and the number and handset on any search.
+
+Mask length always matches the original, so an IMSI of unusual length stays visibly unusual when
+masked. Verified by `IdentifierMaskTests`, which asserts the property - that the hidden middle is
+absent - rather than pinning a string.
+
+**Default grants are unchanged behaviour.** Every role that could already see raw identifiers -
+Analyst, Data Operator, Administrator - holds `identifier.reveal`. Adding a permission nobody held
+would have silently redacted screens that worked the day before, which is a product change
+disguised as a migration. What is new is that an administrator can now withdraw it from one person
+without inventing a role, and that a new role starts without it.
 
 ## 3. Roles
 
-| Role | Dashboards | Subscriber lookup | Export | Upload / import | TAC activation | Admin |
-|---|---|---|---|---|---|---|
-| **Viewer** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Analyst** | ✅ | ✅ | ✅ (audited) | ❌ | ❌ | ❌ |
-| **Data Operator** | ✅ | ✅ | ✅ (audited) | ✅ | ❌ | ❌ |
-| **Administrator** | ✅ | ✅ | ✅ (audited) | ✅ | ✅ | ✅ |
+| Role | Dashboards | Subscriber lookup | IMSI search | Identifiers in full | Export | Upload / import | TAC activation | Admin |
+|---|---|---|---|---|---|---|---|---|
+| **Viewer** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Analyst** | ✅ | ✅ | ✅ | ✅ | ✅ (audited) | ❌ | ❌ | ❌ |
+| **Data Operator** | ✅ | ✅ | ✅ | ✅ | ✅ (audited) | ✅ | ❌ | ❌ |
+| **Administrator** | ✅ | ✅ | ✅ | ✅ | ✅ (audited) | ✅ | ✅ | ✅ |
 
 **Corrected since this table was drafted.** Data Operator uploads a TAC snapshot but does not
 activate it - that is decision D4 of the import platform, which arrived after this row was written.
