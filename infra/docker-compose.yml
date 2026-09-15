@@ -16,6 +16,7 @@ services:
     volumes:
       - chdata:/var/lib/clickhouse
       - ./clickhouse/memory.xml:/etc/clickhouse-server/config.d/memory.xml:ro
+      - ./clickhouse/system-logs.xml:/etc/clickhouse-server/config.d/system-logs.xml:ro
       # The image restricts the built-in 'default' user to loopback, so the application needs
       # its own. ClickHouse hot-reloads users.d, so changing this does not need a restart.
       - ./clickhouse/sqm-app-user.xml:/etc/clickhouse-server/users.d/sqm-app-user.xml:ro

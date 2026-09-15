@@ -56,4 +56,59 @@
       asks for is 8 GiB of tracked memory for nothing.
     -->
     <uncompressed_cache_size>134217728</uncompressed_cache_size>
+    <!--
+      MERGE SIZE, capped to what this container can actually afford.
+
+      Section 2 of docs/architecture/11-clickhouse-memory.md records that a single merge of a
+      multi-gigabyte part holds around 4 GiB here, and that merging a 6.45 GiB table took the
+      server down entirely. It was written as something to work around - batch jobs pause merges,
+      the IMSI backfill waits for the drain - and never as something to prevent.
+
+      Working around it is not enough, because the one moment nothing can pause merges is
+      STARTUP. After an unclean stop the server wakes with a merge backlog, schedules the largest
+      one it can, exhausts the VM, is killed, restarts, and schedules it again. Observed directly:
+      three restart cycles in four minutes, the host down to 2.6 GiB free, and the Docker engine
+      itself returning 500 because the VM had nothing left to give it.
+
+      The default ceiling on a single merge is 150 GiB, which assumes a machine that has it.
+      2 GiB is what this one has to spare, so that is the cap.
+
+      What it costs: large tables stop merging once their parts reach 2 GiB, so binding_current
+      (6.65 GiB) settles at roughly four parts rather than one. That is not a regression - four
+      parts is inside the range measured as cheap for FINAL, and the alternative was a merge that
+      takes the server with it. Correctness is unaffected: ReplacingMergeTree is resolved by
+      FINAL at query time, never by having merged.
+
+      IN PRODUCTION, raise this with the container's memory. It is a statement about available
+      RAM, not about the data.
+    -->
+    <merge_tree>
+        <max_bytes_to_merge_at_max_space_in_pool>2147483648</max_bytes_to_merge_at_max_space_in_pool>
+        <!--
+          Without this, ClickHouse lowers the cap further as the pool fills, using the value above
+          as the maximum. Zero means the cap above is the cap, whatever the pool is doing.
+        -->
+        <number_of_free_entries_in_pool_to_lower_max_size_of_merge>0</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
+
+        <!--
+          Lowered from 20 because the pool below is smaller than the one that default assumes.
+          ClickHouse refuses to start if this exceeds background_pool_size x
+          background_merges_mutations_concurrency_ratio - a good check, and the one that caught
+          the first version of this file: pool 2 x ratio 2 = 4, against a required 20, and the
+          server exited with BAD_ARGUMENTS on every restart. There are two such guards, and
+          they are checked one at a time, so fixing the first only reveals the second.
+        -->
+        <number_of_free_entries_in_pool_to_execute_mutation>2</number_of_free_entries_in_pool_to_execute_mutation>
+        <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>2</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
+    </merge_tree>
+
+    <!--
+      Four merge threads and no task multiplier, so at most four merges run at once. The cap above
+      bounds what one merge holds; this bounds how many can hold it simultaneously, which is the
+      other half of the same arithmetic. The default is 16 threads with a ratio of 2 - thirty-two
+      concurrent tasks, which is sizing for a machine that has thirty-two cores and the RAM to
+      match.
+    -->
+    <background_pool_size>4</background_pool_size>
+    <background_merges_mutations_concurrency_ratio>1</background_merges_mutations_concurrency_ratio>
 </clickhouse>

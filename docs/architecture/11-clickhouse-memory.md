@@ -176,7 +176,99 @@ failures are reported with the exact range to re-run, and repeating a pass finis
 stragglers. That safety net stays regardless, because it costs nothing and the alternative to
 having it is finding out you needed it.
 
+## 7. The idle server that held 5.15 GiB, and the two settings that fixed it
+
+Everything above was about queries and merges under load. This section is about a server doing
+**nothing** and still being unusable, which took a while to believe.
+
+### The symptom
+
+After an unclean shutdown the container came back and stayed pinned at its ceiling. Every query,
+including `SELECT count() FROM system.merges`, died with:
+
+```
+(total) memory limit exceeded: would use 5.36 GiB, current RSS: 5.15 GiB, maximum: 5.20 GiB
+```
+
+RSS sat at exactly 5.15 GiB for ten minutes without moving. No queries were running, no mutations
+were pending, merges had been stopped and drained, and every cache was empty — `MarkCacheBytes`
+reported **1.76 KiB**.
+
+### The measurement that pointed at the answer
+
+| Metric | Value |
+|---|---:|
+| `MemoryTracking` | 5.36 GiB |
+| `MemoryTrackingUncorrected` | **68.79 MiB** |
+| `jemalloc.allocated` | 5.40 GiB |
+| cgroup `anon` | 5.29 GiB |
+| threads | 780 |
+
+ClickHouse's own tracker admitted to 69 MiB. jemalloc said 5.40 GiB was genuinely allocated, and
+the kernel agreed it was anonymous memory. So it was not cache, not a leak of freed pages —
+`SYSTEM JEMALLOC PURGE` changed nothing — and not any query.
+
+### The cause: 6,847 parts of very wide system-log tables
+
+The store held 9,007 part directories. Three tables held most of them:
+
+| Table | Parts | On disk | DDL size |
+|---|---:|---:|---:|
+| `system.text_log` | 2,964 | 458 MB | 2 KB |
+| `system.asynchronous_metric_log` | 2,032 | 188 MB | 758 B |
+| `system.metric_log` | 1,851 | 1,012 MB | **198 KB** |
+| `system.query_metric_log` | 121 | 62 MB | **144 KB** |
+
+`metric_log` has roughly seven hundred columns, and per-part per-column structures are held in
+memory for every active and outdated part. The crash loop had written thousands of them.
+
+It was also self-sustaining, and the log said so:
+
+```
+Failed to flush system log system.asynchronous_metric_log with 4200 entries
+up to offset 106327: (total) memory limit exceeded
+```
+
+Memory is full, so the flush fails; the flush failed, so the buffer keeps the rows; the buffer
+grows, so memory is fuller. A server holding a log of how busy it had been.
+
+**Quarantining those four tables' data and disabling them in config took idle RSS from 5.15 GiB
+to 761 MiB**, with the tracker at 130 MiB. See `infra/clickhouse/system-logs.xml`. `query_log` and
+`part_log` are kept — benchmarks read them.
+
+### The other half: capping merge size
+
+Section 6 records that a single merge of a multi-gigabyte part holds around 4 GiB here, and
+treats it as something batch jobs work around by pausing merges. That is not enough, because
+**the one moment nothing can pause merges is startup**: the server wakes with a backlog,
+schedules the largest merge it can, exhausts the VM, is killed, and restarts into the same
+backlog. Observed directly — three restart cycles in four minutes, the host down to 2.6 GiB free,
+and the Docker engine itself returning 500 because the VM had nothing left to give it.
+
+The default ceiling on one merge is 150 GiB, which assumes a machine that has it.
+`max_bytes_to_merge_at_max_space_in_pool` is now **2 GiB**, with `background_pool_size` 4 and
+`background_merges_mutations_concurrency_ratio` 1 — at most four merges, each bounded.
+
+Two traps, and both bite at startup:
+
+- ClickHouse **refuses to start** if `number_of_free_entries_in_pool_to_execute_mutation` (default
+  20) exceeds `background_pool_size × background_merges_mutations_concurrency_ratio`. The first
+  version of the config exited with `BAD_ARGUMENTS` on every restart.
+- There is a **second** such guard,
+  `number_of_free_entries_in_pool_to_execute_optimize_entire_partition` (default 25), checked
+  after the first. Fixing one only reveals the other. Both are lowered to 2.
+
+**What it cost:** large tables stop merging once their parts reach 2 GiB, so `binding_current`
+settles at roughly four parts rather than one. That is inside the range measured as cheap for
+`FINAL`, and correctness is unaffected — a ReplacingMergeTree is resolved by `FINAL` at query
+time, never by having merged.
+
+**What it bought:** the IMEI backfill wrote 295,013,916 rows, then compacted **301 parts down to
+5 and reconciled**, on the first attempt, with the server answering throughout. The equivalent
+step in the IMSI backfill took the server down three times.
+
 ## Related
+
 
 - `infra/clickhouse/memory.xml` — the configuration, with the same history in comments
 - `docs/adr/ADR-003-analytics-store.md` — why ClickHouse, with the benchmark

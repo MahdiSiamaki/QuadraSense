@@ -1,0 +1,36 @@
+<clickhouse>
+    <!--
+      System logs, trimmed to the ones anything actually reads.
+
+      WHY THIS FILE EXISTS. After an unclean shutdown the server came back pinned at its memory
+      ceiling and stayed there with no queries, no merges and no mutations running - 5.40 GiB
+      allocated against 68.79 MiB that ClickHouse's own tracker admitted to. The log said what was
+      holding it:
+
+        Failed to flush system log system.asynchronous_metric_log with 4200 entries up to
+        offset 106327: (total) memory limit exceeded
+
+      That is a feedback loop, and it cannot break itself. Memory is full, so the flush fails;
+      the flush failed, so the buffer keeps the rows; the buffer grows, so memory is fuller. The
+      server was not busy - it was holding a log of how busy it had been.
+
+      These five had also written about 7,000 parts between them during the restart loop, which is
+      most of the 9,007 parts in the store and none of the data anybody asked for.
+
+      query_metric_log is here for the same reason metric_log is: its DDL alone is 143 KB of
+      column definitions, and a table that wide costs more per part than the rows in it.
+
+      WHAT IS KEPT. query_log and part_log stay: query_log is what benchmarks read for rows_read
+      and timings when a measurement needs the server's own accounting rather than the client's.
+      The ones removed here are diagnostics for a busy production cluster, and on a 6 GiB
+      development container they cost more than they tell.
+
+      IN PRODUCTION, turn metric_log and asynchronous_metric_log back on and give them a TTL.
+      They are genuinely useful when there is memory to hold them and somebody reading them.
+    -->
+    <asynchronous_metric_log remove="1"/>
+    <metric_log remove="1"/>
+    <text_log remove="1"/>
+    <error_log remove="1"/>
+    <query_metric_log remove="1"/>
+</clickhouse>
