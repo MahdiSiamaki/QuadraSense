@@ -232,12 +232,45 @@ export type UploadResult =
  * minutes is worse than no progress bar, so the older API wins on the one thing that matters
  * here.
  */
-export function uploadImportFile(
+/**
+ * The server's answer to "would you take this file".
+ *
+ * A refusal arrives as a thrown `ApiError` rather than in this shape, so the caller's existing
+ * error handling covers it unchanged - and now covers it before any bytes move.
+ */
+export interface UploadPreflight {
+  source: string
+  fileName: string
+  sizeBytes: number
+  /** What is still undecided: the duplicate check needs the content and happens on arrival. */
+  message: string
+}
+
+export async function uploadImportFile(
   sourceCode: string,
   file: File,
   onProgress: (fraction: number) => void,
   signal?: AbortSignal,
 ): Promise<UploadResult> {
+  // Ask before sending. This is a ~200-byte JSON POST that gets the same answer the upload would
+  // give for everything decidable without the body - is the session alive, is the source real,
+  // does this caller hold the upload permission for it.
+  //
+  // It exists because of what a refusal used to cost. A 319.6 MB daily file was pushed across
+  // the wire and refused in 0.4 ms: the server was right to refuse before reading a byte, but the
+  // browser had no way to know that and sent the whole thing anyway.
+  //
+  // It goes through `api.post`, so it carries the session cookie and the CSRF header without this
+  // function having to remember either - which is the failure that made the refusal happen.
+  //
+  // Not a security boundary. The upload re-checks everything; skipping this would waste an
+  // upload, not gain one.
+  await api.post<UploadPreflight>(
+    `/api/v1/imports/${sourceCode}/upload/preflight`,
+    { fileName: file.name, sizeBytes: file.size },
+    signal,
+  )
+
   return new Promise((resolve, reject) => {
     const form = new FormData()
     form.append('file', file)

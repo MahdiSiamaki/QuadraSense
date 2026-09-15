@@ -29,6 +29,16 @@ public static class ImportEndpoints
             .DisableAntiforgery()
             .WithMetadata(new DisableRequestSizeLimitAttribute());
 
+        // Asks the same question the upload asks, without the body.
+        //
+        // The server already refuses an unauthorised upload before reading a byte - but the
+        // BROWSER does not know that, and pushes the whole file at it regardless. A 319.6 MB
+        // daily file was sent and refused in 0.4 ms, which is 319.6 MB across the wire to learn
+        // something a 200-byte request could have said first.
+        group.MapPost("/{sourceCode}/upload/preflight", PreflightAsync)
+            .WithName("PreflightImportUpload")
+            .WithSummary("Whether this file would be accepted, asked before sending it.");
+
         group.MapGet("/", ListAsync)
             .WithName("ListImports")
             .WithSummary("Import history, newest first.");
@@ -79,46 +89,13 @@ public static class ImportEndpoints
         var source = sourceCode.ToUpperInvariant();
         var actor = CurrentActor(http);
 
-        // Which permission applies depends on the source, so it cannot be declared on the route.
-        // Checked here, before a single byte is read: an unauthorised upload should not be
-        // allowed to write a gigabyte to disk first and be rejected afterwards.
-        var required = source switch
+        // The same decision the preflight made, made again. The client is expected to have asked
+        // first, but the client is not what enforces this - a caller that skips the preflight,
+        // or whose permission was withdrawn between the two requests, is refused here.
+        var refusal = await RefuseUploadAsync(sourceCode, http, audit, ct).ConfigureAwait(false);
+        if (refusal is not null)
         {
-            "SQM" => Permissions.ImportUploadSqm,
-            "TAC" => Permissions.ImportUploadTac,
-            _ => null,
-        };
-
-        if (required is null)
-        {
-            return Results.Problem(
-                title: "Unknown source",
-                detail: $"'{sourceCode}' is not a source this platform accepts.",
-                statusCode: StatusCodes.Status404NotFound);
-        }
-
-        var user = CurrentUser.Require(http);
-
-        if (!user.Can(required))
-        {
-            // Audited here, because a check made inside a handler never reaches the pipeline's
-            // authorisation result handler - so without this the one refusal that matters most
-            // in the import platform would be the only one leaving no trace.
-            await audit.WriteAsync(new Sqm.Application.Identity.AuditEntry(
-                ActorName: user.Username,
-                Action: required,
-                Category: Sqm.Application.Identity.AuditCategory.Import,
-                Outcome: Sqm.Application.Identity.AuditOutcome.Denied,
-                ActorUserId: user.UserId,
-                TargetType: "source",
-                TargetId: source,
-                Ip: http.Connection.RemoteIpAddress?.ToString(),
-                CorrelationId: http.TraceIdentifier), ct).ConfigureAwait(false);
-
-            return Results.Problem(
-                title: "Not permitted",
-                detail: $"Uploading {source} files requires the '{required}' permission.",
-                statusCode: StatusCodes.Status403Forbidden);
+            return refusal;
         }
 
         if (!StreamedUpload.IsMultipart(http.Request))
@@ -416,9 +393,129 @@ public static class ImportEndpoints
     /// and falls back to a marker that is obviously a placeholder rather than a plausible user
     /// name. Audit rows written before authentication exists should say so.
     /// </remarks>
+    /// <summary>
+    /// Everything that can refuse an upload without looking at the bytes.
+    /// </summary>
+    /// <param name="sourceCode">The source the file is for.</param>
+    /// <param name="http">The request, for the caller and their address.</param>
+    /// <param name="audit">Where a refusal is recorded.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The problem to return, or <see langword="null"/> when it would be accepted.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>One function, two callers, on purpose.</b> The preflight exists to give the same answer
+    /// the upload would give, and the fastest way to make it lie is to write the rule twice: a
+    /// preflight that says yes where the upload says no wastes the very upload it was added to
+    /// prevent, and one that says no where the upload says yes silently removes a capability.
+    /// </para>
+    /// <para>
+    /// Which permission applies depends on the source, so it cannot be declared on the route.
+    /// </para>
+    /// </remarks>
+    private static async Task<IResult?> RefuseUploadAsync(
+        string sourceCode, HttpContext http, IAuditLog audit, CancellationToken ct)
+    {
+        var source = sourceCode.ToUpperInvariant();
+
+        var required = source switch
+        {
+            "SQM" => Permissions.ImportUploadSqm,
+            "TAC" => Permissions.ImportUploadTac,
+            _ => null,
+        };
+
+        if (required is null)
+        {
+            return Results.Problem(
+                title: "Unknown source",
+                detail: $"'{sourceCode}' is not a source this platform accepts.",
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        var user = CurrentUser.Require(http);
+
+        if (user.Can(required))
+        {
+            return null;
+        }
+
+        // Audited here, because a check made inside a handler never reaches the pipeline's
+        // authorisation result handler - so without this the one refusal that matters most in
+        // the import platform would be the only one leaving no trace.
+        //
+        // Both callers reach this, and that is not double-counting: a caller refused by the
+        // preflight does not go on to send the body, so a refused upload still produces one
+        // entry. A caller allowed here is audited by the upload itself when it succeeds.
+        await audit.WriteAsync(new Sqm.Application.Identity.AuditEntry(
+            ActorName: user.Username,
+            Action: required,
+            Category: Sqm.Application.Identity.AuditCategory.Import,
+            Outcome: Sqm.Application.Identity.AuditOutcome.Denied,
+            ActorUserId: user.UserId,
+            TargetType: "source",
+            TargetId: source,
+            Ip: http.Connection.RemoteIpAddress?.ToString(),
+            CorrelationId: http.TraceIdentifier), ct).ConfigureAwait(false);
+
+        return Results.Problem(
+            title: "Not permitted",
+            detail: $"Uploading {source} files requires the '{required}' permission.",
+            statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    /// <summary>Answers whether a file would be accepted, before it is sent.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>What this cannot tell you, and does not pretend to.</b> The one remaining refusal is a
+    /// duplicate, decided by the SHA-256 of the content - and the only way to know that is to
+    /// have the content. Guessing from the file name and size would be worse than useless: a
+    /// corrected re-delivery usually arrives under the same name at nearly the same size, and
+    /// refusing it would be refusing exactly the file an operator most needs to send.
+    /// </para>
+    /// <para>
+    /// So the duplicate check stays where the bytes are, and stays a 409 rather than an error -
+    /// re-sending a file is a normal thing for an operator to do.
+    /// </para>
+    /// </remarks>
+    private static async Task<IResult> PreflightAsync(
+        string sourceCode,
+        UploadPreflightRequest request,
+        HttpContext http,
+        IAuditLog audit,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var refusal = await RefuseUploadAsync(sourceCode, http, audit, ct).ConfigureAwait(false);
+
+        return refusal ?? Results.Ok(new UploadPreflightResponse(
+            Source: sourceCode.ToUpperInvariant(),
+            FileName: request.FileName,
+            SizeBytes: request.SizeBytes,
+            Message: "Accepted. Content is checked for duplicates once the file arrives."));
+    }
+
     private static string CurrentActor(HttpContext http) =>
         http.User.Identity?.Name is { Length: > 0 } name ? name : "anonymous@pre-auth";
 }
+
+/// <summary>What the client is about to send.</summary>
+/// <param name="FileName">The name the file will arrive under.</param>
+/// <param name="SizeBytes">How large it is, so the answer can name it.</param>
+/// <remarks>
+/// Neither field decides anything today - the refusals that can be made without the body depend
+/// on the source and the caller, not on the file. They are carried so the answer is about a
+/// named file, and so a future size or naming rule has somewhere to live.
+/// </remarks>
+public sealed record UploadPreflightRequest(string FileName, long SizeBytes);
+
+/// <summary>The upload would be accepted.</summary>
+/// <param name="Source">The source, normalised.</param>
+/// <param name="FileName">The file the answer is about.</param>
+/// <param name="SizeBytes">Its size as the client reported it.</param>
+/// <param name="Message">What is still undecided, said plainly.</param>
+public sealed record UploadPreflightResponse(
+    string Source, string FileName, long SizeBytes, string Message);
 
 /// <summary>The first rows of a stored file, as delivered.</summary>
 /// <param name="FileName">The name it arrived under.</param>
