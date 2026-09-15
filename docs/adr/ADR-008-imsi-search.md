@@ -132,8 +132,13 @@ positives alone would be ~1,284 granules and ~10.5M rows.
 
 The date range prunes **partitions** before the index is consulted at all — the table is
 `PARTITION BY data_date` — which is why the history panel puts the range control at the top rather
-than in a filter drawer. It is the single biggest lever on what that query costs. The index is
-1.69 GiB, so a cold first read of it costs seconds; a date range avoids most of it.
+than in a filter drawer. It is the single biggest lever on what that query costs.
+
+**The index has a real cold cost, and it is worth knowing.** It is 1.69 GiB, so the first read of
+it after a restart is not cheap. Measured end to end through the API on a freshly started server,
+the same query four times: **10,033 ms → 801 ms → 2,217 ms → 881 ms**. The row count is identical
+across all four (474,967), so nothing about the plan changed — that spread is page cache filling.
+A date range avoids most of it by never opening the other partitions' index blocks.
 
 ## Consequences
 
