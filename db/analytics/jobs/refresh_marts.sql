@@ -34,6 +34,7 @@
 
 ALTER TABLE sqm.agg_device_daily DROP PARTITION {seq:UInt16};
 ALTER TABLE sqm.agg_kpi_daily    DROP PARTITION {seq:UInt16};
+ALTER TABLE sqm.agg_device_model DROP PARTITION {seq:UInt16};
 
 -- --------------------------------------------------------------------------
 -- 1. Device rollup: one row per (seq, tac, active).
@@ -49,6 +50,44 @@ SELECT
     count()       AS n
 FROM sqm.binding_current FINAL
 GROUP BY tac, active;
+
+-- --------------------------------------------------------------------------
+-- 1b. Device model rollup: one row per (seq, tac), active bindings only.
+--
+--     What the Devices module reads. ~98,000 rows, so sorting, filtering and
+--     paging a device catalogue is a scan of something tiny instead of a 2.35 s
+--     aggregate over 295M rows per keystroke.
+--
+--     It carries four counts rather than the rollup above's one, because the
+--     distinct ones cannot be derived later: handsets, SIMs and subscribers do
+--     not sum across models. Someone who owns two phones is one subscriber of
+--     each model and one subscriber overall, and no arithmetic on per-model
+--     totals recovers that.
+--
+--     uniq() and not uniqExact, matching every other mart here: HyperLogLog at
+--     ~0.5% error, three orders of magnitude cheaper. Using a different
+--     estimator here would make this table disagree with the dashboard about
+--     the same population, which is worse than either estimate.
+--
+--     first_seen / last_seen are NULL when no daily file has ever named a
+--     binding of this model: min() and max() skip NULLs, and a model present
+--     only in the initial dump has nothing but NULLs to skip.
+-- --------------------------------------------------------------------------
+INSERT INTO sqm.agg_device_model
+    (seq, data_date, tac, bindings, handsets, sims, subscribers, first_seen, last_seen)
+SELECT
+    {seq:UInt16}  AS seq,
+    NULL          AS data_date,
+    tac,
+    count()                             AS bindings,
+    uniqIf(imei, length(imei) = 14)     AS handsets,
+    uniq(imsi)                          AS sims,
+    uniq(msisdn)                        AS subscribers,
+    min(last_change_date)               AS first_seen,
+    max(last_change_date)               AS last_seen
+FROM sqm.binding_current FINAL
+WHERE active = 1
+GROUP BY tac;
 
 -- --------------------------------------------------------------------------
 -- 2. Headline counters, including the distinct counts that cannot be derived
@@ -386,14 +425,18 @@ LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
 GROUP BY dim_value;
 
+-- The TAC slice is the one dimension that is NOT a fresh aggregate over 295M rows.
+-- Section 1b has already grouped current state by TAC with the same filter and the same
+-- estimator, so this reads 98,000 rows instead of repeating the pass. Two statements
+-- computing the same per-TAC counts from the same source could only ever agree or be a
+-- bug; one statement cannot disagree with itself.
 INSERT INTO sqm.agg_dimension_daily
     (seq, data_date, dimension, dim_value, bindings, subscribers, handsets)
 SELECT
     {seq:UInt16}, NULL, 'tac',
     if(tac = '', '(unknown device)', tac) AS dim_value,
-    count()                        AS bindings,
-    uniq(msisdn)                   AS subscribers,
-    uniqIf(imei, length(imei) = 14) AS handsets
-FROM sqm.binding_current FINAL
-WHERE active = 1
-GROUP BY dim_value;
+    bindings,
+    subscribers,
+    handsets
+FROM sqm.agg_device_model
+WHERE seq = {seq:UInt16};

@@ -145,13 +145,18 @@ if (args.Contains("--refresh-marts"))
         .ConfigureAwait(false);
 }
 
-// Populates the IMSI-ordered copy of current state. Run once after migration 018, and again
-// after any rebuild of binding_current that bypasses the materialized view - see ADR-008.
-if (args.Contains("--backfill-imsi"))
+// Populates a re-ordered copy of current state. Run once after the migration that creates the
+// table, and again after any rebuild of binding_current that bypasses the materialized view -
+// an EXCHANGE TABLES swap fires no insert and so mirrors nothing. See ADR-008 and ADR-009.
+if (args.Contains("--backfill-imsi") || args.Contains("--backfill-imei"))
 {
     var analytics = host.Services.GetRequiredService<IAnalyticsIngestionStore>();
-    return await ImsiBackfill
-        .RunAsync(analytics, args.Contains("--truncate"), CancellationToken.None)
+    var target = args.Contains("--backfill-imei")
+        ? CurrentStateBackfill.ByImei
+        : CurrentStateBackfill.ByImsi;
+
+    return await CurrentStateBackfill
+        .RunAsync(analytics, target, args.Contains("--truncate"), CancellationToken.None)
         .ConfigureAwait(false);
 }
 
