@@ -1,4 +1,5 @@
 using Sqm.Contracts.Dashboard;
+using Sqm.Domain.Identifiers;
 
 namespace Sqm.Application.Abstractions;
 
@@ -62,6 +63,57 @@ public interface IDeviceAnalyticsStore
     /// </remarks>
     Task<ImsiHistoryOutcome> GetImsiHistoryAsync(
         ulong imsi, DateOnly? fromDate, DateOnly? toDate, int limit, CancellationToken ct);
+
+    // ---------------------------------------------------------------- devices
+
+    /// <summary>A page of the device-model catalogue, filtered, sorted and counted.</summary>
+    /// <remarks>
+    /// Served from <c>sqm.agg_device_model</c>, which holds one row per device model per delivery
+    /// - about 98,000 rows. The same answer from <c>binding_current</c> is a 2.35 s aggregate over
+    /// 295 million rows, which is a mart-build cost, not a keystroke cost.
+    /// </remarks>
+    Task<DeviceListOutcome> SearchDevicesAsync(DeviceListCriteria criteria, CancellationToken ct);
+
+    /// <summary>Everything known about one device model, or null if the TAC is unknown entirely.</summary>
+    /// <remarks>
+    /// Returns a row even for a TAC that the GSMA snapshot does not list, as long as the network
+    /// has seen it - measured at 0.20% of bindings. <c>KnownToGsma</c> distinguishes the two, so a
+    /// page of nulls explains itself.
+    /// </remarks>
+    Task<DeviceDetailRow?> GetDeviceAsync(string tac, CancellationToken ct);
+
+    /// <summary>Daily add and remove counts for one device model over a date range.</summary>
+    /// <remarks>
+    /// Reads <c>agg_change_daily</c>, which is partitioned by day and ordered by
+    /// <c>(data_date, tac, label)</c>. The date range prunes partitions, and within a partition
+    /// <c>data_date</c> is constant - so the second key column really does prune, which is the
+    /// one place in this system where a non-leading key column does.
+    /// </remarks>
+    Task<DeviceTimelineOutcome> GetDeviceTimelineAsync(
+        string tac, DateOnly? fromDate, DateOnly? toDate, CancellationToken ct);
+
+    /// <summary>A page of the identifiers bound to one device model.</summary>
+    /// <remarks>
+    /// Served from <c>sqm.binding_by_imei</c>. A TAC is the first eight digits of an IMEI, so a
+    /// model is the contiguous range <c>['&lt;tac&gt;000000', '&lt;tac&gt;999999']</c> of a table
+    /// ordered by IMEI - a primary-index seek. The same filter on <c>binding_current</c> reads all
+    /// 295 million rows: measured at 6.5-8.9 s across three models, every one a full scan.
+    /// </remarks>
+    Task<DeviceIdentifierOutcome> GetDeviceIdentifiersAsync(
+        DeviceIdentifierCriteria criteria, CancellationToken ct);
+
+    /// <summary>Resolves an IMEI, IMSI or MSISDN to the device models it reaches.</summary>
+    /// <remarks>
+    /// An IMEI needs no query at all - its first eight digits are the model, verified against
+    /// every one of the 284,341,927 well-formed rows of current state with zero mismatches - but
+    /// it is resolved anyway, so that a handset the network has never seen is reported as such
+    /// rather than as a model page with nothing on it.
+    /// </remarks>
+    Task<DeviceResolution> ResolveDeviceAsync(
+        DeviceSearchKind kind, string digits, CancellationToken ct);
+
+    /// <summary>Distinct values available to filter the catalogue by.</summary>
+    Task<DeviceFacetsData> GetDeviceFacetsAsync(CancellationToken ct);
 
     /// <summary>Adds, removes and net change per delivery sequence.</summary>
     Task<IReadOnlyList<ChangePoint>> GetChangeSeriesAsync(DashboardFilter filter, CancellationToken ct);

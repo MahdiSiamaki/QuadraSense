@@ -9,6 +9,7 @@ using Sqm.Api.Infrastructure;
 using Sqm.Application.Abstractions;
 using Sqm.Application.DataImport;
 using Sqm.Application.Identity;
+using Sqm.Infrastructure.Catalog;
 using Sqm.Infrastructure.ClickHouse;
 using Sqm.Infrastructure.DataImport;
 using Sqm.Infrastructure.Identity;
@@ -59,6 +60,10 @@ builder.Services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName, client =
     });
 
 builder.Services.AddSingleton<IDeviceAnalyticsStore, ClickHouseAnalyticsStore>();
+
+// Curated device photographs. The GSMA TAC record carries none and this deployment has no
+// internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.
+builder.Services.AddSingleton<IDeviceImageStore, PostgresDeviceImageStore>();
 
 // The import platform's operational store and file store. The API can queue work and read
 // history; it deliberately has no way to write to the analytics store - that is the worker's
@@ -194,6 +199,7 @@ app.MapImportEndpoints();
 app.MapTacEndpoints();
 app.MapLookupEndpoints();
 app.MapImsiEndpoints();
+app.MapDeviceEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);
 

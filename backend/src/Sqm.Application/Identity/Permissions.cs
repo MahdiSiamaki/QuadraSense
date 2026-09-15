@@ -44,6 +44,39 @@ public static class Permissions
     /// </remarks>
     public const string LookupImsi = "lookup.imsi";
 
+    /// <summary>Open the Devices section: the device-model catalogue and its population figures.</summary>
+    /// <remarks>
+    /// Not dangerous, and granted to every role including Viewer. Everything behind it is a
+    /// statement about a device model - manufacturer, capabilities, how many are on the network -
+    /// and none of it names anybody. A reader who can see "Samsung 43.2%" on the dashboard and
+    /// cannot open Samsung has been given a chart and denied the thing it is about.
+    /// </remarks>
+    public const string DeviceView = "device.view";
+
+    /// <summary>Resolve one handset to the SIMs and numbers bound to it.</summary>
+    /// <remarks>
+    /// The counterpart of <see cref="LookupImsi"/> one layer down: that answers "which handsets
+    /// has this SIM been in", this answers "which SIMs have been in this handset".
+    /// </remarks>
+    public const string LookupImei = "lookup.imei";
+
+    /// <summary>Page through every IMEI, IMSI and MSISDN bound to a device model.</summary>
+    /// <remarks>
+    /// <b>Bulk exposure, and deliberately not folded into <see cref="LookupImei"/>.</b> Resolving
+    /// one IMEI exposes one person's handset; listing a model's identifiers exposes everybody who
+    /// owns that model, and the most populous TAC here covers 208,895 handsets. Those are
+    /// different acts even though they read the same table. Audited on every call, with the count
+    /// of rows returned.
+    /// </remarks>
+    public const string DeviceIdentifiers = "device.identifiers";
+
+    /// <summary>Upload or replace the photograph shown on a device page.</summary>
+    /// <remarks>
+    /// Device imagery is curated in this system: the GSMA TAC record contains none, and the
+    /// deployment has no internet access to fetch any. See ADR-009.
+    /// </remarks>
+    public const string DeviceImageManage = "device.image.manage";
+
     /// <summary>See MSISDN, IMSI and IMEI in full rather than masked.</summary>
     /// <remarks>
     /// Enforced on the server: a caller without this receives the masked string, and the complete
@@ -100,6 +133,7 @@ public static class Permissions
     public static readonly FrozenSet<string> All = new[]
     {
         DashboardView, LookupSubscriber, DataExport, LookupImsi, IdentifierReveal,
+        DeviceView, LookupImei, DeviceIdentifiers, DeviceImageManage,
         ImportView, ImportUploadSqm, ImportUploadTac, ImportReprocess, ImportCancel, ImportDelete,
         TacActivate, TacRollback,
         UserView, UserManage, RoleView, RoleManage, AuditView, SystemAdmin,

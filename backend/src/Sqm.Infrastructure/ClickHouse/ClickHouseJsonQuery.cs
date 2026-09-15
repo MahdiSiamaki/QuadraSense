@@ -199,6 +199,39 @@ internal sealed record ClickHouseJsonResult(
             : value.GetInt32();
     }
 
+    /// <summary>Reads a 64-bit signed column, which may arrive as a string.</summary>
+    /// <remarks>
+    /// Int64 and UInt64 both serialise as JSON strings when the value is large enough to lose
+    /// precision as a double, and ClickHouse decides that per type rather than per value - so a
+    /// column that arrived as a number yesterday can arrive as a string today after a cast.
+    /// </remarks>
+    public static long Int64(JsonElement row, int index)
+    {
+        var value = row[index];
+        return value.ValueKind switch
+        {
+            JsonValueKind.Null => 0,
+            JsonValueKind.String => long.Parse(value.GetString()!, CultureInfo.InvariantCulture),
+            _ => value.GetInt64(),
+        };
+    }
+
+    /// <summary>Reads a floating-point column, treating null as zero.</summary>
+    /// <remarks>
+    /// Null here is division by zero upstream - a percentage against a population of nothing -
+    /// which the SQL guards with nullIf. Zero is the honest rendering of "no change to report".
+    /// </remarks>
+    public static double Double(JsonElement row, int index)
+    {
+        var value = row[index];
+        return value.ValueKind switch
+        {
+            JsonValueKind.Null => 0,
+            JsonValueKind.String => double.Parse(value.GetString()!, CultureInfo.InvariantCulture),
+            _ => value.GetDouble(),
+        };
+    }
+
     /// <summary>Reads a Date column, or null.</summary>
     public static DateOnly? Date(JsonElement row, int index)
     {
