@@ -43,6 +43,24 @@ function readCsrfToken(): string | null {
 }
 
 /**
+ * The CSRF header for a state-changing request, or null when there is no token to echo.
+ *
+ * Exported for the one request that cannot go through `request()`: the import upload uses
+ * XMLHttpRequest for progress events, and therefore has to assemble by hand what every other
+ * call gets for free. That upload spent a while returning 401 because it did exactly that and
+ * forgot both halves.
+ */
+export function csrfHeader(): { name: string; value: string } | null {
+  const value = readCsrfToken()
+  return value ? { name: CSRF_HEADER, value } : null
+}
+
+/** Tells the auth layer the session is gone. For callers outside `request()`. */
+export function notifyUnauthenticated(): void {
+  onUnauthenticated?.()
+}
+
+/**
  * Called when the server says the session is gone.
  *
  * Set once by the auth layer. The client cannot import the router without a cycle, and a module

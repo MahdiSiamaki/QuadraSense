@@ -6,7 +6,7 @@
  * side effects.
  */
 
-import { api, ApiError } from './client'
+import { api, ApiError, csrfHeader, notifyUnauthenticated } from './client'
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -246,6 +246,21 @@ export function uploadImportFile(
     request.open('POST', `${BASE}/api/v1/imports/${sourceCode}/upload`)
     request.responseType = 'json'
 
+    // The two things `request()` in client.ts adds to every other call, and that this one has to
+    // assemble by hand because it does not go through it.
+    //
+    // WITHOUT THESE THE UPLOAD RETURNS 401, and it did: this function was written before the
+    // system had authentication at all, and the auth work never revisited the one request that
+    // bypasses the shared client. In development the SPA is on :5173 and the API on :5202, so
+    // XMLHttpRequest sends no cookies unless told to - the server saw an anonymous request and
+    // refused it in under two milliseconds, after the browser had pushed 319 MB at it.
+    request.withCredentials = true
+
+    // And then CSRF, which would have been the next failure: the middleware exempts nothing, so
+    // a POST carrying a session cookie without the matching header is a 403.
+    const csrf = csrfHeader()
+    if (csrf) request.setRequestHeader(csrf.name, csrf.value)
+
     request.upload.addEventListener('progress', (event) => {
       if (event.lengthComputable) onProgress(event.loaded / event.total)
     })
@@ -278,6 +293,10 @@ export function uploadImportFile(
         })
         return
       }
+
+      // A dead session must reach the auth layer, exactly as it does for every other request.
+      // Reporting "Unauthorized" beside a progress bar tells the user nothing they can act on.
+      if (request.status === 401) notifyUnauthenticated()
 
       reject(new ApiError(request.status, body as never, correlationId))
     })
