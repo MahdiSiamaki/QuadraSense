@@ -47,6 +47,10 @@ SQL forms produce the same set for a user holding a role, a direct grant and a d
 | | `data.export` | Download results as a file |
 | | `lookup.imsi` | Resolve one SIM, by full IMSI or a prefix of ten digits or more |
 | | `identifier.reveal` | See MSISDN, IMSI and IMEI in full rather than masked |
+| | `device.view` | The Devices catalogue: models, capabilities, populations. Names nobody |
+| | `lookup.imei` | Resolve one handset to the SIMs and numbers bound to it |
+| | `device.identifiers` | Page through **every** identifier bound to a device model. Bulk |
+| Reference data | `device.image.manage` | Upload or replace a device photograph |
 | Imports | `import.view` | The Import Center |
 | | `import.upload.sqm` / `import.upload.tac` | Submit a file |
 | | `import.reprocess`, `import.cancel`, `import.delete` | Act on a job |
@@ -60,10 +64,10 @@ Seeded roles:
 
 | Role | Permissions |
 |---|---|
-| **Viewer** | `dashboard.view`, `import.view` |
-| **Analyst** | + `lookup.subscriber`, `lookup.imsi`, `identifier.reveal`, `data.export` |
-| **Data Operator** | + both uploads, `import.reprocess`, `import.cancel` |
-| **Administrator** | all 19 |
+| **Viewer** | `dashboard.view`, `import.view`, `device.view` |
+| **Analyst** | + `lookup.subscriber`, `lookup.imsi`, `lookup.imei`, `device.identifiers`, `identifier.reveal`, `data.export` |
+| **Data Operator** | + both uploads, `import.reprocess`, `import.cancel`, `lookup.imei`, `device.image.manage` |
+| **Administrator** | all 23 |
 
 Data Operator does **not** hold `tac.activate`. That is decision D4 of the import platform —
 operator imports, administrator activates — and it corrects the table in
@@ -73,6 +77,17 @@ operator imports, administrator activates — and it corrects the table in
 different people: *which handset is this SIM in* is SIM operations, *which SIM does this person
 have* is subscriber support. Neither implies the other, and an organisation can now grant one
 without the other.
+
+`device.identifiers` is separate from `lookup.imei`, and that is the sharpest line in the
+catalogue. Resolving one IMEI exposes one person's handset; listing a device model's identifiers
+exposes everybody who owns that model - 208,895 handsets for the most populous one. They read the
+same table and they are not the same act. It is also the first grant where **Data Operator is
+deliberately narrower than Analyst**: getting files in and marts rebuilt needs no list of two
+hundred thousand people's handsets.
+
+`device.view` goes to every role including Viewer, because it is the product. A reader who can see
+"Samsung 43.2%" on the dashboard and cannot open Samsung has been given a chart and denied the
+thing it is about.
 
 `identifier.reveal` is the masking switch. Without it the API returns redacted identifiers and the
 raw values are never in the response — see `04-security-model.md` §2. It is granted to every role

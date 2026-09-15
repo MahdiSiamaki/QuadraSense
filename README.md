@@ -168,13 +168,19 @@ non-zero if they differ. That check earned itself on its first run: every chunk 
 and the copy was short by five rows, because the chunk loop stopped at ten digits and five MSISDNs
 in the data have twelve, thirteen and fifteen. See `docs/adr/ADR-008-imsi-search.md`.
 
+**`--backfill-imei` is the same command for the other re-ordered copy**, and the same rule applies
+to it. `sqm.binding_by_imei` is what makes a device model a contiguous range rather than a scan of
+295 million rows, and it is kept in step by a materialized view with the same one weakness. The
+first run copied 295,013,916 rows in 629 s with zero chunk failures, compacted 301 parts to 5, and
+reconciled to the row. See `docs/adr/ADR-009-device-module.md`.
+
 ### 7. Tests
 
 ```bash
 dotnet test backend/Sqm.slnx
 ```
 
-117 tests. Integration tests run against a real PostgreSQL and **skip with a reason** when none is
+177 tests. Integration tests run against a real PostgreSQL and **skip with a reason** when none is
 reachable, rather than failing. They connect as `sqm_app`, not as the owner: connecting as the
 owner would leave the append-only guarantee untested while appearing to pass.
 
@@ -233,6 +239,8 @@ tools/
 | [ADR-005](docs/adr/ADR-005-frontend-architecture.md) | Frontend: **Vue 3** + Vite + Tailwind + headless primitives | Accepted |
 | [ADR-006](docs/adr/ADR-006-authentication-and-access-control.md) | Auth: **local accounts, server-side sessions, permission-based RBAC** | Accepted |
 | ADR-007 | Deployment | Pending infrastructure decision |
+| [ADR-008](docs/adr/ADR-008-imsi-search.md) | IMSI search: a second table ordered by IMSI, and a skip index on the event log | Accepted |
+| [ADR-009](docs/adr/ADR-009-device-module.md) | Devices: a model is a TAC, and an IMEI-ordered table makes it a range | Accepted |
 
 Every one of these was decided against measurement on the real dataset, not on reputation. Where a
 claim appears in these documents, the number behind it is there too.

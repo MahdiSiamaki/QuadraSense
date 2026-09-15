@@ -66,6 +66,18 @@ Mask length always matches the original, so an IMSI of unusual length stays visi
 masked. Verified by `IdentifierMaskTests`, which asserts the property - that the hidden middle is
 absent - rather than pinning a string.
 
+**The Devices module applies the same rule, and adds one above it.** `identifier.reveal` governs
+whether a device model's identifiers come back complete or redacted, exactly as it does on the
+lookup pages - and the IMEI row is why that table keeps the TAC: a reader browsing a device model
+already knows its TAC, because it is the page they are on. Redacting it would protect nothing and
+make the list unreadable.
+
+What is new is `device.identifiers`, which governs whether that list can be requested **at all**.
+It is not the same question as masking, and not the same question as resolving one handset:
+listing a model's identifiers exposes everybody who owns that model, 208,895 handsets for the most
+populous one. Every request is audited with the actor, the model and the row count - and, as
+everywhere else here, never with an identifier.
+
 **Default grants are unchanged behaviour.** Every role that could already see raw identifiers -
 Analyst, Data Operator, Administrator - holds `identifier.reveal`. Adding a permission nobody held
 would have silently redacted screens that worked the day before, which is a product change
