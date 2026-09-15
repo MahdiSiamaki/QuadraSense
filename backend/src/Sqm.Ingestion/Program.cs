@@ -109,7 +109,7 @@ if (args.Contains("--refresh-dashboard"))
     if (pauseMerges)
     {
         Console.WriteLine("  pausing background merges for the duration");
-        await analytics.SetMergesEnabledAsync(false, CancellationToken.None).ConfigureAwait(false);
+        await MergeControl.PauseAsync(analytics, CancellationToken.None).ConfigureAwait(false);
     }
 
     int failed;
@@ -125,7 +125,7 @@ if (args.Contains("--refresh-dashboard"))
         if (pauseMerges)
         {
             Console.WriteLine("  resuming background merges");
-            await analytics.SetMergesEnabledAsync(true, CancellationToken.None).ConfigureAwait(false);
+            await MergeControl.ResumeAsync(analytics, CancellationToken.None).ConfigureAwait(false);
         }
     }
 

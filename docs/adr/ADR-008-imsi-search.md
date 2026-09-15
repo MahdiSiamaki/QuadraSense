@@ -150,6 +150,40 @@ five MSISDNs in the data have twelve, thirteen and fifteen — numbers beginning
 which are the UAE, Azerbaijan and Iraq. They are anomalies and they are real. A job that says
 "done" without checking is a job that will be believed.
 
+**The copy and the check want opposite things from the server, and getting that wrong cost three
+runs.** It is worth writing down because the shape recurs in any bulk-write-then-verify job.
+
+- The **copy** needs merges paused. A merge of a multi-gigabyte part holds around 4 GiB on this
+  node and the OvercommitTracker stops whichever query is running. The first attempt died at
+  43.68M of 295M rows reporting a memory limit against a query using 1.53 GiB.
+- `SYSTEM STOP MERGES` **does not stop merges already in flight.** A later run had correctly paused
+  merges and still lost its ninth chunk: *would use 5.21 GiB, current RSS 2.35 GiB* — a 2.9 GiB gap
+  between tracker and process, which is a merge the query is charged for. Pausing is two steps, and
+  only waiting for the drain makes the first one true.
+- The **check** needs merges *finished*, not paused. It is two `count() FINAL` queries, and `FINAL`
+  holds one read buffer per active part. Over 295 million rows in **301 parts** that reached
+  **4.97 GiB of real RSS** against a 5.20 GiB ceiling, with merges paused and no merge involved.
+  The same query over the same data in nine parts costs a fraction of it.
+
+So verification cannot live inside the paused window, and it cannot run the instant merges are
+resumed either. The order is: pause and drain → copy → resume → **wait for the table to compact** →
+verify. Only the last step was missing, and its absence looked like three unrelated memory bugs.
+
+**A monitoring loop must not be able to kill the job it is monitoring.** Merging 301 freshly
+written parts of a 6.45 GiB table on a 6 GiB container took ClickHouse down entirely — the
+documented failure in `11-clickhouse-memory.md` §2, and not something the backfill causes or can
+prevent. What the backfill *can* do is survive it: the polls return null rather than throwing, the
+wait keeps going, and a verification that cannot run is reported with exit code 2 —
+"could not verify" — rather than exit 1's "verified, and wrong". An earlier version let the HTTP
+exception escape and the command died with a stack trace after a copy that had completely
+succeeded, which is the worst of both: no result, and an operator with every reason to think the
+copy failed.
+
+**On a node this size, prefer the incremental path.** The materialized view keeps the table in step
+one day at a time, and a day is a few million rows that merge without incident. The full
+`--truncate` rebuild is the exceptional path, it is at the edge of what this container can merge,
+and it should be run with nothing else on the machine.
+
 **These two queries go over HTTP, not through the ADO driver.** Two things are needed that the
 driver does not provide, and both were already paid for once in this project:
 

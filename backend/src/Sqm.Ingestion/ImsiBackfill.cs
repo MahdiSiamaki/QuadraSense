@@ -47,11 +47,13 @@ internal static class ImsiBackfill
 
         Console.WriteLine("backfilling sqm.binding_by_imsi from sqm.binding_current");
 
-        // Merges are paused throughout. A single merge of a multi-gigabyte part can hold 4 GiB on
-        // a 6 GiB node, and the OvercommitTracker then stops whichever query is running - which is
-        // how the first attempt at this died after 43.68M of 295M rows, reporting a memory limit
-        // against a query using 1.53 GiB. See docs/architecture/11-clickhouse-memory.md section 6.
-        await analytics.SetMergesEnabledAsync(false, ct).ConfigureAwait(false);
+        // Merges are paused throughout, and the in-flight ones are waited out. A single merge of a
+        // multi-gigabyte part can hold 4 GiB on a 6 GiB node, and the OvercommitTracker then stops
+        // whichever query is running - which is how the first attempt at this died after 43.68M of
+        // 295M rows, reporting a memory limit against a query using 1.53 GiB. STOP MERGES alone is
+        // not enough: it stops new merges and lets the running ones continue, which is how a later
+        // run lost its ninth chunk. See docs/architecture/11-clickhouse-memory.md section 6.
+        await MergeControl.PauseAsync(analytics, ct).ConfigureAwait(false);
 
         try
         {
@@ -91,17 +93,38 @@ internal static class ImsiBackfill
                 Console.Error.WriteLine("re-run to retry; the copy is idempotent by construction");
                 return 1;
             }
+
         }
         finally
         {
-            // In a finally, including on failure: leaving merges off lets parts accumulate until
-            // the table is unusable, and the next person has no reason to suspect a batch job
-            // turned them off.
-            await analytics.SetMergesEnabledAsync(true, ct).ConfigureAwait(false);
-            Console.WriteLine("  merges resumed");
+            await MergeControl.ResumeAsync(analytics, ct).ConfigureAwait(false);
         }
 
-        return await ReconcileAsync(analytics, ct).ConfigureAwait(false);
+        // The copy and the check want opposite things from the server, and this ordering is what
+        // three failed runs taught. Each phase has one requirement:
+        //
+        //   COPY   needs merges paused. A merge of a multi-gigabyte part holds around 4 GiB and
+        //          the OvercommitTracker stops whichever query is running.
+        //   COMPACT needs merges RUNNING. Two count() FINAL queries hold one read buffer per
+        //          active part; over 301 fresh parts that reached 4.97 GiB of genuine RSS.
+        //   CHECK  needs merges paused again. At 18 parts and 1.22 GiB of RSS the check still
+        //          died reporting 5.21 GiB - the tracker was full of a concurrent merge, not of
+        //          anything this query had allocated.
+        //
+        // So the collision was never really the part count; it was whatever else was running.
+        // Compaction brings the parts down, and pausing again keeps the check to itself.
+        try
+        {
+            await MergeControl.WaitForCompactionAsync(analytics, "binding_by_imsi", ct)
+                .ConfigureAwait(false);
+
+            await MergeControl.PauseAsync(analytics, ct).ConfigureAwait(false);
+            return await ReconcileAsync(analytics, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            await MergeControl.ResumeAsync(analytics, ct).ConfigureAwait(false);
+        }
     }
 
     private static async Task<int> CopyAsync(
@@ -148,17 +171,37 @@ internal static class ImsiBackfill
     private static async Task<int> ReconcileAsync(
         IAnalyticsIngestionStore analytics, CancellationToken ct)
     {
-        var sourceRows = await analytics.ScalarAsync(
-            "SELECT count() FROM sqm.binding_current AS b FINAL", ct).ConfigureAwait(false) ?? -1;
-        var copyRows = await analytics.ScalarAsync(
-            "SELECT count() FROM sqm.binding_by_imsi AS b FINAL", ct).ConfigureAwait(false) ?? -2;
+        long sourceRows, copyRows, sourceActive, copyActive;
 
-        var sourceActive = await analytics.ScalarAsync(
-            "SELECT countIf(active = 1) FROM sqm.binding_current AS b FINAL", ct)
-            .ConfigureAwait(false) ?? -1;
-        var copyActive = await analytics.ScalarAsync(
-            "SELECT countIf(active = 1) FROM sqm.binding_by_imsi AS b FINAL", ct)
-            .ConfigureAwait(false) ?? -2;
+        try
+        {
+            sourceRows = await analytics.ScalarAsync(
+                "SELECT count() FROM sqm.binding_current AS b FINAL", ct).ConfigureAwait(false) ?? -1;
+            copyRows = await analytics.ScalarAsync(
+                "SELECT count() FROM sqm.binding_by_imsi AS b FINAL", ct).ConfigureAwait(false) ?? -2;
+
+            sourceActive = await analytics.ScalarAsync(
+                "SELECT countIf(active = 1) FROM sqm.binding_current AS b FINAL", ct)
+                .ConfigureAwait(false) ?? -1;
+            copyActive = await analytics.ScalarAsync(
+                "SELECT countIf(active = 1) FROM sqm.binding_by_imsi AS b FINAL", ct)
+                .ConfigureAwait(false) ?? -2;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Reported, never thrown. The copy may well have succeeded; what failed is the check,
+            // and an operator who gets a stack trace cannot tell those apart. Exit 2 distinguishes
+            // "could not verify" from exit 1's "verified, and wrong".
+            Console.Error.WriteLine();
+            Console.Error.WriteLine($"copy finished, but it could not be verified: {ex.Message}");
+            Console.Error.WriteLine();
+            Console.Error.WriteLine("The rows are probably there. Re-run once the server is quiet:");
+            Console.Error.WriteLine("  dotnet run -- --backfill-imsi     (the copy is idempotent)");
+            Console.Error.WriteLine("or check by hand:");
+            Console.Error.WriteLine("  SELECT count() FROM sqm.binding_current AS b FINAL;");
+            Console.Error.WriteLine("  SELECT count() FROM sqm.binding_by_imsi AS b FINAL;");
+            return 2;
+        }
 
         Console.WriteLine();
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
