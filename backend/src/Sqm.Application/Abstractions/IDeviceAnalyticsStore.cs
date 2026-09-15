@@ -78,12 +78,24 @@ public interface IDeviceAnalyticsStore
     /// <summary>Daily SIM and handset change counts.</summary>
     Task<IReadOnlyList<DailyChurn>> GetDailyChurnAsync(CancellationToken ct);
 
-    /// <summary>
-    /// Net growth by vendor over the loaded period: who gained bindings and who lost them.
-    /// </summary>
-    /// <param name="limit">Rows to return from each end (biggest gainers and biggest losers).</param>
-    /// <param name="ct">Cancellation token.</param>
-    Task<IReadOnlyList<GrowthRow>> GetVendorGrowthAsync(int limit, CancellationToken ct);
+    /// <summary>Vendors ranked by movement, share or growth, with all three measured.</summary>
+    /// <remarks>
+    /// <para>
+    /// Three different questions, returned together so the widget can switch between them without
+    /// a round trip. <b>Movement</b> counts add and remove events in the window - a SIM moved
+    /// between handsets thirty times contributes thirty of each and changes the population by
+    /// nothing. <b>Share</b> counts the population now. <b>Growth</b> compares the population
+    /// against the first delivery, and is only meaningful relative to the network's own change:
+    /// the whole active population fell 9.3% over that span, so a vendor down 6.4% gained almost
+    /// three points of share.
+    /// </para>
+    /// <para>
+    /// About a second. Movement reads the day-partitioned change mart; both population figures
+    /// read the dimension mart, which holds a few thousand rows per delivery.
+    /// </para>
+    /// </remarks>
+    Task<VendorMovementResponse> GetVendorMovementAsync(
+        DateOnly? from, DateOnly? toDate, VendorRanking ranking, int limit, CancellationToken ct);
 
     /// <summary>
     /// The handset-versus-machine mix: smartphone, feature phone, tablet, IoT/M2M, wearable.

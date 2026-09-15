@@ -232,14 +232,6 @@ export interface DailyChurn {
   deviceChanges: number
 }
 
-export interface GrowthRow {
-  key: string
-  added: number
-  removed: number
-  /** Negative means the vendor is losing bindings. */
-  net: number
-}
-
 /**
  * Daily change history, on a real calendar axis.
  *
@@ -265,14 +257,88 @@ export function useDailyChurn() {
 }
 
 /** Biggest gainers and biggest losers by net binding change over the loaded period. */
-export function useVendorGrowth(limit = 8) {
+/** Which figure the vendor widget ranks by. */
+export type VendorRanking = 'movement' | 'share' | 'growth'
+
+/**
+ * One vendor, measured three ways.
+ *
+ * Every field arrives whichever ranking was asked for, so switching the widget's mode is a
+ * client-side re-sort rather than a round trip.
+ */
+export interface VendorMovementRow {
+  vendor: string
+  /** Add events in the window. */
+  added: number
+  /** Remove events in the window. */
+  removed: number
+  /**
+   * Added minus removed — **events, not devices**.
+   *
+   * One SIM moved between two handsets thirty times contributes thirty of each and changes the
+   * population by nothing. This is why HMD tops the movement ranking with more adds than it has
+   * devices on the network.
+   */
+  net: number
+  /** Active bindings now. */
+  population: number
+  sharePercent: number
+  /** Active bindings in the first delivery on record. */
+  populationAtStart: number
+  populationChange: number
+  populationChangePercent: number
+  /**
+   * The vendor's percentage change minus the network's.
+   *
+   * The figure that means something. The whole network fell 9.29% between the first delivery and
+   * now, so a vendor down 6.4% actually gained almost three points of share. Absolute change
+   * alone reads as universal decline.
+   */
+  vsNetworkPoints: number
+  /** Net movement as a percentage of the vendor's own population. */
+  netPercentOfPopulation: number
+}
+
+export interface VendorMovementResponse {
+  from: string | null
+  to: string | null
+  /** The span the feed actually covers, so the date pickers can be bounded by it. */
+  earliestAvailable: string | null
+  latestAvailable: string | null
+  networkPopulation: number
+  networkPopulationAtStart: number
+  networkChangePercent: number
+  /**
+   * True when the comparison point is the initial dump.
+   *
+   * That dump covers a 30-day window rather than an instant — it averages 1.57 handsets per SIM —
+   * so a large part of every vendor's apparent decline is that over-count being resolved rather
+   * than devices leaving. The widget says so.
+   */
+  startIsInitialDump: boolean
+  rows: VendorMovementRow[]
+}
+
+export interface VendorMovementFilters {
+  from?: string | null
+  to?: string | null
+  rank?: VendorRanking
+  limit?: number
+}
+
+export function useVendorMovement(filters: MaybeRefOrGetter<VendorMovementFilters>) {
   return useQuery({
-    queryKey: ['vendor-growth', limit],
+    queryKey: ['vendor-movement', computed(() => toValue(filters))],
     queryFn: ({ signal }) =>
-      api.get<GrowthRow[]>('/api/v1/dashboard/vendor-growth', { limit }, signal),
+      api.get<VendorMovementResponse>(
+        '/api/v1/dashboard/vendor-movement',
+        { ...toValue(filters) },
+        signal,
+      ),
     staleTime: DAILY_DATA_STALE_TIME,
   })
 }
+
 
 /** Subscriber lookup. POST so the number never appears in a URL. */
 export function lookupMsisdn(msisdn: string, signal?: AbortSignal) {

@@ -52,9 +52,11 @@ public static class DashboardEndpoints
             .WithName("GetDailyChurn")
             .WithSummary("Daily SIM changes and handset changes.");
 
-        group.MapGet("/vendor-growth", GetVendorGrowthAsync)
-            .WithName("GetVendorGrowth")
-            .WithSummary("Biggest gainers and biggest losers by net binding change.");
+        group.MapGet("/vendor-movement", GetVendorMovementAsync)
+            .WithName("GetVendorMovement")
+            .WithSummary(
+                "Vendors by movement, share or growth, over a date range. All three measures are "
+                + "returned whichever the ranking, so the widget switches without a round trip.");
 
         group.MapGet("/capabilities", GetCapabilitiesAsync)
             .WithName("GetCapabilitySupport")
@@ -77,11 +79,45 @@ public static class DashboardEndpoints
         return Results.Ok(rows);
     }
 
-    private static async Task<IResult> GetVendorGrowthAsync(
-        IDeviceAnalyticsStore store, CancellationToken ct, int limit = 8)
+    /// <summary>
+    /// The vendor widget's data.
+    /// </summary>
+    /// <remarks>
+    /// The dates are nullable, not defaulted, for the reason the user list already learned: a
+    /// minimal API treats a non-nullable parameter as REQUIRED from the query string. Absent
+    /// means "the whole span the feed covers", resolved in the store from the data rather than
+    /// guessed here.
+    /// </remarks>
+    private static async Task<IResult> GetVendorMovementAsync(
+        IDeviceAnalyticsStore store,
+        CancellationToken ct,
+        DateOnly? from = null,
+        DateOnly? to = null,
+        string? rank = null,
+        int limit = 8)
     {
-        var rows = await store.GetVendorGrowthAsync(limit, ct).ConfigureAwait(false);
-        return Results.Ok(rows);
+        // An unrecognised ranking falls back to the default rather than erroring. This arrives
+        // from URL state, and a stale bookmark should show the widget rather than a validation
+        // message.
+        var ranking = rank?.ToLowerInvariant() switch
+        {
+            "share" => VendorRanking.Share,
+            "growth" => VendorRanking.Growth,
+            _ => VendorRanking.Movement,
+        };
+
+        if (from is { } start && to is { } end && start > end)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["from"] = ["The start of the range is after its end."],
+            });
+        }
+
+        var result = await store.GetVendorMovementAsync(from, to, ranking, limit, ct)
+            .ConfigureAwait(false);
+
+        return Results.Ok(result);
     }
 
     private static async Task<IResult> GetCapabilitiesAsync(

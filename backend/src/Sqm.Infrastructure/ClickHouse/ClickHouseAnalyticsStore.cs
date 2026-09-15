@@ -602,50 +602,6 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         return rows;
     }
 
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<GrowthRow>> GetVendorGrowthAsync(int limit, CancellationToken ct)
-    {
-        var take = FilterBuilder.ClampLimit(limit, 50);
-
-        // Both ends of the distribution are returned. A "top movers" chart that shows only
-        // gainers hides the more interesting half: which vendors the network is losing.
-        var sql = $$"""
-            WITH growth AS (
-                SELECT
-                    multiIf(c.tac = '', {unknown_device:String},
-                            t.tac = '',  {unknown_tac:String},
-                            coalesce(nullIf(v.vendor_canonical, ''), nullIf(t.manufacturer, ''),
-                                     {unknown_tac:String})) AS k,
-                    sumIf(c.n, c.label = 'add')    AS added,
-                    sumIf(c.n, c.label = 'remove') AS removed
-                FROM sqm.agg_change_daily AS c
-                LEFT JOIN sqm.tac AS t ON t.tac = c.tac
-                LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
-                GROUP BY k
-            )
-            SELECT k, added, removed, toInt64(added) - toInt64(removed) AS net FROM (
-                SELECT * FROM growth ORDER BY toInt64(added) - toInt64(removed) DESC LIMIT {{take}}
-                UNION ALL
-                SELECT * FROM growth ORDER BY toInt64(added) - toInt64(removed) ASC LIMIT {{take}}
-            )
-            ORDER BY net DESC
-            """;
-
-        await using var connection = CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        await using var command = CreateCommand(connection, sql);
-        AddLabelParameters(command);
-
-        var rows = new List<GrowthRow>();
-        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        while (await reader.ReadAsync(ct).ConfigureAwait(false))
-        {
-            rows.Add(new GrowthRow(
-                reader.GetString(0), GetInt64(reader, 1), GetInt64(reader, 2), GetInt64(reader, 3)));
-        }
-        return rows;
-    }
-
     /// <summary>
     /// Opens a connection backed by the pooled <see cref="HttpClient"/>.
     /// </summary>

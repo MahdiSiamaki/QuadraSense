@@ -8,7 +8,6 @@ import {
   useCapabilities,
   useDailyChanges,
   useDailyChurn,
-  useVendorGrowth,
 } from '@/api/dashboard'
 import Card from '@/design-system/Card.vue'
 import KpiCard from '@/design-system/KpiCard.vue'
@@ -18,7 +17,7 @@ import CompositionBar from '@/design-system/CompositionBar.vue'
 import CapabilityBars from '@/design-system/CapabilityBars.vue'
 import ChangeTimeSeries from '@/design-system/ChangeTimeSeries.vue'
 import ChurnTimeSeries from '@/design-system/ChurnTimeSeries.vue'
-import GrowthChart from '@/design-system/GrowthChart.vue'
+import VendorMovementCard from './VendorMovementCard.vue'
 import DimensionTable from '@/design-system/DimensionTable.vue'
 import DataFreshnessCard from './DataFreshnessCard.vue'
 import { useFreshness } from '@/features/imports/useImportQueries'
@@ -51,7 +50,6 @@ const classMix = useDeviceClassMix(countBy)
 const capabilities = useCapabilities(countBy)
 const dailyChanges = useDailyChanges()
 const dailyChurn = useDailyChurn()
-const vendorGrowth = useVendorGrowth(8)
 
 /**
  * Days the source never delivered, from the platform's own calendar of expected days.
@@ -328,29 +326,7 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
         </template>
       </Card>
 
-      <Card
-        title="Vendor growth"
-        subtitle="Net bindings gained and lost across the whole loaded period."
-      >
-        <AsyncBoundary
-          :is-loading="vendorGrowth.isPending.value"
-          :is-error="vendorGrowth.isError.value"
-          :error="vendorGrowth.error.value"
-          :is-empty="vendorGrowth.data.value?.length === 0"
-          empty-message="No daily files loaded yet."
-          min-height="18rem"
-          @retry="vendorGrowth.refetch()"
-        >
-          <GrowthChart :data="vendorGrowth.data.value ?? []" />
-        </AsyncBoundary>
-
-        <template #footer>
-          <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
-            Both ends are shown. A chart of only the winners hides the more useful half &mdash;
-            which vendors the network is losing.
-          </p>
-        </template>
-      </Card>
+      <VendorMovementCard />
     </div>
 
     <!-- Composition -->

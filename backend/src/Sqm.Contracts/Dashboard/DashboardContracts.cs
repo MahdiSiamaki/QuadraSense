@@ -151,12 +151,91 @@ public sealed record DailyChange(
 /// <param name="DeviceChanges">Subscribers who moved to a different handset, same definition.</param>
 public sealed record DailyChurn(DateOnly Date, long SimChanges, long DeviceChanges);
 
-/// <summary>Net growth for one dimension value over a period.</summary>
-/// <param name="Key">Dimension value, e.g. a vendor name.</param>
-/// <param name="Added">Bindings gained.</param>
-/// <param name="Removed">Bindings lost.</param>
-/// <param name="Net">Added minus removed. Negative means the vendor is shrinking.</param>
-public sealed record GrowthRow(string Key, long Added, long Removed, long Net);
+/// <summary>Which figure the vendor widget ranks by.</summary>
+/// <remarks>
+/// Three different questions, and conflating them is how a vendor chart misleads. Movement counts
+/// EVENTS in a window; share counts the POPULATION right now; growth compares the population
+/// against where it started. A vendor with a stable ten million handsets produces no events at
+/// all and is invisible under movement, while one with a hundred thousand restless devices tops
+/// that ranking. Both facts are true and neither is "vendor growth" on its own.
+/// </remarks>
+public enum VendorRanking
+{
+    /// <summary>Net add/remove events in the window. Both ends of the distribution.</summary>
+    Movement,
+
+    /// <summary>Active bindings now, largest first.</summary>
+    Share,
+
+    /// <summary>Population change since the first delivery, relative to the network's own.</summary>
+    Growth,
+}
+
+/// <summary>One vendor, measured three ways.</summary>
+/// <remarks>
+/// Every field is returned whichever ranking was asked for, so switching the widget's mode is a
+/// client-side re-sort rather than a round trip. The whole query costs about a second.
+/// </remarks>
+/// <param name="Vendor">Canonical vendor name, or one of the two unknown buckets.</param>
+/// <param name="Added">Add events in the window.</param>
+/// <param name="Removed">Remove events in the window.</param>
+/// <param name="Net">Added minus removed. <b>Events, not devices</b> - one SIM moved between two
+/// handsets thirty times contributes thirty of each and changes the population by nothing.</param>
+/// <param name="Population">Active bindings now.</param>
+/// <param name="SharePercent">Population as a percentage of the whole active network.</param>
+/// <param name="PopulationAtStart">Active bindings in the first delivery on record.</param>
+/// <param name="PopulationChange">Population now minus population then.</param>
+/// <param name="PopulationChangePercent">That change as a percentage of where it started.</param>
+/// <param name="VsNetworkPoints">
+/// The vendor's percentage change minus the network's. This is the figure that means something:
+/// the whole network fell 9.3% between the first delivery and now, so a vendor down 6.4% actually
+/// GAINED almost three points of share. Absolute change alone reads as universal decline.
+/// </param>
+/// <param name="NetPercentOfPopulation">
+/// Net movement as a percentage of the vendor's own population, which is what makes a figure
+/// comparable between a vendor with fifty million bindings and one with fifty thousand.
+/// </param>
+public sealed record VendorMovementRow(
+    string Vendor,
+    long Added,
+    long Removed,
+    long Net,
+    long Population,
+    double SharePercent,
+    long PopulationAtStart,
+    long PopulationChange,
+    double PopulationChangePercent,
+    double VsNetworkPoints,
+    double NetPercentOfPopulation);
+
+/// <summary>The vendor widget's data, with the context needed to read it honestly.</summary>
+/// <param name="From">Start of the movement window actually used.</param>
+/// <param name="To">End of it.</param>
+/// <param name="EarliestAvailable">Oldest day the event log covers.</param>
+/// <param name="LatestAvailable">Newest day it covers.</param>
+/// <param name="NetworkPopulation">Active bindings across the whole network now.</param>
+/// <param name="NetworkPopulationAtStart">Active bindings in the first delivery on record.</param>
+/// <param name="NetworkChangePercent">
+/// The network's own change. Every vendor's absolute change is dominated by this, which is why
+/// the widget offers a relative view.
+/// </param>
+/// <param name="StartIsInitialDump">
+/// True when the comparison point is the initial dump. That dump covers a 30-day window rather
+/// than an instant - it averages 1.57 handsets per SIM - so it over-counts, and a large part of
+/// every vendor's apparent decline is that over-count being resolved rather than devices leaving.
+/// The UI says so; a number this easy to misread should not be shown bare.
+/// </param>
+/// <param name="Rows">The ranked vendors.</param>
+public sealed record VendorMovementResponse(
+    DateOnly? From,
+    DateOnly? To,
+    DateOnly? EarliestAvailable,
+    DateOnly? LatestAvailable,
+    long NetworkPopulation,
+    long NetworkPopulationAtStart,
+    double NetworkChangePercent,
+    bool StartIsInitialDump,
+    IReadOnlyList<VendorMovementRow> Rows);
 
 /// <summary>One active binding, as returned by subscriber lookup.</summary>
 /// <param name="Msisdn">Subscriber number.</param>
