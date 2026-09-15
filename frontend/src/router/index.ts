@@ -42,6 +42,20 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Import', permission: Permission.ImportView },
   },
   {
+    path: '/devices',
+    name: 'devices',
+    component: () => import('@/features/devices/DeviceListPage.vue'),
+    meta: { title: 'Devices', permission: Permission.DeviceView },
+  },
+  {
+    // Eight digits, matching every TAC in the GSMA export. The constraint is real validation as
+    // well as routing: a malformed code never reaches a query.
+    path: '/devices/:tac(\\d{8})',
+    name: 'device-detail',
+    component: () => import('@/features/devices/DeviceDetailPage.vue'),
+    meta: { title: 'Device', permission: Permission.DeviceView },
+  },
+  {
     path: '/lookup',
     name: 'lookup',
     component: () => import('@/features/lookup/LookupPage.vue'),
