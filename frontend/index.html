@@ -4,6 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
+
+    <!--
+      Both spellings, and the order matters.
+
+      The .ico is declared first and is the historical name every browser knows how to ask for.
+      The SVG is declared second and wins wherever it is understood, because a later matching
+      <link rel="icon"> takes precedence - and it is the better of the two: crisp at any size from
+      one file, and able to answer to the browser's light or dark theme, which an .ico cannot.
+
+      The .ico is not legacy baggage here. Safari only accepted SVG favicons in 16, and this is an
+      internal deployment where the browser is whatever the fleet ships.
+    -->
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+
+    <!-- The tab title before Vue boots. The router replaces it with "<page> - QuadraSense". -->
     <title>QuadraSense</title>
   </head>
   <body>
