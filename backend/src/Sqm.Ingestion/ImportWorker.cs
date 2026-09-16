@@ -47,7 +47,13 @@ public sealed partial class ImportWorker(
         Message = "Import worker stopping; waiting up to {GraceSeconds}s for {Running} running job(s)")]
     private partial void LogStopping(double graceSeconds, int running);
 
+    [LoggerMessage(EventId = 3405, Level = LogLevel.Warning,
+        Message = "Could not record the worker heartbeat; the Import Center may report this "
+                  + "worker as absent while it is in fact running")]
+    private partial void LogHeartbeatFailed(Exception exception);
+
     private readonly ImportWorkerOptions _options = options.Value;
+    private readonly bool _hostedInApi = options.Value.HostedInApi;
     private readonly Dictionary<string, IImportProcessor> _processors =
         processors.ToDictionary(p => p.SourceCode, StringComparer.OrdinalIgnoreCase);
 
@@ -57,6 +63,16 @@ public sealed partial class ImportWorker(
 
         using var slots = new SemaphoreSlim(_options.MaxConcurrentJobs, _options.MaxConcurrentJobs);
         var running = new List<Task>();
+
+        // The heartbeat runs on its OWN loop, and that is not an implementation preference.
+        //
+        // The claim loop below blocks on slots.WaitAsync whenever every slot is busy - which,
+        // with the default of one concurrent job, is the entire duration of an import. A
+        // heartbeat written from inside that loop would stop for the ten minutes a daily file
+        // takes, and the UI would report the worker dead at exactly the moment it was working
+        // hardest. Beating from a separate task is what makes "last seen" mean "alive" rather
+        // than "idle".
+        var heartbeat = HeartbeatAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -102,6 +118,45 @@ public sealed partial class ImportWorker(
         await Task.WhenAny(
             Task.WhenAll(running),
             Task.Delay(_options.ShutdownGrace, CancellationToken.None)).ConfigureAwait(false);
+
+        await heartbeat.ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Says "I am here" on a fixed beat, whatever the claim loop is doing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The absence of these rows is what lets the Import Center distinguish a queue that is busy
+    /// from a queue nobody is serving. It exists because a 319.6 MB upload sat at "Queued" with
+    /// every component reporting success and nothing saying that no worker was running.
+    /// </para>
+    /// <para>
+    /// A failure here is logged and swallowed. A worker that cannot write its heartbeat can still
+    /// import files perfectly well, and stopping real work because a status row could not be
+    /// updated would turn a monitoring problem into an outage.
+    /// </para>
+    /// </remarks>
+    private async Task HeartbeatAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await repository.RecordHeartbeatAsync(
+                    _options.WorkerId,
+                    Environment.MachineName,
+                    _options.MaxConcurrentJobs,
+                    _hostedInApi,
+                    ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                LogHeartbeatFailed(ex);
+            }
+
+            await DelayAsync(_options.PollInterval, ct).ConfigureAwait(false);
+        }
     }
 
     private async Task RunAndReleaseAsync(
@@ -155,7 +210,7 @@ public sealed partial class ImportWorker(
             {
                 await repository.CompleteAsync(
                     job.JobId, outcome.Status, outcome.Counters, outcome.MakeEffective,
-                    stoppingToken).ConfigureAwait(false);
+                    outcome.BusinessDate, stoppingToken).ConfigureAwait(false);
             }
 
             stopwatch.Stop();

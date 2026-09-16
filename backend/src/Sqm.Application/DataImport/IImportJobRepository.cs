@@ -80,9 +80,30 @@ public interface IImportJobRepository
     /// <summary>Moves a job to a new stage.</summary>
     Task SetStageAsync(long jobId, ImportJobStatus status, CancellationToken ct);
 
-    /// <summary>Reports how far along the current stage is.</summary>
+    /// <summary>Records that this worker is alive and polling.</summary>
+    /// <param name="workerId">Stable per worker, so a restart replaces its row.</param>
+    /// <param name="hostname">Where it runs.</param>
+    /// <param name="maxConcurrent">How many jobs it will run at once.</param>
+    /// <param name="hostedInApi">Whether it shares a process with the API.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <remarks>
+    /// Called on every poll, which is cheap and self-correcting: a worker that stops polling for
+    /// any reason - crashed, killed, deployed over - stops updating its row, and that absence is
+    /// the signal. Nothing has to notice the death and report it.
+    /// </remarks>
+    Task RecordHeartbeatAsync(
+        string workerId, string hostname, int maxConcurrent, bool hostedInApi, CancellationToken ct);
+
+    /// <summary>Reports how far along the current stage is, measured in bytes of the file.</summary>
+    /// <remarks>
+    /// Bytes and not rows, and the names say so now: the row count is not known until the file
+    /// has been read, so a byte-based bar can run from zero to a hundred without ever revising
+    /// its own estimate. It was always bytes; the columns simply used to be called rows, and the
+    /// Import Center printed "274,726,912 of 335,100,378" for a file it also described as having
+    /// 7,066,140 rows.
+    /// </remarks>
     Task ReportProgressAsync(
-        long jobId, string stage, long rowsProcessed, long? rowsExpected, CancellationToken ct);
+        long jobId, string stage, long bytesProcessed, long? bytesExpected, CancellationToken ct);
 
     /// <summary>Appends one entry to the job's timeline.</summary>
     /// <remarks>
@@ -117,11 +138,21 @@ public interface IImportJobRepository
     /// business date never has two effective imports and never has none. A partial unique index
     /// enforces the first half of that even if this method is wrong.
     /// </remarks>
+    /// <param name="jobId">The job.</param>
+    /// <param name="status">How it ended.</param>
+    /// <param name="counters">What it moved.</param>
+    /// <param name="makeEffective">Whether it becomes the effective import for its day.</param>
+    /// <param name="businessDate">
+    /// The day the job turned out to describe, when the processor determined it. A file uploaded
+    /// through the browser is enqueued without one; this is where it gets recorded.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
     Task CompleteAsync(
         long jobId,
         ImportJobStatus status,
         ImportCounters counters,
         bool makeEffective,
+        DateOnly? businessDate,
         CancellationToken ct);
 
     /// <summary>

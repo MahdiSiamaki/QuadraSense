@@ -95,7 +95,8 @@ internal sealed partial class SqmDailyProcessor(
                     RowsRejected: validation.TotalRows),
                 MakeEffective: false,
                 $"Rejected: {validation.RejectedRows:N0} of {validation.TotalRows:N0} rows "
-                + $"({rejectionRate:P1}) failed validation. Nothing was imported.");
+                + $"({rejectionRate:P1}) failed validation. Nothing was imported.",
+                businessDate);
         }
 
         if (await context.IsCancellationRequestedAsync(ct).ConfigureAwait(false))
@@ -234,7 +235,10 @@ internal sealed partial class SqmDailyProcessor(
             : $"Imported {stored:N0} rows for {businessDate:yyyy-MM-dd} as day {sequence}; "
               + $"{validation.RejectedRows:N0} rejected, {validation.WarnedRows:N0} imported with warnings.";
 
-        return new ImportOutcome(status, counters, MakeEffective: true, message);
+        // The date goes back with the outcome so CompleteAsync can record it. The job was
+        // enqueued without one when the file came from the browser, and this is the only
+        // place that knows which day it was.
+        return new ImportOutcome(status, counters, MakeEffective: true, message, businessDate);
     }
 
     private static ImportOutcome Cancelled(ValidationResult validation) => new(

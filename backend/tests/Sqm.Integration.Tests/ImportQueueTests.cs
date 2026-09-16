@@ -131,7 +131,7 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
 
             await fixture.Repository.CompleteAsync(
                 originalJob, ImportJobStatus.Completed, new ImportCounters(RowsInserted: 100),
-                makeEffective: true, ct);
+                makeEffective: true, businessDate: date, ct);
 
             // A corrected file for the same day.
             var correctedFile = await fixture.Repository.RegisterFileAsync(
@@ -141,7 +141,7 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
 
             await fixture.Repository.CompleteAsync(
                 correctedJob, ImportJobStatus.Completed, new ImportCounters(RowsInserted: 105),
-                makeEffective: true, ct);
+                makeEffective: true, businessDate: date, ct);
 
             var effective = await fixture.Repository.ListJobsAsync(
                 new ImportHistoryFilter(TestSource, EffectiveOnly: true), 50, 0, ct);

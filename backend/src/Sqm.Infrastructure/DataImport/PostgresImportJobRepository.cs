@@ -361,8 +361,50 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
             Command(Sql, new { job = jobId, status = label, stage = label }, ct)).ConfigureAwait(false);
     }
 
+    public async Task RecordHeartbeatAsync(
+        string workerId, string hostname, int maxConcurrent, bool hostedInApi, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+
+        // started_at is preserved on conflict, so "running since" means what it says across the
+        // hundreds of heartbeats a long-lived worker writes. Everything else is refreshed,
+        // because concurrency and hosting can change when a worker is restarted with new options.
+        const string Sql = """
+            INSERT INTO imports.worker_heartbeat
+                (worker_id, hostname, max_concurrent, hosted_in_api, started_at, last_seen_at)
+            VALUES (@id, @host, @concurrent, @inApi, now(), now())
+            ON CONFLICT (worker_id) DO UPDATE
+               SET hostname       = EXCLUDED.hostname,
+                   max_concurrent = EXCLUDED.max_concurrent,
+                   hosted_in_api  = EXCLUDED.hosted_in_api,
+                   last_seen_at   = now()
+            """;
+
+        await connection.ExecuteAsync(Command(Sql, new
+        {
+            id = workerId,
+            host = hostname,
+            concurrent = maxConcurrent,
+            inApi = hostedInApi,
+        }, ct)).ConfigureAwait(false);
+
+        // Sweep away workers that are never coming back. Without this the table grows by one row
+        // for every worker process ever started - which on a development machine is every restart
+        // - and "how many workers are there" slowly becomes a count of history.
+        //
+        // An hour, not thirty seconds: the liveness window decides who is ALIVE, and this decides
+        // who is FORGOTTEN. Deleting a worker the moment it misses a beat would erase the
+        // evidence that it existed at the exact moment somebody is trying to work out why it
+        // stopped.
+        const string SweepSql = """
+            DELETE FROM imports.worker_heartbeat WHERE last_seen_at < now() - interval '1 hour'
+            """;
+
+        await connection.ExecuteAsync(Command(SweepSql, null, ct)).ConfigureAwait(false);
+    }
+
     public async Task ReportProgressAsync(
-        long jobId, string stage, long rowsProcessed, long? rowsExpected, CancellationToken ct)
+        long jobId, string stage, long bytesProcessed, long? bytesExpected, CancellationToken ct)
     {
         await using var connection = await OpenAsync(ct).ConfigureAwait(false);
 
@@ -372,15 +414,15 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
         // rest of the screen.
         const string Sql = """
             INSERT INTO imports.import_progress
-                (job_id, stage, rows_processed, rows_expected, percent, updated_at)
+                (job_id, stage, bytes_processed, bytes_expected, percent, updated_at)
             VALUES (@job, @stage, @processed, @expected,
                     CASE WHEN @expected IS NULL OR @expected = 0 THEN NULL
                          ELSE LEAST(100, ROUND(@processed::numeric * 100 / @expected, 2)) END,
                     now())
             ON CONFLICT (job_id) DO UPDATE
                SET stage          = EXCLUDED.stage,
-                   rows_processed = EXCLUDED.rows_processed,
-                   rows_expected  = EXCLUDED.rows_expected,
+                   bytes_processed = EXCLUDED.bytes_processed,
+                   bytes_expected  = EXCLUDED.bytes_expected,
                    percent        = EXCLUDED.percent,
                    updated_at     = EXCLUDED.updated_at
             """;
@@ -389,8 +431,8 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
         {
             job = jobId,
             stage,
-            processed = rowsProcessed,
-            expected = rowsExpected,
+            processed = bytesProcessed,
+            expected = bytesExpected,
         }, ct)).ConfigureAwait(false);
     }
 
@@ -503,12 +545,38 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
         ImportJobStatus status,
         ImportCounters counters,
         bool makeEffective,
+        DateOnly? businessDate,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(counters);
 
         await using var connection = await OpenAsync(ct).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        // The day this job turned out to describe, written BEFORE effectiveness is decided.
+        //
+        // The processor is the only thing that knows it: a file uploaded through the browser is
+        // enqueued with no date, and the date is read from the file's own name when the job is
+        // claimed. Nothing used to write it back, and the consequences were quiet and bad - every
+        // browser-uploaded job kept business_date NULL, the demotion below matches on
+        // `IS NOT DISTINCT FROM` so all of them counted as the same day, each new daily import
+        // demoted the previous one, and the initial dump lost its effective flag to a daily file.
+        // The freshness card reads this column, so the dashboard also went on reporting the last
+        // date a script-loaded job had recorded, however many days were imported after it.
+        //
+        // In this transaction, and first, so the demotion below matches on the real day.
+        if (businessDate is not null)
+        {
+            const string DateSql = """
+                UPDATE imports.import_job
+                   SET business_date = @date
+                 WHERE id = @job AND business_date IS DISTINCT FROM @date
+                """;
+
+            await connection.ExecuteAsync(
+                Command(DateSql, new { job = jobId, date = businessDate.Value }, ct, transaction))
+                .ConfigureAwait(false);
+        }
 
         long? superseded = null;
 

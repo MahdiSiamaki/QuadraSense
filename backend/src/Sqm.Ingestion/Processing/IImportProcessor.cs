@@ -31,7 +31,7 @@ public interface IImportContext
     Task EnterStageAsync(ImportJobStatus stage, string message, CancellationToken ct);
 
     /// <summary>Reports progress within the current stage.</summary>
-    Task ReportProgressAsync(long rowsProcessed, long? rowsExpected, CancellationToken ct);
+    Task ReportProgressAsync(long bytesProcessed, long? bytesExpected, CancellationToken ct);
 
     /// <summary>Adds a line to the job's timeline.</summary>
     Task NoteAsync(string severity, string message, object? detail, CancellationToken ct);
@@ -57,8 +57,15 @@ public interface IImportContext
 /// source that appends rather than replaces, and false for a run that wrote nothing.
 /// </param>
 /// <param name="Message">A sentence for the timeline and the history list.</param>
+/// <param name="BusinessDate">
+/// The day the file turned out to describe, when the processor determined it. A file
+/// uploaded through the browser is enqueued without one, and this is what gets it recorded
+/// against the job - which is what makes the freshness card and "effective import for this
+/// day" correct for browser uploads.
+/// </param>
 public sealed record ImportOutcome(
     ImportJobStatus Status,
     ImportCounters Counters,
     bool MakeEffective,
-    string Message);
+    string Message,
+    DateOnly? BusinessDate = null);
