@@ -7,6 +7,7 @@ import { formatDate } from '@/lib/format'
 import { useAuth, Permission } from '@/features/auth/useAuth'
 import { useLogout } from '@/api/auth'
 import UserMenu from '@/features/auth/UserMenu.vue'
+import BrandMark from '@/design-system/BrandMark.vue'
 
 const { isDark, toggle } = useTheme()
 const route = useRoute()
@@ -82,15 +83,10 @@ async function signOut() {
     -->
     <header class="sticky top-0 z-10 border-b bg-[var(--c-surface)]/85 backdrop-blur-sm">
       <div class="mx-auto flex h-14 max-w-[1600px] items-center gap-6 px-5">
-        <RouterLink to="/" class="flex shrink-0 items-center gap-2.5">
-          <span
-            class="grid size-7 place-items-center rounded-[var(--radius-md)] bg-[var(--c-accent)] text-[var(--text-xs)] font-bold text-[var(--c-accent-text)]"
-            aria-hidden="true"
-          >
-            DI
-          </span>
+        <RouterLink to="/" class="flex shrink-0 items-center gap-2">
+          <BrandMark :size="26" />
           <span class="hidden text-[var(--text-sm)] font-semibold tracking-tight sm:inline">
-            Device Intelligence
+            QuadraSense
           </span>
         </RouterLink>
 

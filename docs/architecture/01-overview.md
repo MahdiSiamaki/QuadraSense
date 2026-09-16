@@ -66,7 +66,7 @@ flowchart TB
         SRC["Source system<br/>daily dump-NN batches<br/>CSV + 1.config + 1.done"]
         GSMA["GSMA TAC<br/>Device Database"]
     end
-    subgraph sys["Device Intelligence Platform"]
+    subgraph sys["QuadraSense"]
         ING["Ingestion service<br/>watch · validate · load"]
         DB[("Analytics store<br/>events · state · marts")]
         OLTP[("Operational store<br/>users · jobs · audit")]

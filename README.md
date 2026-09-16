@@ -1,7 +1,11 @@
-# Device Intelligence Platform
+# QuadraSense
 
-Analytics platform for mobile device / SIM / subscriber binding data, enriched with the GSMA TAC
-device database.
+**PI — Primary SIM & Device Inventory.** Analytics platform for mobile device / SIM / subscriber
+binding data, enriched with the GSMA TAC device database.
+
+The four identifiers the name points at are MSISDN, IMSI, IMEI and ICCID/EID. Three of them are
+loaded and queryable today; ICCID and EID are not yet in the feed, and nothing here pretends
+otherwise — see `docs/architecture/03-data-model.md` for what the source actually delivers.
 
 > **Status: Phase 3–4.** The data platform is loaded and the application runs against it. The
 > import platform — upload, queue, worker, validation, TAC versioning — is built and tested, and

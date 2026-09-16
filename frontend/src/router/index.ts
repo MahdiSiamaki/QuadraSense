@@ -207,6 +207,6 @@ setUnauthenticatedHandler(() => {
 
 router.afterEach((to) => {
   document.title = to.meta['title']
-    ? `${to.meta['title']} · Device Intelligence`
-    : 'Device Intelligence'
+    ? `${to.meta['title']} · QuadraSense`
+    : 'QuadraSense'
 })

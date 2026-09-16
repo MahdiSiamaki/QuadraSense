@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BrandMark from '@/design-system/BrandMark.vue'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from '@/design-system/Button.vue'
@@ -80,16 +81,11 @@ async function submit() {
   <div class="flex min-h-screen flex-col items-center justify-center px-5 py-12">
     <div class="w-full max-w-sm">
       <div class="mb-7 flex items-center gap-2.5">
-        <span
-          class="grid size-8 place-items-center rounded-[var(--radius-md)] bg-[var(--c-accent)] text-[var(--text-sm)] font-bold text-[var(--c-accent-text)]"
-          aria-hidden="true"
-        >
-          DI
-        </span>
+        <BrandMark :size="34" />
         <div>
-          <h1 class="text-[var(--text-base)] font-semibold tracking-tight">Device Intelligence</h1>
+          <h1 class="text-[var(--text-base)] font-semibold tracking-tight">QuadraSense</h1>
           <p class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
-            Subscriber device and SIM analytics
+            Primary SIM &amp; Device Inventory
           </p>
         </div>
       </div>

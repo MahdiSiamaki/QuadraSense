@@ -69,6 +69,14 @@
 
   /* A single accent. Used for interactive affordances and the primary series
      only - never for decoration, or it stops meaning anything. */
+  /*
+    Brand. Not part of the interface palette above, and deliberately kept apart from it: these
+    two belong to the mark, and an accent colour that drifts with a redesign must not drag the
+    logo along with it.
+  */
+  --brand-deep: #16306b;
+  --brand-accent: #22b8ed;
+
   --c-accent: oklch(53% 0.17 264);
   --c-accent-hover: oklch(47% 0.175 264);
   --c-accent-subtle: oklch(95% 0.03 264);
@@ -104,6 +112,14 @@
   --c-text: oklch(95% 0.004 260);
   --c-text-secondary: oklch(73% 0.009 260);
   --c-text-muted: oklch(60% 0.011 260);
+
+  /*
+    The deep navy is nearly invisible on this surface, so it lifts to a tint of the same hue.
+    The cyan does not move: keeping one of the two constant is what stops the mark reading as
+    two different logos between themes.
+  */
+  --brand-deep: #7ba0e8;
+  --brand-accent: #22b8ed;
 
   --c-accent: oklch(66% 0.16 264);
   --c-accent-hover: oklch(72% 0.16 264);
