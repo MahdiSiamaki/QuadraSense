@@ -38,6 +38,11 @@ internal sealed partial class MartRefresh(
         Message = "Mart refresh statement failed: {Label}")]
     private partial void LogStatementFailed(string label, Exception exception);
 
+    [LoggerMessage(EventId = 3802, Level = LogLevel.Warning,
+        Message = "Dashboard marts for delivery {Sequence} skipped: delivery {MaxFolded} is "
+                  + "already folded, so current state is no longer delivery {Sequence}'s state")]
+    private partial void LogSkippedOutOfOrder(int sequence, int maxFolded);
+
     private const string ResourceName = "Sqm.Ingestion.refresh_marts.sql";
 
     /// <summary>How many times to run the whole script before giving up.</summary>
@@ -69,6 +74,47 @@ internal sealed partial class MartRefresh(
     {
         var failures = 0;
         var statements = SqlScript.Split(LoadScript()).Count;
+
+        // ------------------------------------------------------------------ the ordering guard
+        //
+        // Every mart here is "the state of the network at delivery N", and every one of them is
+        // built by aggregating binding_current AS IT IS NOW. Those are the same thing only while
+        // no LATER delivery has been folded. Fold day N+1 first and this script will happily
+        // write day N+1's state into day N's partition, label it N, and publish it.
+        //
+        // That is not hypothetical. Days 06-16 and 06-17 were each interrupted and retried; by
+        // the time they ran again, 06-18 was folded. Both rebuilt their own partitions from a
+        // binding_current that already contained 06-18, and all three deliveries ended up holding
+        // the identical figure of 114,230,645 active bindings - while the independent per-day
+        // change marts said 06-16 GAINED 167,111 bindings and its snapshot claimed a loss.
+        //
+        // The state as of delivery N cannot be recovered afterwards: binding_current keeps one
+        // row per binding carrying only its LATEST change, so the earlier state is not there to
+        // read. So this refuses rather than guesses. The delivery's own data is already loaded
+        // and folded - correctly, because the fold is order-independent - and the next delivery
+        // to run in order will publish a correct snapshot.
+        var maxFolded = await analytics.GetMaxSequenceAsync(ct).ConfigureAwait(false);
+
+        if (maxFolded > sequence)
+        {
+            var message =
+                $"Skipping the dashboard marts for delivery {sequence}: delivery {maxFolded} is "
+                + "already folded, so current state is no longer this delivery's state. The "
+                + "events for this day are loaded and correct; only the per-delivery snapshot is "
+                + "unavailable, and it cannot be reconstructed after the fact.";
+
+            LogSkippedOutOfOrder(sequence, maxFolded);
+
+            if (onProgress is not null)
+            {
+                await onProgress(message).ConfigureAwait(false);
+            }
+
+            // Not published. A snapshot that cannot be built must not be claimed as ready - the
+            // dashboard reads max(seq) from mart_ready, and an entry here is what makes a
+            // delivery believed.
+            return 0;
+        }
 
         // Withdraw the delivery before touching it. From here until the refresh finishes, the
         // dashboard reads the previous complete delivery rather than a mart that is being
