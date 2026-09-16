@@ -55,9 +55,54 @@ internal static class ImportFailure
         sqlState is { Length: >= 2 }
         && sqlState[..2] is "08" or "40" or "53" or "57";
 
+    /// <summary>How much of an authored rejection is kept.</summary>
+    /// <remarks>
+    /// A rejection written by a processor is the product's explanation of itself: it names the
+    /// rule, the count and what to do next, and the operator has nothing else to go on. The TAC
+    /// structural scan's message runs to about 900 characters and was being cut at 500, mid-word,
+    /// losing the sentence that said the file was a damaged transfer and should be downloaded
+    /// again - the only part that told anyone what to do.
+    /// </remarks>
+    private const int AuthoredLimit = 2_000;
+
+    /// <summary>How much of an incidental exception message is kept.</summary>
+    /// <remarks>
+    /// Driver and engine messages are not written for anyone. ClickHouse in particular quotes the
+    /// offending input back, so the message carries a row of the file; keeping 500 characters of
+    /// that is enough to recognise it and little enough to read.
+    /// </remarks>
+    private const int IncidentalLimit = 500;
+
     private static string Summarise(Exception exception)
     {
         var message = exception.Message.ReplaceLineEndings(" ").Trim();
-        return message.Length > 500 ? message[..500] : message;
+
+        return Clip(
+            message,
+            exception is ImportRejectedException ? AuthoredLimit : IncidentalLimit);
+    }
+
+    /// <summary>Shortens a message without leaving it looking like a different failure.</summary>
+    /// <remarks>
+    /// Cutting at a fixed offset stops mid-word, and a message that stops mid-word reads as
+    /// corruption rather than as a message that was shortened. So the cut lands on a word
+    /// boundary and says that it happened.
+    /// </remarks>
+    private static string Clip(string message, int limit)
+    {
+        if (message.Length <= limit)
+        {
+            return message;
+        }
+
+        const string Ellipsis = " [...]";
+        var room = limit - Ellipsis.Length;
+        var boundary = message.LastIndexOf(' ', room - 1);
+
+        // A message with no spaces near the limit - a single enormous token - has no boundary
+        // worth finding, so take the fixed cut rather than throwing most of it away.
+        var cut = boundary > room / 2 ? boundary : room;
+
+        return string.Concat(message.AsSpan(0, cut).TrimEnd(), Ellipsis);
     }
 }

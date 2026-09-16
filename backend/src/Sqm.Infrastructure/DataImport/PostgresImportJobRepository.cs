@@ -723,9 +723,15 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
 
         await AppendEventCoreAsync(
             connection, transaction, jobId, "error", null,
+            // Three endings, not two. "No attempts remain" on attempt 1 of 3 is a contradiction
+            // on screen, and it sends the reader looking for a retry that was never going to
+            // happen: a rejected file is not a failed attempt, it is an answer.
             willRetry
                 ? $"Failed: {errorSummary}. Retrying in {retryDelay.TotalSeconds:F0}s."
-                : $"Failed: {errorSummary}. No attempts remain.",
+                : isRetryable
+                    ? $"Failed: {errorSummary}. No attempts remain."
+                    : $"Failed: {errorSummary}. Not retried - the file itself is the problem, so "
+                      + "another attempt would fail the same way.",
             null, ct).ConfigureAwait(false);
 
         await transaction.CommitAsync(ct).ConfigureAwait(false);

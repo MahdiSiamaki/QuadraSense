@@ -644,6 +644,16 @@ Memory is a fixed 25 MB regardless of input: two bitmaps over the eight-digit TA
 than a hash set, because a hash set is sized by the input and the input is the thing under
 suspicion.
 
+**The first refusal in production was itself unreadable.** Every failure summary was clipped to
+500 characters, the rejection runs to 837, and the sentence saying the file was a damaged transfer
+and should be downloaded again was the last one - so the stored message ended `...it is the key
+manufacturer, model an` and the only actionable line was the only line nobody saw. Three fixes:
+a rejection authored for an operator now keeps 2,000 characters where an incidental driver message
+still keeps 500; a clip lands on a word boundary and marks itself `[...]`; and the remedy leads the
+message instead of trailing it. The timeline said `No attempts remain` on attempt 1 of 3 for the
+same reason it says it after attempt 3, which is a contradiction on screen - a permanently rejected
+file now says so instead.
+
 ---
 
 ## 13. Still open

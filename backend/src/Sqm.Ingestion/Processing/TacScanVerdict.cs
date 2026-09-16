@@ -65,20 +65,19 @@ internal static class TacScanRules
             return new TacScanVerdict(faults, null);
         }
 
-        if (scan.MalformedRecords > 0 && scan.RepeatedTacs > 0)
-        {
-            // Said explicitly because the two together point somewhere different from either
-            // alone. A supplier who re-issues an export changes its content; a transfer that
-            // fails repeats what it already sent and loses bytes where it resumes.
-            reasons.Add(
-                "Lost bytes and wholesale repetition in the same file is what a damaged transfer "
-                + "looks like rather than a bad export. Downloading the file again is the first "
-                + "thing to try.");
-        }
+        // What to do comes first, and the evidence for it second. The opposite order shipped
+        // once: the remedy was the last sentence of a 900-character message, the failure summary
+        // was clipped to 500, and the only actionable line was the only line nobody saw.
+        var lead = scan.MalformedRecords > 0 && scan.RepeatedTacs > 0
 
-        return new TacScanVerdict(
-            faults,
-            "This file was not loaded and no TAC version was created. "
-            + string.Join(" ", reasons));
+            // The two defects together point somewhere neither does alone. A supplier who
+            // re-issues an export changes its content; a transfer that fails repeats what it
+            // already sent and loses bytes where it resumes.
+            ? "This file was not loaded and no TAC version was created. Lost bytes and wholesale "
+              + "repetition in the same file is what a damaged transfer looks like rather than a "
+              + "bad export, so downloading it again is the first thing to try. In detail: "
+            : "This file was not loaded and no TAC version was created. ";
+
+        return new TacScanVerdict(faults, lead + string.Join(" ", reasons));
     }
 }

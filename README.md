@@ -184,7 +184,7 @@ reconciled to the row. See `docs/adr/ADR-009-device-module.md`.
 dotnet test backend/Sqm.slnx
 ```
 
-197 tests. Integration tests run against a real PostgreSQL and **skip with a reason** when none is
+204 tests. Integration tests run against a real PostgreSQL and **skip with a reason** when none is
 reachable, rather than failing. They connect as `sqm_app`, not as the owner: connecting as the
 owner would leave the append-only guarantee untested while appearing to pass.
 
