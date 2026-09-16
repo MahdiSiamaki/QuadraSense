@@ -320,6 +320,10 @@ CSV.
 6.97%, malformed IMEI at 0.02%, and so on (see `03-data-model.md` §6). Invalid rows are
 quarantined with column, value, row number and rule.
 
+**Set level:** properties no single row can violate on its own. A TAC export where every record
+is individually well-formed can still be unusable, because the key has to be unique across the
+whole file — see **D10**, which is where this layer was added and why.
+
 **Quarantine must not explode.** A wholly malformed 8M-row file would otherwise write 8M error
 rows. Errors are therefore **aggregated by (rule, column)** with a capped sample of raw rows —
 default 100 per rule — and a count. A file exceeding a configurable invalid-row ratio is failed
@@ -589,13 +593,66 @@ CREATE UNIQUE INDEX ux_tac_version_active ON imports.tac_version ((status = 'ACT
 Each replaces a check that a race could defeat. Two concurrent uploads of the same file both
 pass an application-level existence check; only one can win an index.
 
+### D10 — A TAC export is checked for structure before it is loaded, not after
+
+`DeviceDatabase_TAC16Sep2026.csv` (349 MB) failed three attempts with:
+
+```
+Code: 27. DB::Exception: Cannot parse input: expected ',' before:
+'\n35500510,Samsung Korea,SM-A905F,Galaxy A90,...': (at row 113551)
+```
+
+True, and useless. It names one line in 482,048 and gives an operator no way to tell a typo from
+a ruined download. Diagnosing it took a separate pass with a real CSV parser, which found two
+independent defects:
+
+| | |
+|---|---:|
+| logical records | 482,047 |
+| records with bytes missing | **27** |
+| distinct TACs | 270,885 |
+| TACs present exactly twice | **211,135** |
+| records that are repeats | 211,135 (43.8%) |
+
+The repetition is structured, not random: after a clean run of 50,949 records the file alternates
+between blocks of roughly 165 new records and blocks of roughly 165 replayed from about five
+blocks earlier — **1,224 such pairs**, which is why an otherwise ascending file steps backwards
+1,234 times. All 211,135 duplicate pairs are byte-identical. Only 3 of the 27 damaged records sit
+near a block boundary, so the two defects are independent. Lost bytes plus wholesale repetition
+is a damaged transfer, not a bad export: a re-issued export changes content, it does not repeat it.
+
+**Both rules already existed, and neither was usable.** Duplicate TACs were caught *after* the
+load, so a doomed file was read, parsed and stored before being discarded. Malformed records were
+caught by ClickHouse's parser, which stops at the first one. So the scan moved in front of the
+load — the pattern the daily file has always used (D7): validate and count without writing, then
+stream the bytes.
+
+It is deliberately not a line splitter. `bandDetails` holds up to 5,335 characters of
+comma-separated radio bands inside quotes, so splitting on commas would call almost every record
+malformed. **The scanner's own first version got this wrong in the opposite direction:** it
+treated any `"` as opening a quoted field, and the 19 records ending in a single stray quote made
+it swallow the rest of the file — one "record" of 296,302 fields, 183,187 records counted where
+there are 482,047. RFC 4180 opens a quoted field only at the *start* of a field. The corrected
+scanner reproduces the Python reference parse exactly, on all seven figures above, in 10.8 s.
+
+Why this matters more than the parse error suggests: the quiet case is a duplicated export whose
+CSV is *clean*. It would load without complaint, and every count joining to `sqm.tac` would
+double. This project has shipped that shape of bug once — 251,879,046 against a real
+125,939,523 — and it was found by disbelieving a dashboard, not by an error.
+
+Memory is a fixed 25 MB regardless of input: two bitmaps over the eight-digit TAC domain rather
+than a hash set, because a hash set is sized by the input and the input is the thing under
+suspicion.
+
 ---
 
 ## 13. Still open
 
-**A second TAC file.** Only one exists (`DeviceDatabase_TAC1Sep2026.csv`), so the diff and
-activation flow can be built and unit-tested against synthetic versions, but not verified
-against two real ones. Worth obtaining a second before the feature is considered done.
+**A second TAC file.** One sound file exists (`DeviceDatabase_TAC1Sep2026.csv`, 270,166 records,
+270,166 distinct TACs, scanned clean). A second arrived — `DeviceDatabase_TAC16Sep2026.csv` — and
+is a damaged transfer (D10), so it was refused and the diff and activation flow still have not
+been verified against two real versions. Worth obtaining a sound second file before the feature
+is considered done.
 
 **Delivery lag.** The observed files arrived roughly four weeks behind the data they describe.
 That figure drives the freshness alert thresholds in §10, which are currently set from a single

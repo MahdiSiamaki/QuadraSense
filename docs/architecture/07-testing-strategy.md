@@ -115,11 +115,11 @@ The plan above is the target. This is the state of it.
 | Project | Tests | What it covers |
 |---|---:|---|
 | `Sqm.Domain.Tests` | 122 | The binding fold, the identifier rules, the IMSI search term, the device search term, and masking. Every case cites a discovery measurement. |
-| `Sqm.Ingestion.Tests` | 22 | Row validation and schema-change classification. |
+| `Sqm.Ingestion.Tests` | 40 | Row validation, schema-change classification, and the structural scan of a TAC export - RFC 4180 quoting, repeated TACs, records with bytes missing. |
 | `Sqm.Integration.Tests` | 34 | The import queue's guarantees, the authorisation rule, and endpoint coverage - against a real PostgreSQL. |
 | `Sqm.Application.Tests` | 1 | Placeholder. |
 
-**179 passing.**
+**197 passing.**
 
 ### The integration tests earned their cost on the first run
 
@@ -136,6 +136,23 @@ This is the argument for the rule in section 4 stated as a result rather than a 
 that returns what we expect tests our expectations. The behaviour under test here is
 PostgreSQL's — `FOR UPDATE SKIP LOCKED`, partial unique indexes, transaction isolation — and a
 mock cannot be wrong in the ways a database is wrong.
+
+### Thirteen unit tests passed on a scanner that was wrong by 62%
+
+The TAC structural scanner (`09-import-platform.md` D10) was written with thirteen unit tests
+covering quoted commas, embedded newlines, doubled quotes, CRLF, blank lines and missing trailing
+newlines. All thirteen passed. Run against the 349 MB file it was written to diagnose, it reported
+**183,187 records where there are 482,047** — it had been reading a stray `"` as opening a quoted
+field and swallowing everything after it.
+
+No fixture contained a stray quote, because a stray quote is not something anyone thinks to write
+down. The real file had nineteen. The bug was caught by checking the scanner's seven output
+figures against an independent Python reference parse of the same file, which is now what the
+numbers in D10 are: two implementations agreeing, not one asserting.
+
+The lesson is narrower than "unit tests are insufficient". It is that a parser's fixtures are
+written from the same mental model as the parser, so they test the model rather than the input.
+For anything whose job is to characterise a file, the file itself has to be part of the evidence.
 
 ### Tests that assert a property rather than a string
 

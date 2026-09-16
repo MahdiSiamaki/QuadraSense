@@ -33,6 +33,12 @@ internal sealed partial class TacSnapshotProcessor(
         Message = "TAC version {VersionId} is ready for review: +{Added} -{Removed} ~{Updated}")]
     private partial void LogReady(int versionId, int added, int removed, int updated);
 
+    [LoggerMessage(EventId = 3701, Level = LogLevel.Information,
+        Message = "Scanned {FileName}: {Records} records, {Malformed} malformed, "
+            + "{RepeatedTacs} repeated TAC(s)")]
+    private partial void LogScanned(
+        string fileName, long records, long malformed, long repeatedTacs);
+
     /// <summary>
     /// How large a diff has to be before the import stops rather than waiting for review.
     /// </summary>
@@ -60,6 +66,13 @@ internal sealed partial class TacSnapshotProcessor(
             .ConfigureAwait(false);
 
         await ValidateHeaderAsync(job, context, ct).ConfigureAwait(false);
+
+        await context.EnterStageAsync(
+            ImportJobStatus.Validating,
+            $"Checking the structure of every record in {job.OriginalFileName}", ct)
+            .ConfigureAwait(false);
+
+        await ScanStructureAsync(job, context, ct).ConfigureAwait(false);
 
         var versionId = await store.AllocateVersionIdAsync(ct).ConfigureAwait(false);
         var activeVersionId = await store.GetActiveVersionIdAsync(ct).ConfigureAwait(false);
@@ -96,13 +109,18 @@ internal sealed partial class TacSnapshotProcessor(
             await context.QuarantineAsync(quarantine, ct).ConfigureAwait(false);
         }
 
+        // A backstop. ScanStructureAsync answers this before anything is loaded and with far more
+        // to say about it, so reaching here means the scanner and ClickHouse read the same file
+        // differently - which is worth failing loudly over, because one of the two is wrong about
+        // the data that decides what every device in the product is called.
         if (check.DistinctTacs != check.RowCount)
         {
             await store.DropVersionAsync(versionId, CancellationToken.None).ConfigureAwait(false);
             throw new ImportRejectedException(
-                $"The file contains {check.RowCount - check.DistinctTacs:N0} duplicate TAC(s). "
-                + "A TAC must appear once; a duplicate makes the manufacturer of those devices "
-                + "ambiguous. Nothing was activated and the loaded version was discarded.");
+                $"The loaded version holds {check.RowCount - check.DistinctTacs:N0} duplicate "
+                + "TAC(s) that the pre-load scan did not see. The two disagree about the file, so "
+                + "it has been discarded rather than trusted. This is a defect in the importer, "
+                + "not in the file.");
         }
 
         await context.NoteAsync(
@@ -171,6 +189,64 @@ internal sealed partial class TacSnapshotProcessor(
             MakeEffective: false,
             $"TAC version {versionId} is loaded and ready. It is NOT active - an administrator "
             + "must activate it before the dashboard uses it.");
+    }
+
+    /// <summary>
+    /// Reads the whole file once, writing nothing, and refuses it if its structure is unsound.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This runs before a version id is allocated, so a file refused here leaves nothing at all
+    /// behind - no partition to drop, no gap in the version numbering. That is the difference
+    /// from the checks further down, which can only speak after 366 MB has been loaded.
+    /// </para>
+    /// <para>
+    /// Both rules below were already enforced somewhere; neither was usable. Duplicate TACs were
+    /// caught after the load, so the file was read, parsed and stored before being thrown away.
+    /// Records with the wrong field count were caught by ClickHouse's own parser, which stops at
+    /// the first one and reports it as a syntax error - true, and no help at all to an operator
+    /// trying to work out whether to re-download the file or call the supplier. Counting every
+    /// occurrence first is what turns the failure into a decision.
+    /// </para>
+    /// </remarks>
+    private async Task ScanStructureAsync(
+        ClaimedJob job, IImportContext context, CancellationToken ct)
+    {
+        await using var stream = await context.OpenFileAsync(ct).ConfigureAwait(false);
+
+        var scan = await TacFileScanner.ScanAsync(
+            stream,
+            (bytes, token) => context.ReportProgressAsync(bytes, job.FileBytes, token),
+            ct).ConfigureAwait(false);
+
+        LogScanned(job.OriginalFileName, scan.Records, scan.MalformedRecords, scan.RepeatedTacs);
+
+        if (scan.Records == 0)
+        {
+            throw new ImportRejectedException("The file contained a header but no data rows.");
+        }
+
+        var verdict = TacScanRules.Evaluate(scan);
+
+        if (verdict.Faults.Count > 0)
+        {
+            // Written before the rejection, so the samples survive it and the operator can look
+            // at the actual records on the job's page rather than at a message about them.
+            await context.QuarantineAsync(verdict.Faults, ct).ConfigureAwait(false);
+        }
+
+        if (verdict.Rejection is null)
+        {
+            await context.NoteAsync(
+                "info",
+                $"Structure checked: {scan.Records:N0} records, {scan.DistinctTacs:N0} distinct "
+                + "TACs, no repeats and no malformed records.",
+                scan, ct).ConfigureAwait(false);
+
+            return;
+        }
+
+        throw new ImportRejectedException(verdict.Rejection);
     }
 
     /// <summary>Reads the header and checks it against the GSMA contract.</summary>
