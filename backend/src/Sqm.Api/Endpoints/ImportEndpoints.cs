@@ -154,8 +154,22 @@ public static class ImportEndpoints
                 "This file's content has already been uploaded for this source."));
         }
 
+        // The day this file claims to describe, read from its name and recorded NOW rather than
+        // when the worker gets to it.
+        //
+        // It is what puts the job in the right place in the queue: the claim refuses to run a day
+        // while an earlier day for the same source is still unlanded, and it can only compare
+        // dates that already exist. A job enqueued without one used to sit outside that ordering
+        // entirely - and outside the "effective import for this day" rule, where every dateless
+        // job matched every other one and each new upload demoted the last.
+        //
+        // A hint, not the authority: the processor re-derives it and CompleteAsync records what
+        // was actually imported, so a misnamed file is corrected rather than believed.
+        var declaredDate = DailyFileName.BusinessDateOf(originalName);
+
         var jobId = await repository
-            .EnqueueAsync(source, registered.FileId, null, actor, ct: ct).ConfigureAwait(false);
+            .EnqueueAsync(source, registered.FileId, declaredDate, actor, ct: ct)
+            .ConfigureAwait(false);
 
         await repository.WriteAuditAsync(
             actor, "import.upload", jobId, registered.FileId, null, http.TraceIdentifier,

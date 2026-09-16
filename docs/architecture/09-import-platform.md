@@ -130,16 +130,65 @@ transaction, and disagreement is not representable.
 That is worth more here than push latency we do not need.
 
 ```sql
--- Claim one job. SKIP LOCKED lets N workers run without blocking each other.
+-- Claim one job. SKIP LOCKED lets N workers run without blocking each other -
+-- except where days of one source are concerned, which are strictly serial.
 UPDATE import_job SET status = 'RUNNING', worker_id = $1, lease_expires_at = now() + interval '5 minutes'
 WHERE id = (
-    SELECT id FROM import_job
+    SELECT id FROM import_job j
     WHERE status IN ('QUEUED', 'RETRYING') AND (run_after IS NULL OR run_after <= now())
-    ORDER BY priority DESC, created_at
+      AND (j.business_date IS NULL OR NOT EXISTS (
+              SELECT 1 FROM import_job earlier
+               WHERE earlier.source_code = j.source_code
+                 AND earlier.business_date < j.business_date
+                 AND earlier.status NOT IN ('COMPLETED', 'PARTIALLY_COMPLETED')))
+    ORDER BY priority DESC, business_date NULLS LAST, created_at
     FOR UPDATE SKIP LOCKED LIMIT 1
 )
 RETURNING *;
 ```
+
+### Days of one source run in order, and that is a constraint
+
+The `NOT EXISTS` above is not tidiness. It was added after it went wrong.
+
+The fold is genuinely order-independent - it reads only one day's events, never reads current
+state, and stamps each row with that day's sequence, so `ReplacingMergeTree` keeps the latest
+whatever order the writes arrive in. That property was proven in Phase 0 and still holds.
+
+**What is not order-independent is everything built _per delivery_.** Each dashboard mart is
+"the state of the network at delivery N", aggregated from `binding_current` as it stands when
+the mart runs. That is delivery N's state only while no other delivery has been folded around
+it.
+
+Two days proved it. 2026-06-16 and 2026-06-17 were both interrupted and retried; by the time
+they ran again, 2026-06-18 had folded. Each rebuilt its own partition from a `binding_current`
+that already contained 06-18, and all three deliveries ended up holding the identical figure of
+**114,230,645 active bindings** - while the per-day change marts, which are partitioned by date
+and cannot be affected by processing order, said 06-16 had **gained 167,111** bindings and its
+own snapshot claimed a loss of 343,035.
+
+`ORDER BY` alone could not have prevented that, and that is the point worth remembering:
+`SKIP LOCKED` is doing its job when it steps over an earlier day held by another worker - or by
+a worker that died still holding it - and takes the next one. Preference is not order.
+
+Three things follow from the rule as written:
+
+- **"Landed" means `COMPLETED` or `PARTIALLY_COMPLETED`** - the two states in which the day's
+  events are in the analytics store. Everything else blocks.
+- **A failed or cancelled day blocks the days after it**, deliberately. Running the next day over
+  a hole produces a snapshot of a network that never existed, and nothing downstream would say
+  so. Blocking is visible on the Import Center and has an exit: reprocess the day, or delete it.
+- **Jobs with no business date neither block nor are blocked.** The initial dump describes a
+  30-day range and the TAC snapshots describe no day at all; they are outside the ordering. A day
+  the source never delivered has no job row, and so blocks nothing either - you cannot wait for
+  something nobody queued.
+
+The mart refresh carries the matching guard on the other side: it refuses to build a delivery's
+snapshot at all if a later delivery is already folded, and publishes nothing to `mart_ready`.
+Between them, a snapshot is either built from the right state or is not claimed to exist.
+
+Checked by `ImportQueueTests`: a later day is not claimed while an earlier one is queued or
+running, and a failed day blocks the days after it.
 
 ### Crash recovery — the lease
 

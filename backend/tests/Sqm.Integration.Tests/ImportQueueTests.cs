@@ -33,6 +33,121 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
         return true;
     }
 
+    /// <summary>
+    /// A later day is not claimable while an earlier one is still unlanded.
+    /// </summary>
+    /// <remarks>
+    /// This is the rule that stops a delivery snapshot describing a network that never existed.
+    /// Every dashboard mart is "the state at delivery N", aggregated from current state as it
+    /// stands when the mart runs - so running day N+1 first, or running N after N+1 has folded,
+    /// writes the wrong state under the right label. Three real deliveries did exactly that and
+    /// ended up holding the identical figure of 114,230,645 active bindings.
+    ///
+    /// ORDER BY alone could not prevent it: SKIP LOCKED steps over an earlier day held by another
+    /// worker - or by one that died holding it - and takes the next.
+    /// </remarks>
+    [Fact]
+    public async Task A_later_day_is_not_claimed_while_an_earlier_day_is_still_queued()
+    {
+        if (!await ReadyAsync())
+        {
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+
+        try
+        {
+            // Enqueued newest first, so passing would be impossible by accident.
+            var laterFile = await fixture.Repository.RegisterFileAsync(
+                TestSource, "day-2.csv", Stored(Hash("order-later")), "tester", ct);
+            var later = await fixture.Repository.EnqueueAsync(
+                TestSource, laterFile.FileId, new DateOnly(2026, 4, 2), "tester", ct: ct);
+
+            var earlierFile = await fixture.Repository.RegisterFileAsync(
+                TestSource, "day-1.csv", Stored(Hash("order-earlier")), "tester", ct);
+            var earlier = await fixture.Repository.EnqueueAsync(
+                TestSource, earlierFile.FileId, new DateOnly(2026, 4, 1), "tester", ct: ct);
+
+            var first = await fixture.Repository.ClaimNextAsync(
+                "worker-a", TimeSpan.FromMinutes(5), ct);
+
+            Assert.NotNull(first);
+            Assert.Equal(earlier, first.JobId);
+
+            // The earlier day is now RUNNING rather than queued, and that must block just as
+            // firmly - this is the case SKIP LOCKED used to walk straight past.
+            var second = await fixture.Repository.ClaimNextAsync(
+                "worker-b", TimeSpan.FromMinutes(5), ct);
+
+            Assert.Null(second);
+
+            // Landed, and the later day becomes claimable.
+            await fixture.Repository.CompleteAsync(
+                earlier, ImportJobStatus.Completed, new ImportCounters(RowsInserted: 1),
+                makeEffective: true, businessDate: new DateOnly(2026, 4, 1), ct);
+
+            var third = await fixture.Repository.ClaimNextAsync(
+                "worker-b", TimeSpan.FromMinutes(5), ct);
+
+            Assert.NotNull(third);
+            Assert.Equal(later, third.JobId);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
+    /// <summary>
+    /// A day that failed blocks the days after it, rather than letting them run over the hole.
+    /// </summary>
+    /// <remarks>
+    /// Deliberate, and the less obvious half of the rule. Skipping a failed day would let the
+    /// next one build a snapshot of a network missing a day's changes, and nothing downstream
+    /// would ever say so. Blocking is visible on the Import Center and has an exit: reprocess the
+    /// failed day, or delete it.
+    /// </remarks>
+    [Fact]
+    public async Task A_failed_day_blocks_the_days_after_it()
+    {
+        if (!await ReadyAsync())
+        {
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+
+        try
+        {
+            var badFile = await fixture.Repository.RegisterFileAsync(
+                TestSource, "bad-day.csv", Stored(Hash("order-failed")), "tester", ct);
+            var bad = await fixture.Repository.EnqueueAsync(
+                TestSource, badFile.FileId, new DateOnly(2026, 5, 1), "tester", ct: ct);
+
+            var nextFile = await fixture.Repository.RegisterFileAsync(
+                TestSource, "next-day.csv", Stored(Hash("order-after-failed")), "tester", ct);
+            await fixture.Repository.EnqueueAsync(
+                TestSource, nextFile.FileId, new DateOnly(2026, 5, 2), "tester", ct: ct);
+
+            var claimed = await fixture.Repository.ClaimNextAsync(
+                "worker-a", TimeSpan.FromMinutes(5), ct);
+            Assert.NotNull(claimed);
+            Assert.Equal(bad, claimed.JobId);
+
+            await fixture.Repository.CompleteAsync(
+                bad, ImportJobStatus.Failed, new ImportCounters(),
+                makeEffective: false, businessDate: new DateOnly(2026, 5, 1), ct);
+
+            Assert.Null(await fixture.Repository.ClaimNextAsync(
+                "worker-b", TimeSpan.FromMinutes(5), ct));
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
     [Fact]
     public async Task The_same_content_uploaded_twice_is_recognised_not_imported_again()
     {
@@ -84,13 +199,24 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
         {
             var ct = TestContext.Current.CancellationToken;
 
+            // NO business dates, and that is the point of the test now.
+            //
+            // This used to enqueue four consecutive DAYS and assert that four workers claimed
+            // four of them at once. That property is gone on purpose: days of one source are now
+            // strictly serial, because a delivery's mart is "the state at delivery N" and running
+            // N+1 alongside or before N writes the wrong state under the right label.
+            //
+            // What is still true, and is what this test was always really about, is the locking:
+            // two workers running this statement at the same instant never receive the same row.
+            // Jobs with no business date - the initial dump, the TAC snapshots - do not take part
+            // in the ordering rule, so they are the honest place to exercise it.
             for (var i = 0; i < 4; i++)
             {
                 var file = await fixture.Repository.RegisterFileAsync(
-                    TestSource, $"day-{i}.csv", Stored(Hash($"skiplocked-{i}")), "tester", ct);
+                    TestSource, $"nodate-{i}.csv", Stored(Hash($"skiplocked-{i}")), "tester", ct);
 
                 await fixture.Repository.EnqueueAsync(
-                    TestSource, file.FileId, new DateOnly(2026, 4, 1).AddDays(i), "tester", ct: ct);
+                    TestSource, file.FileId, businessDate: null, "tester", ct: ct);
             }
 
             // Four workers, four jobs, claimed concurrently. Without SKIP LOCKED these would

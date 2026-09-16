@@ -268,10 +268,23 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
         //   business_date     - oldest day first, so a backlog drains in calendar order
         //   created_at        - stable tiebreak
         //
-        // Calendar order matters for presentation rather than correctness: the fold was proven to
-        // depend only on the last event per binding, not the path taken to it, so a day imported
-        // out of order still converges. What it would disturb is the daily change series, which
-        // reads as a timeline and should be built in the order the days happened.
+        // AND THE ORDER IS NOW A CONSTRAINT, NOT A PREFERENCE. The comment that used to sit here
+        // said calendar order mattered "for presentation rather than correctness", because the
+        // fold depends only on the last event per binding and converges whatever order days
+        // arrive in. That part is true and still is.
+        //
+        // What it missed is that the FOLD is not the only thing built per delivery. Every
+        // dashboard mart is "the state of the network at delivery N", aggregated from
+        // binding_current as it stands when the mart runs - so it is only delivery N's state
+        // while no other delivery has been folded around it. Three days proved it: 06-16 and
+        // 06-17 were interrupted, retried after 06-18 had folded, and all three deliveries ended
+        // up holding the identical figure of 114,230,645 active bindings while the per-day change
+        // marts said 06-16 had gained 167,111.
+        //
+        // ORDER BY alone could not prevent that, because SKIP LOCKED is doing its job: an earlier
+        // day held by another worker - or by a worker that died still holding it - is stepped
+        // over, and the next day starts. The NOT EXISTS below is what makes the preference a
+        // rule.
         const string Sql = """
             WITH claimed AS (
                 SELECT j.id
@@ -279,6 +292,27 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                  WHERE j.status IN ('QUEUED', 'RETRYING')
                    AND (j.run_after IS NULL OR j.run_after <= now())
                    AND NOT j.cancel_requested
+                   -- No earlier day for this source may still be unlanded.
+                   --
+                   -- "Landed" is COMPLETED or PARTIALLY_COMPLETED: both mean the day's events are
+                   -- in the analytics store. Everything else blocks, including the terminal
+                   -- failures - a day that FAILED or was CANCELLED leaves a hole, and running the
+                   -- next day over a hole produces a snapshot of a network that never existed.
+                   -- Blocking is visible and has an exit: reprocess the failed day, or delete it.
+                   -- Silently skipping it would not.
+                   --
+                   -- Scoped to jobs that HAVE a business date, so the initial dump and the TAC
+                   -- snapshots - which describe a range or no day at all - neither block nor are
+                   -- blocked. A day the source never delivered has no job row and cannot block
+                   -- anything either; you cannot wait for something nobody queued.
+                   AND (j.business_date IS NULL OR NOT EXISTS (
+                           SELECT 1
+                             FROM imports.import_job earlier
+                            WHERE earlier.source_code = j.source_code
+                              AND earlier.business_date IS NOT NULL
+                              AND earlier.business_date < j.business_date
+                              AND earlier.status NOT IN ('COMPLETED', 'PARTIALLY_COMPLETED')
+                       ))
                  ORDER BY j.priority DESC, j.business_date NULLS LAST, j.created_at
                    FOR UPDATE SKIP LOCKED
                  LIMIT 1

@@ -45,16 +45,17 @@ internal sealed partial class SqmDailyProcessor(
 
     public string SourceCode => "SQM";
 
-    [GeneratedRegex(@"(\d{4}-\d{2}-\d{2})", RegexOptions.None, matchTimeoutMilliseconds: 200)]
-    private static partial Regex BusinessDatePattern { get; }
-
     public async Task<ImportOutcome> ProcessAsync(
         ClaimedJob job, IImportContext context, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(context);
 
-        var businessDate = job.BusinessDate ?? ParseBusinessDate(job.OriginalFileName)
+        // DailyFileName, not a private copy: the upload endpoint reads the date from the same
+        // rule so the job carries it before any worker sees it, which is what the queue's
+        // ordering constraint is enforced against. Two spellings of one rule would put jobs in
+        // the wrong place in the queue and be very hard to see.
+        var businessDate = job.BusinessDate ?? DailyFileName.BusinessDateOf(job.OriginalFileName)
             ?? throw new ImportRejectedException(
                 $"Cannot determine which day '{job.OriginalFileName}' describes. The name must "
                 + "contain a date in YYYY-MM-DD form.");
@@ -448,18 +449,6 @@ internal sealed partial class SqmDailyProcessor(
         }, CancellationToken.None);
     }
 
-    /// <summary>Reads the business date out of a file name.</summary>
-    private static DateOnly? ParseBusinessDate(string fileName)
-    {
-        var match = BusinessDatePattern.Match(fileName);
-
-        return match.Success
-            && DateOnly.TryParseExact(
-                match.Groups[1].Value, "yyyy-MM-dd", CultureInfo.InvariantCulture,
-                DateTimeStyles.None, out var date)
-            ? date
-            : null;
-    }
 
     /// <summary>Running tallies and per-rule groups built during validation.</summary>
     private sealed class ValidationResult
