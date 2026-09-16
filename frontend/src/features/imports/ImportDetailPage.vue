@@ -124,11 +124,11 @@ function toggleRule(summaryId: number) {
           <ProgressBar
             :percent="detail.data.value.progress.percent"
             :label="detail.data.value.progress.stage.toLowerCase()"
-            :detail="`${formatFull(detail.data.value.progress.rowsProcessed)} of ${
-              detail.data.value.progress.rowsExpected
-                ? formatFull(detail.data.value.progress.rowsExpected)
+            :detail="`${formatBytes(detail.data.value.progress.bytesProcessed)} of ${
+              detail.data.value.progress.bytesExpected
+                ? formatBytes(detail.data.value.progress.bytesExpected)
                 : 'unknown'
-            }`"
+            } read`"
           />
         </Card>
 

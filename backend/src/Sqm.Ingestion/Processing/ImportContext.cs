@@ -36,7 +36,7 @@ internal sealed class ImportContext(
             .ConfigureAwait(false);
     }
 
-    public async Task ReportProgressAsync(long rowsProcessed, long? rowsExpected, CancellationToken ct)
+    public async Task ReportProgressAsync(long bytesProcessed, long? bytesExpected, CancellationToken ct)
     {
         var now = DateTime.UtcNow.Ticks;
         var last = Interlocked.Read(ref _lastProgressTicks);
@@ -53,7 +53,7 @@ internal sealed class ImportContext(
             return;
         }
 
-        await repository.ReportProgressAsync(job.JobId, _stage, rowsProcessed, rowsExpected, ct)
+        await repository.ReportProgressAsync(job.JobId, _stage, bytesProcessed, bytesExpected, ct)
             .ConfigureAwait(false);
     }
 
