@@ -36,7 +36,13 @@ const pendingTac = computed(() => tacVersions.data.value?.filter((v) => v.status
   Saying so is the whole point. A page that shows one delivery's numbers under another
   delivery's date is exactly the kind of quiet wrongness this product is built to avoid.
 */
-const kpi = useKpiSummary(() => ({}))
+/*
+  Deliberately the unfiltered KPI - the served delivery does not depend on what the reader has
+  drilled into - and deliberately spelled the same way the page spells "no filter", so the two
+  share one cache entry instead of issuing the identical request twice. `{}` and
+  `{ includeUnknownDevice: true }` mean the same thing to the API and are different query keys.
+*/
+const kpi = useKpiSummary(() => ({ includeUnknownDevice: true }))
 
 const martBehind = computed(() => {
   const served = kpi.data.value?.deliveryDate ?? null

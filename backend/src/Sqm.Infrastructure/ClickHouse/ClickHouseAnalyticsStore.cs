@@ -534,15 +534,43 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
     public async Task<IReadOnlyList<DailyChange>> GetDailyChangesAsync(CancellationToken ct)
     {
         // The running total is computed in SQL rather than in the client: it is a window
-        // function over ~133 rows, and doing it here keeps the API's shape the same whether
+        // function over ~150 rows, and doing it here keeps the API's shape the same whether
         // the caller wants one month or the whole history.
+        //
+        // IT IS ANCHORED TO THE END, NOT THE BEGINNING, and that is the whole correctness of it.
+        //
+        // The obvious form - start at the initial dump and add each day's net - was wrong by
+        // 9,532,541 bindings, 8.3%, and put a line on the chart that ended at 124,684,132 while
+        // the KPI card beside it read 115,151,591. Two figures for one quantity on one screen.
+        //
+        // The cause is the dump itself. It lists every binding seen over a 30-day window rather
+        // than at an instant, averaging 1.57 handsets per SIM, so its 125,939,523 rows are not a
+        // population and the event stream never reconciles to them. Measured: the drift is
+        // already 9,549,453 at the earliest delivery that has a measured population and stays
+        // flat to within 0.4% of itself for every delivery after, so it is an error in the
+        // starting point rather than one that accumulates.
+        //
+        // Anchoring instead to the population the KPI mart actually measured, and walking the
+        // net backwards, was checked against all 16 deliveries whose population is known: worst
+        // drift 28,554, or 0.025%, against a constant 9.5 million. The last point is exact by
+        // construction, which is the one a reader cross-checks against the card above it.
+        //
+        // Expressed as a baseline rather than a reversed window so it stays a single pass:
+        //   cumulative(d) = anchor - net_through_anchor + running_net(d)
+        // At d = anchor this is the anchor; before it, it walks back; after it - days folded but
+        // not yet in a complete snapshot - it walks forward, which is what those days are.
         const string Sql = """
+            WITH
+                (SELECT max(seq) FROM sqm.mart_ready) AS anchor_seq,
+                (SELECT active_bindings FROM sqm.agg_kpi_daily WHERE seq = anchor_seq) AS anchor_pop,
+                (SELECT sum(toInt64(added) - toInt64(removed))
+                   FROM sqm.agg_change_summary_daily WHERE seq <= anchor_seq) AS net_to_anchor
             SELECT
                 data_date,
                 added,
                 removed,
                 toInt64(added) - toInt64(removed) AS net,
-                (SELECT active_bindings FROM sqm.agg_kpi_daily ORDER BY seq LIMIT 1)
+                anchor_pop - net_to_anchor
                     + sum(toInt64(added) - toInt64(removed)) OVER (ORDER BY data_date) AS cumulative,
                 unknown_device_rows
             FROM sqm.agg_change_summary_daily

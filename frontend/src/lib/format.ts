@@ -9,6 +9,21 @@
 
 const LOCALE = 'en-US'
 
+/**
+ * Business dates are rendered in UTC, and that is a correctness rule rather than a preference.
+ *
+ * A business date is a calendar day with no time of day: `2026-07-02` is the day a file
+ * describes, not an instant. Turning it into `2026-07-02T00:00:00Z` and then formatting it in
+ * the reader's own zone shows the day BEFORE for everyone west of UTC - measured: New York, Los
+ * Angeles and Honolulu all render that date as "Jul 1, 2026". A dashboard whose freshness card,
+ * missing-day list and import history all shift by one day depending on who is looking is worse
+ * than one that is merely wrong, because two colleagues comparing screens disagree.
+ *
+ * Timestamps are the opposite case and stay local: an import that ran at 08:31 happened at a
+ * moment, and the reader wants it in their own time.
+ */
+const UTC = 'UTC'
+
 const compact = new Intl.NumberFormat(LOCALE, {
   notation: 'compact',
   maximumFractionDigits: 1,
@@ -74,9 +89,11 @@ export function maskIdentifier(value: string, keepStart = 4, keepEnd = 3): strin
  */
 export function formatSequence(sequence: number, dataDate: string | null): string {
   if (dataDate) {
-    return new Intl.DateTimeFormat(LOCALE, { month: 'short', day: 'numeric' }).format(
-      new Date(dataDate),
-    )
+    return new Intl.DateTimeFormat(LOCALE, {
+      month: 'short',
+      day: 'numeric',
+      timeZone: UTC,
+    }).format(new Date(dataDate))
   }
   return `#${sequence}`
 }
@@ -141,6 +158,7 @@ export function formatDate(iso: string | null): string {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+    timeZone: UTC,
   }).format(new Date(`${iso}T00:00:00Z`))
 }
 

@@ -196,6 +196,17 @@ public static class DashboardEndpoints
         return Results.Ok(rows);
     }
 
+    /// <summary>
+    /// Distribution across a dimension, under the same filters as everything else on the page.
+    /// </summary>
+    /// <remarks>
+    /// This used to declare only <c>manufacturer</c> and <c>vendor</c> and pass nulls for the
+    /// rest. The dashboard sends every active filter to every widget, and a minimal API simply
+    /// does not bind a query parameter it has not declared - so drilling into an OS or a device
+    /// type left this card answering the unfiltered question while the page above it displayed a
+    /// chip saying otherwise. Nothing errored; the card was just answering a different question
+    /// from the one on screen. The store has always applied whatever it was given.
+    /// </remarks>
     private static async Task<IResult> GetDistributionAsync(
         string dimension,
         IDeviceAnalyticsStore store,
@@ -203,6 +214,10 @@ public static class DashboardEndpoints
         string? countBy = null,
         string? manufacturer = null,
         string? vendor = null,
+        string? deviceType = null,
+        string? operatingSystem = null,
+        string? tac = null,
+        string? msisdnPrefix = null,
         bool includeUnknownDevice = true)
     {
         if (!TryParseDimension(dimension, out var parsed))
@@ -216,7 +231,8 @@ public static class DashboardEndpoints
         }
 
         var filter = BuildFilter(
-            manufacturer, vendor, null, null, null, null, null, null, includeUnknownDevice);
+            manufacturer, vendor, deviceType, operatingSystem, tac, msisdnPrefix,
+            null, null, includeUnknownDevice);
 
         var rows = await store.GetDistributionAsync(parsed, filter, measure, ct).ConfigureAwait(false);
         return Results.Ok(rows);

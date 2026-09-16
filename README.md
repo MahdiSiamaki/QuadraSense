@@ -34,7 +34,7 @@ from the GSMA TAC database, and answers:
 | Daily change history | **1,051,743,000** events over **133 days** (2026-01-26 → 2026-06-14) |
 | Days expected but never delivered | **7** (all within one window in May) |
 | Daily volume | ~7.4M – 9.6M events/day |
-| Device reference data | 270,166 TACs |
+| Device reference data | 270,885 TACs (version 2, activated 2026-09-16) |
 | TAC enrichment coverage | **92.8%** of active bindings |
 
 ## The four things a newcomer should understand first
@@ -184,7 +184,7 @@ reconciled to the row. See `docs/adr/ADR-009-device-module.md`.
 dotnet test backend/Sqm.slnx
 ```
 
-204 tests. Integration tests run against a real PostgreSQL and **skip with a reason** when none is
+205 tests. Integration tests run against a real PostgreSQL and **skip with a reason** when none is
 reachable, rather than failing. They connect as `sqm_app`, not as the owner: connecting as the
 owner would leave the append-only guarantee untested while appearing to pass.
 
@@ -212,6 +212,7 @@ docs/
     09-import-platform.md          the import platform, design and build
     11-clickhouse-memory.md        container memory: what went wrong and what the settings mean
     12-identity-and-access.md      how auth, RBAC and audit are built, and how to operate them
+    13-dashboard-review.md         every dashboard figure checked against the store, and what was wrong
   adr/             Architecture Decision Records
 backend/
   src/Sqm.Domain          the binding fold and identifier rules

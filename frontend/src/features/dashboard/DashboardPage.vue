@@ -21,6 +21,7 @@ import VendorMovementCard from './VendorMovementCard.vue'
 import DimensionTable from '@/design-system/DimensionTable.vue'
 import DataFreshnessCard from './DataFreshnessCard.vue'
 import { useFreshness } from '@/features/imports/useImportQueries'
+import { useTacVersions } from '@/features/imports/useTacVersions'
 import { formatFull, formatPercent } from '@/lib/format'
 import { useFilterState, FILTER_LABELS } from './useFilterState'
 
@@ -115,6 +116,39 @@ const unregisteredTac = computed(() => {
 
 /** The filtered path falls back to the raw table and is measurably slower. */
 const isFiltered = computed(() => activeFilters.value.length > 0)
+
+/**
+ * Two cards read marts that carry no dimension breakdown, so they cannot be filtered at all.
+ *
+ * `agg_device_class_daily` and `agg_capability_daily` are rolled up to (delivery, measure, class)
+ * — there is no vendor or OS in them to filter on, and answering from the raw table would cost
+ * seconds per card. That is a defensible design; showing network-wide figures under a heading
+ * the page has just labelled "Filtered by Vendor: Samsung" is not. So they say so.
+ */
+const NETWORK_WIDE_NOTE = 'Network-wide — the filters above do not apply to this card.'
+
+const classMixSubtitle = computed(() =>
+  `Counted by ${countBy.value}. IoT/M2M is a real segment here, not tail noise.`
+  + (isFiltered.value ? ` ${NETWORK_WIDE_NOTE}` : ''),
+)
+
+const capabilitySubtitle = computed(() =>
+  `Counted by ${countBy.value}, from the GSMA band list and eUICC records.`
+  + (isFiltered.value ? ` ${NETWORK_WIDE_NOTE}` : ''),
+)
+
+/**
+ * The size of the GSMA database, read from the active version rather than written down.
+ *
+ * It was the literal 270,166 until that stopped being true: activating the September 16 export
+ * took it to 270,885 and the sentence kept asserting the old figure. A number in prose is a
+ * number nobody updates.
+ */
+const tacVersions = useTacVersions()
+
+const activeTacRows = computed(
+  () => tacVersions.data.value?.find((v) => v.status === 'Active')?.rowCount ?? null,
+)
 </script>
 
 <template>
@@ -332,7 +366,7 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
     <!-- Composition -->
     <Card
       title="Device class mix"
-      :subtitle="`Counted by ${countByLabel}. IoT/M2M is a real segment here, not tail noise.`"
+      :subtitle="classMixSubtitle"
     >
       <AsyncBoundary
         :is-loading="classMix.isPending.value"
@@ -347,8 +381,8 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
 
     <!-- Network and SIM capability -->
     <Card
-      title="Network & SIM capability"
-      :subtitle="`Counted by ${countByLabel}, from the GSMA band list and eUICC records.`"
+      title="Network &amp; SIM capability"
+      :subtitle="capabilitySubtitle"
     >
       <AsyncBoundary
         :is-loading="capabilities.isPending.value"
@@ -363,7 +397,8 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
       <template #footer>
         <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
           <strong>VoLTE is not shown</strong> because the GSMA dataset does not contain it: the band
-          list mentions VoLTE in 2 of 270,166 records, and the IMS fields describe emergency calling
+          list mentions VoLTE in 2 records<template v-if="activeTacRows"> of
+          {{ formatFull(activeTacRows) }}</template>, and the IMS fields describe emergency calling
           rather than VoLTE. A proxy would look like an answer without being one.
         </p>
       </template>
@@ -390,8 +425,8 @@ const isFiltered = computed(() => activeFilters.value.length > 0)
         <template #footer>
           <p v-if="countBy === 'bindings'" class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
             <strong>Bindings</strong> are number + SIM + handset combinations. A dual-SIM phone
-            serving two numbers counts twice, so this runs higher than a handset count &mdash; for
-            Samsung, 52.7M bindings against 39.3M handsets.
+            serving two numbers counts twice, so this runs higher than the handset count for the
+            same vendor. Switch to Handsets to compare.
           </p>
           <p
             v-else-if="countBy === 'subscribers'"
