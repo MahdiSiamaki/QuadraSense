@@ -98,6 +98,13 @@ public sealed record DeviceRow(
     DateOnly? FirstSeen,
     DateOnly? LastSeen);
 
+/// <summary>What a TAC says about which model it is.</summary>
+/// <param name="Brand">GSMA brand, e.g. <c>Redmi</c>. May be blank.</param>
+/// <param name="Manufacturer">Fallback when brand is blank, e.g. <c>Xiaomi Communications Co Ltd</c>.</param>
+/// <param name="MarketingName">The product name, e.g. <c>Redmi Note 12S</c>.</param>
+public sealed record DeviceModelIdentity(
+    string? Brand, string? Manufacturer, string? MarketingName);
+
 /// <summary>A page of the catalogue, with what it cost.</summary>
 /// <param name="Rows">The page.</param>
 /// <param name="Total">Matching models before paging.</param>

@@ -1,23 +1,27 @@
 namespace Sqm.Application.Abstractions;
 
 /// <summary>A curated device photograph, with its bytes.</summary>
-/// <param name="Tac">The device model it belongs to.</param>
+/// <param name="ModelKey">The model it belongs to, not the TAC - see <c>DeviceModelKey</c>.</param>
 /// <param name="ContentType">One of <c>image/png</c>, <c>image/jpeg</c>, <c>image/webp</c>.</param>
 /// <param name="Bytes">The image itself.</param>
 /// <param name="ETag">A quoted entity tag derived from the content hash.</param>
 /// <param name="UpdatedAt">When it was last replaced.</param>
 public sealed record DeviceImage(
-    string Tac, string ContentType, byte[] Bytes, string ETag, DateTimeOffset UpdatedAt);
+    string ModelKey, string ContentType, byte[] Bytes, string ETag, DateTimeOffset UpdatedAt);
 
 /// <summary>What is known about a device photograph without fetching it.</summary>
-/// <param name="Tac">The device model it belongs to.</param>
+/// <param name="ModelKey">The model it belongs to.</param>
+/// <param name="Brand">Display brand, e.g. <c>Redmi</c>.</param>
+/// <param name="MarketingName">Display name, e.g. <c>Redmi Note 12S</c>.</param>
 /// <param name="ContentType">Its media type.</param>
 /// <param name="ByteSize">How large it is.</param>
 /// <param name="SourceNote">Where the uploader said it came from.</param>
 /// <param name="UploadedBy">Username of whoever last replaced it.</param>
 /// <param name="UpdatedAt">When that was.</param>
 public sealed record DeviceImageInfo(
-    string Tac,
+    string ModelKey,
+    string Brand,
+    string MarketingName,
     string ContentType,
     int ByteSize,
     string SourceNote,
@@ -28,6 +32,12 @@ public sealed record DeviceImageInfo(
 /// Curated photographs of device models.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>Keyed by model, not by TAC.</b> One marketing name spans many TACs - 18 for Redmi Note 12S,
+/// 184 for Galaxy A12 - so a TAC-keyed picture meant one device page showed the phone and the
+/// other seventeen showed a placeholder of it. See <c>DeviceModelKey</c> for how the identity is
+/// formed and why it deliberately refuses to fold variants together.
+/// </para>
 /// <para>
 /// <b>Where these come from, because the question has a real answer.</b> The GSMA TAC database has
 /// 26 columns and not one of them is an image, a URL, or a reference to one - there is no imagery
@@ -47,10 +57,10 @@ public sealed record DeviceImageInfo(
 public interface IDeviceImageStore
 {
     /// <summary>Fetches one image, or null when the model has none.</summary>
-    Task<DeviceImage?> GetAsync(string tac, CancellationToken ct);
+    Task<DeviceImage?> GetAsync(string modelKey, CancellationToken ct);
 
     /// <summary>Metadata for one image, without transferring it.</summary>
-    Task<DeviceImageInfo?> GetInfoAsync(string tac, CancellationToken ct);
+    Task<DeviceImageInfo?> GetInfoAsync(string modelKey, CancellationToken ct);
 
     /// <summary>
     /// Which of these models have a photograph.
@@ -59,19 +69,22 @@ public interface IDeviceImageStore
     /// One indexed read for a whole page of the catalogue, rather than forty requests that each
     /// discover an absence. The list needs to know only whether to draw a picture or a placeholder.
     /// </remarks>
-    Task<IReadOnlySet<string>> GetPresentAsync(IReadOnlyList<string> tacs, CancellationToken ct);
+    Task<IReadOnlySet<string>> GetPresentAsync(
+        IReadOnlyList<string> modelKeys, CancellationToken ct);
 
-    /// <summary>Stores or replaces one model's photograph.</summary>
-    /// <param name="tac">The device model.</param>
+    /// <summary>Stores or replaces one model's photograph, covering every TAC of that model.</summary>
+    /// <param name="modelKey">The normalised model identity.</param>
+    /// <param name="brand">Display brand, stored so the row is readable without the TAC dimension.</param>
+    /// <param name="marketingName">Display name, stored for the same reason.</param>
     /// <param name="contentType">Media type, already validated against the allowed set.</param>
     /// <param name="bytes">The image.</param>
     /// <param name="sourceNote">Where it came from, free text, for provenance.</param>
     /// <param name="userId">Who uploaded it.</param>
     /// <param name="ct">Cancellation token.</param>
     Task SaveAsync(
-        string tac, string contentType, byte[] bytes, string sourceNote, long userId,
-        CancellationToken ct);
+        string modelKey, string brand, string marketingName, string contentType, byte[] bytes,
+        string sourceNote, long userId, CancellationToken ct);
 
     /// <summary>Removes one model's photograph. True when there was one to remove.</summary>
-    Task<bool> DeleteAsync(string tac, CancellationToken ct);
+    Task<bool> DeleteAsync(string modelKey, CancellationToken ct);
 }

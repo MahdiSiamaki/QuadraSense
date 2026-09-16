@@ -114,12 +114,12 @@ The plan above is the target. This is the state of it.
 
 | Project | Tests | What it covers |
 |---|---:|---|
-| `Sqm.Domain.Tests` | 122 | The binding fold, the identifier rules, the IMSI search term, the device search term, and masking. Every case cites a discovery measurement. |
+| `Sqm.Domain.Tests` | 134 | The binding fold, the identifier rules, the IMSI search term, the device search term, and masking. Every case cites a discovery measurement. |
 | `Sqm.Ingestion.Tests` | 47 | Row validation, schema-change classification, and the structural scan of a TAC export - RFC 4180 quoting, repeated TACs, records with bytes missing. |
 | `Sqm.Integration.Tests` | 35 | The import queue's guarantees, the authorisation rule, and endpoint coverage - against a real PostgreSQL. |
 | `Sqm.Application.Tests` | 1 | Placeholder. |
 
-**205 passing.**
+**217 passing.**
 
 ### The integration tests earned their cost on the first run
 

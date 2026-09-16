@@ -391,6 +391,36 @@ public sealed partial class ClickHouseAnalyticsStore
     }
 
     /// <inheritdoc />
+    public async Task<DeviceModelIdentity?> GetModelIdentityAsync(string tac, CancellationToken ct)
+    {
+        // sqm.tac is a view onto the active version, ordered by tac, so this is a primary-key
+        // read of a 270,885-row table. It exists so a device photograph - which belongs to the
+        // MODEL, and therefore to all 18 TACs of a Redmi Note 12S or all 184 of a Galaxy A12 -
+        // can be found from whichever TAC the caller happens to be looking at.
+        const string Sql = """
+            SELECT brandName, manufacturer, marketingName
+            FROM sqm.tac
+            WHERE tac = {tac:String}
+            LIMIT 1
+            """;
+
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal) { ["tac"] = tac };
+        var result = await JsonQuery.ExecuteAsync(Sql, parameters, ct).ConfigureAwait(false);
+
+        if (result.Rows.Count == 0)
+        {
+            return null;
+        }
+
+        var row = result.Rows[0];
+
+        return new DeviceModelIdentity(
+            ClickHouseJsonResult.NullIfEmpty(row, 0),
+            ClickHouseJsonResult.NullIfEmpty(row, 1),
+            ClickHouseJsonResult.NullIfEmpty(row, 2));
+    }
+
+    /// <inheritdoc />
     public async Task<DeviceFacetsData> GetDeviceFacetsAsync(CancellationToken ct)
     {
         // Three facets in one round trip. They are counted over device MODELS rather than

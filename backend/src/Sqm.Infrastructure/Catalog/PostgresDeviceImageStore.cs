@@ -8,7 +8,7 @@ using Sqm.Infrastructure.Identity;
 
 namespace Sqm.Infrastructure.Catalog;
 
-/// <summary>Device photographs, held in <c>catalog.device_image</c>.</summary>
+/// <summary>Device photographs, held in <c>catalog.device_model_image</c>.</summary>
 /// <remarks>
 /// <para>
 /// Every column is aliased to its constructor parameter name in these queries. That is not style:
@@ -35,21 +35,21 @@ public sealed class PostgresDeviceImageStore : IDeviceImageStore
     }
 
     /// <inheritdoc />
-    public async Task<DeviceImage?> GetAsync(string tac, CancellationToken ct)
+    public async Task<DeviceImage?> GetAsync(string modelKey, CancellationToken ct)
     {
         const string Sql = """
             SELECT content_type AS ContentType,
                    bytes        AS Bytes,
                    sha256       AS Sha256,
                    updated_at   AS UpdatedAt
-            FROM catalog.device_image
-            WHERE tac = @tac
+            FROM catalog.device_model_image
+            WHERE model_key = @modelKey
             """;
 
         await using var connection = await _db.OpenAsync(ct).ConfigureAwait(false);
 
         var row = await connection.QuerySingleOrDefaultAsync<ImageRow>(
-            new CommandDefinition(Sql, new { tac }, commandTimeout: _commandTimeout,
+            new CommandDefinition(Sql, new { modelKey }, commandTimeout: _commandTimeout,
                 cancellationToken: ct)).ConfigureAwait(false);
 
         if (row is null)
@@ -57,50 +57,55 @@ public sealed class PostgresDeviceImageStore : IDeviceImageStore
             return null;
         }
 
-        return new DeviceImage(tac, row.ContentType, row.Bytes, ToETag(row.Sha256), row.UpdatedAt);
+        return new DeviceImage(
+            modelKey, row.ContentType, row.Bytes, ToETag(row.Sha256), row.UpdatedAt);
     }
 
     /// <inheritdoc />
-    public async Task<DeviceImageInfo?> GetInfoAsync(string tac, CancellationToken ct)
+    public async Task<DeviceImageInfo?> GetInfoAsync(string modelKey, CancellationToken ct)
     {
         // octet_length rather than the bytes themselves: this is called to render an admin panel,
         // and transferring half a megabyte to display "112 KB" would be an odd way to do it.
         const string Sql = """
-            SELECT i.tac                   AS Tac,
+            SELECT i.model_key             AS ModelKey,
+                   i.brand                 AS Brand,
+                   i.marketing_name        AS MarketingName,
                    i.content_type          AS ContentType,
                    octet_length(i.bytes)   AS ByteSize,
                    i.source_note           AS SourceNote,
                    u.username              AS UploadedBy,
                    i.updated_at            AS UpdatedAt
-            FROM catalog.device_image AS i
+            FROM catalog.device_model_image AS i
             LEFT JOIN auth.user_account AS u ON u.id = i.uploaded_by
-            WHERE i.tac = @tac
+            WHERE i.model_key = @modelKey
             """;
 
         await using var connection = await _db.OpenAsync(ct).ConfigureAwait(false);
 
         return await connection.QuerySingleOrDefaultAsync<DeviceImageInfo>(
-            new CommandDefinition(Sql, new { tac }, commandTimeout: _commandTimeout,
+            new CommandDefinition(Sql, new { modelKey }, commandTimeout: _commandTimeout,
                 cancellationToken: ct)).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public async Task<IReadOnlySet<string>> GetPresentAsync(
-        IReadOnlyList<string> tacs, CancellationToken ct)
+        IReadOnlyList<string> modelKeys, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(tacs);
+        ArgumentNullException.ThrowIfNull(modelKeys);
 
-        if (tacs.Count == 0)
+        if (modelKeys.Count == 0)
         {
             return new HashSet<string>(StringComparer.Ordinal);
         }
 
-        const string Sql = "SELECT tac FROM catalog.device_image WHERE tac = ANY(@tacs)";
+        const string Sql =
+            "SELECT model_key FROM catalog.device_model_image WHERE model_key = ANY(@keys)";
 
         await using var connection = await _db.OpenAsync(ct).ConfigureAwait(false);
 
         var found = await connection.QueryAsync<string>(
-            new CommandDefinition(Sql, new { tacs = tacs.ToArray() },
+            new CommandDefinition(
+                Sql, new { keys = modelKeys.Distinct(StringComparer.Ordinal).ToArray() },
                 commandTimeout: _commandTimeout, cancellationToken: ct)).ConfigureAwait(false);
 
         return new HashSet<string>(found, StringComparer.Ordinal);
@@ -108,8 +113,8 @@ public sealed class PostgresDeviceImageStore : IDeviceImageStore
 
     /// <inheritdoc />
     public async Task SaveAsync(
-        string tac, string contentType, byte[] bytes, string sourceNote, long userId,
-        CancellationToken ct)
+        string modelKey, string brand, string marketingName, string contentType,
+        byte[] bytes, string sourceNote, long userId, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(bytes);
 
@@ -119,36 +124,40 @@ public sealed class PostgresDeviceImageStore : IDeviceImageStore
         var sha = SHA256.HashData(bytes);
 
         const string Sql = """
-            INSERT INTO catalog.device_image
-                (tac, content_type, bytes, sha256, source_note, uploaded_by, uploaded_at, updated_at)
-            VALUES (@tac, @contentType, @bytes, @sha, @sourceNote, @userId, now(), now())
-            ON CONFLICT (tac) DO UPDATE SET
-                content_type = EXCLUDED.content_type,
-                bytes        = EXCLUDED.bytes,
-                sha256       = EXCLUDED.sha256,
-                source_note  = EXCLUDED.source_note,
-                uploaded_by  = EXCLUDED.uploaded_by,
-                updated_at   = now()
+            INSERT INTO catalog.device_model_image
+                (model_key, brand, marketing_name, content_type, bytes, sha256,
+                 source_note, uploaded_by, uploaded_at, updated_at)
+            VALUES (@modelKey, @brand, @marketingName, @contentType, @bytes, @sha,
+                    @sourceNote, @userId, now(), now())
+            ON CONFLICT (model_key) DO UPDATE SET
+                brand          = EXCLUDED.brand,
+                marketing_name = EXCLUDED.marketing_name,
+                content_type   = EXCLUDED.content_type,
+                bytes          = EXCLUDED.bytes,
+                sha256         = EXCLUDED.sha256,
+                source_note    = EXCLUDED.source_note,
+                uploaded_by    = EXCLUDED.uploaded_by,
+                updated_at     = now()
             """;
 
         await using var connection = await _db.OpenAsync(ct).ConfigureAwait(false);
 
         await connection.ExecuteAsync(new CommandDefinition(
             Sql,
-            new { tac, contentType, bytes, sha, sourceNote, userId },
+            new { modelKey, brand, marketingName, contentType, bytes, sha, sourceNote, userId },
             commandTimeout: _commandTimeout,
             cancellationToken: ct)).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
-    public async Task<bool> DeleteAsync(string tac, CancellationToken ct)
+    public async Task<bool> DeleteAsync(string modelKey, CancellationToken ct)
     {
-        const string Sql = "DELETE FROM catalog.device_image WHERE tac = @tac";
+        const string Sql = "DELETE FROM catalog.device_model_image WHERE model_key = @modelKey";
 
         await using var connection = await _db.OpenAsync(ct).ConfigureAwait(false);
 
         var affected = await connection.ExecuteAsync(new CommandDefinition(
-            Sql, new { tac }, commandTimeout: _commandTimeout, cancellationToken: ct))
+            Sql, new { modelKey }, commandTimeout: _commandTimeout, cancellationToken: ct))
             .ConfigureAwait(false);
 
         return affected > 0;

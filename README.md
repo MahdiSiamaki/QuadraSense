@@ -184,7 +184,7 @@ reconciled to the row. See `docs/adr/ADR-009-device-module.md`.
 dotnet test backend/Sqm.slnx
 ```
 
-205 tests. Integration tests run against a real PostgreSQL and **skip with a reason** when none is
+217 tests. Integration tests run against a real PostgreSQL and **skip with a reason** when none is
 reachable, rather than failing. They connect as `sqm_app`, not as the owner: connecting as the
 owner would leave the append-only guarantee untested while appearing to pass.
 
@@ -247,6 +247,7 @@ tools/
 | ADR-007 | Deployment | Pending infrastructure decision |
 | [ADR-008](docs/adr/ADR-008-imsi-search.md) | IMSI search: a second table ordered by IMSI, and a skip index on the event log | Accepted |
 | [ADR-009](docs/adr/ADR-009-device-module.md) | Devices: a model is a TAC, and an IMEI-ordered table makes it a range | Accepted |
+| [ADR-010](docs/adr/ADR-010-device-images.md) | Device images: keyed by model, sourced from Commons under identity guards | Accepted |
 
 Every one of these was decided against measurement on the real dataset, not on reputation. Where a
 claim appears in these documents, the number behind it is there too.

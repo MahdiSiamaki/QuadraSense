@@ -2,6 +2,7 @@ using System.Globalization;
 using Sqm.Api.Auth;
 using Sqm.Application.Abstractions;
 using Sqm.Application.Identity;
+using Sqm.Domain.Devices;
 using Sqm.Contracts.Devices;
 using Sqm.Contracts.Lookup;
 using Sqm.Domain.Identifiers;
@@ -189,14 +190,28 @@ public static class DeviceEndpoints
                 Limit: pageSize),
             ct).ConfigureAwait(false);
 
-        var present = await images
-            .GetPresentAsync([.. result.Rows.Select(r => r.Tac)], ct).ConfigureAwait(false);
+        // Asked by MODEL, because that is what a picture belongs to. The rows already carry
+        // brand and marketing name, so the keys cost nothing to compute, and a page showing
+        // several TACs of one model resolves them all to the same key - one lookup, and every
+        // one of them draws the photograph instead of one drawing it and the rest a placeholder.
+        var keys = result.Rows
+            .Select(r => DeviceModelKey.For(r.Brand, r.Manufacturer, r.MarketingName))
+            .OfType<string>()
+            .ToList();
+
+        var present = await images.GetPresentAsync(keys, ct).ConfigureAwait(false);
+
+        bool HasImage(DeviceRow row)
+        {
+            var key = DeviceModelKey.For(row.Brand, row.Manufacturer, row.MarketingName);
+            return key is not null && present.Contains(key);
+        }
 
         return Results.Ok(new DeviceListResponse(
             Total: result.Total,
             Page: page,
             PageSize: pageSize,
-            Items: [.. result.Rows.Select(r => ToSummary(r, present.Contains(r.Tac)))],
+            Items: [.. result.Rows.Select(r => ToSummary(r, HasImage(r)))],
             Resolution: resolution,
             Timing: new SearchTiming(result.ElapsedMs, result.RowsExamined)));
     }
@@ -328,7 +343,13 @@ public static class DeviceEndpoints
             });
         }
 
-        var image = await images.GetInfoAsync(tac, ct).ConfigureAwait(false);
+        // The row already names the model, so resolving the picture costs no extra query.
+        var modelKey = DeviceModelKey.For(
+            row.Summary.Brand, row.Summary.Manufacturer, row.Summary.MarketingName);
+
+        var image = modelKey is null
+            ? null
+            : await images.GetInfoAsync(modelKey, ct).ConfigureAwait(false);
 
         var change = row.BindingsAtStart == 0
             ? 0
@@ -496,11 +517,22 @@ public static class DeviceEndpoints
     /// replaces them, and a catalogue page asks for forty at once.
     /// </remarks>
     private static async Task<IResult> ImageAsync(
-        string tac, HttpContext http, IDeviceImageStore images, CancellationToken ct)
+        string tac,
+        HttpContext http,
+        IDeviceImageStore images,
+        IDeviceAnalyticsStore store,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(images);
 
-        var image = await images.GetAsync(tac, ct).ConfigureAwait(false);
+        var model = await ResolveModelAsync(tac, store, ct).ConfigureAwait(false);
+
+        if (model is null)
+        {
+            return Results.NotFound();
+        }
+
+        var image = await images.GetAsync(model.Key, ct).ConfigureAwait(false);
 
         if (image is null)
         {
@@ -530,6 +562,7 @@ public static class DeviceEndpoints
         IFormFile file,
         HttpContext http,
         IDeviceImageStore images,
+        IDeviceAnalyticsStore store,
         IAuditLog audit,
         CancellationToken ct)
     {
@@ -579,22 +612,52 @@ public static class DeviceEndpoints
             ? supplied.ToString().Trim()
             : string.Empty;
 
-        await images.SaveAsync(tac, contentType, bytes, note, user.UserId, ct).ConfigureAwait(false);
+        // The picture is stored against the MODEL, so this one upload covers every TAC of it -
+        // all 18 of a Redmi Note 12S, all 184 of a Galaxy A12. A TAC the active GSMA version does
+        // not name has no model to attach to and is refused rather than silently stored under a
+        // key nothing will ever read.
+        var model = await ResolveModelAsync(tac, store, ct).ConfigureAwait(false);
+
+        if (model is null)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["tac"] = [
+                    $"TAC {tac} is not in the active GSMA version, or has no marketing name, so "
+                    + "there is no device model for a picture to belong to."],
+            });
+        }
+
+        await images.SaveAsync(
+            model.Key, model.Brand, model.Name, contentType, bytes, note, user.UserId, ct)
+            .ConfigureAwait(false);
 
         await audit.WriteAsync(Entry(
             user, http, Permissions.DeviceImageManage, AuditOutcome.Success, "device",
             new Dictionary<string, object?>
             {
                 ["tac"] = tac,
+                ["model"] = model.Key,
                 ["contentType"] = contentType,
                 ["bytes"] = bytes.Length,
             }), ct).ConfigureAwait(false);
 
-        return Results.Ok(new { tac, contentType, bytes = bytes.Length });
+        return Results.Ok(new
+        {
+            tac,
+            model = $"{model.Brand} {model.Name}",
+            contentType,
+            bytes = bytes.Length,
+        });
     }
 
     private static async Task<IResult> DeleteImageAsync(
-        string tac, HttpContext http, IDeviceImageStore images, IAuditLog audit, CancellationToken ct)
+        string tac,
+        HttpContext http,
+        IDeviceImageStore images,
+        IDeviceAnalyticsStore store,
+        IAuditLog audit,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(images);
 
@@ -612,21 +675,61 @@ public static class DeviceEndpoints
                 detail: "Managing device images needs the \"device.image.manage\" permission.");
         }
 
-        var removed = await images.DeleteAsync(tac, ct).ConfigureAwait(false);
+        var model = await ResolveModelAsync(tac, store, ct).ConfigureAwait(false);
+
+        if (model is null)
+        {
+            return Results.NotFound();
+        }
+
+        var removed = await images.DeleteAsync(model.Key, ct).ConfigureAwait(false);
 
         if (removed)
         {
+            // Recorded against the model, not the TAC, because that is the scope of what was
+            // deleted: this removes the picture from every TAC of the model at once.
             await audit.WriteAsync(Entry(
                 user, http, Permissions.DeviceImageManage, AuditOutcome.Success, "device",
                 new Dictionary<string, object?>
                 {
                     ["tac"] = tac,
+                    ["model"] = model.Key,
                     ["action"] = "delete",
                 }), ct).ConfigureAwait(false);
         }
 
         return removed ? Results.NoContent() : Results.NotFound();
     }
+
+    /// <summary>The model a TAC belongs to, or null when the GSMA version does not name one.</summary>
+    private static async Task<ResolvedModel?> ResolveModelAsync(
+        string tac, IDeviceAnalyticsStore store, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+
+        var identity = await store.GetModelIdentityAsync(tac, ct).ConfigureAwait(false);
+
+        if (identity is null)
+        {
+            return null;
+        }
+
+        var key = DeviceModelKey.For(
+            identity.Brand, identity.Manufacturer, identity.MarketingName);
+
+        if (key is null)
+        {
+            return null;
+        }
+
+        return new ResolvedModel(
+            key,
+            DeviceModelKey.DisplayBrand(identity.Brand, identity.Manufacturer) ?? string.Empty,
+            DeviceModelKey.DisplayName(identity.MarketingName) ?? string.Empty);
+    }
+
+    /// <summary>A TAC resolved to the model its photograph belongs to.</summary>
+    private sealed record ResolvedModel(string Key, string Brand, string Name);
 
     // ======================================================================= plumbing
 

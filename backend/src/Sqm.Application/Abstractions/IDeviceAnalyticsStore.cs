@@ -112,6 +112,17 @@ public interface IDeviceAnalyticsStore
     Task<DeviceResolution> ResolveDeviceAsync(
         DeviceSearchKind kind, string digits, CancellationToken ct);
 
+    /// <summary>
+    /// The brand and marketing name behind one TAC, for resolving it to a model.
+    /// </summary>
+    /// <remarks>
+    /// A primary-key read of the TAC table, deliberately separate from
+    /// <see cref="GetDeviceAsync"/>: the image route needs only the model identity, and making it
+    /// pay for the detail page's network-wide statistics would put an aggregate behind every
+    /// thumbnail. Null when the TAC is not in the active GSMA version.
+    /// </remarks>
+    Task<DeviceModelIdentity?> GetModelIdentityAsync(string tac, CancellationToken ct);
+
     /// <summary>Distinct values available to filter the catalogue by.</summary>
     Task<DeviceFacetsData> GetDeviceFacetsAsync(CancellationToken ct);
 
