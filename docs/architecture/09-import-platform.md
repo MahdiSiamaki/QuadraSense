@@ -644,6 +644,20 @@ Memory is a fixed 25 MB regardless of input: two bitmaps over the eight-digit TA
 than a hash set, because a hash set is sized by the input and the input is the thing under
 suspicion.
 
+**The damage turned out to be structural, not lossy, and the file was recovered.** Measured
+before anything was rebuilt: all 211,135 repeated TACs carry byte-identical records; all 27
+malformed fragments are the *tail* of a complete record that also survives in the file, so they
+are debris from the replay seams rather than truncated devices; and the recovered set is a strict
+superset of the active version - **0** of its 270,166 TACs go missing, and 719 are added, which
+matches the measured change rate of 1,000-1,650 a month. `tools/repair_tac_transfer.py` rebuilds
+the file from its own surviving lines and **refuses to write anything** unless both of those
+properties hold, because a repeat with differing content is a conflict it has no business
+resolving and a fragment with no intact counterpart is a model it would silently delete. Both
+refusals are exercised, not assumed. The result - 270,885 records, 270,885 distinct TACs - is
+certified by the platform's own scanner rather than by the script: clean, no faults, no rejection.
+Repair is a tool a person runs, deliberately not a step the importer takes, because an importer
+that quietly repairs its input is one that quietly accepts corruption nobody measured.
+
 **The first refusal in production was itself unreadable.** Every failure summary was clipped to
 500 characters, the rejection runs to 837, and the sentence saying the file was a damaged transfer
 and should be downloaded again was the last one - so the stored message ended `...it is the key
