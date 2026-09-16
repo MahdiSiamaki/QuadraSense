@@ -205,6 +205,7 @@ docs/
     03-dated-daily-files.md        how the date risk was closed
   architecture/    Phase 1 — how the system is built
     01-overview.md                 requirements, diagrams, risk register
+    02-glossary.md                 binding, fold, mart, delivery - the vocabulary the code uses
     03-data-model.md               entities, tables, quality rules
     04-security-model.md           roles, controls, audit
     07-testing-strategy.md         what is tested and why
