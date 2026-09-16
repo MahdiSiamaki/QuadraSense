@@ -64,4 +64,13 @@ public sealed class ImportWorkerOptions
     /// shutdown be a plain timeout rather than a negotiation.
     /// </remarks>
     public TimeSpan ShutdownGrace { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Whether this worker shares a process with the API.</summary>
+    /// <remarks>
+    /// Set by the host rather than configured: the API sets it when it registers the worker in
+    /// process. Reported on the Import Center, because it changes what restarting the API costs -
+    /// it stops the running import too - and that is worth seeing on the page rather than
+    /// inferring from how the system happened to be launched.
+    /// </remarks>
+    public bool HostedInApi { get; set; }
 }

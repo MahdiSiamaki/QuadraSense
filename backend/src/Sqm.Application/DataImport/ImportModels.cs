@@ -100,14 +100,14 @@ public sealed record QuarantineSample(long RowNumber, string RawLine, string? Of
 
 /// <summary>How far along a running job is.</summary>
 /// <param name="Stage">Current stage.</param>
-/// <param name="RowsProcessed">Rows handled so far.</param>
-/// <param name="RowsExpected">Estimated total, when one can be estimated.</param>
+/// <param name="BytesProcessed">Bytes of the source file consumed so far.</param>
+/// <param name="BytesExpected">The file size, which is what percent is measured against.</param>
 /// <param name="Percent">Completion percentage, when it can be computed.</param>
 /// <param name="UpdatedAt">When the worker last reported.</param>
 public sealed record ImportProgress(
     string Stage,
-    long RowsProcessed,
-    long? RowsExpected,
+    long BytesProcessed,
+    long? BytesExpected,
     decimal? Percent,
     DateTimeOffset UpdatedAt);
 
@@ -276,11 +276,30 @@ public sealed record SourceFreshness(
 /// <param name="Retrying">Jobs failed and waiting on backoff.</param>
 /// <param name="FailedLast24Hours">Jobs that gave up in the last day.</param>
 /// <param name="OldestQueuedAt">When the longest-waiting job was queued.</param>
-/// <param name="ActiveWorkers">Workers holding a live lease.</param>
+/// <param name="ActiveWorkers">
+/// Workers that have polled recently, whether or not they hold a job.
+/// </param>
 /// <param name="StaleLeases">
 /// Jobs whose lease has expired. Nonzero means a worker died; the recovery sweep will
 /// return them to the queue.
 /// </param>
+/// <param name="WorkerHostedInApi">
+/// True when a live worker shares a process with the API. Worth showing, because restarting the
+/// API then stops the running import too.
+/// </param>
+/// <remarks>
+/// <b>ActiveWorkers used to mean something narrower, and the difference is the whole point.</b>
+/// It was <c>COUNT(DISTINCT worker_id) WHERE lease_expires_at &gt; now()</c> - workers holding a
+/// live lease on a job. An idle worker, polling happily with nothing to do, holds no lease and
+/// counted as zero.
+/// <para>
+/// So the two states an operator most needs to tell apart were displayed identically: "a worker
+/// is running and there is nothing to do" and "no worker is running at all" both read
+/// <c>0 workers</c>. A 319.6 MB file sat at Queued behind that zero, with nothing on the page
+/// suggesting why. It now counts workers that have reported a heartbeat recently, which is the
+/// question being asked.
+/// </para>
+/// </remarks>
 public sealed record WorkerHealth(
     int Queued,
     int Running,
@@ -288,7 +307,17 @@ public sealed record WorkerHealth(
     int FailedLast24Hours,
     DateTimeOffset? OldestQueuedAt,
     int ActiveWorkers,
-    int StaleLeases);
+    int StaleLeases,
+    bool WorkerHostedInApi = false)
+{
+    /// <summary>Work is waiting and nothing is alive to take it.</summary>
+    /// <remarks>
+    /// Neither number means anything alone. Queued jobs with live workers is a busy queue; no
+    /// queued jobs and no workers is an idle system. This combination is the one that needs
+    /// saying out loud.
+    /// </remarks>
+    public bool Stalled => Queued > 0 && ActiveWorkers == 0;
+}
 
 /// <summary>What an activation changed.</summary>
 /// <param name="TacVersionId">The operational row that is now active.</param>

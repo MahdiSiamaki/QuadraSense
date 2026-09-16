@@ -78,6 +78,7 @@ function resetPaging() {
           />
           <span class="text-[var(--c-text-secondary)]">
             {{ health.data.value.activeWorkers }} worker{{ health.data.value.activeWorkers === 1 ? '' : 's' }}
+            <template v-if="health.data.value.workerHostedInApi">(in the API)</template>
           </span>
         </span>
         <span class="text-[var(--c-text-secondary)]">
@@ -88,6 +89,40 @@ function resetPaging() {
         </span>
       </div>
     </header>
+
+    <!--
+      The state that used to be silent.
+
+      A 319.6 MB file was uploaded successfully and sat at "Queued" forever, because no worker
+      process was running. Every component reported success; nothing said why nothing happened.
+      This is the one combination worth interrupting the page for: work waiting, and nothing
+      alive to take it.
+    -->
+    <div
+      v-if="health.data.value?.stalled"
+      class="rounded-[var(--radius-md)] border border-[var(--c-warning)] p-4"
+      role="alert"
+    >
+      <p class="text-[var(--text-sm)] font-semibold">
+        {{ health.data.value.queued }} job{{ health.data.value.queued === 1 ? '' : 's' }} queued,
+        and no import worker is running.
+      </p>
+      <p class="mt-1 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+        Nothing will be imported until one starts. In development the API hosts the worker itself,
+        so this usually means the API was started with
+        <code class="text-[var(--text-xs)]">Import:RunWorkerInProcess=false</code>, or the worker
+        process has stopped. Start one with:
+      </p>
+      <pre
+        class="mt-2 overflow-x-auto rounded-[var(--radius-md)] bg-[var(--c-surface-sunken)] px-3 py-2 text-[var(--text-xs)]"
+      ><code>dotnet run --project backend/src/Sqm.Ingestion</code></pre>
+      <p
+        v-if="health.data.value.oldestQueuedAt"
+        class="mt-2 text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+      >
+        The oldest has been waiting since {{ formatDateTime(health.data.value.oldestQueuedAt) }}.
+      </p>
+    </div>
 
     <!-- Freshness, per source. Placed above the fold because "is the data current?" is the
          question this whole page exists to answer. -->

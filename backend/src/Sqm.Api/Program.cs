@@ -13,6 +13,7 @@ using Sqm.Infrastructure.Catalog;
 using Sqm.Infrastructure.ClickHouse;
 using Sqm.Infrastructure.DataImport;
 using Sqm.Infrastructure.Identity;
+using Sqm.Ingestion;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -65,13 +66,43 @@ builder.Services.AddSingleton<IDeviceAnalyticsStore, ClickHouseAnalyticsStore>()
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.
 builder.Services.AddSingleton<IDeviceImageStore, PostgresDeviceImageStore>();
 
-// The import platform's operational store and file store. The API can queue work and read
-// history; it deliberately has no way to write to the analytics store - that is the worker's
-// alone, so a bug in an endpoint cannot drop a day's data.
+// The import platform's operational store and file store. No ENDPOINT can write to the analytics
+// store - none of them takes IAnalyticsIngestionStore, so a bug in a handler cannot drop a day's
+// data. Below, the worker may be hosted in this process, and then the PROCESS can write; see the
+// note there about what that does and does not change.
 builder.Services.AddSingleton<IImportJobRepository, PostgresImportJobRepository>();
 builder.Services.AddSingleton<IImportFileStore, DirectoryImportFileStore>();
 builder.Services.AddSingleton<ITacVersionStore, ClickHouseTacVersionStore>();
 builder.Services.AddSingleton(TimeProvider.System);
+
+// ------------------------------------------------------- the worker, optionally
+//
+// WHY THIS EXISTS. The worker is a separate process, and a queued job therefore sits untouched
+// until somebody remembers to start it. That is correct in production and a trap in development:
+// a 319.6 MB file was uploaded, the Import Center showed "Queued" with a progress panel that
+// never appeared, and nothing anywhere said why - because nothing was wrong except that no
+// worker existed.
+//
+// So in development the API hosts it, and one `dotnet run` is the whole system.
+//
+// WHAT THIS COSTS, stated rather than discovered later. A heavy import competes with the API for
+// this process's CPU and memory - and it is this process that serves the progress page somebody
+// is watching while it runs. The mart rebuild after a daily file is minutes of that. It also
+// means the two can no longer be scaled or restarted independently.
+//
+// WHAT IT DOES NOT COST. The separation of code paths survives: no endpoint takes
+// IAnalyticsIngestionStore, and the worker's services are reachable only from the worker. What
+// is given up is process isolation, not the boundary.
+//
+// Default: on in Development, off everywhere else. Production keeps two processes, which is what
+// ADR-007 will decide properly.
+var runWorkerInProcess = builder.Configuration.GetValue(
+    "Import:RunWorkerInProcess", builder.Environment.IsDevelopment());
+
+if (runWorkerInProcess)
+{
+    builder.Services.AddImportWorker(builder.Configuration, hostedInApi: true);
+}
 
 // ---------------------------------------------------------------- identity
 // One pool for every identity repository, rather than one per repository.

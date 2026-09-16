@@ -204,7 +204,7 @@ public sealed partial class PostgresImportJobRepository
             """;
 
         const string ProgressSql = """
-            SELECT stage AS Stage, rows_processed AS RowsProcessed, rows_expected AS RowsExpected,
+            SELECT stage AS Stage, bytes_processed AS BytesProcessed, bytes_expected AS BytesExpected,
                    percent AS Percent, updated_at AS UpdatedAt
               FROM imports.import_progress
              WHERE job_id = @job
@@ -361,10 +361,21 @@ public sealed partial class PostgresImportJobRepository
                                    AND finished_at > now() - interval '24 hours')::int
                                                                                 AS FailedLast24Hours,
                 MIN(created_at) FILTER (WHERE status = 'QUEUED')                AS OldestQueuedAt,
-                COUNT(DISTINCT worker_id) FILTER (WHERE lease_expires_at > now())::int
-                                                                                AS ActiveWorkers,
+                -- Heartbeats, NOT leases. A lease means "holding a job"; an idle worker holds
+                -- none and used to count as zero, making "nothing to do" and "nothing running"
+                -- indistinguishable on the one page where telling them apart matters.
+                (SELECT count(*)::int FROM imports.worker_heartbeat
+                  WHERE last_seen_at > now() - interval '30 seconds')            AS ActiveWorkers,
                 COUNT(*) FILTER (WHERE lease_expires_at IS NOT NULL
-                                   AND lease_expires_at < now())::int           AS StaleLeases
+                                   AND lease_expires_at < now())::int           AS StaleLeases,
+                -- LAST, and that is not cosmetic. Dapper matches a record constructor by the
+                -- READER'S field order, so a column added in the middle of this list stops the
+                -- whole type materialising - with an error naming the constructor it wanted and
+                -- never the column that displaced it. WorkerHostedInApi is the trailing
+                -- defaulted parameter, so it belongs at the end here too.
+                (SELECT COALESCE(bool_or(hosted_in_api), false)
+                   FROM imports.worker_heartbeat
+                  WHERE last_seen_at > now() - interval '30 seconds')            AS WorkerHostedInApi
               FROM imports.import_job
             """;
 

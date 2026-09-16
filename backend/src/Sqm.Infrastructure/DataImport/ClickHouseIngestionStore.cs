@@ -26,6 +26,25 @@ namespace Sqm.Infrastructure.DataImport;
 /// </remarks>
 public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
 {
+    /// <summary>
+    /// This store's own HTTP client, separate from the one the query path uses.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Two workloads, two timeouts, and they cannot share a name.</b> The query path allows
+    /// 180 seconds: a dashboard query that has not answered by then has gone wrong, and failing
+    /// fast is the useful behaviour. This path allows thirty minutes, because a bulk insert of a
+    /// gigabyte legitimately runs for minutes.
+    /// </para>
+    /// <para>
+    /// Both used to be registered under the name <c>clickhouse</c>, which was safe only while the
+    /// API and the worker were separate processes. Hosting the worker inside the API makes the
+    /// last registration win, and either outcome is wrong: a gigabyte insert cut off at 180
+    /// seconds, or a broken dashboard query hanging for half an hour instead of failing.
+    /// </para>
+    /// </remarks>
+    public const string HttpClientName = "clickhouse-ingestion";
+
     [LoggerMessage(EventId = 3200, Level = LogLevel.Information,
         Message = "Loaded {Rows} rows for {BusinessDate} (seq {Sequence}) in {ElapsedMs} ms")]
     private partial void LogLoaded(long rows, DateOnly businessDate, int sequence, long elapsedMs);
@@ -66,7 +85,7 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
     }
 
     private ClickHouseConnection CreateConnection() =>
-        new(_options.ConnectionString, _httpClientFactory, ClickHouseAnalyticsStore.HttpClientName);
+        new(_options.ConnectionString, _httpClientFactory, HttpClientName);
 
     public async Task<long> CountEventsForDateAsync(DateOnly businessDate, CancellationToken ct)
     {
@@ -156,7 +175,7 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
         request.Content = new StreamContent(body, bufferSize: 1 << 20);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
 
-        var client = _httpClientFactory.CreateClient(ClickHouseAnalyticsStore.HttpClientName);
+        var client = _httpClientFactory.CreateClient(HttpClientName);
         var started = System.Diagnostics.Stopwatch.StartNew();
 
         using var response = await client
@@ -447,7 +466,7 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             request.Headers.Authorization = _authentication;
         }
 
-        var client = _httpClientFactory.CreateClient(ClickHouseAnalyticsStore.HttpClientName);
+        var client = _httpClientFactory.CreateClient(HttpClientName);
 
         using var response = await client.SendAsync(request, ct).ConfigureAwait(false);
 

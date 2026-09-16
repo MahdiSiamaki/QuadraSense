@@ -124,8 +124,8 @@ export interface QuarantineSample {
 
 export interface ImportProgress {
   stage: string
-  rowsProcessed: number
-  rowsExpected: number | null
+  bytesProcessed: number
+  bytesExpected: number | null
   percent: number | null
   updatedAt: string
 }
@@ -167,7 +167,12 @@ export interface WorkerHealth {
   retrying: number
   failedLast24Hours: number
   oldestQueuedAt: string | null
+  /** Workers that have polled recently, whether or not they are holding a job. */
   activeWorkers: number
+  /** True when a live worker shares a process with the API, so restarting it stops the import. */
+  workerHostedInApi: boolean
+  /** Work is waiting and nothing is alive to take it. */
+  stalled: boolean
   staleLeases: number
 }
 

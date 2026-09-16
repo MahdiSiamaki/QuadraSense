@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Sqm.Infrastructure\Sqm.Infrastructure.csproj" />
+    <!-- So the API can host the import worker in development. See Import:RunWorkerInProcess. -->
+    <ProjectReference Include="..\Sqm.Ingestion\Sqm.Ingestion.csproj" />
     <ProjectReference Include="..\Sqm.Domain\Sqm.Domain.csproj" />
   </ItemGroup>
 

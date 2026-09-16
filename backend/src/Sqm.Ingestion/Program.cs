@@ -14,40 +14,23 @@ builder.Logging.AddJsonConsole(o =>
     o.UseUtcTimestamp = true;
 });
 
-builder.Services.Configure<ImportWorkerOptions>(
-    builder.Configuration.GetSection(ImportWorkerOptions.SectionName));
-builder.Services.Configure<PostgresOptions>(
-    builder.Configuration.GetSection(PostgresOptions.SectionName));
-builder.Services.Configure<ImportStorageOptions>(
-    builder.Configuration.GetSection(ImportStorageOptions.SectionName));
-builder.Services.Configure<ClickHouseOptions>(
-    builder.Configuration.GetSection(ClickHouseOptions.SectionName));
+// The pipeline, and the two hosted services that drive it. Defined once in
+// ImportWorkerRegistration because the API hosts the same worker in development - see
+// Import:RunWorkerInProcess there. Two copies of this list would drift on the first change.
+//
+// A batch command must NOT also start a worker that claims jobs underneath it, so the switches
+// are inspected before deciding which of the two registrations to use.
+var batchMode = args.Any(a => a.StartsWith("--", StringComparison.Ordinal)
+    && a is not "--force" and not "--truncate" and not "--pause-merges");
 
-// The same pooled-handler configuration the API uses. The worker posts gigabyte request bodies,
-// so the timeout is the one number that differs: an insert may legitimately run for minutes.
-builder.Services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName, client =>
-    {
-        client.Timeout = TimeSpan.FromMinutes(30);
-    })
-    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
-    {
-        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-        MaxConnectionsPerServer = 8,
-        AutomaticDecompression = System.Net.DecompressionMethods.All,
-    });
-
-builder.Services.AddSingleton<IImportJobRepository, PostgresImportJobRepository>();
-builder.Services.AddSingleton<IImportFileStore, DirectoryImportFileStore>();
-builder.Services.AddSingleton<IAnalyticsIngestionStore, ClickHouseIngestionStore>();
-builder.Services.AddSingleton<ITacVersionStore, ClickHouseTacVersionStore>();
-
-// One processor per data source, resolved by source code at claim time.
-builder.Services.AddSingleton<MartRefresh>();
-builder.Services.AddSingleton<IImportProcessor, SqmDailyProcessor>();
-builder.Services.AddSingleton<IImportProcessor, TacSnapshotProcessor>();
-
-builder.Services.AddHostedService<ImportWorker>();
-builder.Services.AddHostedService<LeaseRecoveryService>();
+if (batchMode)
+{
+    builder.Services.AddImportPipeline(builder.Configuration);
+}
+else
+{
+    builder.Services.AddImportWorker(builder.Configuration);
+}
 
 var host = builder.Build();
 
