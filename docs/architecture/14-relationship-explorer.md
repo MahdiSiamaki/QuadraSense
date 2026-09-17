@@ -30,19 +30,45 @@ Measured on handset `86453906970786`: two bindings, one number, two SIMs (one ac
 A dual-SIM phone carries **two IMEIs**, one per radio — the GSMA record confirms it for 76.9% of
 bindings (`imeiQuantity = 2`). Nothing in the feed says which two belong together.
 
-What can be *shown* is a pair where the two serials are adjacent within one TAC **and** the same
-phone number has been seen on both. Adjacency alone is not evidence: within a popular TAC roughly
-a quarter of serials sit next to another live handset simply because the model sold well. The
-shared subscriber is what makes it a pair, and it is decisive:
+What can be *shown* is a pair sitting at a position manufacturers use for a second radio, of the
+same model, where the same phone number has been seen on both. Proximity alone is not evidence:
+within a popular TAC roughly a quarter of serials sit next to another live handset simply because
+the model sold well. **The shared subscriber is what makes it a pair.**
 
-| serial distance | pairs sharing a number (TAC 86453906, 151,113 handsets) |
+**There are two allocation schemes, and only knowing one of them is how this was wrong to begin
+with.**
+
+*Adjacent serial, same TAC* (+1) — Xiaomi, Redmi. TAC 86453906, 151,113 handsets:
+
+| serial distance | pairs sharing a number |
 |---|---:|
 | **1** | **4,760** |
 | 2 | 0 |
 | 3 | 1 |
 | 1000 | 0 |
 
-That is a signature, not a tendency. Nothing but one physical handset produces it.
+*Identical serial, twin TAC* (+100,000,000, i.e. TAC + 100) — Samsung. The GSMA database lists
+both TACs under one marketing name; **2,737 TACs across 362 models** have such a twin. Galaxy A51,
+TACs 35446411 and 35446511:
+
+| offset | pairs sharing a number |
+|---|---:|
+| **+100,000,000** | **3,290** |
+| +1 | 0 |
+| +200,000,000 | 0 |
+
+Each is a signature, not a tendency. Nothing but one physical handset produces it.
+
+### How the second scheme was found, which is the part worth remembering
+
+The first version knew only the +1 rule. It had been measured, it was right, and it reported
+**zero** pairs for Samsung — the largest vendor on this network — which was read as "Samsung does
+not do this" rather than "the rule does not cover Samsung".
+
+It was caught by the product owner asking a question with a known answer: two of their own numbers,
+in one phone. The data showed both on Galaxy A51 IMEIs `35446411748626` and `35446511748626` —
+identical six-digit serials, TACs a hundred apart. The rule that missed it looked correct and had
+evidence behind it. The evidence was from the wrong vendor.
 
 ## Why it will not show every real pair
 
@@ -52,10 +78,13 @@ Stated on the page itself, because absence here is not evidence of absence in th
 from this operator, so a dual-SIM phone whose other slot holds a competitor's SIM has an IMEI that
 is simply not in this dataset.
 
-**Manufacturers do not allocate alike.** The same test on TAC 35004012 (Galaxy A54 5G, also
-`imeiQuantity = 2`, also two SIM slots) finds **zero** pairs at distance 1. Samsung does not number
-the second IMEI adjacently. And of 1,435 Galaxy A54 numbers holding two or more active handsets,
-**98% are two different models** — a device replacement, not a second radio.
+**A model may not have a twin TAC at all.** Galaxy A54 5G is `imeiQuantity = 2` with two SIM
+slots, but the +100 partner TAC `35004112` does not exist in the GSMA database, so no pair can be
+formed for it under either scheme. And of 1,435 Galaxy A54 numbers holding two or more active
+handsets, **98% are two different models** — a device replacement, not a second radio.
+
+**A scheme may exist that is not yet known.** Two were found; there is no reason to assume there
+are only two.
 
 So a handset showing no pair is **not** shown to be single-SIM. The product owner's plan is to
 improve coverage with probe data from other network nodes; until that exists the rule stays strict,

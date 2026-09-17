@@ -58,9 +58,9 @@ public sealed partial class ClickHouseAnalyticsStore
     /// How many handsets are checked for a physical pair.
     /// </summary>
     /// <remarks>
-    /// Each handset contributes two candidate serials, so this is the width of one IN list
-    /// against a table sorted by IMEI. Forty handsets is far past what a real subscriber has and
-    /// still one cheap range read.
+    /// Each handset contributes four candidates - two neighbouring serials and two twin-TAC
+    /// positions - so this bounds the width of one IN list against a table sorted by IMEI. Forty
+    /// handsets is far past what a real subscriber has and still a cheap set of point reads.
     /// </remarks>
     private const int MaxPairProbes = 40;
 
@@ -177,8 +177,12 @@ public sealed partial class ClickHouseAnalyticsStore
         IReadOnlyList<System.Text.Json.JsonElement> rows,
         CancellationToken ct)
     {
-        // Which numbers reach each handset, from the rows already in hand - no second read.
+        // Which numbers reach each handset, and what model it is, from the rows already in hand -
+        // no second read. The model matters because the twin-TAC candidate crosses a TAC boundary
+        // on purpose, so "same marketing name" is what keeps that from reaching a different phone.
         var numbersByHandset = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var modelByHandset = new Dictionary<string, string?>(StringComparer.Ordinal);
+
         foreach (var row in rows)
         {
             var imei = ClickHouseJsonResult.Text(row, 2) ?? string.Empty;
@@ -190,6 +194,7 @@ public sealed partial class ClickHouseAnalyticsStore
                 numbersByHandset[imei] = set = new HashSet<string>(StringComparer.Ordinal);
             }
             set.Add(msisdn);
+            modelByHandset[imei] = ClickHouseJsonResult.NullIfEmpty(row, 5);
         }
 
         if (kind == RelatedKind.Imei && identifier.Length == 14)
@@ -200,7 +205,7 @@ public sealed partial class ClickHouseAnalyticsStore
         var candidates = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var imei in numbersByHandset.Keys.Take(MaxPairProbes))
         {
-            foreach (var neighbour in AdjacentSerials(imei))
+            foreach (var neighbour in PartnerCandidates(imei))
             {
                 candidates[neighbour] = imei;
             }
@@ -240,7 +245,16 @@ public sealed partial class ClickHouseAnalyticsStore
 
             if (!candidates.TryGetValue(candidate, out var origin)) continue;
             if (!numbersByHandset.TryGetValue(origin, out var numbers)) continue;
-            if (!numbers.Contains(msisdn)) continue;          // adjacency without a shared number is not evidence
+            if (!numbers.Contains(msisdn)) continue;          // proximity without a shared number is not evidence
+
+            // Both radios of one handset are the same product, and the GSMA database says so even
+            // when the two IMEIs sit in different TACs.
+            if (modelByHandset.TryGetValue(origin, out var originModel)
+                && originModel is not null && model is not null
+                && !string.Equals(originModel, model, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
 
             if (!shared.TryGetValue(candidate, out var entry))
             {
@@ -255,28 +269,74 @@ public sealed partial class ClickHouseAnalyticsStore
             .ThenBy(p => p.Imei, StringComparer.Ordinal)];
     }
 
-    /// <summary>The IMEIs either side of this one, within the same TAC.</summary>
+    /// <summary>TAC + 100 with the six-digit serial untouched, as an IMEI offset.</summary>
+    private const ulong TwinTacOffset = 100_000_000;
+
+    /// <summary>
+    /// Where a handset's other radio would be, under the two schemes seen in this data.
+    /// </summary>
     /// <remarks>
-    /// Confined to the TAC on purpose. Serial 000000 and 999999 sit next to a different model
-    /// entirely, and a "pair" that crosses a TAC boundary would be two unrelated handsets.
+    /// <para>
+    /// There is no single rule, and assuming there was made the first version of this blind to the
+    /// largest vendor on the network.
+    /// </para>
+    /// <para>
+    /// <b>Adjacent serial, same TAC</b> (+1). Xiaomi and Redmi. Measured on TAC 86453906: 4,760
+    /// pairs sharing a phone number at distance 1, and 0 at distances 2, 3 and 1000.
+    /// </para>
+    /// <para>
+    /// <b>Identical serial, twin TAC</b> (+100,000,000). Samsung. The GSMA database carries both
+    /// TACs under the same marketing name - 2,737 TACs across 362 models have such a twin - and a
+    /// handset's two IMEIs sit one in each. Measured on Galaxy A51, TACs 35446411 and 35446511:
+    /// <b>3,290</b> pairs sharing a number at that offset, 0 at +1 and 0 at +200,000,000.
+    /// </para>
+    /// <para>
+    /// The second scheme was found by checking the explorer against a handset whose two numbers
+    /// were known to share it. The rule that missed it looked right and had been measured - on the
+    /// wrong vendor. The first test agreed with the first rule, which is exactly why it held.
+    /// </para>
     /// </remarks>
-    private static IEnumerable<string> AdjacentSerials(string imei)
+    private static IEnumerable<string> PartnerCandidates(string imei)
     {
         if (imei.Length != 14 || !ulong.TryParse(imei, out var value))
         {
             yield break;
         }
 
+        // Same TAC, neighbouring serial. Confined to the TAC because serial 000000 and 999999 sit
+        // next to a different model, and a pair across that boundary is two unrelated handsets.
         var tac = imei[..8];
 
-        foreach (var neighbour in new[] { value - 1, value + 1 })
+        if (value >= 1 && Format(value - 1) is { } before
+            && before.StartsWith(tac, StringComparison.Ordinal))
         {
-            var text = neighbour.ToString(CultureInfo.InvariantCulture).PadLeft(14, '0');
-            if (text.Length == 14 && text.StartsWith(tac, StringComparison.Ordinal))
-            {
-                yield return text;
-            }
+            yield return before;
         }
+
+        if (Format(value + 1) is { } after && after.StartsWith(tac, StringComparison.Ordinal))
+        {
+            yield return after;
+        }
+
+        // Twin TAC, identical serial. Deliberately NOT confined to the TAC - crossing it is the
+        // point - so the model check and the shared-subscriber check carry the weight instead.
+        if (value >= TwinTacOffset && Format(value - TwinTacOffset) is { } lower)
+        {
+            yield return lower;
+        }
+
+        if (value <= ulong.MaxValue - TwinTacOffset
+            && Format(value + TwinTacOffset) is { } upper)
+        {
+            yield return upper;
+        }
+    }
+
+    /// <summary>A 14-digit IMEI, or null when the arithmetic left that range.</summary>
+    private static string? Format(ulong value)
+    {
+        var text = value.ToString(CultureInfo.InvariantCulture);
+        return text.Length <= 14 ? text.PadLeft(14, '0') : null;
     }
 
     private static void Add(

@@ -227,7 +227,7 @@ function isWithheld(key: string): boolean {
               </span>
               <span class="mt-0.5 block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
                 <template v-if="pair.marketingName">{{ pair.marketingName }} · </template>
-                adjacent serial in the same TAC, and
+                same model at a paired IMEI position, and
                 <strong>{{ pair.sharedSubscribers }}</strong>
                 phone number{{ pair.sharedSubscribers === 1 ? '' : 's' }} seen on both
               </span>
@@ -251,22 +251,25 @@ function isWithheld(key: string): boolean {
             <p>
               <strong>This will not show every real pair, and that is expected.</strong> The feed
               records a binding &mdash; number, SIM, handset &mdash; and has no field saying which
-              two IMEIs are one device, so a pair can only be shown where the data makes it
-              provable: the two serials are adjacent within one TAC <em>and</em> the same phone
-              number has been seen on both.
+              two IMEIs are one device. A pair is shown only where the data makes it provable: the
+              two IMEIs sit at a position manufacturers use for a second radio, they are the same
+              model, <em>and</em> the same phone number has been seen on both.
             </p>
             <p>
-              Two things limit that. A handset's second radio only appears at all if a SIM of this
-              network has used it, so a phone whose other slot holds another operator's SIM is
-              invisible here. And manufacturers do not allocate alike: measured on one Redmi Note
-              12S TAC, 4,760 pairs were found at adjacent serials and <strong>zero</strong> at any
-              other distance &mdash; a clean signature &mdash; while the same test on a Galaxy A54
-              5G TAC found none at all, because Samsung does not number the second IMEI that way.
+              Manufacturers do not allocate alike, and there are two schemes here.
+              <strong>Adjacent serial in one TAC</strong> &mdash; Xiaomi and Redmi: measured on one
+              Redmi Note 12S TAC, 4,760 pairs at distance 1 and <strong>zero</strong> at distances
+              2, 3 and 1000. <strong>Identical serial in a twin TAC</strong> &mdash; Samsung, where
+              the GSMA database lists both TACs under one model name: measured on Galaxy A51,
+              3,290 pairs at that offset and zero at the others.
             </p>
             <p>
-              So a handset with no pair here is <em>not</em> shown to be single-SIM. Coverage will
-              improve as probe data from other network nodes is added; until then the rule is
-              deliberately strict, because a wrong pairing is worse than a missing one.
+              The limit that remains is the feed itself. A handset's second radio appears only if a
+              SIM of <em>this</em> network has used it, so a phone whose other slot holds another
+              operator's SIM cannot be paired here at all. A handset with no pair shown is therefore
+              <em>not</em> shown to be single-SIM. Coverage will improve as probe data from other
+              network nodes is added; until then the rule stays strict, because a wrong pairing is
+              worse than a missing one &mdash; nobody re-checks a link that looks right.
             </p>
           </div>
         </template>
