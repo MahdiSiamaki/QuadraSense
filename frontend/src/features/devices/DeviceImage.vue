@@ -26,8 +26,17 @@ const props = withDefaults(
     /** One of the 19 GSMA device types. Drives which silhouette is drawn. */
     deviceType?: string | null
     size?: 'sm' | 'md' | 'lg'
+    /**
+     * Whether a person has approved this picture.
+     *
+     * Only surfaced where a reader can act on it - the detail page and the review queue - and
+     * deliberately not on catalogue tiles, where forty amber dots would say nothing useful.
+     */
+    imageStatus?: 'verified' | 'needs_review' | null
+    /** Serve a candidate's bytes instead of the live image. Used by the review screen. */
+    src?: string | null
   }>(),
-  { name: null, deviceType: null, size: 'md' },
+  { name: null, deviceType: null, size: 'md', imageStatus: null, src: null },
 )
 
 /**
@@ -36,9 +45,20 @@ const props = withDefaults(
  * the img request, and a torn icon is a worse answer than the placeholder.
  */
 const failed = ref(false)
-watch(() => props.tac, () => { failed.value = false })
+const loaded = ref(false)
 
-const showPhoto = computed(() => props.hasImage && !failed.value)
+watch(
+  () => [props.tac, props.src],
+  () => {
+    failed.value = false
+    loaded.value = false
+  },
+)
+
+const showPhoto = computed(() => (props.hasImage || !!props.src) && !failed.value)
+
+/** A candidate is served by id from the review endpoint; everything else by TAC. */
+const source = computed(() => props.src ?? apiUrl(`/api/v1/devices/${props.tac}/image`))
 
 /**
  * The 19 GSMA device types, folded into the five shapes worth drawing differently.
@@ -81,15 +101,42 @@ const box = computed(() => ({
     class="relative grid shrink-0 place-items-center overflow-hidden rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)]"
     :class="box"
   >
+    <!--
+      contain and centre, never cover. These are catalogue product images: cover would crop a
+      handset to fill the tile, which is the one thing a device picture must never do.
+      The plate underneath is white in both themes because the normalised images are rendered on
+      white or on transparency, and a dark tile behind a transparent PNG shows a black phone.
+    -->
     <img
       v-if="showPhoto"
-      :src="apiUrl(`/api/v1/devices/${tac}/image`)"
+      :src="source"
       :alt="name ? `${name} device photograph` : 'Device photograph'"
-      class="size-full object-contain"
+      class="size-full bg-white object-contain object-center transition-opacity duration-150"
+      :class="loaded ? 'opacity-100' : 'opacity-0'"
       loading="lazy"
       decoding="async"
+      @load="loaded = true"
       @error="failed = true"
     />
+
+    <!--
+      A quiet skeleton while the bytes arrive, rather than the silhouette: flashing the
+      placeholder and then replacing it reads as a failure that corrected itself.
+    -->
+    <div
+      v-if="showPhoto && !loaded"
+      class="absolute inset-0 animate-pulse bg-[var(--c-surface-hover)]"
+      aria-hidden="true"
+    />
+
+    <!-- Says the picture has not been checked, where a reader can do something about it. -->
+    <span
+      v-if="showPhoto && imageStatus === 'needs_review'"
+      class="absolute top-1 right-1 rounded-full bg-[var(--c-warning)] px-1.5 py-0.5 text-[var(--text-2xs)] font-medium text-white"
+      title="This image was sourced automatically and nobody has verified it."
+    >
+      unverified
+    </span>
 
     <template v-else>
       <!--

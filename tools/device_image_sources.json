@@ -1,0 +1,29 @@
+{
+  "//": "Explicit allowlist of image sources. A candidate from a domain absent from this file is rejected before a byte is downloaded. Extending it is a deliberate edit to this file, reviewed like any other change - the pipeline never widens it at runtime.",
+
+  "//trust": "0-100. Feeds the sourceTrust term of the quality score. Only 'manufacturer' sources are official product renders; 'encyclopedic' is a volunteer photograph of a device and is accepted only when it survives every composition rule.",
+
+  "sources": {
+    "upload.wikimedia.org": {
+      "type": "encyclopedic",
+      "trust": 35,
+      "note": "Wikimedia Commons file store. Explicit licence per file, which is why it is usable at all; photography is volunteer-contributed and frequently a shop shelf or a desk, so composition rules do the work here."
+    },
+    "commons.wikimedia.org": {
+      "type": "encyclopedic",
+      "trust": 35,
+      "note": "Commons API host. Metadata only; files themselves come from upload.wikimedia.org."
+    }
+  },
+
+  "//manufacturer": "Official product-render sources go here when one is available. None is configured, and that is a statement rather than an omission: images.samsung.com, www.apple.com and i01.appmifile.com all serve official renders behind per-product paths that are not derivable from a TAC record, so reaching them needs either a licensed catalogue feed or a per-vendor adapter with the vendor's agreement. The pipeline is built to take one - add the domain here with type 'manufacturer' and implement a provider - and until then it will not pretend an encyclopedia photograph is a product render.",
+
+  "manufacturer_candidates": {},
+
+  "limits": {
+    "max_download_bytes": 12582912,
+    "timeout_seconds": 20,
+    "max_redirects": 3,
+    "max_decoded_pixels": 50000000
+  }
+}

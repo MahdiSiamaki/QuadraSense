@@ -39,6 +39,7 @@ const nav = computed(() =>
     { to: '/devices', label: 'Devices', show: can(Permission.DeviceView) },
     { to: '/imports', label: 'Imports', show: can(Permission.ImportView) },
     { to: '/lookup', label: 'Lookup', show: can(Permission.LookupSubscriber) },
+    { to: '/devices/image-review', label: 'Image review', show: can(Permission.DeviceImageManage) },
     { to: '/lookup/imsi', label: 'IMSI', show: can(Permission.LookupImsi) },
     // Reachable by anybody who can look up any one of the three; the server decides per centre
     // which sections they actually get back.
@@ -60,7 +61,7 @@ const nav = computed(() =>
 function isCurrent(to: string): boolean {
   if (to === '/') return route.path === '/'
   if (to === '/admin/users') return route.path.startsWith('/admin/users') || route.path.startsWith('/admin/roles')
-  if (to === '/devices') return route.path.startsWith('/devices')
+  if (to === '/devices') return route.path.startsWith('/devices') && !route.path.startsWith('/devices/image-review')
   // /lookup must not claim /lookup/imsi, which is its own destination.
   if (to === '/lookup') return route.path === '/lookup'
   return route.path.startsWith(to)

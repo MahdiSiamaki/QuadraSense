@@ -65,6 +65,7 @@ builder.Services.AddSingleton<IDeviceAnalyticsStore, ClickHouseAnalyticsStore>()
 // Curated device photographs. The GSMA TAC record carries none and this deployment has no
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.
 builder.Services.AddSingleton<IDeviceImageStore, PostgresDeviceImageStore>();
+builder.Services.AddSingleton<IDeviceImageCandidateStore, PostgresDeviceImageCandidateStore>();
 
 // The import platform's operational store and file store. No ENDPOINT can write to the analytics
 // store - none of them takes IAnalyticsIngestionStore, so a bug in a handler cannot drop a day's
@@ -232,6 +233,7 @@ app.MapLookupEndpoints();
 app.MapImsiEndpoints();
 app.MapDeviceEndpoints();
 app.MapRelationshipEndpoints();
+app.MapDeviceImageReviewEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);
 

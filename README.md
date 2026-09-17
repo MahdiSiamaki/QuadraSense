@@ -184,7 +184,7 @@ reconciled to the row. See `docs/adr/ADR-009-device-module.md`.
 dotnet test backend/Sqm.slnx
 ```
 
-217 tests. Integration tests run against a real PostgreSQL and **skip with a reason** when none is
+223 tests. Integration tests run against a real PostgreSQL and **skip with a reason** when none is
 reachable, rather than failing. They connect as `sqm_app`, not as the owner: connecting as the
 owner would leave the append-only guarantee untested while appearing to pass.
 
@@ -231,6 +231,10 @@ db/
     jobs/          the backfill of the pre-platform load
 infra/             the development environment as a compose file
 tools/
+  source_device_images.py        proposes device images for review; never writes a live image
+  device_image_sources.json      the source allowlist, and why no manufacturer source is in it
+  test_device_image_pipeline.py  40 checks on identity, rejection, scoring and normalisation
+  repair_tac_transfer.py         rebuilds a TAC export damaged in transit, refusing if lossy
   profiling/       reproducible data-profiling scripts (DuckDB)
   benchmark/       storage-engine benchmark harness
 ```
@@ -248,7 +252,8 @@ tools/
 | ADR-007 | Deployment | Pending infrastructure decision |
 | [ADR-008](docs/adr/ADR-008-imsi-search.md) | IMSI search: a second table ordered by IMSI, and a skip index on the event log | Accepted |
 | [ADR-009](docs/adr/ADR-009-device-module.md) | Devices: a model is a TAC, and an IMEI-ordered table makes it a range | Accepted |
-| [ADR-010](docs/adr/ADR-010-device-images.md) | Device images: keyed by model, sourced from Commons under identity guards | Accepted |
+| [ADR-010](docs/adr/ADR-010-device-images.md) | Device images: keyed by model, sourced from Commons under identity guards | Amended by ADR-011 |
+| [ADR-011](docs/adr/ADR-011-device-image-sourcing.md) | Device images are proposed, scored from the pixels and reviewed - never auto-applied | Accepted |
 
 Every one of these was decided against measurement on the real dataset, not on reputation. Where a
 claim appears in these documents, the number behind it is there too.

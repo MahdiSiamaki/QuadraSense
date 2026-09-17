@@ -50,6 +50,12 @@ public sealed class IdentityFixture : IAsyncLifetime
     /// <summary>The audit log under test.</summary>
     public PostgresAuditLog Audit { get; private set; } = null!;
 
+    /// <summary>Proposed device images, for the review-queue tests.</summary>
+    public Sqm.Infrastructure.Catalog.PostgresDeviceImageCandidateStore ImageCandidates { get; private set; } = null!;
+
+    /// <summary>Live device images, so a test can check one was or was not replaced.</summary>
+    public Sqm.Infrastructure.Catalog.PostgresDeviceImageStore LiveImages { get; private set; } = null!;
+
     /// <summary>The options the stack was built with.</summary>
     public AuthOptions Options { get; } = new();
 
@@ -94,6 +100,10 @@ public sealed class IdentityFixture : IAsyncLifetime
                 NullLogger<LocalPasswordAuthenticator>.Instance);
             Audit = new PostgresAuditLog(
                 _dataSource, postgres, NullLogger<PostgresAuditLog>.Instance);
+            ImageCandidates = new Sqm.Infrastructure.Catalog.PostgresDeviceImageCandidateStore(
+                _dataSource, postgres);
+            LiveImages = new Sqm.Infrastructure.Catalog.PostgresDeviceImageStore(
+                _dataSource, postgres);
 
             IsAvailable = true;
         }

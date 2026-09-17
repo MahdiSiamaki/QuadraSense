@@ -68,6 +68,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'IMSI search', permission: Permission.LookupImsi },
   },
   {
+    path: '/devices/image-review',
+    name: 'device-image-review',
+    component: () => import('@/features/devices/DeviceImageReviewPage.vue'),
+    meta: { title: 'Device image review', permission: Permission.DeviceImageManage },
+  },
+  {
     path: '/relationships',
     name: 'relationships',
     component: () => import('@/features/lookup/RelationshipExplorerPage.vue'),

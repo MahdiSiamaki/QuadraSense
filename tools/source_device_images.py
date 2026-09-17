@@ -1,361 +1,885 @@
 """
-Populate the device catalogue's photographs from Wikimedia Commons.
+Propose device images for review. Never replaces a live image.
 
-WHY COMMONS AND NOT A BETTER-LOOKING SOURCE. GSMArena, manufacturer press pages and retailer
-listings have uniform, flattering photography of almost every handset, and none of them carry a
-licence this catalogue could cite. Commons files carry an explicit licence and a permanent URL,
-which is exactly what `catalog.device_model_image.source_note` exists to hold. The cost is
-coverage and consistency, measured rather than guessed - see the report this prints.
+WHAT THIS REPLACED, AND WHY
+---------------------------
+The previous version asked Wikipedia for the *lead image of an article* and stored it. Four
+faults, each sufficient on its own:
 
-WHAT IT REFUSES TO DO, which is the important part. An earlier version of this took the top
-search hit and was wrong in the most dangerous way available:
+  1. The source was an encyclopedia, not a product catalogue. A lead image is whatever a
+     volunteer uploaded - which is how the catalogue acquired shop shelves with price tags
+     visible, and how four Nokia models acquired a photograph of Nokia's headquarters.
+  2. There was no candidate set. One lead image per model means the first result wins by
+     construction; nothing competes and nothing is scored.
+  3. Every guard was textual. Filename tokens and variant words check identity and never look
+     at a single pixel, so background, crop, resolution and composition went unchecked.
+  4. There was no lifecycle. An auto-sourced image and a human-chosen one were the same row, so
+     84 of 87 stored images were never reviewed and nothing said so.
 
-    Redmi Note 12S  ->  Redmi_Note_12_front.jpg          a different phone
-    Redmi Note 11   ->  Redmi_Note_11_Pro_(Star_Blue).png a more expensive phone
-    Galaxy A05      ->  Samsung_Galaxy_A05s_2024.jpg      a different phone
-    Galaxy A15      ->  Logo_Samsung_Galaxy_A15.png       not a phone
-    POCO M3         ->  Redmi_Note_9_4G.jpg               three phones in one lookup
+This version fixes all four: an allowlisted source set, a candidate SET per model, a
+deterministic score computed from the decoded pixels with its reasoning stored alongside, and a
+staging table a reviewer approves from. It writes to catalog.device_image_candidate and NEVER to
+catalog.device_model_image.
 
-A catalogue that shows a confident picture of the wrong handset is worse than one that shows a
-placeholder, because nobody re-checks a picture that looks right. So a candidate is accepted only
-when the FILE NAME names this model in whole tokens and adds no variant word the model does not
-claim. Measured on the 200 most populous models: 60.5% have some image, 27% survive the guards.
-The other third is the difference between a catalogue and a catalogue of plausible mistakes.
+SAFETY
+------
+Default execution is a dry run. `--apply` writes CANDIDATES - it does not touch a live image, and
+there is deliberately no flag in this tool that does. Replacement happens only through the review
+endpoint, by a person holding device.image.manage.
 
-Usage:
-    python tools/source_device_images.py --limit 300 --user admin [--apply]
-
-Without --apply it reports what it would do and writes nothing.
+USAGE
+-----
+    python tools/source_device_images.py --limit 20                  # dry run, prints a report
+    python tools/source_device_images.py --limit 20 --apply          # stages candidates
+    python tools/source_device_images.py --manufacturer Samsung --apply
+    python tools/source_device_images.py --model "Galaxy A32" --apply
+    python tools/source_device_images.py --only-missing --limit 50 --apply
 """
+
+from __future__ import annotations
 
 import argparse
 import base64
+import dataclasses
+import hashlib
 import io
+import ipaddress
 import json
+import os
 import re
+import socket
 import subprocess
 import sys
 import time
 import urllib.parse
 
-UA = "QuadraSense-device-catalogue/1.0 (internal telecom device inventory)"
-WIKI = "https://en.wikipedia.org/w/api.php"
-COMMONS = "https://commons.wikimedia.org/w/api.php"
+# --------------------------------------------------------------------------- configuration
 
-CH = ("http://localhost:18123/?database=sqm", "sqm_app", "sqm_dev")
-PG = ("sqm-postgres", "sqm", "sqm")
+HERE = os.path.dirname(os.path.abspath(__file__))
+SOURCES_FILE = os.path.join(HERE, "device_image_sources.json")
 
-BATCH = 25
-PAUSE = 1.2
-MAX_BYTES = 512 * 1024
-MAX_EDGE = 600
+UA = "QuadraSense-device-catalogue/2.0 (internal telecom device inventory)"
+COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 
-VARIANTS = {"pro", "plus", "ultra", "max", "lite", "mini", "fe", "prime", "neo", "power"}
-NOT_A_DEVICE = ("logo", "wordmark", "icon", "symbol", "chart", "map", "graph")
+CLICKHOUSE = ("http://localhost:18123/?database=sqm", "sqm_app", "sqm_dev")
+POSTGRES = ("sqm-postgres", "sqm", "sqm")
+
+# Presentation target. 800x800 with the product filling ~84% leaves the 6-10% breathing space a
+# catalogue tile needs on every side, whatever shape the source was.
+CANVAS = 800
+PADDING_FRACTION = 0.08
+STORED_FORMAT = "WEBP"
+STORED_MIME = "image/webp"
+MAX_STORED_BYTES = 512 * 1024          # matches the database CHECK
+
+# A source below this on either edge is a thumbnail. Upscaling one produces a soft, obviously
+# second-rate tile next to a real render, which is worse than the placeholder.
+MIN_SOURCE_EDGE = 400
+PREFERRED_SOURCE_EDGE = 1000
+
+# Wikimedia answers 429 when asked too quickly, and answers it with an HTML page rather than an
+# error the transport reports. Retrying politely is the difference between "this model has no
+# usable image" and "we asked too fast".
+MAX_ATTEMPTS = 4
+RETRY_BACKOFF_SECONDS = 6
+POLITE_DELAY_SECONDS = 1.5
+
+ACCEPTED_MIME = {"image/png", "image/jpeg", "image/webp"}
+MAGIC = {
+    b"\x89PNG\r\n\x1a\n": "image/png",
+    b"\xff\xd8\xff": "image/jpeg",
+}
 
 
-# ----------------------------------------------------------------- plumbing
+def load_config() -> dict:
+    with open(SOURCES_FILE, encoding="utf-8") as fh:
+        return json.load(fh)
 
-def say(text):
-    """Print without dying on a console that cannot encode the text.
 
-    Commons file names are frequently not Latin-1 - the Redmi Note 13's lead image is named in
-    Chinese - and a Windows console defaulting to cp1252 raises UnicodeEncodeError on them. A
-    bulk import must not stop halfway because of how a terminal is configured.
-    """
+CONFIG = load_config()
+ALLOWED = CONFIG["sources"]
+LIMITS = CONFIG["limits"]
+
+
+# --------------------------------------------------------------------------- plumbing
+
+def say(text: str) -> None:
+    """Print without dying on a console that cannot encode the text."""
     encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
     print(text.encode(encoding, errors="replace").decode(encoding, errors="replace"))
 
 
-def curl_json(url):
-    for attempt in range(4):
-        out = subprocess.run(["curl", "-sS", "-m", "30", "-A", UA, url],
-                             capture_output=True, text=True, encoding="utf-8")
-        body = (out.stdout or "").strip()
-        if body.startswith("{"):
-            return json.loads(body)
-        time.sleep(2 + attempt * 3)          # rate limited: back off, never record a false miss
-    raise RuntimeError("no JSON after retries")
-
-
-def curl_bytes(url):
-    out = subprocess.run(["curl", "-sSL", "-m", "60", "-A", UA, url], capture_output=True)
-    if out.returncode != 0 or not out.stdout:
-        raise RuntimeError("download failed")
-    return out.stdout
-
-
-def clickhouse(sql):
-    url, user, password = CH
+def clickhouse(sql: str) -> str:
+    url, user, password = CLICKHOUSE
     out = subprocess.run(["curl", "-sS", "-u", f"{user}:{password}", url, "--data-binary", sql],
                          capture_output=True, text=True, encoding="utf-8", check=True)
     return out.stdout
 
 
-def psql(sql, quiet=True):
-    """Run SQL, passing it on STDIN rather than as an argument.
-
-    An insert here carries a base64 image, and a command line is not the place for half a
-    megabyte of it: Windows caps a command at 32 KB, so the first large photograph would fail
-    with an error about the argument list rather than about the image.
-    """
-    container, user, db = PG
-    args = ["docker", "exec", "-i", container, "psql", "-U", user, "-d", db, "-v", "ON_ERROR_STOP=1"]
-    if quiet:
-        args += ["-t", "-A"]
-    out = subprocess.run(args, input=sql, capture_output=True, text=True, encoding="utf-8")
+def psql(sql: str) -> str:
+    container, user, db = POSTGRES
+    out = subprocess.run(
+        ["docker", "exec", "-i", container, "psql", "-U", user, "-d", db,
+         "-v", "ON_ERROR_STOP=1", "-t", "-A"],
+        input=sql, capture_output=True, text=True, encoding="utf-8")
     if out.returncode != 0:
         raise RuntimeError(out.stderr.strip())
     return out.stdout.strip()
 
 
-# ----------------------------------------------------------------- matching
-
-def tokens(text):
-    return [t for t in re.split(r"[^a-z0-9]+", text.lower()) if t]
+def esc(text: str) -> str:
+    return (text or "").replace("'", "''")
 
 
-def clean(brand, model):
-    name = re.sub(r"\s*\([^)]*\)", "", model)
-    # "DS" is a dual-SIM suffix and drops out. The Nokia type code does NOT: for models
-    # named only "TA-1557" it is the entire identity, and removing it left the bare word
-    # "Nokia", which resolves to the company article and its photograph of the headquarters.
-    name = re.sub(r"\bDS\b", "", name)
-    name = re.sub(r"\b5g\b", "5G", name, flags=re.I)
-    name = re.sub(r"\b4g\b", "4G", name, flags=re.I)
-    name = re.sub(r"\s+", " ", name).strip()
+# --------------------------------------------------------------------------- identity
 
-    b = (brand or "").strip()
-    if "iphone" in name.lower():
-        name = name[name.lower().index("iphone"):]
-    elif b and not name.lower().startswith(b.lower()):
-        name = f"{b} {name}"
-    if name.lower().startswith("galaxy "):
-        name = "Samsung " + name
-    return name
+VARIANTS = {"pro", "plus", "ultra", "max", "lite", "mini", "fe", "prime", "neo", "power",
+            "5g", "4g", "lte"}
 
 
-def file_depicts(model_title, filename, brand=""):
-    """True only when the file names THIS model and no richer variant of it."""
-    if not filename:
-        return False
-    low = filename.lower()
-    if any(b in low for b in NOT_A_DEVICE):
-        return False
-
-    want = tokens(model_title)
-    got = set(tokens(filename))
-
-    # The brand is not required in the FILE name - it is already established by the page the file
-    # hangs on, and Commons often omits it: the Galaxy A12's photograph is
-    # Galaxy_A12_front_and_Back.png, with no "Samsung" anywhere in it. Requiring it rejected the
-    # single most populous model on the network. What must match is everything that distinguishes
-    # one model from the next.
-    brand_tokens = set(tokens(brand))
-    distinguishing = [t for t in want if t not in brand_tokens]
-
-    # Nothing left once the brand is removed means the title was only a brand name, and the
-    # file would match on that alone. Four Nokia models were given a picture of Nokia's
-    # headquarters this way: every textual guard passed, because "nokia" really was in the
-    # file name. It was caught by looking at the images, which is why that step is not
-    # optional.
-    if not distinguishing:
-        return False
-
-    if not all(t in got for t in distinguishing):
-        return False
-    return not ((got & VARIANTS) - set(want))
+def norm(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip()).lower()
 
 
-# ----------------------------------------------------------------- sources
-
-def lead_images(titles):
-    """{asked title: (thumb url, commons file name)} for up to 25 titles in one request."""
-    data = curl_json(WIKI + "?" + urllib.parse.urlencode({
-        "action": "query", "prop": "pageimages", "piprop": "thumbnail|name",
-        "pithumbsize": str(MAX_EDGE), "redirects": "1",
-        "titles": "|".join(titles), "format": "json",
-    }))
-    query = data.get("query", {})
-
-    resolved = {e["from"]: e["to"] for e in query.get("normalized", [])}
-    for e in query.get("redirects", []):
-        for asked, became in list(resolved.items()):
-            if became == e["from"]:
-                resolved[asked] = e["to"]
-        resolved.setdefault(e["from"], e["to"])
-
-    pages = {p.get("title"): p for p in query.get("pages", {}).values()}
-
-    result = {}
-    for asked in titles:
-        page = pages.get(resolved.get(asked, asked)) or {}
-        thumb = page.get("thumbnail") or {}
-        result[asked] = (thumb.get("source"), page.get("pageimage"))
-    return result
+def tokens(text: str) -> list[str]:
+    return [t for t in re.split(r"[^a-z0-9]+", (text or "").lower()) if t]
 
 
-def licence_of(filename):
-    """The Commons licence and author, so provenance is recorded rather than implied."""
-    try:
-        data = curl_json(COMMONS + "?" + urllib.parse.urlencode({
-            "action": "query", "prop": "imageinfo", "iiprop": "extmetadata",
-            "titles": f"File:{filename}", "format": "json",
-        }))
-        for page in data.get("query", {}).get("pages", {}).values():
-            meta = (page.get("imageinfo") or [{}])[0].get("extmetadata", {})
-            licence = (meta.get("LicenseShortName") or {}).get("value", "unknown licence")
-            author = re.sub(r"<[^>]+>", "", (meta.get("Artist") or {}).get("value", "")).strip()
-            return licence, (author or "unknown author")
-    except Exception:                                    # noqa: BLE001 - provenance is best effort
-        pass
-    return "unknown licence", "unknown author"
+@dataclasses.dataclass(frozen=True)
+class DeviceIdentity:
+    """
+    Enough of a device to tell it from its neighbours.
+
+    The IMAGE is keyed by (brand, marketing name) because that is what a picture depicts: the
+    GSMA record gives Galaxy A51 sixteen model codes - SM-A515F, SM-A515F/DS, SM-A515U and so on -
+    which are region and dual-SIM variants of one physical product, and sixteen copies of one
+    render would be sixteen things to keep in step.
+
+    The model CODES are carried anyway, because they are what proves a variant is not being
+    confused. marketingName already separates the ones that matter - Galaxy A32 is SM-A325x,
+    Galaxy A32 5G is SM-A326x - and the codes let a candidate be checked against both.
+    """
+
+    manufacturer: str
+    brand: str
+    marketing_name: str
+    model_codes: tuple[str, ...]
+    device_type: str
+    bindings: int
+
+    @property
+    def model_key(self) -> str:
+        return f"{norm(self.brand)}|{norm(self.marketing_name)}"
+
+    @property
+    def search_title(self) -> str:
+        name = re.sub(r"\s*\([^)]*\)", "", self.marketing_name)
+        if "iphone" in name.lower():
+            name = name[name.lower().index("iphone"):]
+        elif self.brand and not name.lower().startswith(self.brand.lower()):
+            name = f"{self.brand} {name}"
+        if name.lower().startswith("galaxy "):
+            name = "Samsung " + name
+        return re.sub(r"\s+", " ", name).strip()
+
+    def describe(self) -> str:
+        codes = ", ".join(self.model_codes[:3])
+        more = f" (+{len(self.model_codes) - 3} more)" if len(self.model_codes) > 3 else ""
+        return f"{self.brand} {self.marketing_name}\n           {codes}{more}"
 
 
-def to_stored_image(raw):
-    """Normalise to something the schema accepts: <=512 KB, <=600px, PNG or JPEG."""
-    from PIL import Image
+def load_devices(limit: int, manufacturer: str | None, model: str | None,
+                 only_missing: bool) -> list[DeviceIdentity]:
+    where = ["d.seq = (SELECT max(seq) FROM sqm.mart_ready)", "t.marketingName != ''"]
+    if manufacturer:
+        safe = esc(manufacturer)
+        where.append(
+            f"(lower(coalesce(nullIf(t.brandName,''), t.manufacturer)) = lower('{safe}')"
+            f" OR lower(t.manufacturer) LIKE lower('%{safe}%'))")
+    if model:
+        where.append(f"lower(t.marketingName) LIKE lower('%{esc(model)}%')")
 
-    im = Image.open(io.BytesIO(raw))
-    im.thumbnail((MAX_EDGE, MAX_EDGE), Image.LANCZOS)
-
-    # Transparency is worth keeping - many of these are cut-outs on a transparent background,
-    # and flattening them onto white looks wrong on a dark theme.
-    if im.mode in ("RGBA", "LA", "P"):
-        im = im.convert("RGBA")
-        buf = io.BytesIO()
-        im.save(buf, format="PNG", optimize=True)
-        if buf.tell() <= MAX_BYTES:
-            return buf.getvalue(), "image/png"
-        im = im.convert("RGB")
-
-    im = im.convert("RGB")
-    for quality in (88, 80, 70, 60, 50):
-        buf = io.BytesIO()
-        im.save(buf, format="JPEG", quality=quality, optimize=True)
-        if buf.tell() <= MAX_BYTES:
-            return buf.getvalue(), "image/jpeg"
-    raise RuntimeError("cannot fit under 512 KB")
-
-
-# ----------------------------------------------------------------- main
-
-def models(limit):
     sql = f"""
-        SELECT coalesce(nullIf(t.brandName,''), t.manufacturer) AS brand,
-               t.marketingName AS model,
-               sum(d.bindings) AS bindings
+        SELECT any(t.manufacturer)                              AS manufacturer,
+               coalesce(nullIf(t.brandName,''), t.manufacturer) AS brand,
+               t.marketingName                                  AS marketing_name,
+               arrayStringConcat(groupUniqArray(20)(t.modelName), '~') AS model_codes,
+               any(t.deviceType)                                AS device_type,
+               sum(d.bindings)                                  AS bindings
         FROM sqm.agg_device_model AS d
         INNER JOIN sqm.tac AS t ON t.tac = d.tac
-        WHERE d.seq = (SELECT max(seq) FROM sqm.mart_ready) AND t.marketingName != ''
-        GROUP BY brand, model ORDER BY bindings DESC LIMIT {int(limit)} FORMAT TSV
+        WHERE {' AND '.join(where)}
+        GROUP BY brand, marketing_name
+        ORDER BY bindings DESC
+        LIMIT {int(limit) * 4}
+        FORMAT TSV
     """
-    rows = []
+
+    devices: list[DeviceIdentity] = []
     for line in clickhouse(sql).splitlines():
         if not line.strip():
             continue
-        brand, model, bindings = line.split("\t")
-        rows.append((brand, model, int(bindings)))
-    return rows
+        maker, brand, name, codes, device_type, bindings = line.split("\t")
+        devices.append(DeviceIdentity(
+            manufacturer=maker, brand=brand, marketing_name=name,
+            model_codes=tuple(c for c in codes.split("~") if c),
+            device_type=device_type, bindings=int(bindings)))
+
+    if only_missing:
+        have = {k for k in psql("SELECT model_key FROM catalog.device_model_image").splitlines() if k}
+        devices = [d for d in devices if d.model_key not in have]
+
+    return devices[:limit]
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--limit", type=int, default=200)
-    ap.add_argument("--user", default="admin", help="username recorded as the uploader")
-    ap.add_argument("--apply", action="store_true", help="write to the database")
-    args = ap.parse_args()
+def live_images() -> dict[str, tuple[str, str]]:
+    """model_key -> (status, sha256 hex) for whatever is currently being served."""
+    out: dict[str, tuple[str, str]] = {}
+    rows = psql("SELECT model_key || E'\\t' || status || E'\\t' || encode(sha256,'hex') "
+                "FROM catalog.device_model_image").splitlines()
+    for row in rows:
+        parts = row.strip().split("\t")
+        if len(parts) == 3:
+            out[parts[0]] = (parts[1], parts[2])
+    return out
 
-    user_id = psql(f"SELECT id FROM auth.user_account WHERE username = '{args.user}' LIMIT 1")
-    if not user_id:
-        sys.exit(f"no such user: {args.user}")
 
-    existing = set(psql("SELECT model_key FROM catalog.device_model_image").splitlines())
-    existing = {k for k in existing if k}
+def known_candidate_hashes() -> set[tuple[str, str]]:
+    """
+    (model_key, sha256) already proposed, in ANY state.
 
-    wanted = models(args.limit)
-    print(f"models considered:   {len(wanted)}")
-    print(f"already have a photo: {len(existing)}\n")
+    Rejected ones are included on purpose: a candidate a reviewer has turned down must not
+    reappear on the next run. Only a genuinely different image is a new proposal.
+    """
+    out = set()
+    rows = psql("SELECT model_key || E'\\t' || encode(sha256,'hex') "
+                "FROM catalog.device_image_candidate").splitlines()
+    for row in rows:
+        parts = row.strip().split("\t")
+        if len(parts) == 2:
+            out.add((parts[0], parts[1]))
+    return out
 
-    candidates = []
-    for start in range(0, len(wanted), BATCH):
-        chunk = wanted[start:start + BATCH]
-        titles = [clean(b, m) for b, m, _ in chunk]
-        try:
-            found = lead_images(titles)
-        except Exception as exc:                         # noqa: BLE001
-            # One refused batch must not end the run. Losing 25 candidates is a coverage dent;
-            # losing the remaining 275 because of a rate limit is a wasted hour - and the first
-            # attempt at 300 models did exactly that, silently.
-            print(f"  batch failed, skipping 25: {exc}", file=sys.stderr)
-            found = {}
-        for (brand, model, bindings), title in zip(chunk, titles):
-            url, filename = found.get(title, (None, None))
-            candidates.append((brand, model, bindings, title, url, filename))
-        print(f"  probed {min(start + BATCH, len(wanted))}/{len(wanted)}", file=sys.stderr)
-        time.sleep(PAUSE)
 
-    stored = skipped_have = rejected = no_image = failed = 0
-    stored_bindings = 0
+# --------------------------------------------------------------------------- safe fetching
 
-    for brand, model, bindings, title, url, filename in candidates:
-        key = f"{brand.strip().lower()}|{model.strip().lower()}"
-        key = re.sub(r"\s+", " ", key)
+class FetchError(Exception):
+    """A candidate could not be retrieved safely. Always a rejection, never a retry loop."""
 
-        if key in existing:
-            skipped_have += 1
+
+def host_of(url: str) -> str:
+    return (urllib.parse.urlparse(url).hostname or "").lower()
+
+
+def check_public_host(host: str) -> None:
+    """
+    Refuse anything that resolves inside the network this runs on.
+
+    The allowlist already limits us to a few public hosts, so this is the second lock rather than
+    the first: it stops an allowlisted name that has been pointed somewhere private, and it is
+    what makes following a redirect safe at all. Rebinding between this check and the fetch is
+    not fully closed by it - the allowlist is what bounds that.
+    """
+    try:
+        infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+    except OSError as exc:
+        raise FetchError(f"cannot resolve {host}: {exc}") from exc
+
+    for info in infos:
+        address = ipaddress.ip_address(info[4][0])
+        if (address.is_private or address.is_loopback or address.is_link_local
+                or address.is_reserved or address.is_multicast):
+            raise FetchError(f"{host} resolves to a non-public address ({address})")
+
+
+def fetch(url: str, *, expect_json: bool = False):
+    """
+    Download one thing, treating the far end as hostile.
+
+    https only, allowlisted host, public address, bounded redirects, bounded time, bounded size.
+    The effective URL is re-checked after redirects, because a redirect to a host nobody vetted is
+    exactly the trick this guards against.
+    """
+    if not url.lower().startswith("https://"):
+        raise FetchError(f"not https: {url[:60]}")
+
+    host = host_of(url)
+    if host not in ALLOWED:
+        raise FetchError(f"domain not allowlisted: {host}")
+    check_public_host(host)
+
+    marker = b"\n---META---"
+    command = [
+        "curl", "-sS", "--proto", "=https", "--proto-redir", "=https",
+        "--location", "--max-redirs", str(LIMITS["max_redirects"]),
+        "--max-time", str(LIMITS["timeout_seconds"]),
+        "--max-filesize", str(LIMITS["max_download_bytes"]),
+        "-A", UA,
+        "-w", marker.decode() + "%{http_code} %{url_effective}",
+        url,
+    ]
+
+    last_error = "not attempted"
+
+    for attempt in range(MAX_ATTEMPTS):
+        time.sleep(POLITE_DELAY_SECONDS)
+        out = subprocess.run(command, capture_output=True)
+        if out.returncode != 0:
+            raise FetchError(
+                f"transport failed ({out.returncode}): "
+                f"{out.stderr.decode(errors='replace')[:120]}")
+
+        body, separator, meta = out.stdout.rpartition(marker)
+        if not separator:
+            raise FetchError("no response metadata; cannot confirm the status")
+
+        status_text, _, effective = meta.decode(errors="replace").partition(" ")
+        status = int(status_text) if status_text.isdigit() else 0
+
+        # The status is checked BEFORE the bytes. Without this a rate-limited request looked like
+        # a corrupt image: Wikimedia answers 429 with a 2,255-byte HTML page, which sniffed as no
+        # known format and was reported as "bytes are not a supported image" - true, and the
+        # wrong diagnosis entirely.
+        if status == 429 or 500 <= status < 600:
+            last_error = f"HTTP {status} from {host}"
+            time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
             continue
+
+        if status != 200:
+            raise FetchError(f"HTTP {status} from {host}")
+
+        final_host = host_of(effective) if effective else host
+        if final_host and final_host not in ALLOWED:
+            raise FetchError(f"redirected off the allowlist to {final_host}")
+
+        if len(body) > LIMITS["max_download_bytes"]:
+            raise FetchError("larger than the download ceiling")
+
+        if expect_json:
+            return json.loads(body.decode("utf-8"))
+        return body, final_host or host
+
+    raise FetchError(f"{last_error} after {MAX_ATTEMPTS} attempts")
+
+
+def sniff(data: bytes) -> str | None:
+    """
+    The media type from the bytes, never from the header the server claimed.
+
+    WebP needs both ends checked: RIFF alone also begins a WAV file.
+    """
+    for signature, mime in MAGIC.items():
+        if data.startswith(signature):
+            return mime
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+# --------------------------------------------------------------------------- providers
+
+@dataclasses.dataclass
+class Candidate:
+    url: str
+    domain: str
+    source_type: str
+    title: str
+    width: int = 0
+    height: int = 0
+    mime: str = ""
+    licence: str = ""
+    author: str = ""
+
+
+def commons_candidates(device: DeviceIdentity, want: int = 8) -> list[Candidate]:
+    """
+    A SET of files from Commons that name this model, not one article's lead image.
+
+    Searching the File namespace rather than reading an article is the structural fix for "the
+    first result wins": it returns several files with their real dimensions and media types,
+    which is what a score needs something to choose between.
+    """
+    search = fetch(COMMONS_API + "?" + urllib.parse.urlencode({
+        "action": "query", "list": "search",
+        "srsearch": f'"{device.search_title}" filetype:bitmap',
+        "srnamespace": "6", "srlimit": str(want), "format": "json",
+    }), expect_json=True)
+
+    titles = [hit["title"] for hit in search.get("query", {}).get("search", [])]
+    if not titles:
+        return []
+
+    info = fetch(COMMONS_API + "?" + urllib.parse.urlencode({
+        "action": "query", "prop": "imageinfo",
+        "iiprop": "url|size|mime|extmetadata",
+        "titles": "|".join(titles[:20]), "format": "json",
+    }), expect_json=True)
+
+    out: list[Candidate] = []
+    for page in info.get("query", {}).get("pages", {}).values():
+        details = (page.get("imageinfo") or [{}])[0]
+        url = details.get("url")
         if not url:
-            no_image += 1
             continue
-        if not file_depicts(title, filename or "", brand):
-            rejected += 1
-            say(f"  REJECT {model}  <-  {filename}")
+        meta = details.get("extmetadata", {})
+        out.append(Candidate(
+            url=url, domain=host_of(url), source_type="encyclopedic",
+            title=page.get("title", "").removeprefix("File:"),
+            width=int(details.get("width") or 0),
+            height=int(details.get("height") or 0),
+            mime=details.get("mime", ""),
+            licence=(meta.get("LicenseShortName") or {}).get("value", "unknown licence"),
+            author=re.sub(r"<[^>]+>", "", (meta.get("Artist") or {}).get("value", "")).strip()))
+    return out
+
+
+def manufacturer_candidates(device: DeviceIdentity) -> list[Candidate]:
+    """
+    Official product renders, when a provider for the brand is configured.
+
+    None is configured, and the configuration file says why: the official renders for Samsung,
+    Apple and Xiaomi sit behind per-product paths that cannot be derived from a TAC record, so
+    reaching them needs a licensed catalogue feed or a per-vendor adapter agreed with the vendor.
+    This is the seam for one. It returns nothing rather than substituting something that is not a
+    product render and calling it one.
+    """
+    configured = CONFIG.get("manufacturer_candidates", {})
+    rule = configured.get(norm(device.brand)) or configured.get(norm(device.manufacturer))
+    if not rule:
+        return []
+
+    out: list[Candidate] = []
+    for code in device.model_codes[:4]:
+        url = rule["template"].format(code=urllib.parse.quote(code.replace("/", "-")))
+        if host_of(url) not in ALLOWED:
+            continue
+        out.append(Candidate(url=url, domain=host_of(url), source_type="manufacturer", title=code))
+    return out
+
+
+# --------------------------------------------------------------------------- identity matching
+
+def identity_verdict(device: DeviceIdentity, candidate: Candidate) -> tuple[bool, str]:
+    """
+    Does this file name THIS model, and no richer variant of it?
+
+    Kept from the previous version because it is the part that worked: token-exact matching with
+    a variant guard is what stopped Redmi Note 12S being given Redmi Note 12's photograph, and
+    Galaxy A05 being given the A05s.
+    """
+    name = candidate.title or ""
+    if not name:
+        return False, "the file has no name to match against"
+
+    haystack = set(tokens(name))
+    brand_tokens = set(tokens(device.brand)) | set(tokens(device.manufacturer))
+    wanted = [t for t in tokens(device.search_title) if t not in brand_tokens]
+
+    if not wanted:
+        return False, "the model name is only a brand, so nothing distinguishes it"
+
+    missing = [t for t in wanted if t not in haystack]
+    if missing:
+        return False, f"does not name this model (missing {', '.join(missing)})"
+
+    extra = (haystack & VARIANTS) - set(tokens(device.search_title))
+    if extra:
+        return False, f"names a different variant ({', '.join(sorted(extra))})"
+
+    codes = {norm(c).replace("/", "") for c in device.model_codes}
+    flat = norm(name).replace("/", "").replace("-", "").replace(" ", "")
+    confirmed = any(c.replace("-", "") in flat for c in codes if len(c) > 5)
+
+    return True, "model code confirmed in the file name" if confirmed else "model name matched"
+
+
+# --------------------------------------------------------------------------- pixel analysis
+
+def analyse(data: bytes) -> dict:
+    """
+    What the pixels say, in terms a score can use and a person can check.
+
+    Every measure is deterministic and cheap, and each maps to something a catalogue image has to
+    be: shot on a clean background, whole, not a thumbnail, not a photograph of a scene. None of
+    it is a classifier - there is no model here deciding "lifestyle photo" - so each measure is
+    named for what it actually computes, and the limits of that are in the docs.
+    """
+    from PIL import Image, ImageOps
+
+    Image.MAX_IMAGE_PIXELS = LIMITS["max_decoded_pixels"]
+
+    with Image.open(io.BytesIO(data)) as raw:
+        raw.load()
+        image = raw.convert("RGBA")
+
+    try:
+        image = ImageOps.exif_transpose(image)
+    except Exception:                                   # noqa: BLE001 - orientation is best effort
+        pass
+
+    width, height = image.size
+    pixels = image.load()
+
+    def is_background(px) -> bool:
+        r, g, b, a = px
+        return a < 24 or (r > 238 and g > 238 and b > 238)
+
+    # Border cleanliness: a studio render sits on white or on nothing. A shelf photograph does not.
+    band = max(2, int(min(width, height) * 0.02))
+    border_total = border_clean = 0
+    for x in range(0, width, max(1, width // 120)):
+        for y in list(range(band)) + list(range(max(band, height - band), height)):
+            border_total += 1
+            border_clean += is_background(pixels[x, y])
+    for y in range(0, height, max(1, height // 120)):
+        for x in list(range(band)) + list(range(max(band, width - band), width)):
+            border_total += 1
+            border_clean += is_background(pixels[x, y])
+
+    cleanliness = border_clean / border_total if border_total else 0.0
+
+    # Where the product actually is.
+    step = max(1, min(width, height) // 240)
+    min_x, min_y, max_x, max_y = width, height, -1, -1
+    for x in range(0, width, step):
+        for y in range(0, height, step):
+            if not is_background(pixels[x, y]):
+                min_x, max_x = min(min_x, x), max(max_x, x)
+                min_y, max_y = min(min_y, y), max(max_y, y)
+
+    if max_x < 0:
+        return {"width": width, "height": height, "cleanliness": cleanliness,
+                "coverage": 0.0, "edges_touched": 4, "colours": 0, "has_alpha": False}
+
+    coverage = ((max_x - min_x) * (max_y - min_y)) / float(width * height)
+
+    margin_x, margin_y = width * 0.01, height * 0.01
+    edges_touched = sum([
+        min_x <= margin_x, min_y <= margin_y,
+        max_x >= width - margin_x, max_y >= height - margin_y,
+    ])
+
+    # Colour complexity separates a render from a scene: a product on white has few distinct
+    # quantised colours, a photograph of a shop has many.
+    colours = len(set(image.convert("RGB").resize((64, 64)).getdata()))
+    has_alpha = image.getchannel("A").getextrema()[0] < 250
+
+    return {"width": width, "height": height, "cleanliness": cleanliness, "coverage": coverage,
+            "edges_touched": edges_touched, "colours": colours, "has_alpha": has_alpha}
+
+
+# --------------------------------------------------------------------------- scoring
+
+@dataclasses.dataclass
+class Score:
+    total: int
+    breakdown: list[dict]
+    rejected: str | None = None
+
+
+def score_candidate(device: DeviceIdentity, candidate: Candidate, facts: dict,
+                    identity_note: str) -> Score:
+    """
+    A deterministic score with every term recorded.
+
+    Rejections come first and are absolute: a candidate that breaks one is never redeemed by
+    scoring well elsewhere, because a beautiful picture of the wrong phone is the failure this
+    whole exercise exists to prevent.
+    """
+    breakdown: list[dict] = []
+
+    def add(name: str, points: int, detail: str) -> None:
+        breakdown.append({"term": name, "points": points, "detail": detail})
+
+    if min(facts["width"], facts["height"]) < MIN_SOURCE_EDGE:
+        return Score(0, breakdown, f"below {MIN_SOURCE_EDGE}px on an edge "
+                                   f"({facts['width']}x{facts['height']}) - a thumbnail")
+
+    if facts["coverage"] < 0.18:
+        return Score(0, breakdown, f"product fills only {facts['coverage']:.0%} of the frame "
+                                   "- a scene, not a product shot")
+
+    if facts["edges_touched"] >= 2:
+        return Score(0, breakdown, f"content touches {facts['edges_touched']} edges "
+                                   "- the device is cropped")
+
+    if facts["cleanliness"] < 0.55:
+        return Score(0, breakdown, f"background only {facts['cleanliness']:.0%} clean "
+                                   "- not a studio backdrop")
+
+    aspect = facts["width"] / facts["height"] if facts["height"] else 0
+    if aspect > 3 or aspect < 0.25:
+        return Score(0, breakdown, f"aspect ratio {aspect:.2f} - a banner, not a product shot")
+
+    rule = ALLOWED.get(candidate.domain, {})
+    trust = int(rule.get("trust", 0))
+    add("sourceTrust", 25 if rule.get("type") == "manufacturer" else round(trust * 0.2),
+        f"{rule.get('type', 'unknown')} source ({candidate.domain}, trust {trust})")
+
+    add("exactModelMatch", 30, identity_note)
+
+    edge = min(facts["width"], facts["height"])
+    add("resolution",
+        15 if edge >= PREFERRED_SOURCE_EDGE
+        else round(15 * (edge - MIN_SOURCE_EDGE) / (PREFERRED_SOURCE_EDGE - MIN_SOURCE_EDGE)),
+        f"{facts['width']}x{facts['height']} source")
+
+    add("cleanBackground", round(10 * max(0.0, (facts["cleanliness"] - 0.55) / 0.45)),
+        f"{facts['cleanliness']:.0%} of the border is white or clear")
+
+    add("productCoverage", 8 if 0.45 <= facts["coverage"] <= 0.92 else 4,
+        f"product fills {facts['coverage']:.0%} of the frame")
+
+    add("renderLike", 7 if facts["colours"] <= 900 else (3 if facts["colours"] <= 2500 else 0),
+        f"{facts['colours']} distinct colours at 64x64")
+
+    if facts["has_alpha"]:
+        add("transparency", 5, "carries an alpha channel")
+
+    return Score(sum(t["points"] for t in breakdown), breakdown)
+
+
+# --------------------------------------------------------------------------- normalisation
+
+def normalise(data: bytes) -> tuple[bytes, str]:
+    """
+    One canvas, one format, contain-fit, never cropped and never stretched.
+
+    800x800 with 8% padding means the product occupies about 84% of the tile. Re-encoding drops
+    the source metadata, which is how EXIF and anything else riding along leaves.
+    """
+    from PIL import Image, ImageOps
+
+    Image.MAX_IMAGE_PIXELS = LIMITS["max_decoded_pixels"]
+
+    with Image.open(io.BytesIO(data)) as raw:
+        raw.load()
+        image = ImageOps.exif_transpose(raw.convert("RGBA"))
+
+    # Trim the existing background so the padding below is measured from the product itself
+    # rather than from whatever margin the source happened to have.
+    alpha_bbox = image.getchannel("A").getbbox()
+    white = Image.new("RGBA", image.size, (255, 255, 255, 255))
+    bbox = alpha_bbox or Image.alpha_composite(white, image).convert("RGB").getbbox()
+    if bbox:
+        image = image.crop(bbox)
+
+    inner = int(CANVAS * (1 - 2 * PADDING_FRACTION))
+    image.thumbnail((inner, inner), Image.LANCZOS)
+
+    canvas = Image.new("RGBA", (CANVAS, CANVAS), (255, 255, 255, 0))
+    canvas.paste(image, ((CANVAS - image.width) // 2, (CANVAS - image.height) // 2), image)
+
+    for quality in (90, 82, 74, 66, 58):
+        buffer = io.BytesIO()
+        canvas.save(buffer, format=STORED_FORMAT, quality=quality, method=6)
+        if buffer.tell() <= MAX_STORED_BYTES:
+            return buffer.getvalue(), STORED_MIME
+
+    raise FetchError("cannot fit the normalised image under 512 KB")
+
+
+# --------------------------------------------------------------------------- pipeline
+
+def evaluate(device: DeviceIdentity):
+    """Gather candidates for one device, score them all, return the winner and the reasons."""
+    notes: list[str] = []
+    pool: list[Candidate] = []
+
+    for provider in (manufacturer_candidates, commons_candidates):
+        try:
+            pool.extend(provider(device))
+        except FetchError as exc:
+            notes.append(f"{provider.__name__}: {exc}")
+        except Exception as exc:                        # noqa: BLE001 - one device must not stop a run
+            notes.append(f"{provider.__name__}: {exc}")
+
+    if not pool:
+        return None, None, None, notes or ["no candidate from any allowlisted source"]
+
+    best = None
+
+    for candidate in pool:
+        ok, identity_note = identity_verdict(device, candidate)
+        if not ok:
+            notes.append(f"{candidate.title}: {identity_note}")
+            continue
+
+        if candidate.mime and candidate.mime not in ACCEPTED_MIME:
+            notes.append(f"{candidate.title}: media type {candidate.mime} not accepted")
             continue
 
         try:
-            raw = curl_bytes(url)
-            data, content_type = to_stored_image(raw)
-            licence, author = licence_of(filename)
-        except Exception as exc:                          # noqa: BLE001 - report and continue
-            failed += 1
-            say(f"  FAIL   {model}: {exc}")
+            data, domain = fetch(candidate.url)
+        except FetchError as exc:
+            notes.append(f"{candidate.title}: {exc}")
             continue
 
-        note = (f"Wikimedia Commons: File:{filename}; {licence}; {author}; "
-                f"https://commons.wikimedia.org/wiki/File:{urllib.parse.quote(filename)}")
+        actual = sniff(data)
+        if actual not in ACCEPTED_MIME:
+            notes.append(f"{candidate.title}: bytes are not a supported image (sniffed {actual})")
+            continue
 
-        say(f"  {'store ' if args.apply else 'would '}{model:32s} {filename}")
+        try:
+            facts = analyse(data)
+        except Exception as exc:                        # noqa: BLE001 - a corrupt image is a rejection
+            notes.append(f"{candidate.title}: cannot decode ({exc})")
+            continue
+
+        candidate.domain = domain
+        candidate.width, candidate.height, candidate.mime = facts["width"], facts["height"], actual
+        score = score_candidate(device, candidate, facts, identity_note)
+
+        if score.rejected:
+            notes.append(f"{candidate.title}: {score.rejected}")
+            continue
+
+        if best is None or score.total > best[1].total:
+            best = (candidate, score, data)
+
+    if best is None:
+        return None, None, None, notes
+
+    return best[0], best[1], best[2], notes
+
+
+def insert_candidate(device: DeviceIdentity, candidate: Candidate, score: Score,
+                     data: bytes, mime: str, digest: str) -> None:
+    payload = base64.b64encode(data).decode("ascii")
+    psql(f"""
+        INSERT INTO catalog.device_image_candidate
+            (model_key, brand, marketing_name, status, content_type, bytes, sha256,
+             source_type, source_domain, source_url,
+             original_width, original_height, original_bytes,
+             quality_score, score_breakdown)
+        VALUES (
+            '{esc(device.model_key)}', '{esc(device.brand)}', '{esc(device.marketing_name)}',
+            'needs_review', '{mime}', decode('{payload}', 'base64'), decode('{digest}', 'hex'),
+            '{esc(candidate.source_type)}', '{esc(candidate.domain)}', '{esc(candidate.url)}',
+            {candidate.width}, {candidate.height}, {len(data)},
+            {score.total}, '{esc(json.dumps(score.breakdown))}'::jsonb)
+        ON CONFLICT (model_key, sha256) DO NOTHING
+    """)
+
+
+def run(args: argparse.Namespace) -> int:
+    devices = load_devices(args.limit, args.manufacturer, args.model, args.only_missing)
+    live = live_images()
+    seen = known_candidate_hashes()
+
+    say(f"devices selected:  {len(devices)}")
+    say(f"live images:       {len(live)} "
+        f"({sum(1 for s, _ in live.values() if s == 'verified')} verified)")
+    say(f"mode:              "
+        f"{'APPLY - stages candidates, never touches a live image' if args.apply else 'DRY RUN - writes nothing'}")
+    say("")
+
+    created = skipped = rejected = failed = 0
+
+    for device in devices:
+        status = live.get(device.model_key, ("missing", ""))[0]
+
+        say(f"DEVICE:    {device.describe()}")
+        say(f"CURRENT:   {status}")
+
+        if status == "verified" and not args.include_unverified:
+            say("ACTION:    skipped")
+            say("REASON:    a reviewer has verified this image; pass --include-unverified "
+                "to propose against it anyway")
+            say("")
+            skipped += 1
+            continue
+
+        candidate, score, data, notes = evaluate(device)
+
+        if candidate is None or score is None or data is None:
+            say("ACTION:    rejected")
+            say(f"REASON:    {notes[0] if notes else 'no usable candidate'}")
+            for note in notes[1:4]:
+                say(f"           {note}")
+            say("")
+            rejected += 1
+            continue
+
+        try:
+            stored, mime = normalise(data)
+        except Exception as exc:                        # noqa: BLE001
+            say("ACTION:    failed")
+            say(f"REASON:    {exc}")
+            say("")
+            failed += 1
+            continue
+
+        digest = hashlib.sha256(stored).hexdigest()
+
+        if (device.model_key, digest) in seen:
+            say("ACTION:    skipped")
+            say("REASON:    this exact image has been proposed before - already reviewed, "
+                "or already waiting")
+            say("")
+            skipped += 1
+            continue
+
+        if live.get(device.model_key, ("", ""))[1] == digest:
+            say("ACTION:    skipped")
+            say("REASON:    identical to the image already being served")
+            say("")
+            skipped += 1
+            continue
+
+        say(f"CANDIDATE: {candidate.title}")
+        say(f"           {candidate.domain} · {candidate.width}x{candidate.height} "
+            f"· {candidate.source_type} · {candidate.licence or 'licence unknown'}")
+        say(f"SCORE:     {score.total}")
+        for term in score.breakdown:
+            say(f"           {term['term']:>16}: {term['points']:+3d}  {term['detail']}")
 
         if args.apply:
-            payload = base64.b64encode(data).decode("ascii")
-            psql(
-                "INSERT INTO catalog.device_model_image "
-                "(model_key, brand, marketing_name, content_type, bytes, sha256, "
-                " source_note, uploaded_by, uploaded_at, updated_at) VALUES ("
-                f"'{key.replace(chr(39), chr(39) * 2)}', "
-                f"'{brand.replace(chr(39), chr(39) * 2)}', "
-                f"'{model.replace(chr(39), chr(39) * 2)}', "
-                f"'{content_type}', decode('{payload}', 'base64'), "
-                f"sha256(decode('{payload}', 'base64')), "
-                f"'{note.replace(chr(39), chr(39) * 2)}', {user_id}, now(), now()) "
-                "ON CONFLICT (model_key) DO NOTHING")
+            insert_candidate(device, candidate, score, stored, mime, digest)
+            say("ACTION:    candidate-created")
+        else:
+            say("ACTION:    candidate-created (dry run - nothing written)")
 
-        stored += 1
-        stored_bindings += bindings
-        time.sleep(0.4)
+        say("REASON:    awaiting review")
+        say("")
+        created += 1
+        time.sleep(0.3)
 
-    total_bindings = sum(b for _, _, b in wanted)
-    print(f"\n{'stored' if args.apply else 'would store'}: {stored}")
-    print(f"already had:        {skipped_have}")
-    print(f"no image on Commons:{no_image}")
-    print(f"refused by guards:  {rejected}")
-    print(f"failed to fetch:    {failed}")
-    print(f"bindings covered by new images: {stored_bindings:,} of {total_bindings:,} "
-          f"({100.0 * stored_bindings / total_bindings:.1f}% of the models considered)")
-    if not args.apply:
-        print("\nnothing was written; re-run with --apply")
+    say("-" * 62)
+    say(f"{'created' if args.apply else 'would create'}: {created}")
+    say(f"skipped:  {skipped}")
+    say(f"rejected: {rejected}")
+    say(f"failed:   {failed}")
+    if args.apply:
+        say("\nCandidates are staged. No live image has been changed - approve them on the "
+            "Device image review page.")
+    else:
+        say("\nNothing was written. Re-run with --apply to stage these for review.")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Propose device images for review. Never replaces a live image.")
+    parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument("--manufacturer", help="brand or manufacturer, e.g. Samsung")
+    parser.add_argument("--model", help="substring of the marketing name, e.g. 'Galaxy A32'")
+    parser.add_argument("--only-missing", action="store_true",
+                        help="only devices with no live image at all")
+    parser.add_argument("--include-unverified", action="store_true",
+                        help="also propose against images that exist but nobody has verified")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="the default; accepted so it can be written explicitly")
+    parser.add_argument("--apply", action="store_true",
+                        help="stage CANDIDATES. Does not touch a live image - approval is a "
+                             "separate, human step in the review page.")
+    args = parser.parse_args()
+
+    if args.dry_run:
+        args.apply = False
+
+    return run(args)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
