@@ -1,3 +1,5 @@
+using Sqm.Contracts.Devices;
+
 namespace Sqm.Application.Abstractions;
 
 /// <summary>A curated device photograph, with its bytes.</summary>
@@ -84,6 +86,26 @@ public interface IDeviceImageStore
     Task SaveAsync(
         string modelKey, string brand, string marketingName, string contentType, byte[] bytes,
         string sourceNote, long userId, CancellationToken ct);
+
+    /// <summary>
+    /// A page of the images currently being served, for reviewing what is already live.
+    /// </summary>
+    /// <param name="status"><c>verified</c>, <c>needs_review</c>, or <c>all</c>.</param>
+    /// <param name="limit">Rows per page, already clamped.</param>
+    /// <param name="offset">Rows to skip.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<DeviceImagePage> ListAsync(string status, int limit, int offset, CancellationToken ct);
+
+    /// <summary>
+    /// Marks a live image as checked by a person, without changing the image.
+    /// </summary>
+    /// <remarks>
+    /// The counterpart to deleting it. An image sourced before there was any review step is not
+    /// necessarily bad - it is unexamined, and saying "this one is fine" has to be as easy as
+    /// saying "this one is not", or the queue never empties.
+    /// </remarks>
+    /// <returns>False when there is no image for that model.</returns>
+    Task<bool> VerifyAsync(string modelKey, long userId, CancellationToken ct);
 
     /// <summary>Removes one model's photograph. True when there was one to remove.</summary>
     Task<bool> DeleteAsync(string modelKey, CancellationToken ct);

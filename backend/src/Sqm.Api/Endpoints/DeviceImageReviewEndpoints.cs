@@ -60,6 +60,28 @@ public static class DeviceImageReviewEndpoints
             .WithName("RejectDeviceImageCandidate")
             .WithSummary("Turn a candidate down. It will not be proposed again.");
 
+        // ------------------------------------------------------------------ live images
+        //
+        // The other half of the same job. Flagging the 84 automatically sourced images as
+        // unreviewed was not the same as giving anybody a way to act on them: the queue above
+        // only ever shows PROPOSALS, and for an image with no proposal there was nothing to do
+        // but visit each device page in turn.
+        var live = app.MapGroup("/api/v1/devices/images")
+            .RequireAuthorization(PermissionPolicyProvider.Prefix + Permissions.DeviceImageManage)
+            .WithTags("Devices");
+
+        live.MapGet("/", ListLiveAsync)
+            .WithName("ListDeviceImages")
+            .WithSummary("Images currently being served, unverified first.");
+
+        live.MapPost("/{modelKey}/verify", VerifyAsync)
+            .WithName("VerifyDeviceImage")
+            .WithSummary("Record that a person has checked this image. The image is unchanged.");
+
+        live.MapDelete("/{modelKey}", RemoveAsync)
+            .WithName("RemoveDeviceImage")
+            .WithSummary("Remove the image for one model. The device falls back to the placeholder.");
+
         return app;
     }
 
@@ -191,6 +213,69 @@ public static class DeviceImageReviewEndpoints
         return rejected
             ? Results.Ok(new { id, status = "rejected" })
             : Results.Conflict(new { id, message = "That candidate is no longer awaiting review." });
+    }
+
+    private static async Task<IResult> ListLiveAsync(
+        IDeviceImageStore images,
+        CancellationToken ct,
+        string? status = null,
+        int page = 1,
+        int pageSize = 24)
+    {
+        ArgumentNullException.ThrowIfNull(images);
+
+        var wanted = status?.ToLowerInvariant() switch
+        {
+            "verified" => "verified",
+            "all" => "all",
+            _ => "needs_review",
+        };
+
+        var size = Math.Clamp(pageSize, 1, MaxPageSize);
+        var result = await images
+            .ListAsync(wanted, size, Math.Max(0, page - 1) * size, ct).ConfigureAwait(false);
+
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> VerifyAsync(
+        string modelKey, HttpContext http, IDeviceImageStore images, IAuditLog audit,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(images);
+
+        var user = CurrentUser.Require(http);
+        var verified = await images.VerifyAsync(modelKey, user.UserId, ct).ConfigureAwait(false);
+
+        await audit.WriteAsync(Entry(user, http, AuditOutcome.Success, new Dictionary<string, object?>
+        {
+            ["model"] = modelKey,
+            ["action"] = "verify",
+            ["result"] = verified ? "verified" : "no image for that model",
+        }), ct).ConfigureAwait(false);
+
+        return verified
+            ? Results.Ok(new { modelKey, status = "verified" })
+            : Results.NotFound(new { modelKey, message = "No image is stored for that model." });
+    }
+
+    private static async Task<IResult> RemoveAsync(
+        string modelKey, HttpContext http, IDeviceImageStore images, IAuditLog audit,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(images);
+
+        var user = CurrentUser.Require(http);
+        var removed = await images.DeleteAsync(modelKey, ct).ConfigureAwait(false);
+
+        await audit.WriteAsync(Entry(user, http, AuditOutcome.Success, new Dictionary<string, object?>
+        {
+            ["model"] = modelKey,
+            ["action"] = "remove",
+            ["result"] = removed ? "removed" : "no image for that model",
+        }), ct).ConfigureAwait(false);
+
+        return removed ? Results.NoContent() : Results.NotFound();
     }
 
     private static AuditEntry Entry(

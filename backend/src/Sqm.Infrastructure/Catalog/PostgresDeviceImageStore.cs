@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using Dapper;
 using Microsoft.Extensions.Options;
 using Sqm.Application.Abstractions;
+using Sqm.Contracts.Devices;
 using Sqm.Infrastructure.DataImport;
 using Sqm.Infrastructure.Identity;
 
@@ -150,6 +151,70 @@ public sealed class PostgresDeviceImageStore : IDeviceImageStore
     }
 
     /// <inheritdoc />
+    public async Task<DeviceImagePage> ListAsync(
+        string status, int limit, int offset, CancellationToken ct)
+    {
+        // Ordered unverified-first and then by name: the queue exists to be emptied, so the rows
+        // that need a decision belong at the top rather than mixed in with the settled ones.
+        const string Sql = """
+            SELECT i.model_key                     AS ModelKey,
+                   i.brand                         AS Brand,
+                   i.marketing_name                AS MarketingName,
+                   i.status                        AS Status,
+                   i.content_type                  AS ContentType,
+                   octet_length(i.bytes)           AS ByteSize,
+                   i.source_type                   AS SourceType,
+                   i.source_domain                 AS SourceDomain,
+                   i.source_note                   AS SourceNote,
+                   i.quality_score                 AS QualityScore,
+                   u.username                      AS UploadedBy,
+                   v.username                      AS VerifiedBy,
+                   i.updated_at                    AS UpdatedAt,
+                   count(*) OVER ()                AS Total
+            FROM catalog.device_model_image AS i
+            LEFT JOIN auth.user_account AS u ON u.id = i.uploaded_by
+            LEFT JOIN auth.user_account AS v ON v.id = i.verified_by
+            WHERE (@status = 'all' OR i.status = @status)
+            ORDER BY (i.status = 'needs_review') DESC, i.brand, i.marketing_name
+            LIMIT @limit OFFSET @offset
+            """;
+
+        await using var connection = await _db.OpenAsync(ct).ConfigureAwait(false);
+
+        var rows = (await connection.QueryAsync<LiveRow>(
+            new CommandDefinition(Sql, new { status, limit, offset },
+                commandTimeout: _commandTimeout, cancellationToken: ct))
+            .ConfigureAwait(false)).ToList();
+
+        var total = rows.Count > 0 ? rows[0].Total : 0;
+
+        return new DeviceImagePage(total, [.. rows.Select(r => new DeviceImageSummary(
+            r.ModelKey, r.Brand, r.MarketingName, r.Status, r.ContentType, r.ByteSize,
+            r.SourceType, r.SourceDomain, r.SourceNote, r.QualityScore, r.UploadedBy,
+            r.VerifiedBy, r.UpdatedAt))]);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> VerifyAsync(string modelKey, long userId, CancellationToken ct)
+    {
+        // The bytes are untouched. This records a judgement, not a change - which is why it is a
+        // separate verb from uploading and from deleting.
+        const string Sql = """
+            UPDATE catalog.device_model_image
+               SET status = 'verified', verified_by = @userId, verified_at = now()
+             WHERE model_key = @modelKey
+            """;
+
+        await using var connection = await _db.OpenAsync(ct).ConfigureAwait(false);
+
+        var affected = await connection.ExecuteAsync(new CommandDefinition(
+            Sql, new { modelKey, userId }, commandTimeout: _commandTimeout,
+            cancellationToken: ct)).ConfigureAwait(false);
+
+        return affected > 0;
+    }
+
+    /// <inheritdoc />
     public async Task<bool> DeleteAsync(string modelKey, CancellationToken ct)
     {
         const string Sql = "DELETE FROM catalog.device_model_image WHERE model_key = @modelKey";
@@ -182,6 +247,38 @@ public sealed class PostgresDeviceImageStore : IDeviceImageStore
     /// not. The columns are aliased above anyway, so either would work here - but the property
     /// path is the one that keeps working if somebody removes an alias.
     /// </remarks>
+    /// <summary>Settable properties, for the reason the class below gives.</summary>
+    private sealed class LiveRow
+    {
+        public string ModelKey { get; set; } = string.Empty;
+
+        public string Brand { get; set; } = string.Empty;
+
+        public string MarketingName { get; set; } = string.Empty;
+
+        public string Status { get; set; } = string.Empty;
+
+        public string ContentType { get; set; } = string.Empty;
+
+        public int ByteSize { get; set; }
+
+        public string SourceType { get; set; } = string.Empty;
+
+        public string SourceDomain { get; set; } = string.Empty;
+
+        public string SourceNote { get; set; } = string.Empty;
+
+        public int? QualityScore { get; set; }
+
+        public string? UploadedBy { get; set; }
+
+        public string? VerifiedBy { get; set; }
+
+        public DateTimeOffset UpdatedAt { get; set; }
+
+        public int Total { get; set; }
+    }
+
     private sealed class ImageRow
     {
         public string ContentType { get; set; } = string.Empty;

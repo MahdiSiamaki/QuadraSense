@@ -8,7 +8,10 @@ import DeviceImage from './DeviceImage.vue'
 import {
   useImageCandidates,
   useCandidateDecision,
+  useLiveImages,
+  useLiveImageDecision,
   type DeviceImageCandidate,
+  type DeviceImageSummary,
 } from '@/api/deviceImageCandidates'
 import { apiUrl } from '@/api/client'
 import { formatBytes, formatDateTime } from '@/lib/format'
@@ -24,8 +27,51 @@ import { formatBytes, formatDateTime } from '@/lib/format'
  * Side by side rather than a toggle. The question is never "is this a good picture" - it is "is
  * this better than what is there", and that cannot be answered by looking at one of them.
  */
+/**
+ * Two queues, and they answer different questions.
+ *
+ * **Candidates** is "should this replace what is there" - a proposal nobody has acted on.
+ * **Current images** is "should this still be there" - the 84 pictures a script put into the
+ * catalogue before any review step existed. Flagging those was not the same as giving anybody a
+ * way to deal with them, and for an image with no proposal the candidate queue is simply empty.
+ */
+const tab = ref<'candidates' | 'current'>('candidates')
+
 const status = ref<'needs_review' | 'approved' | 'rejected' | 'all'>('needs_review')
 const page = ref(1)
+
+const liveStatus = ref<'needs_review' | 'verified' | 'all'>('needs_review')
+const livePage = ref(1)
+
+const LIVE_STATUSES = [
+  { value: 'needs_review' as const, label: 'Unverified' },
+  { value: 'verified' as const, label: 'Verified' },
+  { value: 'all' as const, label: 'All' },
+]
+
+const live = useLiveImages(liveStatus, livePage)
+const liveDecision = useLiveImageDecision()
+
+const liveItems = computed(() => live.data.value?.items ?? [])
+const liveTotal = computed(() => live.data.value?.total ?? 0)
+
+function setLiveStatus(next: typeof liveStatus.value) {
+  liveStatus.value = next
+  livePage.value = 1
+}
+
+function keep(image: DeviceImageSummary) {
+  liveDecision.mutate({ modelKey: image.modelKey, decision: 'verify' })
+}
+
+function remove(image: DeviceImageSummary) {
+  liveDecision.mutate({ modelKey: image.modelKey, decision: 'remove' })
+}
+
+function liveSrc(image: DeviceImageSummary): string {
+  return apiUrl(
+    `/api/v1/devices/image-candidates/current/${encodeURIComponent(image.modelKey)}`)
+}
 
 const STATUSES = [
   { value: 'needs_review' as const, label: 'Awaiting review' },
@@ -80,27 +126,76 @@ const total = computed(() => queue.data.value?.total ?? 0)
         </p>
       </div>
 
-      <div class="flex rounded-[var(--radius-md)] border p-0.5" role="radiogroup" aria-label="Queue">
-        <button
-          v-for="option in STATUSES"
-          :key="option.value"
-          type="button"
-          role="radio"
-          :aria-checked="status === option.value"
-          class="rounded-[var(--radius-sm)] px-2.5 py-1 text-[var(--text-xs)] font-medium transition-colors"
-          :class="
-            status === option.value
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="flex rounded-[var(--radius-md)] border p-0.5" role="radiogroup" aria-label="Which queue">
+          <button
+            type="button"
+            role="radio"
+            :aria-checked="tab === 'candidates'"
+            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-[var(--text-xs)] font-medium transition-colors"
+            :class="tab === 'candidates'
               ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
-              : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'
-          "
-          @click="setStatus(option.value)"
-        >
-          {{ option.label }}
-        </button>
+              : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'"
+            @click="tab = 'candidates'"
+          >
+            Proposed
+          </button>
+          <button
+            type="button"
+            role="radio"
+            :aria-checked="tab === 'current'"
+            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-[var(--text-xs)] font-medium transition-colors"
+            :class="tab === 'current'
+              ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
+              : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'"
+            @click="tab = 'current'"
+          >
+            Current images
+          </button>
+        </div>
+
+        <div v-if="tab === 'candidates'" class="flex rounded-[var(--radius-md)] border p-0.5" role="radiogroup" aria-label="Queue">
+          <button
+            v-for="option in STATUSES"
+            :key="option.value"
+            type="button"
+            role="radio"
+            :aria-checked="status === option.value"
+            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-[var(--text-xs)] font-medium transition-colors"
+            :class="
+              status === option.value
+                ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
+                : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'
+            "
+            @click="setStatus(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+
+        <div v-else class="flex rounded-[var(--radius-md)] border p-0.5" role="radiogroup" aria-label="Which images">
+          <button
+            v-for="option in LIVE_STATUSES"
+            :key="option.value"
+            type="button"
+            role="radio"
+            :aria-checked="liveStatus === option.value"
+            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-[var(--text-xs)] font-medium transition-colors"
+            :class="
+              liveStatus === option.value
+                ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
+                : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'
+            "
+            @click="setLiveStatus(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
       </div>
     </header>
 
     <AsyncBoundary
+      v-if="tab === 'candidates'"
       :is-loading="queue.isPending.value"
       :is-error="queue.isError.value"
       :error="queue.error.value"
@@ -243,6 +338,88 @@ const total = computed(() => queue.data.value?.total ?? 0)
           :page-size="12"
           :total="total"
           @update:page="page = $event"
+        />
+      </div>
+    </AsyncBoundary>
+
+    <!--
+      Current images. A grid rather than the side-by-side above, because there is nothing to
+      compare against - the question is only whether this picture should stay.
+    -->
+    <AsyncBoundary
+      v-else
+      :is-loading="live.isPending.value"
+      :is-error="live.isError.value"
+      :error="live.error.value"
+      :is-empty="liveItems.length === 0"
+      empty-message="No images in this state."
+      min-height="14rem"
+      @retry="live.refetch()"
+    >
+      <div class="space-y-4">
+        <p class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+          {{ liveTotal }} image{{ liveTotal === 1 ? '' : 's' }}.
+          <template v-if="liveStatus === 'needs_review'">
+            These were sourced automatically before there was any review step. They are being
+            shown to users right now. <strong>Keep</strong> records that you have checked one;
+            <strong>Remove</strong> takes that model back to the drawn placeholder.
+          </template>
+        </p>
+
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <Card v-for="image in liveItems" :key="image.modelKey">
+            <div class="mx-auto size-36">
+              <DeviceImage
+                :tac="image.modelKey"
+                :has-image="true"
+                :src="liveSrc(image)"
+                :name="image.brand"
+                size="lg"
+              />
+            </div>
+
+            <p class="mt-2 truncate text-[var(--text-sm)] font-semibold" :title="image.marketingName">
+              {{ image.brand }} {{ image.marketingName }}
+            </p>
+
+            <p class="mt-0.5 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+              {{ image.sourceType }}
+              <template v-if="image.sourceDomain"> · {{ image.sourceDomain }}</template>
+              · {{ formatBytes(image.byteSize) }}
+            </p>
+
+            <p
+              v-if="image.status === 'verified'"
+              class="mt-0.5 text-[var(--text-2xs)] text-[var(--c-success)]"
+            >
+              verified<template v-if="image.verifiedBy"> by {{ image.verifiedBy }}</template>
+            </p>
+            <p v-else class="mt-0.5 text-[var(--text-2xs)] text-[var(--c-warning)]">
+              nobody has checked this
+            </p>
+
+            <div v-if="image.status !== 'verified'" class="mt-2.5 flex gap-2">
+              <Button variant="primary" :pending="liveDecision.isPending.value" @click="keep(image)">
+                Keep
+              </Button>
+              <Button variant="danger" :pending="liveDecision.isPending.value" @click="remove(image)">
+                Remove
+              </Button>
+            </div>
+            <div v-else class="mt-2.5">
+              <Button variant="ghost" :pending="liveDecision.isPending.value" @click="remove(image)">
+                Remove
+              </Button>
+            </div>
+          </Card>
+        </div>
+
+        <Pagination
+          v-if="liveTotal > 24"
+          :page="livePage"
+          :page-size="24"
+          :total="liveTotal"
+          @update:page="livePage = $event"
         />
       </div>
     </AsyncBoundary>

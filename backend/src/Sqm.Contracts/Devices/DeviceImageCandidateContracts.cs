@@ -66,3 +66,44 @@ public sealed record DeviceImageCandidatePage(int Total, IReadOnlyList<DeviceIma
 /// again: the sourcing tool will not re-offer bytes it has already had an answer about.
 /// </param>
 public sealed record RejectCandidateRequest(string? Reason);
+
+/// <summary>
+/// An image the product is currently serving, for the review of what is already live.
+/// </summary>
+/// <remarks>
+/// Distinct from <see cref="DeviceImageCandidate"/>, which is a proposal. This is the other half
+/// of the same problem: 84 images were sourced automatically before there was any review step,
+/// and flagging them was not the same as giving anybody a way to act on them.
+/// </remarks>
+/// <param name="ModelKey">The model it belongs to.</param>
+/// <param name="Brand">Display brand.</param>
+/// <param name="MarketingName">Display model name.</param>
+/// <param name="Status"><c>verified</c> or <c>needs_review</c>.</param>
+/// <param name="ContentType">Media type.</param>
+/// <param name="ByteSize">Stored size.</param>
+/// <param name="SourceType">Where it came from: manual, wikimedia, and so on.</param>
+/// <param name="SourceDomain">The host, when it was sourced rather than uploaded.</param>
+/// <param name="SourceNote">Free-text provenance, which for the old rows is the licence line.</param>
+/// <param name="QualityScore">Null for anything predating the scoring pipeline.</param>
+/// <param name="UploadedBy">Who put it there.</param>
+/// <param name="VerifiedBy">Who vouched for it, when somebody has.</param>
+/// <param name="UpdatedAt">When it last changed.</param>
+public sealed record DeviceImageSummary(
+    string ModelKey,
+    string Brand,
+    string MarketingName,
+    string Status,
+    string ContentType,
+    int ByteSize,
+    string SourceType,
+    string SourceDomain,
+    string SourceNote,
+    int? QualityScore,
+    string? UploadedBy,
+    string? VerifiedBy,
+    DateTimeOffset UpdatedAt);
+
+/// <summary>A page of the live image catalogue.</summary>
+/// <param name="Total">Images matching the filter, before paging.</param>
+/// <param name="Items">The page.</param>
+public sealed record DeviceImagePage(int Total, IReadOnlyList<DeviceImageSummary> Items);
