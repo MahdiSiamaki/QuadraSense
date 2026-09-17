@@ -104,9 +104,15 @@ LIMITS = CONFIG["limits"]
 # --------------------------------------------------------------------------- plumbing
 
 def say(text: str) -> None:
-    """Print without dying on a console that cannot encode the text."""
+    """
+    Print without dying on a console that cannot encode the text, and without buffering.
+
+    flush=True because this runs for minutes and its output is how anybody knows it is alive.
+    Piped to a file or a pager, Python buffers stdout in 8 KB blocks - which looked exactly like
+    a hung process the first time this was run in the background.
+    """
     encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
-    print(text.encode(encoding, errors="replace").decode(encoding, errors="replace"))
+    print(text.encode(encoding, errors="replace").decode(encoding, errors="replace"), flush=True)
 
 
 def clickhouse(sql: str) -> str:
@@ -399,9 +405,13 @@ def commons_candidates(device: DeviceIdentity, want: int = 8) -> list[Candidate]
     first result wins": it returns several files with their real dimensions and media types,
     which is what a score needs something to choose between.
     """
+    # intitle:, not a free-text phrase. Commons full-text search matches file DESCRIPTIONS, and
+    # searching '"Redmi Note 13"' that way returned a house in Volgograd, a hotel in Nairobi and
+    # a heatwave in Hackney - every one correctly rejected by the identity guard, and every one a
+    # wasted download. Searching the file NAME is also what the guard checks, so the two agree.
     search = fetch(COMMONS_API + "?" + urllib.parse.urlencode({
         "action": "query", "list": "search",
-        "srsearch": f'"{device.search_title}" filetype:bitmap',
+        "srsearch": f'intitle:"{device.search_title}"',
         "srnamespace": "6", "srlimit": str(want), "format": "json",
     }), expect_json=True)
 
