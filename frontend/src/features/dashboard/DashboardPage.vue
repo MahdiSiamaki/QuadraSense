@@ -277,12 +277,26 @@ const activeTacRows = computed(
           qualifier="approx."
           definition="Distinct SIM identities. Slightly higher than the number of subscribers because a number that has been swapped to a new SIM has more than one IMSI."
         />
+        <!--
+          The qualifier says "includes replaced" because this figure is not what its label
+          suggests, and the difference is large enough to change a conclusion.
+
+          It counts IMEIs holding an ACTIVE binding, and a binding stays active until the source
+          removes it - so a phone somebody replaced is still in here. Measured: 1.079 handsets per
+          SIM across the whole population, against 0.996 for bindings the feed confirmed within
+          the last 30 days, where the ratio is the 1:1 it should be. The gap is accumulated
+          history, not devices.
+
+          Stated on the face of the card rather than only in the tooltip: a reader who never
+          hovers would otherwise read it as "phones on the network today", which is the exact
+          misreading that prompted this.
+        -->
         <KpiCard
           label="Handsets"
           :value="kpi.data.value?.distinctDevices"
           identifier="IMEI"
-          qualifier="approx."
-          definition="Distinct 14-digit IMEIs. Excludes the 000000 unknown-device sentinel, which is one literal value shared by 8.8M bindings and is not a handset."
+          qualifier="approx. · includes replaced"
+          definition="Distinct 14-digit IMEIs holding an active binding - NOT a count of handsets in use today. A binding stays active until the source removes it, so a phone that has been replaced is still counted. Measured: 1.079 handsets per SIM overall, against 0.996 for bindings confirmed in the last 30 days, where the ratio is 1:1 as expected; 45% of active bindings have never appeared in a daily file at all, coming from the initial dump, which covers a 30-day window rather than an instant. A dual-SIM phone does not lower this: the GSMA record gives 77% of bindings two IMEIs, one per radio. Excludes the 000000 sentinel, which is one literal value and not a handset."
         />
         <KpiCard
           label="Unknown device"

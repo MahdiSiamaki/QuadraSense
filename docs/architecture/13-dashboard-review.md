@@ -182,6 +182,49 @@ Still carrying a magic number: `ImsiSearchPage` aligns its button with `pt-[1.55
 `items-start`. It is correct today and fragile by construction, but it was not what was reported
 and changing it was not worth the churn in the same pass.
 
+## The Handsets KPI says what it counts
+
+Raised by the product owner as a question rather than a bug: *most phones take two SIMs, so why
+are there more handsets than SIMs, and why are SIMs not equal to numbers?*
+
+The assumption underneath it does not hold. A dual-SIM phone is not one IMEI with two SIMs — it
+has two radios and **two IMEIs**, one per slot, and the GSMA record confirms it: **76.9% of
+bindings are on models with `imeiQuantity = 2`**. Two SIMs of this operator in one handset are
+therefore two IMSIs *and* two IMEIs. Dual-SIM is neutral to the ratio, not a force pushing SIMs
+above handsets. And when the second slot holds a rival's SIM, neither its IMSI nor its IMEI
+appears here at all, because a binding requires a SIM on this network.
+
+What actually lifts handsets above SIMs is **accumulation, not simultaneity**. Only 57.6M of
+75.6M SIMs have exactly one active handset; 10.7M have two, 3.3M have three, with a long tail.
+Splitting the same ratio by how recently the feed confirmed the binding shows it plainly:
+
+| binding last confirmed | handsets per SIM |
+|---|---:|
+| never in a daily file (initial dump only) | 1.092 |
+| within the last 7 days | 1.038 |
+| within the last 30 days | **0.996** |
+| older than 30 days | 1.026 |
+
+In a real snapshot it is 1:1. The headline 1.079 is history that has never been retired: a binding
+stays active until the source removes it, and **45% of active bindings (49.8M) have never appeared
+in a daily file** — they come from the initial dump, which covers a 30-day window rather than an
+instant.
+
+The number of SIMs per number is the mirror image and much smaller: **73,849,139 of 75.5M numbers
+(97.8%) have exactly one SIM**, 737,411 have two, 11,672 have three. The operator issues one
+number per SIM, so it is 1:1 by provisioning; the 0.17% excess is SIM replacement, where the
+number stays and the IMSI changes.
+
+**The card now says so.** "Handsets" counts IMEIs with an active binding, not handsets in use
+today, and reading it as the latter is the misreading that prompted this. The qualifier on the
+face of the card reads `approx. · includes replaced`, and the tooltip carries the measured
+figures. Put on the card rather than only in the tooltip because a reader who never hovers is
+exactly the reader who would draw the wrong conclusion.
+
+Not changed: Subscribers and SIM cards carry the same accumulation in their absolute counts, for
+the same reason. It distorts them far less than it distorts the handset ratio, and qualifying them
+was not asked for — but they are not instantaneous either.
+
 ## Also noted
 
 `.env` and `.env.example` are the same file and both carry `change_me` for the ClickHouse and
