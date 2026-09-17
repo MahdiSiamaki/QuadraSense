@@ -68,6 +68,14 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'IMSI search', permission: Permission.LookupImsi },
   },
   {
+    path: '/relationships',
+    name: 'relationships',
+    component: () => import('@/features/lookup/RelationshipExplorerPage.vue'),
+    // The centre's own kind decides the real permission, checked server-side. This gate only
+    // keeps the page out of the navigation for somebody who can look nothing up at all.
+    meta: { title: 'Relationship explorer', permission: Permission.LookupSubscriber },
+  },
+  {
     path: '/profile',
     name: 'profile',
     component: () => import('@/features/profile/ProfilePage.vue'),

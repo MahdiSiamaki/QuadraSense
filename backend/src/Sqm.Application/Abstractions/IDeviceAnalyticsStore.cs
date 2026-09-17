@@ -1,4 +1,5 @@
 using Sqm.Contracts.Dashboard;
+using Sqm.Contracts.Lookup;
 using Sqm.Domain.Identifiers;
 
 namespace Sqm.Application.Abstractions;
@@ -122,6 +123,16 @@ public interface IDeviceAnalyticsStore
     /// thumbnail. Null when the TAC is not in the active GSMA version.
     /// </remarks>
     Task<DeviceModelIdentity?> GetModelIdentityAsync(string tac, CancellationToken ct);
+
+    /// <summary>
+    /// Everything connected to one identifier, in whichever direction it is held.
+    /// </summary>
+    /// <param name="kind">Which of the three the identifier is.</param>
+    /// <param name="identifier">The identifier, already validated.</param>
+    /// <param name="allowed">Which sections the caller may see, decided by permission.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<RelationshipGraph> GetRelationshipsAsync(
+        RelatedKind kind, string identifier, RelationshipSections allowed, CancellationToken ct);
 
     /// <summary>Distinct values available to filter the catalogue by.</summary>
     Task<DeviceFacetsData> GetDeviceFacetsAsync(CancellationToken ct);

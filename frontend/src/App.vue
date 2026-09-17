@@ -40,6 +40,13 @@ const nav = computed(() =>
     { to: '/imports', label: 'Imports', show: can(Permission.ImportView) },
     { to: '/lookup', label: 'Lookup', show: can(Permission.LookupSubscriber) },
     { to: '/lookup/imsi', label: 'IMSI', show: can(Permission.LookupImsi) },
+    // Reachable by anybody who can look up any one of the three; the server decides per centre
+    // which sections they actually get back.
+    {
+      to: '/relationships',
+      label: 'Relationships',
+      show: canAny(Permission.LookupSubscriber, Permission.LookupImsi, Permission.LookupImei),
+    },
     {
       to: '/admin/users',
       label: 'Users',

@@ -231,6 +231,7 @@ app.MapTacEndpoints();
 app.MapLookupEndpoints();
 app.MapImsiEndpoints();
 app.MapDeviceEndpoints();
+app.MapRelationshipEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);
 

@@ -213,6 +213,7 @@ docs/
     11-clickhouse-memory.md        container memory: what went wrong and what the settings mean
     12-identity-and-access.md      how auth, RBAC and audit are built, and how to operate them
     13-dashboard-review.md         every dashboard figure checked against the store, and what was wrong
+    14-relationship-explorer.md    number / SIM / handset links, and which one of them is inferred
   adr/             Architecture Decision Records
 backend/
   src/Sqm.Domain          the binding fold and identifier rules
