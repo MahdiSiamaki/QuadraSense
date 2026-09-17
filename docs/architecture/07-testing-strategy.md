@@ -116,10 +116,10 @@ The plan above is the target. This is the state of it.
 |---|---:|---|
 | `Sqm.Domain.Tests` | 134 | The binding fold, the identifier rules, the IMSI search term, the device search term, and masking. Every case cites a discovery measurement. |
 | `Sqm.Ingestion.Tests` | 47 | Row validation, schema-change classification, and the structural scan of a TAC export - RFC 4180 quoting, repeated TACs, records with bytes missing. |
-| `Sqm.Integration.Tests` | 41 | The import queue's guarantees, the authorisation rule, and endpoint coverage - against a real PostgreSQL. |
+| `Sqm.Integration.Tests` | 42 | The import queue's guarantees, the authorisation rule, and endpoint coverage - against a real PostgreSQL. |
 | `Sqm.Application.Tests` | 1 | Placeholder. |
 
-**223 passing**, plus 40 checks in `tools/test_device_image_pipeline.py` - the image sourcing
+**224 passing**, plus 40 checks in `tools/test_device_image_pipeline.py` - the image sourcing
 rules are Python and are tested with plain asserts against synthesised images, because adding a
 Python test runner to run forty checks would be more infrastructure than the thing it tests.
 

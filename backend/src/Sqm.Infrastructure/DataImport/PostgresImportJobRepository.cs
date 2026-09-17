@@ -305,6 +305,18 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                    -- snapshots - which describe a range or no day at all - neither block nor are
                    -- blocked. A day the source never delivered has no job row and cannot block
                    -- anything either; you cannot wait for something nobody queued.
+                   -- The condition is about earlier DAYS, not earlier JOBS, and the difference
+                   -- is what jammed the queue once.
+                   --
+                   -- 2026-07-11 failed as job 593 and was re-imported successfully as job 682.
+                   -- The day had landed; the failed attempt had not. Written as "no earlier job
+                   -- that did not succeed", job 593 blocked 07-12 through 07-15 indefinitely, and
+                   -- nothing short of editing the row would have released them - a reprocess adds
+                   -- a NEW job and leaves the old one exactly as it was.
+                   --
+                   -- So the inner NOT EXISTS asks the question that actually matters: is there an
+                   -- earlier day whose events are not in the analytics store? A failed attempt for
+                   -- a day that some other job landed is history, not a blockage.
                    AND (j.business_date IS NULL OR NOT EXISTS (
                            SELECT 1
                              FROM imports.import_job earlier
@@ -312,6 +324,13 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                               AND earlier.business_date IS NOT NULL
                               AND earlier.business_date < j.business_date
                               AND earlier.status NOT IN ('COMPLETED', 'PARTIALLY_COMPLETED')
+                              AND NOT EXISTS (
+                                      SELECT 1
+                                        FROM imports.import_job landed
+                                       WHERE landed.source_code = earlier.source_code
+                                         AND landed.business_date = earlier.business_date
+                                         AND landed.status IN ('COMPLETED', 'PARTIALLY_COMPLETED')
+                                  )
                        ))
                  ORDER BY j.priority DESC, j.business_date NULLS LAST, j.created_at
                    FOR UPDATE SKIP LOCKED

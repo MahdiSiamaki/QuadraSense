@@ -190,6 +190,24 @@ Between them, a snapshot is either built from the right state or is not claimed 
 Checked by `ImportQueueTests`: a later day is not claimed while an earlier one is queued or
 running, and a failed day blocks the days after it.
 
+### A failed attempt must not block a day that has already landed
+
+The rule above was first written as *"no earlier JOB that did not succeed"*, and that jammed the
+real queue.
+
+2026-07-11 failed as job 593 and was re-imported successfully as job 682 — `PARTIALLY_COMPLETED`
+and `is_effective`. The **day** had landed; the failed **attempt** had not. So job 593 blocked
+2026-07-12 through 2026-07-15 indefinitely, and nothing short of editing the row could have
+released them: a reprocess adds a *new* job and leaves the old one exactly as it was.
+
+The condition now asks the question that actually matters — is there an earlier day whose events
+are not in the analytics store — by excluding any earlier job whose business date some other job
+has landed. The original guarantee is unchanged and still tested: a day that has never imported
+still blocks every day after it.
+
+`A_failed_attempt_stops_blocking_once_that_day_lands_another_way` pins it, and was verified by
+reverting the fix and watching it fail.
+
 ### Crash recovery — the lease
 
 A running job holds a **lease** that the worker renews as it makes progress. If the worker dies,

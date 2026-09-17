@@ -149,6 +149,77 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
     }
 
     [Fact]
+    public async Task A_failed_attempt_stops_blocking_once_that_day_lands_another_way()
+    {
+        if (!await ReadyAsync())
+        {
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+
+        try
+        {
+            // The shape that jammed the real queue. 2026-07-11 failed as one job and was
+            // re-imported successfully as another; the day had landed, the failed attempt had
+            // not. Written as "no earlier JOB that did not succeed", the dead attempt blocked
+            // four later days indefinitely - and a reprocess could not release them, because it
+            // adds a new job and leaves the old one exactly as it was.
+            var badFile = await fixture.Repository.RegisterFileAsync(
+                TestSource, "day-one-attempt-one.csv", Stored(Hash("superseded-failure")),
+                "tester", ct);
+            var bad = await fixture.Repository.EnqueueAsync(
+                TestSource, badFile.FileId, new DateOnly(2026, 5, 1), "tester", ct: ct);
+
+            var laterFile = await fixture.Repository.RegisterFileAsync(
+                TestSource, "day-two.csv", Stored(Hash("superseded-later-day")), "tester", ct);
+            await fixture.Repository.EnqueueAsync(
+                TestSource, laterFile.FileId, new DateOnly(2026, 5, 2), "tester", ct: ct);
+
+            var first = await fixture.Repository.ClaimNextAsync(
+                "worker-a", TimeSpan.FromMinutes(5), ct);
+            Assert.NotNull(first);
+            Assert.Equal(bad, first.JobId);
+
+            await fixture.Repository.CompleteAsync(
+                bad, ImportJobStatus.Failed, new ImportCounters(),
+                makeEffective: false, businessDate: new DateOnly(2026, 5, 1), ct);
+
+            // Still blocked: 1 May has not landed by any route yet. This is the guarantee that
+            // must survive the fix, so it is asserted before the fix is exercised.
+            Assert.Null(await fixture.Repository.ClaimNextAsync(
+                "worker-b", TimeSpan.FromMinutes(5), ct));
+
+            // Now 1 May is re-imported successfully as a second job, which is what a reprocess
+            // does.
+            var retryFile = await fixture.Repository.RegisterFileAsync(
+                TestSource, "day-one-attempt-two.csv", Stored(Hash("superseded-retry")),
+                "tester", ct);
+            var retry = await fixture.Repository.EnqueueAsync(
+                TestSource, retryFile.FileId, new DateOnly(2026, 5, 1), "tester", ct: ct);
+
+            var second = await fixture.Repository.ClaimNextAsync(
+                "worker-c", TimeSpan.FromMinutes(5), ct);
+            Assert.NotNull(second);
+            Assert.Equal(retry, second.JobId);
+
+            await fixture.Repository.CompleteAsync(
+                retry, ImportJobStatus.PartiallyCompleted, new ImportCounters(),
+                makeEffective: true, businessDate: new DateOnly(2026, 5, 1), ct);
+
+            // 1 May has landed, so 2 May is claimable - the dead attempt is history, not a wall.
+            var third = await fixture.Repository.ClaimNextAsync(
+                "worker-d", TimeSpan.FromMinutes(5), ct);
+            Assert.NotNull(third);
+            Assert.Equal(new DateOnly(2026, 5, 2), third!.BusinessDate);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
+    [Fact]
     public async Task The_same_content_uploaded_twice_is_recognised_not_imported_again()
     {
         if (!await ReadyAsync())
