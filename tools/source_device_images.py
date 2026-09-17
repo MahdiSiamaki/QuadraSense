@@ -77,6 +77,10 @@ MAX_STORED_BYTES = 512 * 1024          # matches the database CHECK
 MIN_SOURCE_EDGE = 400
 PREFERRED_SOURCE_EDGE = 1000
 
+# What width to ask the file host for. Above PREFERRED_SOURCE_EDGE so nothing is lost to the
+# resolution score, and far below a typical Commons original, which is frequently 20 megapixels.
+RENDITION_WIDTH = 1400
+
 # Wikimedia answers 429 when asked too quickly, and answers it with an HTML page rather than an
 # error the transport reports. Retrying politely is the difference between "this model has no
 # usable image" and "we asked too fast".
@@ -419,22 +423,37 @@ def commons_candidates(device: DeviceIdentity, want: int = 8) -> list[Candidate]
     if not titles:
         return []
 
+    # Ask for a rendition at the width we actually want, not the original. A Commons original is
+    # often a 20-megapixel photograph, and we normalise to 800px square - downloading tens of
+    # megabytes to throw away 95% of them is what got this IP rate-limited by the file host in the
+    # first place. RENDITION_WIDTH stays above PREFERRED_SOURCE_EDGE so the resolution score is
+    # unaffected.
     info = fetch(COMMONS_API + "?" + urllib.parse.urlencode({
         "action": "query", "prop": "imageinfo",
         "iiprop": "url|size|mime|extmetadata",
+        "iiurlwidth": str(RENDITION_WIDTH),
         "titles": "|".join(titles[:20]), "format": "json",
     }), expect_json=True)
 
     out: list[Candidate] = []
     for page in info.get("query", {}).get("pages", {}).values():
         details = (page.get("imageinfo") or [{}])[0]
-        url = details.get("url")
+
+        # The rendition when the server made one, the original when it did not. Its dimensions
+        # are the ones scored, because they are the ones that will be normalised.
+        url = details.get("thumburl") or details.get("url")
         if not url:
             continue
         meta = details.get("extmetadata", {})
         out.append(Candidate(
             url=url, domain=host_of(url), source_type="encyclopedic",
             title=page.get("title", "").removeprefix("File:"),
+            # The ORIGINAL dimensions, never the rendition's. Commons echoes the width that was
+            # ASKED for even when the file is smaller and it can only upscale: requesting 1400
+            # from a 195x400 file reports thumbwidth 1400x2872. Recording that would let a
+            # thumbnail claim to be high-resolution. Scoring uses the decoded bytes regardless,
+            # so this is provenance rather than a second line of defence - but a provenance field
+            # that lies is worse than none.
             width=int(details.get("width") or 0),
             height=int(details.get("height") or 0),
             mime=details.get("mime", ""),
