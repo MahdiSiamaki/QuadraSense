@@ -263,19 +263,25 @@ const activeTacRows = computed(
           identifier="MSISDN + IMSI + IMEI"
           definition="Rows in the current state: one per distinct number-SIM-handset combination. This is the grain of the whole dataset, not a count of people."
         />
+        <!--
+          Same accumulation as Handsets, smaller but not small: a number stays counted until the
+          source removes it. Measured by how recently the feed last said anything about each
+          number - 27.7% have NEVER appeared in a daily file, and only 36.1% were confirmed in the
+          last 30 days. "still counted" is the honest short form.
+        -->
         <KpiCard
           label="Subscribers"
           :value="kpi.data.value?.distinctSubscribers"
           identifier="MSISDN"
-          qualifier="approx."
-          definition="Distinct phone numbers with at least one active binding. Estimated with HyperLogLog (~0.5% error); exact counts are available via export."
+          qualifier="approx. · incl. dormant"
+          definition="Distinct phone numbers with at least one active binding - not a count of numbers in use today. A binding stays active until the source removes it, so a number that has gone quiet is still counted. Measured by when the feed last mentioned each number: 27.7% have never appeared in a daily file at all, coming from the initial dump; 36.1% were confirmed in the last 30 days, 22.3% within 90, and 13.9% not for over 90 days. Estimated with HyperLogLog (~0.5% error); exact counts are available via export."
         />
         <KpiCard
           label="SIM cards"
           :value="kpi.data.value?.distinctSims"
           identifier="IMSI"
-          qualifier="approx."
-          definition="Distinct SIM identities. Slightly higher than the number of subscribers because a number that has been swapped to a new SIM has more than one IMSI."
+          qualifier="approx. · incl. dormant"
+          definition="Distinct SIM identities with an active binding - not a count of SIMs in use today, for the same reason as Subscribers: 28.2% have never appeared in a daily file, 35.8% were confirmed in the last 30 days. Slightly higher than the number of subscribers because a number swapped to a new SIM has more than one IMSI - measured at 1.0017 SIMs per number, with 97.8% of numbers holding exactly one."
         />
         <!--
           The qualifier says "includes replaced" because this figure is not what its label

@@ -221,9 +221,24 @@ face of the card reads `approx. · includes replaced`, and the tooltip carries t
 figures. Put on the card rather than only in the tooltip because a reader who never hovers is
 exactly the reader who would draw the wrong conclusion.
 
-Not changed: Subscribers and SIM cards carry the same accumulation in their absolute counts, for
-the same reason. It distorts them far less than it distorts the handset ratio, and qualifying them
-was not asked for — but they are not instantaneous either.
+**Subscribers and SIM cards carry it too, and now say so.** The same rule applies - a number or a
+SIM stays counted until the source removes it - and measuring when the feed last mentioned each
+one shows it is not a rounding detail:
+
+| last confirmed | subscribers | SIMs |
+|---|---:|---:|
+| never in a daily file | **27.7%** | **28.2%** |
+| within the last 30 days | 36.1% | 35.8% |
+| within the last 90 days | 22.3% | 22.2% |
+| more than 90 days ago | 13.9% | 13.8% |
+
+Better than a quarter of both counts has never been confirmed by a daily file at all; only about
+a third was confirmed in the last month. Both cards now read `approx. · incl. dormant`, with the
+distribution in the tooltip.
+
+This does not make the figures wrong - "has an active binding" is exactly what they count, and it
+is the right denominator for the shares on this page. It makes them answerable: a reader asking
+"how many customers do we have today" now has the information to know this is not that number.
 
 ## Also noted
 
