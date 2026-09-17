@@ -50,7 +50,13 @@ const MODES: Array<{ id: VendorRanking; label: string; help: string }> = [
 
 const ranking = ref<VendorRanking>('movement')
 const normalised = ref(false)
-const limit = ref(8)
+/**
+ * How many vendors the widget opens with.
+ *
+ * Five rather than eight by product-owner decision. The selector still offers 5, 8, 12 and 20,
+ * so this is the opening view rather than a ceiling.
+ */
+const limit = ref(5)
 const from = ref('')
 const to = ref('')
 
