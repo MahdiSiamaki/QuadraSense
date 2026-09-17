@@ -58,42 +58,53 @@ function correlationId(e: unknown): string | null {
     </header>
 
     <Card>
-      <form class="flex flex-wrap items-end gap-3" @submit.prevent="search">
-        <div class="min-w-[16rem] flex-1">
-          <label for="msisdn" class="block text-[var(--text-xs)] font-medium text-[var(--c-text-secondary)]">
-            Subscriber number
-          </label>
-          <input
-            id="msisdn"
-            v-model="input"
-            inputmode="tel"
-            autocomplete="off"
-            placeholder="0913 123 4567"
-            aria-describedby="msisdn-formats"
-            class="mt-1.5 w-full rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-3 py-2 font-[var(--font-mono)] text-[var(--text-sm)] tabular placeholder:text-[var(--c-text-muted)]"
-          />
-          <!--
-            The accepted forms are stated rather than left to be discovered. An operator pastes
-            whatever they were given - a spreadsheet cell, a ticket, a chat message - and the one
-            thing they should not have to do is convert it by hand for a number they are about to
-            investigate.
-          -->
-          <p id="msisdn-formats" class="mt-1.5 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
-            National or international, with or without separators —
-            <code class="font-[var(--font-mono)]">0913…</code>,
-            <code class="font-[var(--font-mono)]">913…</code>,
-            <code class="font-[var(--font-mono)]">+98 913…</code>,
-            <code class="font-[var(--font-mono)]">0098913…</code>
-            all find the same subscriber.
-          </p>
+      <form @submit.prevent="search">
+        <!--
+          The help text is a sibling of this row, not a child of the field.
+
+          It used to sit inside the flex item, and `items-end` then aligned the button with
+          the bottom of the whole column - which is the bottom of the help paragraph, not of
+          the input. Measured against this stylesheet, the button sat 26px low. A row that
+          contains only the things that should line up is what keeps them lined up.
+        -->
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="min-w-[16rem] flex-1">
+            <label for="msisdn" class="block text-[var(--text-xs)] font-medium text-[var(--c-text-secondary)]">
+              Subscriber number
+            </label>
+            <input
+              id="msisdn"
+              v-model="input"
+              inputmode="tel"
+              autocomplete="off"
+              placeholder="0913 123 4567"
+              aria-describedby="msisdn-formats"
+              class="mt-1.5 w-full rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-3 py-2 font-[var(--font-mono)] text-[var(--text-sm)] tabular placeholder:text-[var(--c-text-muted)]"
+            />
+          </div>
+          <button
+            type="submit"
+            :disabled="isLoading || !input.trim()"
+            class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-4 py-2 text-[var(--text-sm)] font-medium text-[var(--c-accent-text)] hover:bg-[var(--c-accent-hover)] disabled:opacity-50"
+          >
+            {{ isLoading ? 'Searching…' : 'Search' }}
+          </button>
         </div>
-        <button
-          type="submit"
-          :disabled="isLoading || !input.trim()"
-          class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-4 py-2 text-[var(--text-sm)] font-medium text-[var(--c-accent-text)] hover:bg-[var(--c-accent-hover)] disabled:opacity-50"
-        >
-          {{ isLoading ? 'Searching…' : 'Search' }}
-        </button>
+
+        <!--
+          The accepted forms are stated rather than left to be discovered. An operator pastes
+          whatever they were given - a spreadsheet cell, a ticket, a chat message - and the one
+          thing they should not have to do is convert it by hand for a number they are about to
+          investigate.
+        -->
+        <p id="msisdn-formats" class="mt-1.5 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          National or international, with or without separators —
+          <code class="font-[var(--font-mono)]">0913…</code>,
+          <code class="font-[var(--font-mono)]">913…</code>,
+          <code class="font-[var(--font-mono)]">+98 913…</code>,
+          <code class="font-[var(--font-mono)]">0098913…</code>
+          all find the same subscriber.
+        </p>
       </form>
 
       <p class="mt-3 text-[var(--text-2xs)] text-[var(--c-text-muted)]">

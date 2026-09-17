@@ -12,6 +12,7 @@ import {
 import { CanvasRenderer } from 'echarts/renderers'
 import { formatCompact, formatFull, formatSigned } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
+import { chartColor } from '@/lib/chart-colors'
 import type { DailyChange } from '@/api/dashboard'
 
 echarts.use([
@@ -49,9 +50,12 @@ const container = ref<HTMLElement | null>(null)
 const chart = shallowRef<echarts.ECharts | null>(null)
 const { isDark } = useTheme()
 
-function cssVar(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-}
+/*
+  Tokens are oklch, and ECharts needs a colour it can compute with, not only paint. Reading the
+  custom property directly returned oklch, which drew correctly and then made the hovered bar
+  disappear - zrender cannot parse it, so the hover fill resolved to undefined. See chart-colors.
+*/
+const cssVar = chartColor
 
 function render() {
   if (!chart.value) return

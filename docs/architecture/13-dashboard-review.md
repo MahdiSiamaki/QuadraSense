@@ -131,6 +131,57 @@ refresh on activation, which costs the full ~14-minute mart rebuild and is there
 about how TAC activation should behave rather than a correction to make unasked. Recorded here so
 it is a known property and not a surprise.
 
+## UI defects, found by the product owner and fixed
+
+Three, reported from screenshots on 2026-09-17. All three were measured in the browser against
+this application's own stylesheet before being changed, and the first was measured again from the
+painted canvas pixels afterwards.
+
+### Hovering a bar made it disappear
+
+Every chart, both themes. The design tokens in `tokens.css` are `oklch()`, and ECharts renders to
+canvas where the browser understands that string perfectly - so bars drew correctly. But ECharts
+does not only paint a colour, it *computes* with it: the default hover state is the base colour
+lifted, through zrender's own parser, which handles hex, `rgb()`, `rgba()`, `hsl()` and `hsla()`
+and returns `undefined` for anything else. Measured against the installed version:
+
+```
+lift('#4f79e8')             -> 'rgba(86,133,255,1)'
+lift('oklch(58% 0.16 264)') -> undefined
+```
+
+So the hover fill resolved to nothing and the bar vanished. Confirmed from the canvas itself, by
+reading the pixel inside a bar before and during hover:
+
+| | before hover | on hover |
+|---|---|---|
+| oklch token, as shipped | `rgba(72,116,216,255)` | **`rgba(0,0,0,0)`** |
+| resolved to `rgb()` | `rgba(72,116,216,255)` | `rgba(79,127,237,255)` |
+
+`lib/chart-colors.ts` now resolves a token by painting one pixel and reading it back, which asks
+the browser for the colour it would actually have drawn. That is the right answer by definition,
+and stays right if the tokens ever move to `color()` or `lab()`. The three ECharts components -
+`BarChart`, `ChangeTimeSeries`, `ChurnTimeSeries` - all use it; the other widgets are plain CSS,
+where `var()` works and there was never a bug.
+
+### Modals opened in the corner, not the middle
+
+A modal `<dialog>` is laid out in the top layer against `inset: 0`, so the user agent centres it
+with `margin: auto`. Tailwind's Preflight resets `margin: 0` on every element, `dialog` included,
+which silently removes that. Measured in this app: computed margin `0px`, dialog at `left 0,
+top 0`. With `margin: auto` restored it centres. One class on the shared `Modal.vue`, so every
+dialog in the product is fixed at once.
+
+### The lookup Search button sat below its input
+
+The form was `flex items-end`, and the accepted-formats help text was *inside* the flex item - so
+the button aligned to the bottom of the whole column rather than to the input. Measured at **26px
+low**. The help text is now a sibling of the row, which is 0.
+
+Still carrying a magic number: `ImsiSearchPage` aligns its button with `pt-[1.55rem]` against
+`items-start`. It is correct today and fragile by construction, but it was not what was reported
+and changing it was not worth the churn in the same pass.
+
 ## Also noted
 
 `.env` and `.env.example` are the same file and both carry `change_me` for the ClickHouse and

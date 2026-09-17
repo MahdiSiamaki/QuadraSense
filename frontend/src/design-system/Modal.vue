@@ -59,9 +59,18 @@ const widths: Record<string, string> = {
 </script>
 
 <template>
+  <!--
+    m-auto is what centres this, and it is load-bearing rather than cosmetic.
+
+    A modal <dialog> is laid out in the top layer against `inset: 0`, so the user agent centres it
+    with `margin: auto`. Tailwind's Preflight resets `margin: 0` on every element, `dialog`
+    included, which silently removes that - measured in this app's own stylesheet: computed margin
+    `0px`, and the dialog rendered at left 0, top 0, pinned to the corner of the screen. Restoring
+    the margin puts it back in the middle.
+  -->
   <dialog
     ref="dialog"
-    class="w-[calc(100vw-2rem)] rounded-[var(--radius-lg)] border bg-[var(--c-surface)] p-0 text-[var(--c-text)] shadow-[var(--shadow-md)] backdrop:bg-black/40 backdrop:backdrop-blur-[1px]"
+    class="m-auto w-[calc(100vw-2rem)] rounded-[var(--radius-lg)] border bg-[var(--c-surface)] p-0 text-[var(--c-text)] shadow-[var(--shadow-md)] backdrop:bg-black/40 backdrop:backdrop-blur-[1px]"
     :class="widths[size]"
     @cancel="requestClose"
     @click="onBackdropClick"
