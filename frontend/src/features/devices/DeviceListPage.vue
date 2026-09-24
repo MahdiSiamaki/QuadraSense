@@ -121,8 +121,11 @@ function isRealDevice(d: DeviceSummary): boolean {
   return d.tac.length > 0
 }
 
-const columnClass =
-  'cursor-pointer select-none px-3 py-2 text-right font-medium hover:text-[var(--c-text)]'
+// Alignment is left out on purpose and set per column. With `text-right` in here, the TAC header
+// carried both `text-right` and `text-left`, and whichever Tailwind emits later wins - not the
+// one written last in the template - so the header sat right while its values sat left.
+const sortableClass = 'cursor-pointer select-none px-3 py-2 font-medium hover:text-[var(--c-text)]'
+const columnClass = `${sortableClass} text-right`
 </script>
 
 <template>
@@ -263,7 +266,7 @@ const columnClass =
               >
                 <tr>
                   <th scope="col" class="px-3 py-2 text-left font-medium">Device</th>
-                  <th scope="col" :class="[columnClass, 'text-left']" @click="sortBy('tac')">
+                  <th scope="col" :class="[sortableClass, 'text-left']" @click="sortBy('tac')">
                     TAC{{ sortMark('tac') }}
                   </th>
                   <th scope="col" class="px-3 py-2 text-left font-medium">Type</th>
