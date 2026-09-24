@@ -155,6 +155,11 @@ public static class DashboardEndpoints
         string? msisdnPrefix = null,
         bool includeUnknownDevice = true)
     {
+        if (InvalidMsisdnPrefix(msisdnPrefix) is { } invalid)
+        {
+            return invalid;
+        }
+
         var filter = BuildFilter(
             manufacturer, vendor, deviceType, operatingSystem, tac, msisdnPrefix,
             null, null, includeUnknownDevice);
@@ -180,6 +185,11 @@ public static class DashboardEndpoints
         if (!TryParseDimension(dimension, out var parsed))
         {
             return InvalidDimension(dimension);
+        }
+
+        if (InvalidMsisdnPrefix(msisdnPrefix) is { } invalid)
+        {
+            return invalid;
         }
 
         var filter = BuildFilter(
@@ -230,6 +240,11 @@ public static class DashboardEndpoints
             return InvalidCountBy(countBy!);
         }
 
+        if (InvalidMsisdnPrefix(msisdnPrefix) is { } invalid)
+        {
+            return invalid;
+        }
+
         var filter = BuildFilter(
             manufacturer, vendor, deviceType, operatingSystem, tac, msisdnPrefix,
             null, null, includeUnknownDevice);
@@ -247,6 +262,39 @@ public static class DashboardEndpoints
         var filter = new DashboardFilter(SequenceFrom: sequenceFrom, SequenceTo: sequenceTo);
         var rows = await store.GetChangeSeriesAsync(filter, ct).ConfigureAwait(false);
         return Results.Ok(rows);
+    }
+
+    /// <summary>
+    /// Refuses an MSISDN prefix longer than an operator range, or one that is not digits.
+    /// </summary>
+    /// <remarks>
+    /// The limit is a privacy boundary, by the product owner's decision. Ten digits is a whole
+    /// number, and a dashboard filtered to one subscriber answers "which handset does this person
+    /// use" for anyone with dashboard.view - no lookup permission, no audit entry, and the number
+    /// in the URL. A full number belongs in Subscriber Lookup, which checks and records both.
+    /// Checked here so bad input is a 400, not an exception from the query builder.
+    /// </remarks>
+    private static IResult? InvalidMsisdnPrefix(string? msisdnPrefix)
+    {
+        if (string.IsNullOrWhiteSpace(msisdnPrefix))
+        {
+            return null;
+        }
+
+        var prefix = msisdnPrefix.Trim();
+        if (prefix.Length <= DashboardFilter.MaxMsisdnPrefixDigits && prefix.All(char.IsAsciiDigit))
+        {
+            return null;
+        }
+
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["msisdnPrefix"] =
+            [
+                $"An MSISDN prefix is 1 to {DashboardFilter.MaxMsisdnPrefixDigits} digits. To look "
+                + "up one subscriber, use Subscriber Lookup.",
+            ],
+        });
     }
 
     private static DashboardFilter BuildFilter(

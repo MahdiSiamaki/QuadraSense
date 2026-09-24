@@ -37,9 +37,10 @@ internal sealed class FilterBuilder
             // Validated as digits before binding. A prefix match on a numeric column is expressed as a
             // range on the string form so the primary index can still be used.
             var prefix = filter.MsisdnPrefix.Trim();
-            if (!IsAllDigits(prefix) || prefix.Length > 10)
+            if (!IsAllDigits(prefix) || prefix.Length > DashboardFilter.MaxMsisdnPrefixDigits)
             {
-                throw new ArgumentException("MSISDN prefix must be up to 10 digits.", nameof(filter));
+                throw new ArgumentException(
+                    $"MSISDN prefix must be up to {DashboardFilter.MaxMsisdnPrefixDigits} digits.", nameof(filter));
             }
 
             b._conditions.Add("startsWith(toString(b.msisdn), {f_msisdn_prefix:String})");
