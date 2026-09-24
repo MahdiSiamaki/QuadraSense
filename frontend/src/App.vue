@@ -91,12 +91,13 @@ async function signOut() {
           </span>
         </RouterLink>
 
-        <nav class="flex items-center gap-1" aria-label="Main">
+        <!-- Scrolls within the bar on a narrow screen rather than widening the whole page. -->
+        <nav class="flex min-w-0 items-center gap-1 overflow-x-auto" aria-label="Main">
           <RouterLink
             v-for="item in nav"
             :key="item.to"
             :to="item.to"
-            class="rounded-[var(--radius-md)] px-2.5 py-1.5 text-[var(--text-sm)] font-medium transition-colors"
+            class="shrink-0 rounded-[var(--radius-md)] px-2.5 py-1.5 text-[var(--text-sm)] font-medium whitespace-nowrap transition-colors"
             :class="
               isCurrent(item.to)
                 ? 'bg-[var(--c-surface-sunken)] text-[var(--c-text)]'
