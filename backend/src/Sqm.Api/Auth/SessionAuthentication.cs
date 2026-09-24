@@ -68,7 +68,7 @@ public sealed class SessionAuthenticationHandler
             // Unknown, expired, revoked, or the account was deactivated - the store does not say
             // which, and neither does this. Clearing the cookie stops the browser re-sending a
             // dead value on every subsequent request.
-            Response.Cookies.Delete(CookieNames.Session(_options));
+            CookieNames.ClearSession(Response, _options);
             return AuthenticateResult.NoResult();
         }
 
@@ -132,6 +132,27 @@ public static class CookieNames
     {
         ArgumentNullException.ThrowIfNull(options);
         return Adjust(options.CookieName, options.RequireSecureCookies);
+    }
+
+    /// <summary>Tells the browser to drop the session cookie.</summary>
+    /// <remarks>
+    /// A deletion is a Set-Cookie like any other, and a browser applies the prefix rule to it too:
+    /// without <c>Secure</c> it is ignored and the dead cookie stays. That once happened here. The
+    /// cookie then outlived the CSRF cookie, whose lifetime is the session's 24-hour limit, and
+    /// the CSRF check - which fires whenever a session cookie is present - refused every sign-in
+    /// with 403 until the browser was restarted.
+    /// </remarks>
+    public static void ClearSession(HttpResponse response, SessionSettings options)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+        ArgumentNullException.ThrowIfNull(options);
+
+        response.Cookies.Delete(Session(options), new CookieOptions
+        {
+            Secure = options.RequireSecureCookies,
+            SameSite = SameSiteMode.Strict,
+            Path = "/",
+        });
     }
 
     /// <summary>Name of the CSRF cookie for the current configuration.</summary>
