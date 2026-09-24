@@ -80,7 +80,7 @@ public sealed partial class ClickHouseAnalyticsStore
     private const string CatalogueFrom = """
         FROM sqm.agg_device_model AS d
         LEFT JOIN sqm.tac AS t ON t.tac = d.tac
-        LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+        LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
         """;
 
     /// <summary>The vendor expression the dashboard uses, so both name the same vendors.</summary>
@@ -173,7 +173,7 @@ public sealed partial class ClickHouseAnalyticsStore
                  ORDER BY activated_at DESC LIMIT 1)                   AS tac_version
             FROM sqm.agg_device_model AS d
             LEFT JOIN sqm.tac AS t ON t.tac = d.tac
-            LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+            LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
             LEFT JOIN sqm.tac_capability AS c ON c.tac = d.tac
             WHERE d.seq = (SELECT max(seq) FROM sqm.mart_ready) AND d.tac = {tac:String}
             LIMIT 1

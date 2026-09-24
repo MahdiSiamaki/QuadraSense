@@ -201,7 +201,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 (SELECT if(count() = 0, NULL, max(data_date)) FROM sqm.agg_change_summary_daily) AS delivery_date
             FROM sqm.binding_current AS b FINAL
             LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-            LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+            LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
             WHERE b.active = 1 AND {f.WhereClause}
             """;
 
@@ -324,7 +324,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                         grouping(k) AS is_total
                     FROM sqm.binding_current AS b FINAL
                     LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-                    LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+                    LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
                     WHERE b.active = 1 AND {{f.WhereClause}}
                     GROUP BY GROUPING SETS ((k), ())
                 )

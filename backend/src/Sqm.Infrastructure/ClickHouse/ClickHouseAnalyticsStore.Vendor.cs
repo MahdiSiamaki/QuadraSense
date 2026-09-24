@@ -80,7 +80,7 @@ public sealed partial class ClickHouseAnalyticsStore
                            sumIf(c.n, c.label = 'remove') AS removed
                     FROM sqm.agg_change_daily AS c
                     LEFT JOIN sqm.tac AS t ON t.tac = c.tac
-                    LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+                    LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
                     WHERE c.data_date >= {fromDate:Date} AND c.data_date <= {toDate:Date}
                     GROUP BY k
                 ),

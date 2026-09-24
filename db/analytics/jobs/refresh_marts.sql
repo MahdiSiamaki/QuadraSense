@@ -357,7 +357,7 @@ SELECT
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
 FROM sqm.binding_current AS b FINAL
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
 GROUP BY dim_value;
 
@@ -373,7 +373,7 @@ SELECT
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
 FROM sqm.binding_current AS b FINAL
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
 GROUP BY dim_value;
 
@@ -389,7 +389,7 @@ SELECT
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
 FROM sqm.binding_current AS b FINAL
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
 GROUP BY dim_value;
 
@@ -405,7 +405,7 @@ SELECT
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
 FROM sqm.binding_current AS b FINAL
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
 GROUP BY dim_value;
 
@@ -421,7 +421,7 @@ SELECT
     uniqIf(b.imei, length(b.imei) = 14) AS handsets
 FROM sqm.binding_current AS b FINAL
 LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.active = 1
 GROUP BY dim_value;
 
