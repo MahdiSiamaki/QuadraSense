@@ -110,7 +110,7 @@ public sealed partial class PostgresUserDirectory : IUserDirectory
             roleCode = query.RoleCode,
             isActive = query.IsActive,
             limit = pageSize,
-            offset = (page - 1) * pageSize,
+            offset = (int)Math.Min((page - 1L) * pageSize, int.MaxValue),
         }, ct)).ConfigureAwait(false)).AsList();
 
         if (rows.Count == 0)

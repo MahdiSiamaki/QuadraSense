@@ -50,10 +50,10 @@ public static class AuditEndpoints
         // validation error, because these arrive from URL state and a stale link should show the
         // log rather than an error page.
         AuditCategory? parsedCategory =
-            Enum.TryParse<AuditCategory>(category, ignoreCase: true, out var c) ? c : null;
+            Enum.TryParse<AuditCategory>(category, ignoreCase: true, out var c) && Enum.IsDefined(c) ? c : null;
 
         AuditOutcome? parsedOutcome =
-            Enum.TryParse<AuditOutcome>(outcome, ignoreCase: true, out var o) ? o : null;
+            Enum.TryParse<AuditOutcome>(outcome, ignoreCase: true, out var o) && Enum.IsDefined(o) ? o : null;
 
         var result = await audit.QueryAsync(new AuditQuery(
             search, action, parsedCategory, parsedOutcome, actorUserId, from, to,

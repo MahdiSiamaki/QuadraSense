@@ -196,7 +196,14 @@ public sealed partial class PostgresUserDirectory
         if (username is null)
         {
             await transaction.RollbackAsync(ct).ConfigureAwait(false);
-            return false;
+
+            // Nothing changed either because there is no such user or because the account is
+            // already in the state asked for. Only the first is "not found": activating an
+            // active account has succeeded, and answering 404 to it sent the admin looking for
+            // a user who was on the screen in front of them.
+            return await connection.ExecuteScalarAsync<bool>(_db.Command(
+                "SELECT EXISTS (SELECT 1 FROM auth.user_account WHERE id = @userId)",
+                new { userId }, ct)).ConfigureAwait(false);
         }
 
         var revoked = 0;

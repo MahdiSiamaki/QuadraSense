@@ -84,7 +84,7 @@ public static class ImsiEndpoints
                 request.ActiveOnly ?? false,
                 request.From,
                 request.To,
-                Offset: (page - 1) * pageSize,
+                Offset: (int)Math.Min((page - 1L) * pageSize, int.MaxValue),
                 Limit: pageSize),
             ct).ConfigureAwait(false);
 
