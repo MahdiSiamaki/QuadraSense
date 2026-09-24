@@ -307,18 +307,37 @@ public sealed partial class PostgresImportJobRepository
              ORDER BY ds.code
             """;
 
-        // A gap is only a gap against a calendar of what was expected. Inferring it from the
-        // absence of a file cannot distinguish "the delivery failed" from "there was no delivery
-        // that day", and only the first is a problem.
+        // A gap is only a gap against a calendar of what was expected, and for a dated source
+        // that calendar is every day: the operator delivers a file for each calendar day,
+        // weekends included (confirmed by the product owner, 2026-09-24). So every day from a
+        // source's first landed date to its latest is expected, and one with nothing effective
+        // on it was not delivered. Days after the latest are "behind today", reported apart.
+        //
+        // Derived, not read from imports.expected_business_date. That table was seeded once from
+        // the bulk-load range, 2026-01-26 to 2026-06-14, and nothing ever extended it, so no day
+        // after 14 June could be reported missing: the card said 7 while 25 were absent - the
+        // same failure as the hard-coded list of dates it replaced, moved into a table.
+        //
+        // Offsets rather than generate_series over dates, which resolves to timestamptz and
+        // would let a daylight-saving change in the session time zone repeat or skip a day.
         const string MissingSql = """
-            SELECT e.source_code AS SourceCode, e.business_date AS BusinessDate
-              FROM imports.expected_business_date e
+            SELECT s.source_code AS SourceCode, s.first_day + n AS BusinessDate
+              FROM (SELECT j.source_code,
+                           min(j.business_date) AS first_day,
+                           max(j.business_date) AS last_day
+                      FROM imports.import_job j
+                      JOIN imports.data_source ds ON ds.code = j.source_code
+                     WHERE j.is_effective
+                       AND j.business_date IS NOT NULL
+                       AND ds.revision_strategy = 'replace_by_date'
+                     GROUP BY j.source_code) s
+             CROSS JOIN LATERAL generate_series(0, s.last_day - s.first_day) AS n
              WHERE NOT EXISTS (
                    SELECT 1 FROM imports.import_job j
-                    WHERE j.source_code = e.source_code
-                      AND j.business_date = e.business_date
+                    WHERE j.source_code = s.source_code
+                      AND j.business_date = s.first_day + n
                       AND j.is_effective)
-             ORDER BY e.business_date DESC
+             ORDER BY BusinessDate DESC
             """;
 
         await using var connection = await OpenAsync(ct).ConfigureAwait(false);

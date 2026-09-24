@@ -648,6 +648,59 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
         }
     }
 
+    /// <summary>
+    /// Every calendar day between two delivered days is expected, whether or not anybody wrote
+    /// it down.
+    /// </summary>
+    /// <remarks>
+    /// The source delivers a file for every calendar day. The missing-day list used to be read
+    /// from a table seeded once with the bulk-load range and never extended, so a day after that
+    /// range could not be reported: the dashboard said 7 missing while 25 were. Nothing is listed
+    /// for this source in that table, so this test fails against the old query.
+    /// </remarks>
+    [Fact]
+    public async Task A_day_with_nothing_landed_between_two_delivered_days_is_reported_missing()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+
+        try
+        {
+            // 2 April missing alone, 4 and 5 April as a run, then nothing after the 6th.
+            foreach (var day in new[] { new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 3), new DateOnly(2026, 4, 6) })
+            {
+                var file = await fixture.Repository.RegisterFileAsync(
+                    TestSource, $"{day:yyyy-MM-dd}.csv", Stored(Hash($"calendar-{day}")), "tester", ct);
+                var job = await fixture.Repository.EnqueueAsync(TestSource, file.FileId, day, "tester", ct: ct);
+
+                var claimed = await fixture.Repository.ClaimNextAsync("worker-calendar", TimeSpan.FromMinutes(5), ct);
+                Assert.Equal(job, claimed?.JobId);
+
+                await fixture.Repository.CompleteAsync(
+                    job, ImportJobStatus.Completed, new ImportCounters(RowsInserted: 1),
+                    makeEffective: true, businessDate: day, workerId: null, ct);
+            }
+
+            var freshness = await fixture.Repository.GetFreshnessAsync(new DateOnly(2026, 4, 20), ct);
+            var mine = Assert.Single(freshness, f => f.SourceCode == TestSource);
+
+            // Newest first. The 7th to the 20th are not in it: a day is missing once a later day
+            // has arrived, and until then it is only "behind today", which is reported apart.
+            Assert.Equal(
+                new[] { new DateOnly(2026, 4, 5), new DateOnly(2026, 4, 4), new DateOnly(2026, 4, 2) },
+                mine.MissingBusinessDates);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
     private static async Task ExpireLeaseAsync(long jobId)
     {
         await using var connection = new Npgsql.NpgsqlConnection(ImportQueueFixture.ConnectionString);
