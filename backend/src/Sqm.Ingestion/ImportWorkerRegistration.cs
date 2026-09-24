@@ -105,6 +105,11 @@ public static class ImportWorkerRegistration
 
         services.TryAddSingleton<MartRefresh>();
 
+        // Rebuilt once per run of files; the worker settles what a stopped run left owed.
+        services.TryAddSingleton<DashboardSnapshot>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IIdleTask, DashboardSnapshot>(
+            sp => sp.GetRequiredService<DashboardSnapshot>()));
+
         // One processor per data source, resolved by source code at claim time. TryAddEnumerable
         // rather than TryAddSingleton: these are a collection, and TryAdd on a collection would
         // keep only the first.

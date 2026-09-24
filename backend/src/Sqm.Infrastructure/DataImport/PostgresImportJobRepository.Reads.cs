@@ -293,7 +293,9 @@ public sealed partial class PostgresImportJobRepository
                    (SELECT COUNT(*)::int FROM imports.import_job j
                      WHERE j.source_code = ds.code
                        AND j.status = 'FAILED'
-                       AND j.finished_at > now() - interval '7 days') AS FailedLast7Days
+                       AND j.finished_at > now() - interval '7 days') AS FailedLast7Days,
+                   (SELECT o.owed_since FROM imports.dashboard_refresh_owed o
+                     WHERE o.source_code = ds.code) AS DashboardPendingSince
               FROM imports.data_source ds
               LEFT JOIN LATERAL (
                     SELECT j.business_date, j.finished_at
@@ -355,15 +357,18 @@ public sealed partial class PostgresImportJobRepository
                 row.LatestImportedAt,
                 row.LatestBusinessDate is { } date ? today.DayNumber - date.DayNumber : null,
                 [.. missing.Where(m => m.SourceCode == row.SourceCode).Select(m => m.BusinessDate)],
-                row.FailedLast7Days)),
+                row.FailedLast7Days,
+                row.DashboardPendingSince)),
         ];
     }
 
+    // In the reader's column order: Dapper matches a record constructor by position.
     private sealed record FreshnessRow(
         string SourceCode,
         DateOnly? LatestBusinessDate,
         DateTimeOffset? LatestImportedAt,
-        int FailedLast7Days);
+        int FailedLast7Days,
+        DateTimeOffset? DashboardPendingSince);
 
     private sealed record MissingRow(string SourceCode, DateOnly BusinessDate);
 

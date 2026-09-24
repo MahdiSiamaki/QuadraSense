@@ -701,6 +701,105 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
         }
     }
 
+    /// <summary>
+    /// A file counts the files of its source that will still run after it, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// This count decides whether a daily import rebuilds the dashboard snapshot (~31 minutes) or
+    /// leaves it to a later file. Counting a file that will never run would leave the snapshot to
+    /// nobody; the idle worker would still settle it, but late.
+    /// </remarks>
+    [Fact]
+    public async Task Waiting_files_are_the_queued_and_retrying_ones_of_the_same_source_only()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+
+        try
+        {
+            var jobs = new List<long>();
+            foreach (var day in new[] { 1, 2, 3, 4 })
+            {
+                var date = new DateOnly(2026, 5, day);
+                var file = await fixture.Repository.RegisterFileAsync(
+                    TestSource, $"{date:yyyy-MM-dd}.csv", Stored(Hash($"waiting-{day}")), "tester", ct);
+                jobs.Add(await fixture.Repository.EnqueueAsync(TestSource, file.FileId, date, "tester", ct: ct));
+            }
+
+            // The first is claimed: it is now the file asking, and running is not waiting.
+            var claimed = await fixture.Repository.ClaimNextAsync("worker-waiting", TimeSpan.FromMinutes(5), ct);
+            Assert.Equal(jobs[0], claimed?.JobId);
+            Assert.True(await fixture.Repository.IsSourceRunningAsync(TestSource, ct));
+
+            // A queued file an operator asked to stop will not run.
+            await fixture.Repository.RequestCancellationAsync(jobs[3], "tester", ct);
+
+            Assert.Equal(2, await fixture.Repository.CountWaitingJobsAsync(TestSource, jobs[0], ct));
+            Assert.Equal(0, await fixture.Repository.CountWaitingJobsAsync("SQM-NOT-THIS-ONE", jobs[0], ct));
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
+    /// <summary>
+    /// A rebuild clears only the debt it saw before it began.
+    /// </summary>
+    /// <remarks>
+    /// The one property the deferred rebuild cannot do without. If a file defers while the idle
+    /// worker is rebuilding, the rebuild covered state without that file, and settling must leave
+    /// the newer debt standing - otherwise the dashboard would stay behind its data with nothing
+    /// recording that it is.
+    /// </remarks>
+    [Fact]
+    public async Task Settling_a_dashboard_debt_leaves_a_newer_one_standing()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+
+        try
+        {
+            Assert.Null(await fixture.Repository.GetDashboardOwedSinceAsync(TestSource, ct));
+
+            await fixture.Repository.MarkDashboardOwedAsync(TestSource, null, "first file deferred", ct);
+            var seenByTheRebuild = await fixture.Repository.GetDashboardOwedSinceAsync(TestSource, ct);
+            Assert.NotNull(seenByTheRebuild);
+            Assert.Contains(TestSource, await fixture.Repository.ListDashboardOwedAsync(ct));
+
+            // Another file defers while the rebuild runs.
+            await fixture.Repository.MarkDashboardOwedAsync(TestSource, null, "second file deferred", ct);
+            var newer = await fixture.Repository.GetDashboardOwedSinceAsync(TestSource, ct);
+            Assert.True(newer > seenByTheRebuild);
+
+            // The rebuild finishes and settles what it saw: nothing is cleared.
+            Assert.False(await fixture.Repository.SettleDashboardOwedAsync(TestSource, seenByTheRebuild!.Value, ct));
+            Assert.Equal(newer, await fixture.Repository.GetDashboardOwedSinceAsync(TestSource, ct));
+
+            // The freshness read says so, which is what the dashboard card shows.
+            var freshness = await fixture.Repository.GetFreshnessAsync(new DateOnly(2026, 9, 24), ct);
+            Assert.Equal(newer, Assert.Single(freshness, f => f.SourceCode == TestSource).DashboardPendingSince);
+
+            // The next rebuild saw the newer debt, and clears it.
+            Assert.True(await fixture.Repository.SettleDashboardOwedAsync(TestSource, newer!.Value, ct));
+            Assert.Null(await fixture.Repository.GetDashboardOwedSinceAsync(TestSource, ct));
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
     private static async Task ExpireLeaseAsync(long jobId)
     {
         await using var connection = new Npgsql.NpgsqlConnection(ImportQueueFixture.ConnectionString);

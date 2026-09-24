@@ -262,13 +262,18 @@ public sealed record TacVersion(
 /// </param>
 /// <param name="MissingBusinessDates">Expected days with no effective import, newest first.</param>
 /// <param name="FailedLast7Days">Jobs that failed in the last week.</param>
+/// <param name="DashboardPendingSince">
+/// Since when the dashboard's figures have been behind this source's data, while a run of queued
+/// files lands before they are rebuilt once; null when they are current.
+/// </param>
 public sealed record SourceFreshness(
     string SourceCode,
     DateOnly? LatestBusinessDate,
     DateTimeOffset? LatestImportedAt,
     int? DaysBehind,
     IReadOnlyList<DateOnly> MissingBusinessDates,
-    int FailedLast7Days);
+    int FailedLast7Days,
+    DateTimeOffset? DashboardPendingSince = null);
 
 /// <summary>Live view of the worker fleet.</summary>
 /// <param name="Queued">Jobs waiting for a worker.</param>

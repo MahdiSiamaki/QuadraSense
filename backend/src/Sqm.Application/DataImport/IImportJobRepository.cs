@@ -193,6 +193,34 @@ public interface IImportJobRepository
     Task<int> RecoverExpiredLeasesAsync(CancellationToken ct);
 
     // -----------------------------------------------------------------------
+    // The dashboard snapshot, rebuilt once per run of files (migration 011)
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Jobs of <paramref name="sourceCode"/> that will still run - queued, or waiting to retry -
+    /// other than <paramref name="exceptJobId"/>.
+    /// </summary>
+    Task<int> CountWaitingJobsAsync(string sourceCode, long exceptJobId, CancellationToken ct);
+
+    /// <summary>Whether any worker is working on a job of this source right now.</summary>
+    Task<bool> IsSourceRunningAsync(string sourceCode, CancellationToken ct);
+
+    /// <summary>Records that the source's dashboard snapshot is behind its data.</summary>
+    Task MarkDashboardOwedAsync(string sourceCode, long? jobId, string reason, CancellationToken ct);
+
+    /// <summary>Since when the source's snapshot has been owed; null when it is up to date.</summary>
+    Task<DateTimeOffset?> GetDashboardOwedSinceAsync(string sourceCode, CancellationToken ct);
+
+    /// <summary>Every source whose dashboard snapshot is owed, longest owed first.</summary>
+    Task<IReadOnlyList<string>> ListDashboardOwedAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Clears the debt, but only if it is still the one recorded at <paramref name="owedSince"/>.
+    /// </summary>
+    /// <returns>False when a newer debt was recorded meanwhile, which then stays owed.</returns>
+    Task<bool> SettleDashboardOwedAsync(string sourceCode, DateTimeOffset owedSince, CancellationToken ct);
+
+    // -----------------------------------------------------------------------
     // Reads
     // -----------------------------------------------------------------------
 

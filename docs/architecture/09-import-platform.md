@@ -368,6 +368,29 @@ one range. With late days sent down the arrival-order path it fails.
 The snapshot is most of every import, and after a late day it rebuilds the same latest delivery
 each time. While it runs, that delivery is withdrawn and the dashboard shows the one before it.
 
+### One snapshot per run of files
+
+So the snapshot is rebuilt **once per run**, not once per file (migration 011,
+`DashboardSnapshot`):
+
+- A file with more files of its source queued behind it skips the rebuild and records that the
+  snapshot is owed (`imports.dashboard_refresh_owed`). Its data - events, current state, the
+  day-level charts - is current as soon as it lands; only the snapshot waits.
+- The last file of the run rebuilds it, and clears the debt it read **before** it began. A file
+  that deferred while a rebuild ran moved `owed_since` forward, so that debt survives and is
+  rebuilt for.
+- A run can stop part way - a file fails and blocks the rest, or they are cancelled - and then no
+  file is last. So the worker, whenever it has nothing it can claim, rebuilds any snapshot still
+  owed, unless a job of that source is running in another worker. A failed rebuild stays owed and
+  is tried again at the next idle moment. The dashboard cannot be left behind its data.
+- Until the rebuild, the dashboard keeps the figures it had - it no longer falls back to an older
+  delivery once per file - and the Data freshness card says the figures update once the queued
+  files have landed.
+
+For the ~27 files expected from the operator, estimated from the measured steps above: about
+14 minutes a file (the history fold and the day-level marts) and one 31-minute rebuild at the
+end - about 7 hours - against about 20 hours rebuilding after every file.
+
 **Operationally:** a late or corrected day that fails blocks every later day, new daily files
 included, until it is reprocessed or removed - by design, because folding past a hole produces a
 state that never existed. It is visible in the Import Center.
