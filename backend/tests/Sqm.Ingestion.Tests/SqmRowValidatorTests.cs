@@ -145,4 +145,38 @@ public class SqmRowValidatorTests
             Assert.EndsWith(".", description, StringComparison.Ordinal);
         }
     }
+
+    [Theory]
+    [InlineData("99999999999999999999,432110123456789,35085748000001,add")]   // 20 digits: wraps in UInt64
+    [InlineData("9121234567,18446744073709551616,35085748000001,add")]         // UInt64.MaxValue + 1
+    public void A_number_too_large_for_the_column_is_rejected_not_wrapped(string line)
+    {
+        var findings = new List<RowFinding>();
+
+        Assert.Equal(RowVerdict.Reject, SqmRowValidator.Validate(line, findings));
+    }
+
+    [Fact]
+    public void The_largest_UInt64_is_still_a_number()
+    {
+        var findings = new List<RowFinding>();
+
+        Assert.Equal(RowVerdict.Accept,
+            SqmRowValidator.Validate("18446744073709551615,432110123456789,35085748000001,add", findings));
+    }
+
+    [Fact]
+    public void A_row_is_checked_against_the_columns_its_header_declared()
+    {
+        const string Appended = "9121234567,432110123456789,35085748000001,add,north";
+        var findings = new List<RowFinding>();
+
+        // The schema check accepts a header that only appends columns; its rows must pass too.
+        Assert.Equal(RowVerdict.Accept, SqmRowValidator.Validate(Appended, findings, columns: 5));
+        // Under a four-column header the same row has a field too many.
+        Assert.Equal(RowVerdict.Reject, SqmRowValidator.Validate(Appended, findings, columns: 4));
+        // And a row short of what its header declared is still short.
+        Assert.Equal(RowVerdict.Reject,
+            SqmRowValidator.Validate("9121234567,432110123456789,35085748000001,add", findings, columns: 5));
+    }
 }

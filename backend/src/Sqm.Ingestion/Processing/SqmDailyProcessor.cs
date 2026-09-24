@@ -361,7 +361,7 @@ internal sealed partial class SqmDailyProcessor(
 
             result.TotalRows++;
             findings.Clear();
-            var verdict = SqmRowValidator.Validate(line, findings);
+            var verdict = SqmRowValidator.Validate(line, findings, columns.Length);
 
             switch (verdict)
             {
@@ -421,6 +421,10 @@ internal sealed partial class SqmDailyProcessor(
                     await writer.WriteLineAsync(header).ConfigureAwait(false);
                 }
 
+                // The same column count validation used, or this pass would drop every row of a
+                // file that validation accepted.
+                var columns = Math.Max(4, header?.Split(',').Length ?? 4);
+
                 var findings = new List<RowFinding>(4);
 
                 while (await reader.ReadLineAsync(ct).ConfigureAwait(false) is { } line)
@@ -431,7 +435,7 @@ internal sealed partial class SqmDailyProcessor(
                     }
 
                     findings.Clear();
-                    if (SqmRowValidator.Validate(line, findings) != RowVerdict.Reject)
+                    if (SqmRowValidator.Validate(line, findings, columns) != RowVerdict.Reject)
                     {
                         await writer.WriteLineAsync(line).ConfigureAwait(false);
                     }

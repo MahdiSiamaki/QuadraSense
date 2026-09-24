@@ -54,6 +54,17 @@ public sealed class DailyLoadSafetyTests
     }
 
     [Fact]
+    public async Task A_file_whose_header_appends_a_column_is_loaded_not_quarantined()
+    {
+        var file = $"{Header},region\n{Row1},north\n{Row2},south\n";
+        var run = new Run(file);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(run.ProcessAsync); // the stop at the fold
+
+        Assert.Equal(file, Assert.Single(run.Loaded));
+    }
+
+    [Fact]
     public async Task A_count_mismatch_removes_the_day_before_anything_is_derived_from_it()
     {
         var run = new Run($"{Header}\n{Row1}\n{Row2}\n") { StoredCount = 1 };
