@@ -47,7 +47,7 @@ const orphaned = computed(() =>
 <template>
   <div class="flex flex-col gap-5">
     <nav class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
-      <RouterLink to="/admin/roles" class="hover:text-[var(--c-text)] hover:underline">
+      <RouterLink to="/settings/roles" class="hover:text-[var(--c-text)] hover:underline">
         Roles
       </RouterLink>
       <span aria-hidden="true"> / </span>
@@ -55,7 +55,7 @@ const orphaned = computed(() =>
     </nav>
 
     <header>
-      <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Permission matrix</h1>
+      <h2 class="text-[var(--text-lg)] font-semibold tracking-tight">Permission matrix</h2>
       <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
         What every role can do, side by side. Edit a role from its own page.
       </p>
@@ -109,7 +109,7 @@ const orphaned = computed(() =>
                   class="px-3 py-2 text-center"
                 >
                   <RouterLink
-                    :to="`/admin/roles/${role.id}`"
+                    :to="`/settings/roles/${role.id}`"
                     class="text-[var(--text-xs)] font-semibold hover:text-[var(--c-accent)] hover:underline"
                   >
                     {{ role.displayName }}

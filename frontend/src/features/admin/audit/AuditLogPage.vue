@@ -70,7 +70,7 @@ const selectClass =
   <div class="flex flex-col gap-5">
     <header class="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Audit log</h1>
+        <h2 class="text-[var(--text-lg)] font-semibold tracking-tight">Audit log</h2>
         <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
           Append-only. Sign-ins, administrative changes, imports and every refused request.
         </p>
@@ -158,7 +158,7 @@ const selectClass =
                   <td class="px-4 py-2">
                     <RouterLink
                       v-if="entry.actorUserId"
-                      :to="`/admin/users/${entry.actorUserId}`"
+                      :to="`/settings/users/${entry.actorUserId}`"
                       class="hover:text-[var(--c-accent)] hover:underline"
                       @click.stop
                     >
