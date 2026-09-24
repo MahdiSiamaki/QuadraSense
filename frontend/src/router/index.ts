@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { queryClient } from '@/lib/queryClient'
-import { CURRENT_USER_KEY, type CurrentUser } from '@/api/auth'
+import { CURRENT_USER_KEY, forgetSession, type CurrentUser } from '@/api/auth'
 import { api, ApiError, setUnauthenticatedHandler } from '@/api/client'
 import { Permission } from '@/features/auth/useAuth'
 
@@ -214,7 +214,7 @@ router.beforeEach(async (to) => {
 setUnauthenticatedHandler(() => {
   if (router.currentRoute.value.meta['public']) return
 
-  queryClient.clear()
+  forgetSession(queryClient)
   const from = router.currentRoute.value.fullPath
   void router.replace({ name: 'login', query: from === '/' ? {} : { next: from } })
 })
