@@ -101,6 +101,18 @@ export function chartColor(token: string): string {
   return toRgb(raw)
 }
 
+/**
+ * A resolved colour with its alpha replaced, for ECharts.
+ *
+ * `chartColor` returns `rgb(r, g, b)`, and appending a hex alpha to it - the habit from `#rrggbb`
+ * days - gives `rgb(79, 121, 232)22`, which zrender cannot parse: the zoom slider's selection
+ * was filled with whatever the canvas painted last. Input that is not rgb/rgba comes back as is.
+ */
+export function withAlpha(rgb: string, alpha: number): string {
+  const match = /^rgba?\(\s*(\d+),\s*(\d+),\s*(\d+)/.exec(rgb)
+  return match ? `rgba(${match[1]}, ${match[2]}, ${match[3]}, ${alpha})` : rgb
+}
+
 /** Clears the cache. Only needed if the tokens themselves are edited at runtime. */
 export function clearChartColorCache(): void {
   resolved.clear()
