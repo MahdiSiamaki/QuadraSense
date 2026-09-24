@@ -288,7 +288,8 @@ export interface VendorMovementRow {
   /** Active bindings in the first delivery on record. */
   populationAtStart: number
   populationChange: number
-  populationChangePercent: number
+  /** Null when the vendor started at zero: a change from nothing has no percentage. */
+  populationChangePercent: number | null
   /**
    * The vendor's percentage change minus the network's.
    *
@@ -296,9 +297,9 @@ export interface VendorMovementRow {
    * now, so a vendor down 6.4% actually gained almost three points of share. Absolute change
    * alone reads as universal decline.
    */
-  vsNetworkPoints: number
-  /** Net movement as a percentage of the vendor's own population. */
-  netPercentOfPopulation: number
+  vsNetworkPoints: number | null
+  /** Net movement as a percentage of the vendor's own population; null when that is zero. */
+  netPercentOfPopulation: number | null
 }
 
 export interface VendorMovementResponse {

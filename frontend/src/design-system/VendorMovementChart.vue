@@ -34,24 +34,32 @@ const measure = computed(() => {
     }
   }
 
+  // A percentage of zero does not exist: a vendor that started with no bindings, or has none now,
+  // gets no bar and says why, rather than a bar of 0 that reads as "did not move".
   if (props.ranking === 'growth') {
     return {
-      value: (r: VendorMovementRow) => r.vsNetworkPoints,
+      value: (r: VendorMovementRow) => r.vsNetworkPoints ?? 0,
       label: (r: VendorMovementRow) =>
-        `${r.vsNetworkPoints >= 0 ? '+' : ''}${r.vsNetworkPoints.toFixed(1)} pts`,
+        r.vsNetworkPoints === null
+          ? 'new'
+          : `${r.vsNetworkPoints >= 0 ? '+' : ''}${r.vsNetworkPoints.toFixed(1)} pts`,
       detail: (r: VendorMovementRow) =>
         `${formatFull(r.populationAtStart)} → ${formatFull(r.population)} ` +
-        `(${r.populationChangePercent.toFixed(2)}%), against the network's ` +
-        `${props.networkChangePercent.toFixed(2)}%`,
+        (r.populationChangePercent === null
+          ? '(none at the start, so no percentage change)'
+          : `(${r.populationChangePercent.toFixed(2)}%), against the network's ` +
+            `${props.networkChangePercent.toFixed(2)}%`),
       diverging: true,
     }
   }
 
   return props.normalised
     ? {
-        value: (r: VendorMovementRow) => r.netPercentOfPopulation,
+        value: (r: VendorMovementRow) => r.netPercentOfPopulation ?? 0,
         label: (r: VendorMovementRow) =>
-          `${r.netPercentOfPopulation >= 0 ? '+' : ''}${r.netPercentOfPopulation.toFixed(2)}%`,
+          r.netPercentOfPopulation === null
+            ? '—'
+            : `${r.netPercentOfPopulation >= 0 ? '+' : ''}${r.netPercentOfPopulation.toFixed(2)}%`,
         detail: (r: VendorMovementRow) =>
           `net ${formatSigned(r.net)} events against ${formatFull(r.population)} bindings ` +
           `(added ${formatCompact(r.added)}, removed ${formatCompact(r.removed)})`,
