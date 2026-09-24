@@ -19,7 +19,8 @@ public sealed record Page<T>(IReadOnlyList<T> Items, long? Total, int PageNumber
 /// <param name="DeviceType">Exact match on GSMA device type, e.g. <c>Smartphone</c>.</param>
 /// <param name="OperatingSystem">Exact match on GSMA operating system.</param>
 /// <param name="Tac">Exact 8-character TAC.</param>
-/// <param name="MsisdnPrefix">Leading digits of the subscriber number, e.g. <c>9149</c>.</param>
+/// <param name="MsisdnPrefix">Leading digits of the subscriber number, e.g. <c>9149</c>; at most
+/// <see cref="MaxMsisdnPrefixDigits"/>.</param>
 /// <param name="SequenceFrom">Inclusive lower bound on delivery sequence.</param>
 /// <param name="SequenceTo">Inclusive upper bound on delivery sequence.</param>
 /// <param name="IncludeUnknownDevice">
@@ -35,7 +36,15 @@ public sealed record DashboardFilter(
     string? MsisdnPrefix = null,
     int? SequenceFrom = null,
     int? SequenceTo = null,
-    bool IncludeUnknownDevice = true);
+    bool IncludeUnknownDevice = true)
+{
+    /// <summary>
+    /// Longest <see cref="MsisdnPrefix"/> accepted: an operator range, never a whole number.
+    /// </summary>
+    /// <remarks>A full number filters the dashboard to one subscriber, which is a lookup - and
+    /// lookups are permissioned and audited. The product owner's decision.</remarks>
+    public const int MaxMsisdnPrefixDigits = 6;
+}
 
 /// <summary>Headline counters for the dashboard.</summary>
 /// <param name="ActiveBindings">Bindings currently active.</param>

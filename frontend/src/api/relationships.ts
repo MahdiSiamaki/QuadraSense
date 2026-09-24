@@ -52,6 +52,11 @@ export interface RelationshipGraph {
   truncated: boolean
   elapsedMs: number
   rowsExamined: number
+  /**
+   * Whether the neighbours' identifiers are complete. Masked when the caller lacks
+   * identifier.reveal; a masked value cannot be explored further.
+   */
+  identifiers: 'Masked' | 'Full'
 }
 
 /**

@@ -161,14 +161,14 @@ public sealed class GrantEscalationTests : IClassFixture<WebApplicationFactory<P
         new(id, code, code, string.Empty, false, 0, permissions,
             DateTimeOffset.UnixEpoch, null, DateTimeOffset.UnixEpoch, null);
 
-    /// <summary>Stubs built with DispatchProxy: members a test does not expect throw.</summary>
+    /// <summary>The session store and directories, answering only what these tests expect.</summary>
     private sealed class Stubs
     {
         public Stubs()
         {
-            Sessions = Stub<ISessionStore>(Handle);
-            Users = Stub<IUserDirectory>(Handle);
-            Roles = Stub<IRoleDirectory>(Handle);
+            Sessions = TestStubs.Create<ISessionStore>(Handle);
+            Users = TestStubs.Create<IUserDirectory>(Handle);
+            Roles = TestStubs.Create<IRoleDirectory>(Handle);
         }
 
         public ISessionStore Sessions { get; }
@@ -213,22 +213,5 @@ public sealed class GrantEscalationTests : IClassFixture<WebApplicationFactory<P
             [
                 new PermissionResolution(TargetDeny, "x", "x", "x", false, false, [], false, true, "x"),
             ], 0);
-
-        private static T Stub<T>(Func<MethodInfo, object?[], object?> handler)
-            where T : class
-        {
-            var proxy = DispatchProxy.Create<T, Proxy>();
-            ((Proxy)(object)proxy).Handler = handler;
-            return proxy;
-        }
-    }
-
-    /// <summary>Forwards every interface call to a handler.</summary>
-    public class Proxy : DispatchProxy
-    {
-        internal Func<MethodInfo, object?[], object?> Handler { get; set; } = (_, _) => null;
-
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
-            Handler(targetMethod!, args ?? []);
     }
 }

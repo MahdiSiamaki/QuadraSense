@@ -20,6 +20,9 @@ const input = ref('')
 const explorer = useRelationshipExplorer()
 const graph = computed(() => explorer.data.value ?? null)
 
+/** Without identifier.reveal the neighbours arrive redacted, and a redacted value cannot be explored. */
+const masked = computed(() => graph.value?.identifiers === 'Masked')
+
 /** Length alone decides, matching the server; the three lengths do not overlap in this feed. */
 const KINDS: Record<number, string> = { 10: 'phone number', 14: 'handset', 15: 'SIM' }
 
@@ -161,6 +164,16 @@ function isWithheld(key: string): boolean {
           This identifier has more bindings than the server will return in one go, so the lists
           below are the first 500 and not the whole set.
         </p>
+
+        <!-- Masking is a server decision; the page reports it rather than performing it. -->
+        <p
+          v-if="masked"
+          class="mt-3 rounded-[var(--radius-md)] bg-[var(--c-warning-subtle)] px-3 py-2 text-[var(--text-xs)]"
+        >
+          Identifiers are shown masked. Your account does not hold
+          <code class="font-mono">identifier.reveal</code>, so the server redacted them before
+          sending, and a masked identifier cannot be explored further.
+        </p>
       </Card>
 
       <div class="grid gap-5 xl:grid-cols-3">
@@ -180,10 +193,12 @@ function isWithheld(key: string): boolean {
           </p>
 
           <ul v-else class="divide-y">
-            <li v-for="node in section.nodes" :key="node.value">
+            <!-- Indexed: two different identifiers can mask to the same string. -->
+            <li v-for="(node, i) in section.nodes" :key="`${i}:${node.value}`">
               <button
                 type="button"
-                class="w-full px-4 py-2.5 text-left hover:bg-[var(--c-surface-hover)]"
+                class="w-full px-4 py-2.5 text-left enabled:hover:bg-[var(--c-surface-hover)] disabled:cursor-default"
+                :disabled="masked"
                 @click="explore(node.value)"
               >
                 <span class="tabular block font-[var(--font-mono)] text-[var(--text-sm)]">
@@ -216,10 +231,11 @@ function isWithheld(key: string): boolean {
         subtitle="Two IMEIs shown to be the two radios of one dual-SIM phone."
       >
         <ul v-if="graph.paired.length" class="divide-y">
-          <li v-for="pair in graph.paired" :key="pair.imei" class="py-2.5 first:pt-0">
+          <li v-for="(pair, i) in graph.paired" :key="`${i}:${pair.imei}`" class="py-2.5 first:pt-0">
             <button
               type="button"
-              class="w-full text-left"
+              class="w-full text-left disabled:cursor-default"
+              :disabled="masked"
               @click="explore(pair.imei)"
             >
               <span class="tabular block font-[var(--font-mono)] text-[var(--text-sm)]">

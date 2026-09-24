@@ -63,6 +63,9 @@ public sealed record PairedHandset(string Imei, string? MarketingName, int Share
 /// <param name="Truncated">True when the identifier has more bindings than the server will return.</param>
 /// <param name="ElapsedMs">What the query cost.</param>
 /// <param name="RowsExamined">Rows the engine read. The number that tells an index from a scan.</param>
+/// <param name="Identifiers">
+/// Whether the neighbours' identifiers are complete or redacted. The centre is always as typed.
+/// </param>
 public sealed record RelationshipGraph(
     string Centre,
     RelatedKind Kind,
@@ -74,7 +77,8 @@ public sealed record RelationshipGraph(
     IReadOnlyList<string> Withheld,
     bool Truncated,
     long ElapsedMs,
-    long RowsExamined);
+    long RowsExamined,
+    IdentifierVisibility Identifiers = IdentifierVisibility.Full);
 
 /// <summary>
 /// Which sections of the graph the caller is permitted to see.

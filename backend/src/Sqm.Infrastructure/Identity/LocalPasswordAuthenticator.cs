@@ -174,12 +174,17 @@ public sealed partial class LocalPasswordAuthenticator : IPasswordAuthenticator
     {
         const string sql = """
             UPDATE auth.user_account
-            SET failed_login_count   = failed_login_count + 1,
+            SET failed_login_count   = LEAST(failed_login_count + 1, 30000),
                 last_failed_login_at = now(),
                 locked_until = CASE
                     WHEN failed_login_count + 1 >= @maxAttempts
+                    -- The exponent is capped before it is used. Uncapped, 2^38 minutes is out of
+                    -- interval range: from the 43rd failure every wrong password was a 500, not
+                    -- counted, not locked, not audited - and guessing continued once the last
+                    -- lock ran out. 2^20 minutes is already far past any MaxLockout. The count
+                    -- is capped for the same reason: it is a smallint.
                     THEN now() + LEAST(
-                        @initial * power(2, failed_login_count + 1 - @maxAttempts),
+                        @initial * power(2, LEAST(failed_login_count + 1 - @maxAttempts, 20)),
                         @maxLockout)
                     ELSE locked_until
                 END

@@ -73,6 +73,8 @@ export interface LookupResult {
   msisdn: string
   wellFormed: boolean
   count: number
+  /** Masked when the caller lacks identifier.reveal: the IMSI and IMEI are then redacted. */
+  identifiers: 'Masked' | 'Full'
   bindings: BindingRow[]
 }
 

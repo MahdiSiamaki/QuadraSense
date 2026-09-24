@@ -130,6 +130,15 @@ function correlationId(e: unknown): string | null {
       :subtitle="result.wellFormed ? formatMsisdn(result.msisdn) : `${result.msisdn} — unusual length, shown for review`"
       flush
     >
+      <!-- Masking is a server decision; the page reports it rather than performing it. -->
+      <p
+        v-if="result.identifiers === 'Masked'"
+        class="mx-4 mt-3 rounded-[var(--radius-md)] bg-[var(--c-warning-subtle)] px-3 py-2 text-[var(--text-xs)]"
+      >
+        SIM and handset identifiers are shown masked. Your account does not hold
+        <code class="font-mono">identifier.reveal</code>, so the server redacted them before sending.
+      </p>
+
       <div v-if="result.count === 0" class="px-4 py-8 text-center text-[var(--text-sm)] text-[var(--c-text-secondary)]">
         No bindings found for this number.
       </div>
