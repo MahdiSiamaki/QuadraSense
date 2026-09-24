@@ -159,6 +159,11 @@ export interface SourceFreshness {
   daysBehind: number | null
   missingBusinessDates: string[]
   failedLast7Days: number
+  /**
+   * Set while a run of queued files lands before the dashboard's figures are rebuilt once, at the
+   * end of it. The data is current throughout; only the figures wait.
+   */
+  dashboardPendingSince: string | null
 }
 
 export interface WorkerHealth {
