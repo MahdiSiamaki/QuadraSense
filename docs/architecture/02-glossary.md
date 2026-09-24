@@ -236,14 +236,21 @@ rather than a nameless one.
 A row that fails a validation rule is **quarantined** — recorded with its rule, a sample and a
 count — rather than silently dropped or allowed to fail the import.
 
-An import finishes as `PARTIALLY_COMPLETED` when **anything** was rejected or warned, and
-`COMPLETED` only when the file was entirely clean. In practice every daily file lands as partially
-completed, because ~0.03% of rows carry an IMEI that is neither 14 digits nor the `000000`
-sentinel — a known property of the feed, measured in Phase 0. Nothing is lost: those rows are
-imported and counted in the unknown-device bucket.
+A daily import finishes as `PARTIALLY_COMPLETED` when rows were **rejected** — not imported, and so
+missing from the data. A file whose every row landed is `COMPLETED`, and if validation raised
+warnings on some rows the status reads **Completed · with warnings**; the job's quarantine lists
+the rules, the counts and samples. (A TAC snapshot uses `PARTIALLY_COMPLETED` differently: loaded,
+not yet activated.)
 
-The distinction is worth keeping rather than tuning away. If that figure ever jumps from thousands
-to hundreds of thousands, the status is what sends someone to look.
+> **SUPERSEDED (2026-09-24).** This used to read: `PARTIALLY_COMPLETED` when *anything* was
+> rejected or warned, kept deliberately so that "if that figure ever jumps from thousands to
+> hundreds of thousands, the status is what sends someone to look." It did not. Every daily file
+> carries a few thousand IMEIs that are neither 14 digits nor `000000` (median 3,062 a day, about
+> 0.04% of rows), so all 60 days imported through the platform read partially completed with not
+> one row of 422.9 million rejected. When 25 and 26 August arrived with about 10% of IMEIs cut to
+> eight digits — 793,476 and 711,620 rows, 250 times the median — the status could not get any
+> worse, and nobody looked. The product owner changed the rule; migration 010 relabelled the 60
+> days. The warning count is now the signal, and it needs a threshold to be an alarm.
 
 ## Related
 

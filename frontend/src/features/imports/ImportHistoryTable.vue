@@ -61,6 +61,13 @@ defineProps<{ rows: ImportJobSummary[] }>()
           <td class="px-3 py-2">
             <StatusBadge :status="row.status" />
             <span
+              v-if="row.status === 'Completed' && row.warningCount > 0"
+              class="ml-1 text-[var(--text-2xs)] font-medium text-[var(--c-warning)]"
+              title="Every row was imported. Validation raised warnings on some of them - open the import for the rows and the rules."
+            >
+              with warnings
+            </span>
+            <span
               v-if="row.attempt > 1"
               class="ml-1 text-[var(--text-2xs)] text-[var(--c-text-muted)]"
             >
