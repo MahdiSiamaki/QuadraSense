@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { computed, ref } from 'vue'
-import { useTheme } from '@/lib/theme'
 import { useFreshness } from '@/features/imports/useImportQueries'
 import { formatDate } from '@/lib/format'
 import { useAuth, Permission } from '@/features/auth/useAuth'
 import { useLogout } from '@/api/auth'
 import UserMenu from '@/features/auth/UserMenu.vue'
 import BrandMark from '@/design-system/BrandMark.vue'
+import ThemeToggle from '@/design-system/ThemeToggle.vue'
 
-const { isDark, toggle } = useTheme()
 const route = useRoute()
 const router = useRouter()
 
@@ -129,14 +128,7 @@ async function signOut() {
           </RouterLink>
 
           <div class="flex items-center gap-0.5">
-            <button
-              type="button"
-              class="rounded-[var(--radius-md)] border px-2 py-1.5 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)]"
-              :aria-label="isDark ? 'Switch to light theme' : 'Switch to dark theme'"
-              @click="toggle"
-            >
-              {{ isDark ? 'Light' : 'Dark' }}
-            </button>
+            <ThemeToggle />
 
             <RouterLink
               to="/settings"
