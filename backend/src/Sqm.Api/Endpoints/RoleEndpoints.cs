@@ -94,6 +94,12 @@ public static class RoleEndpoints
             });
         }
 
+        var notHeld = GrantGuard.NotHeld(CurrentUser.Require(http), request.PermissionCodes ?? []);
+        if (notHeld.Count > 0)
+        {
+            return GrantGuard.Refuse(notHeld);
+        }
+
         try
         {
             var id = await roles.CreateRoleAsync(
@@ -139,6 +145,20 @@ public static class RoleEndpoints
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        var role = await roles.GetRoleAsync(id, ct).ConfigureAwait(false);
+        if (role is null)
+        {
+            return Results.NotFound();
+        }
+
+        var current = role.PermissionCodes.ToHashSet(StringComparer.Ordinal);
+        var notHeld = GrantGuard.NotHeld(
+            CurrentUser.Require(http), (request.PermissionCodes ?? []).Where(c => !current.Contains(c)));
+        if (notHeld.Count > 0)
+        {
+            return GrantGuard.Refuse(notHeld);
+        }
 
         try
         {
