@@ -1,0 +1,8 @@
+# Python dependencies of tools/.   pip install -r tools/requirements.txt
+#
+# Pinned to what tools/test_device_image_pipeline.py last passed against (40 of 40).
+
+Pillow==12.0.0    # tools/source_device_images.py and its tests
+
+# tools/profiling/*.py also need duckdb, but they read the raw dumps from local paths that are
+# not in this repository, so they are not runnable anywhere else and are not listed here.

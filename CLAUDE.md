@@ -103,6 +103,33 @@ So a green `dotnet test` in a cloud session means 190 of 224. What it cannot do 
 about real data. Do not report a database-backed claim as verified when the integration tests
 skipped — say which ones skipped and why.
 
-What does work anywhere: `dotnet build`, `dotnet test` (unit projects in full), and
-`cd frontend && npm install && npm run build` (`vue-tsc -b && vite build`, with
-`TreatWarningsAsErrors` on the backend — warnings are failures).
+What does work anywhere, given the toolchain below: `dotnet build backend/Sqm.slnx`,
+`dotnet test backend/Sqm.slnx`, `cd frontend && npm ci && npm run build` (`vue-tsc -b && vite
+build`), and `pip install -r tools/requirements.txt && python tools/test_device_image_pipeline.py`
+(40 checks, no network, no database). `TreatWarningsAsErrors` is on for the backend: a warning is
+a failure.
+
+## Cloud sessions
+
+The cloud VM is Ubuntu 24.04 with Node 22 and Python preinstalled, and **no .NET SDK**. The
+environment's setup script, `tools/cloud/setup.sh`, installs it.
+
+**First thing in a cloud session, before building anything:**
+
+```bash
+dotnet --version
+```
+
+It must print exactly the `sdk.version` in `global.json`. If `dotnet` is missing, or prints
+something else, stop and say so. The setup script logs why it failed, and the usual cause is that
+`builds.dotnet.microsoft.com` is not in the environment's allowed domains.
+
+**Do not "fix" a missing SDK by editing `global.json`.** It will look like the obvious repair, and
+it is the one change that silently breaks the guarantee this file exists to keep. The analyzers
+ship inside the SDK and `AnalysisLevel` is `latest-recommended`, so a different SDK feature band
+is a different set of warnings, and with warnings as errors, a different verdict. Ubuntu's own
+`dotnet-sdk-10.0` package is the 1xx band; the laptop runs 10.0.400. A build that is green in the
+cloud and red on the laptop is exactly the drift the two places must not have.
+
+Work on a branch and open a pull request. `main` changes only through a merged PR, from either
+place, so the laptop and the cloud can never both be ahead.
