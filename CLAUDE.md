@@ -133,3 +133,19 @@ cloud and red on the laptop is exactly the drift the two places must not have.
 
 Work on a branch and open a pull request. `main` changes only through a merged PR, from either
 place, so the laptop and the cloud can never both be ahead.
+
+**Every change made in a cloud session ends committed and pushed.** The product owner tests cloud
+work on the laptop, against the real stack and the real data the cloud does not have, and the
+only way work gets there is through the remote. So after each task that changes files: commit
+(same rules as above: small, logical, the *why* in the message), push the session's branch, and
+end the reply with the branch name and the commands to bring it onto the laptop:
+
+```bash
+git fetch origin <branch>
+git switch <branch>        # first time: git switch -c <branch> --track origin/<branch>
+git pull
+```
+
+A task that changes nothing (a build, a test run, a question) has nothing to push; say so rather
+than making an empty commit. Work that exists only in the cloud container is lost when the
+container is reclaimed.
