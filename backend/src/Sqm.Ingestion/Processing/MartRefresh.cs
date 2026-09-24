@@ -39,9 +39,9 @@ internal sealed partial class MartRefresh(
     private partial void LogStatementFailed(string label, Exception exception);
 
     [LoggerMessage(EventId = 3802, Level = LogLevel.Warning,
-        Message = "Dashboard marts for delivery {Sequence} skipped: delivery {MaxFolded} is "
-                  + "already folded, so current state is no longer delivery {Sequence}'s state")]
-    private partial void LogSkippedOutOfOrder(int sequence, int maxFolded);
+        Message = "Dashboard marts for delivery {Sequence} skipped: delivery {Latest} holds the "
+                  + "latest day, so current state is no longer delivery {Sequence}'s state")]
+    private partial void LogSkippedOutOfOrder(int sequence, int latest);
 
     private const string ResourceName = "Sqm.Ingestion.refresh_marts.sql";
 
@@ -69,6 +69,26 @@ internal sealed partial class MartRefresh(
 
     /// <summary>Runs the refresh, retrying the whole script until nothing fails.</summary>
     /// <returns>How many statements still failed after the last pass.</returns>
+    /// <summary>The delivery whose day is the latest in the event log.</summary>
+    /// <remarks>
+    /// By date, not by sequence number. A missing day imported late takes the next number, so
+    /// "highest sequence" would name 12 May as the newest delivery while 31 August is loaded -
+    /// the dashboard would then be rebuilt for, and dated as, a day three months old. Falls back
+    /// to the highest sequence while no daily file has landed, which is the initial dump.
+    /// </remarks>
+    public static async Task<int> LatestDeliveryAsync(
+        IAnalyticsIngestionStore analytics, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(analytics);
+
+        var days = await analytics.GetBusinessDatesAsync(null, null, ct).ConfigureAwait(false);
+        var latest = days.Count > 0
+            ? await analytics.GetSequenceForDateAsync(days[^1], ct).ConfigureAwait(false)
+            : null;
+
+        return latest ?? await analytics.GetMaxSequenceAsync(ct).ConfigureAwait(false);
+    }
+
     public async Task<int> RunAsync(
         int sequence, Func<string, Task>? onProgress, CancellationToken ct)
     {
@@ -93,17 +113,17 @@ internal sealed partial class MartRefresh(
         // read. So this refuses rather than guesses. The delivery's own data is already loaded
         // and folded - correctly, because the fold is order-independent - and the next delivery
         // to run in order will publish a correct snapshot.
-        var maxFolded = await analytics.GetMaxSequenceAsync(ct).ConfigureAwait(false);
+        var latest = await LatestDeliveryAsync(analytics, ct).ConfigureAwait(false);
 
-        if (maxFolded > sequence)
+        if (latest != sequence)
         {
             var message =
-                $"Skipping the dashboard marts for delivery {sequence}: delivery {maxFolded} is "
-                + "already folded, so current state is no longer this delivery's state. The "
+                $"Skipping the dashboard marts for delivery {sequence}: delivery {latest} holds "
+                + "the latest day, so current state is no longer this delivery's state. The "
                 + "events for this day are loaded and correct; only the per-delivery snapshot is "
                 + "unavailable, and it cannot be reconstructed after the fact.";
 
-            LogSkippedOutOfOrder(sequence, maxFolded);
+            LogSkippedOutOfOrder(sequence, latest);
 
             if (onProgress is not null)
             {

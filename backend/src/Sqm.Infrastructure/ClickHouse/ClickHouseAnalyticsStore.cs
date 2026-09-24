@@ -189,7 +189,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 -- so it reports the newest delivery rather than whichever one the marts serve.
                 -- agg_change_summary_daily is 133 rows; reading max(seq) off binding_event would
                 -- be a full column scan of a billion.
-                (SELECT max(seq) FROM sqm.agg_change_summary_daily)       AS delivery_seq,
+                (SELECT argMax(seq, data_date) FROM sqm.agg_change_summary_daily) AS delivery_seq,
                 (SELECT max(data_date) FROM sqm.agg_change_summary_daily) AS delivery_date
             FROM sqm.binding_current AS b FINAL
             LEFT JOIN sqm.tac AS t ON t.tac = b.tac
@@ -427,7 +427,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
             FROM sqm.agg_change_daily AS e
             WHERE {f.WhereClause}
             GROUP BY seq
-            ORDER BY seq
+            ORDER BY data_date
             """;
 
         await using var connection = CreateConnection();
@@ -563,8 +563,12 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
             WITH
                 (SELECT max(seq) FROM sqm.mart_ready) AS anchor_seq,
                 (SELECT active_bindings FROM sqm.agg_kpi_daily WHERE seq = anchor_seq) AS anchor_pop,
+                -- Through the anchor's DAY, not its sequence number: a missing day imported late
+                -- has a higher number than the anchor but sits before it in the series.
+                (SELECT max(data_date) FROM sqm.agg_change_summary_daily
+                  WHERE seq = anchor_seq) AS anchor_date,
                 (SELECT sum(toInt64(added) - toInt64(removed))
-                   FROM sqm.agg_change_summary_daily WHERE seq <= anchor_seq) AS net_to_anchor
+                   FROM sqm.agg_change_summary_daily WHERE data_date <= anchor_date) AS net_to_anchor
             SELECT
                 data_date,
                 added,
