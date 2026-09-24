@@ -113,12 +113,36 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
         //
         // The partition id for `PARTITION BY data_date` is the date itself.
         var partition = businessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        // The bindings the outgoing day touched are kept before it goes. A binding the corrected
+        // file no longer mentions still has a row in binding_current that this day decided, and
+        // nothing else would ever revisit it: the fold only reads the new day's events. The next
+        // fold of this day re-derives these from what remains. Appended, not replaced, so a
+        // retry after a failed load keeps the keys of the attempt before it too.
+        var replaced = ReplacedKeysTable(businessDate);
+        command.CommandText = $"""
+            CREATE TABLE IF NOT EXISTS {_database}.{replaced}
+                (msisdn UInt64, imsi UInt64, imei String)
+            ENGINE = MergeTree ORDER BY (msisdn, imsi, imei)
+            """;
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+        await ExecuteBoundedAsync($$"""
+            INSERT INTO {{_database}}.{{replaced}}
+            SELECT DISTINCT msisdn, imsi, imei FROM {{_database}}.binding_event
+            WHERE data_date = {businessDate:Date}
+            """, businessDate, ct).ConfigureAwait(false);
+
         command.CommandText =
             $"ALTER TABLE {_database}.binding_event DROP PARTITION '{partition}'";
 
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         LogDroppedDay(businessDate);
     }
+
+    /// <summary>Scratch table holding the bindings of a day that is being replaced.</summary>
+    private static string ReplacedKeysTable(DateOnly businessDate) =>
+        "fold_replaced_" + businessDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
 
     public async Task<long> LoadDailyEventsAsync(
         DateOnly businessDate,
@@ -234,9 +258,16 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
 
     public async Task<long> FoldDayAsync(DateOnly businessDate, CancellationToken ct)
     {
-        // No delete first, and no replay. binding_current is a ReplacingMergeTree versioned by
-        // last_change_seq, so a row written for a later day wins over an earlier one on merge -
-        // which is exactly the fold, expressed as a write rather than as a computation.
+        var replaced = ReplacedKeysTable(businessDate);
+        var replacing = await ScalarAsync($"EXISTS TABLE {_database}.{replaced}", ct)
+            .ConfigureAwait(false) == 1;
+        var laterDays = await GetBusinessDatesAsync(businessDate.AddDays(1), null, ct)
+            .ConfigureAwait(false);
+
+        // The fast path. binding_current is a ReplacingMergeTree versioned by last_change_seq,
+        // so when this is the newest day its row wins over anything written before it - which
+        // is exactly the fold, expressed as a write rather than as a computation. It holds only
+        // while the day is the latest by DATE and adds to history rather than rewriting it.
         var sql = $$"""
             INSERT INTO {{_database}}.binding_current
                 (msisdn, imsi, imei, active, last_change_seq, last_change_date)
@@ -250,7 +281,63 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             GROUP BY msisdn, imsi, imei
             """;
 
+        if (replacing || laterDays.Count > 0)
+        {
+            // A day that arrives after later days, or replaces one, cannot use it. A missing day
+            // imported late is given the next sequence number, so its rows outranked every later
+            // day's: a binding added on 12 May and removed on 3 June read as active once 12 May
+            // landed. And a replaced day's withdrawn bindings were never revisited at all.
+            //
+            // So the bindings involved are re-derived from their whole history, in DATE order -
+            // the last event by date decides, and with no event left the initial dump does. The
+            // version is the highest sequence in the log, which no earlier row can exceed; a row
+            // with an equal version is replaced by the later insert. Days after this one keep
+            // winning, because they take the next sequence.
+            //
+            // Costlier than the fast path - it reads each binding's history, not one day - and
+            // only taken for late or replaced days. Not yet measured against the real event log.
+            var extraKeys = replacing
+                ? $"UNION ALL SELECT msisdn, imsi, imei FROM {_database}.{replaced}"
+                : string.Empty;
+
+            // One GROUP BY and no joins, because under the fold's one-thread, 1.2 GB limits a
+            // GROUP BY can spill to disk and a hash join cannot. Each binding's candidates are
+            // ranked: its events (2), then the initial dump (1), then nothing at all (0), and the
+            // highest-ranked, latest-dated one decides.
+            sql = $$"""
+                INSERT INTO {{_database}}.binding_current
+                    (msisdn, imsi, imei, active, last_change_seq, last_change_date)
+                WITH keys AS (
+                    SELECT msisdn, imsi, imei FROM {{_database}}.binding_event
+                    WHERE data_date = {businessDate:Date}
+                    {{extraKeys}}
+                )
+                SELECT
+                    msisdn, imsi, imei,
+                    argMax(is_add, (rank, data_date, seq))              AS active,
+                    (SELECT max(seq) FROM {{_database}}.binding_event)  AS last_change_seq,
+                    if(max(rank) = 2, maxIf(data_date, rank = 2), NULL) AS last_change_date
+                FROM (
+                    SELECT msisdn, imsi, imei, label = 'add' AS is_add, data_date, seq, 2 AS rank
+                    FROM {{_database}}.binding_event
+                    WHERE (msisdn, imsi, imei) IN (SELECT msisdn, imsi, imei FROM keys)
+                    UNION ALL
+                    SELECT msisdn, imsi, imei, 1, toDate(0), 0, 1
+                    FROM {{_database}}.binding_snapshot
+                    WHERE (msisdn, imsi, imei) IN (SELECT msisdn, imsi, imei FROM keys)
+                    UNION ALL
+                    SELECT msisdn, imsi, imei, 0, toDate(0), 0, 0
+                    FROM keys
+                )
+                GROUP BY msisdn, imsi, imei
+                """;
+        }
+
         await ExecuteBoundedAsync(sql, businessDate, ct).ConfigureAwait(false);
+
+        // Only once the fold has landed: until then a retry needs these keys again.
+        await ExecuteBoundedAsync($"DROP TABLE IF EXISTS {_database}.{replaced}", businessDate, ct)
+            .ConfigureAwait(false);
 
         return await CountFoldedAsync(businessDate, ct).ConfigureAwait(false);
     }

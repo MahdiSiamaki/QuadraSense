@@ -62,7 +62,7 @@ if (args.Contains("--verify-marts"))
     var sequence = index >= 0 && index + 1 < args.Length
         && int.TryParse(args[index + 1], out var wanted)
         ? wanted
-        : await analytics.GetMaxSequenceAsync(CancellationToken.None).ConfigureAwait(false);
+        : await MartRefresh.LatestDeliveryAsync(analytics, CancellationToken.None).ConfigureAwait(false);
 
     var problems = await MartVerification
         .RunAsync(analytics, sequence, CancellationToken.None).ConfigureAwait(false);
@@ -79,7 +79,7 @@ if (args.Contains("--refresh-dashboard"))
     var sequence = index >= 0 && index + 1 < args.Length
         && int.TryParse(args[index + 1], out var parsed)
         ? parsed
-        : await analytics.GetMaxSequenceAsync(CancellationToken.None).ConfigureAwait(false);
+        : await MartRefresh.LatestDeliveryAsync(analytics, CancellationToken.None).ConfigureAwait(false);
 
     Console.WriteLine($"rebuilding dashboard marts for delivery {sequence}");
 

@@ -154,12 +154,7 @@ public static class AuthEndpoints
         await sessions.RevokeAsync(session.SessionId, session.User.Username, "signed out", ct)
             .ConfigureAwait(false);
 
-        http.Response.Cookies.Delete(CookieNames.Session(options), new CookieOptions
-        {
-            Secure = options.RequireSecureCookies,
-            SameSite = SameSiteMode.Strict,
-            Path = "/",
-        });
+        CookieNames.ClearSession(http.Response, options);
 
         CsrfMiddleware.ClearToken(http, options);
 

@@ -124,9 +124,17 @@ public static class UserEndpoints
     }
 
     private static async Task<IResult> CreateAsync(
-        CreateUserRequest request, HttpContext http, IUserDirectory users, CancellationToken ct)
+        CreateUserRequest request, HttpContext http, IUserDirectory users, IRoleDirectory roles,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        var notHeld = GrantGuard.NotHeld(CurrentUser.Require(http), GrantGuard.AddedByRoles(
+            [], request.RoleCodes ?? [], await PermissionsByRoleAsync(roles, ct).ConfigureAwait(false)));
+        if (notHeld.Count > 0)
+        {
+            return GrantGuard.Refuse(notHeld);
+        }
 
         if (string.IsNullOrWhiteSpace(request.Username)
             || string.IsNullOrWhiteSpace(request.DisplayName))
@@ -232,9 +240,29 @@ public static class UserEndpoints
 
     private static async Task<IResult> SetRolesAsync(
         long id, SetRolesRequest request, HttpContext http, IUserDirectory users,
-        CancellationToken ct)
+        IRoleDirectory roles, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        var actor = CurrentUser.Require(http);
+        if (id == actor.UserId)
+        {
+            return GrantGuard.RefuseSelf();
+        }
+
+        var target = await users.GetAsync(id, ct).ConfigureAwait(false);
+        if (target is null)
+        {
+            return Results.NotFound();
+        }
+
+        var notHeld = GrantGuard.NotHeld(actor, GrantGuard.AddedByRoles(
+            target.Roles.Select(r => r.Code), request.RoleCodes ?? [],
+            await PermissionsByRoleAsync(roles, ct).ConfigureAwait(false)));
+        if (notHeld.Count > 0)
+        {
+            return GrantGuard.Refuse(notHeld);
+        }
 
         try
         {
@@ -271,6 +299,25 @@ public static class UserEndpoints
                     : PermissionEffect.Grant,
                 o.Reason))
             .ToList();
+
+        var actor = CurrentUser.Require(http);
+        if (id == actor.UserId)
+        {
+            return GrantGuard.RefuseSelf();
+        }
+
+        var target = await users.GetAsync(id, ct).ConfigureAwait(false);
+        if (target is null)
+        {
+            return Results.NotFound();
+        }
+
+        var notHeld = GrantGuard.NotHeld(
+            actor, GrantGuard.LoosenedByOverrides(target.Permissions, overrides));
+        if (notHeld.Count > 0)
+        {
+            return GrantGuard.Refuse(notHeld);
+        }
 
         try
         {
@@ -356,6 +403,13 @@ public static class UserEndpoints
     /// <summary>
     /// 409, not 400. The request was well-formed; the system's state is what refuses it.
     /// </summary>
+    private static async Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> PermissionsByRoleAsync(
+        IRoleDirectory roles, CancellationToken ct)
+    {
+        var all = await roles.GetRolesAsync(ct).ConfigureAwait(false);
+        return all.ToDictionary(r => r.Code, r => r.PermissionCodes, StringComparer.Ordinal);
+    }
+
     private static IResult Conflict(Exception ex) => Results.Problem(
         title: "That change would lock everyone out",
         detail: ex.Message,

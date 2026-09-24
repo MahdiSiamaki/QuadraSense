@@ -170,9 +170,10 @@ internal sealed partial class SqmDailyProcessor(
 
         await context.NoteAsync(
             "info",
-            $"{folded:N0} bindings had their state updated by this day. Only the new day was "
-            + "aggregated, not the full history - the last event decides a binding's state, so "
-            + "replaying the rest would produce the same answer at a thousand times the cost.",
+            $"{folded:N0} bindings had their state updated by this day. The last event by date "
+            + "decides a binding's state: for the newest day only that day is read; a day that "
+            + "arrived after later ones, or replaced one, re-derives its bindings from their "
+            + "whole history.",
             new { bindingsTouched = folded }, ct).ConfigureAwait(false);
 
         await analytics.RefreshChangeMartsForDayAsync(businessDate, sequence, ct)
@@ -183,12 +184,17 @@ internal sealed partial class SqmDailyProcessor(
         // KPI showing yesterday, with nothing on screen to say which - the most confusing state
         // the system can be in, which is why it runs as part of the import rather than as a job
         // someone has to remember.
+        // For the delivery holding the latest DAY, which is this one unless the day arrived late
+        // or replaced an earlier one. Then the latest delivery's snapshot is what this day just
+        // changed, and a rebuild of this day's own would be skipped as out of date.
+        var martSequence = await MartRefresh.LatestDeliveryAsync(analytics, ct).ConfigureAwait(false);
+
         await context.NoteAsync(
-            "info", $"Rebuilding the dashboard marts for delivery {sequence}", null, ct)
+            "info", $"Rebuilding the dashboard marts for delivery {martSequence}", null, ct)
             .ConfigureAwait(false);
 
         var martFailures = await martRefresh.RunAsync(
-            sequence,
+            martSequence,
             message => context.NoteAsync("warning", message, null, ct),
             ct).ConfigureAwait(false);
 
@@ -254,9 +260,9 @@ internal sealed partial class SqmDailyProcessor(
     /// <remarks>
     /// A day that already has a sequence keeps it, so a corrected file replaces the day in place
     /// rather than appearing as a new one at the end of the series. A day that does not gets the
-    /// next number. This holds as long as days arrive in order, which the delivery does; a day
-    /// arriving out of order gets a sequence that does not match its calendar position, which the
-    /// charts do not use - they read <c>data_date</c> - but which would look odd in the event log.
+    /// next number - including a missing day that arrives late, whose number then does not match
+    /// its calendar position. Nothing that decides state reads the number as an order: the fold
+    /// re-derives a late day's bindings by date, and the dashboard marts follow the latest date.
     /// </remarks>
     private async Task<int> ResolveSequenceAsync(DateOnly businessDate, CancellationToken ct)
     {
