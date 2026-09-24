@@ -43,7 +43,13 @@ const STATUS_PRESETS = [
   { value: '', label: 'All' },
   { value: 'Completed,PartiallyCompleted', label: 'Succeeded' },
   { value: 'Failed,Quarantined', label: 'Failed' },
-  { value: 'Queued,Retrying,Validating,Parsing,Importing,Aggregating,Finalizing', label: 'In flight' },
+  // Every non-terminal status. Deduplicating (a daily file) and Enriching (a TAC file) were
+  // missing, so a job in either stage disappeared from "In flight" while it was running.
+  {
+    value:
+      'Uploaded,Queued,Retrying,Validating,Parsing,Normalizing,Deduplicating,Enriching,Importing,Aggregating,Finalizing',
+    label: 'In flight',
+  },
   { value: 'Duplicate', label: 'Duplicates' },
 ]
 

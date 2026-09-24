@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useAuth, Permission } from '@/features/auth/useAuth'
 import {
   useKpiSummary,
   useTopDimension,
@@ -60,7 +61,9 @@ const dailyChurn = useDailyChurn()
  * lives in imports.expected_business_date and the gap is computed against what actually
  * imported, so the chart's footnote cannot drift away from the chart.
  */
-const freshness = useFreshness()
+const { can } = useAuth()
+const canSeeImports = computed(() => can(Permission.ImportView))
+const freshness = useFreshness({ enabled: canSeeImports })
 
 const missingDays = computed(
   () => freshness.data.value?.find((f) => f.sourceCode === 'SQM')?.missingBusinessDates ?? [],
@@ -144,7 +147,7 @@ const capabilitySubtitle = computed(() =>
  * took it to 270,885 and the sentence kept asserting the old figure. A number in prose is a
  * number nobody updates.
  */
-const tacVersions = useTacVersions()
+const tacVersions = useTacVersions({ enabled: canSeeImports })
 
 const activeTacRows = computed(
   () => tacVersions.data.value?.find((v) => v.status === 'Active')?.rowCount ?? null,
@@ -213,7 +216,7 @@ const activeTacRows = computed(
       successful import was six weeks ago, and nothing else on the screen can tell the reader
       which - so it goes above the numbers rather than in a footer under them.
     -->
-    <DataFreshnessCard />
+    <DataFreshnessCard v-if="canSeeImports" />
 
     <!-- Active filters. Shown as removable chips so the current view is always legible. -->
     <div v-if="isFiltered" class="flex flex-wrap items-center gap-2">
