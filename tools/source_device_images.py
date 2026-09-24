@@ -68,6 +68,7 @@ POSTGRES = ("sqm-postgres", "sqm", "sqm")
 # catalogue tile needs on every side, whatever shape the source was.
 CANVAS = 800
 PADDING_FRACTION = 0.08
+WHITE_TOLERANCE = 12   # of 255: what still counts as the white background when trimming
 STORED_FORMAT = "WEBP"
 STORED_MIME = "image/webp"
 MAX_STORED_BYTES = 512 * 1024          # matches the database CHECK
@@ -694,7 +695,7 @@ def normalise(data: bytes) -> tuple[bytes, str]:
     800x800 with 8% padding means the product occupies about 84% of the tile. Re-encoding drops
     the source metadata, which is how EXIF and anything else riding along leaves.
     """
-    from PIL import Image, ImageOps
+    from PIL import Image, ImageChops, ImageOps
 
     Image.MAX_IMAGE_PIXELS = LIMITS["max_decoded_pixels"]
 
@@ -704,9 +705,19 @@ def normalise(data: bytes) -> tuple[bytes, str]:
 
     # Trim the existing background so the padding below is measured from the product itself
     # rather than from whatever margin the source happened to have.
-    alpha_bbox = image.getchannel("A").getbbox()
-    white = Image.new("RGBA", image.size, (255, 255, 255, 255))
-    bbox = alpha_bbox or Image.alpha_composite(white, image).convert("RGB").getbbox()
+    #
+    # A transparent source is trimmed to what is opaque. An opaque one - every JPEG - is trimmed
+    # to what is not near-white. The earlier version never reached that second case: the alpha
+    # box of an opaque image is the whole image, not None, and getbbox() on the flattened RGB
+    # looks for non-black, which a white background is too. So a JPEG kept its margin and the
+    # product came out at a fraction of the size the padding rule promises.
+    if image.getchannel("A").getextrema()[0] < 255:
+        bbox = image.getchannel("A").getbbox()
+    else:
+        white = Image.new("RGB", image.size, (255, 255, 255))
+        distance = ImageChops.difference(image.convert("RGB"), white).convert("L")
+        # A few levels of tolerance, so JPEG ringing around the edge is not taken for product.
+        bbox = distance.point(lambda v: 255 if v > WHITE_TOLERANCE else 0).getbbox()
     if bbox:
         image = image.crop(bbox)
 

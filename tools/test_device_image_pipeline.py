@@ -274,9 +274,23 @@ def test_normalisation() -> None:
               bbox is not None and bbox[0] > 0 and bbox[1] > 0
               and bbox[2] < pipeline.CANVAS and bbox[3] < pipeline.CANVAS, str(bbox))
 
-        width_share = (bbox[2] - bbox[0]) / pipeline.CANVAS
+        # The longer side: the product here is portrait once trimmed. Measuring width alone passed
+        # only while the white margin was left in and counted as product.
+        share = max(bbox[2] - bbox[0], bbox[3] - bbox[1]) / pipeline.CANVAS
         check("the product fills most of the canvas without touching it",
-              0.7 <= width_share <= 0.95, f"{width_share:.0%} wide")
+              0.7 <= share <= 0.95, f"{share:.0%} on its longer side")
+
+    # The white margin of an opaque source is trimmed, so the product - not the photograph it sits
+    # in - is what fills the canvas. A JPEG on a wide white background came out at under half.
+    for fmt in ("PNG", "JPEG"):
+        with Image.open(io.BytesIO(pipeline.normalise(render(1400, 900, product=(0.4, 0.8),
+                                                              fmt=fmt))[0])) as out:
+            flat = Image.new("RGB", out.size, (255, 255, 255))
+            flat.paste(out.convert("RGBA"), mask=out.convert("RGBA").getchannel("A"))
+            dark = flat.convert("L").point(lambda v: 255 if v < 128 else 0).getbbox()
+            share = max(dark[2] - dark[0], dark[3] - dark[1]) / pipeline.CANVAS
+            check(f"a {fmt} product on white is trimmed to fill the canvas",
+                  0.78 <= share <= 0.9, f"{share:.0%} of the canvas")
 
     # Aspect ratio must survive: a 2:1 source must not come out square.
     tall = pipeline.normalise(render(600, 1200, product=(0.5, 0.9)))[0]
