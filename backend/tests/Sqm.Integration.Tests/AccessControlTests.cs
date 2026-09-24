@@ -559,6 +559,31 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
     }
 
     [Fact]
+    public async Task An_administrative_change_is_linked_to_the_account_that_made_it()
+    {
+        if (Skip(out var reason))
+        {
+            Assert.Skip(reason);
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var admin = await _fixture.Users.GetByUsernameAsync("admin", ct);
+        Assert.NotNull(admin); // the bootstrap administrator every database starts with
+
+        var id = await CreateAsync("linked", "analyst");
+        await _fixture.Users.SetRolesAsync(id, ["viewer"], admin.Username, IdentityFixture.Context, ct);
+
+        var page = await _fixture.Audit.QueryAsync(
+            new AuditQuery(Action: "user.roles.set", PageSize: 20), ct);
+        var entry = page.Items.First(e => e.TargetId == id.ToString(
+            System.Globalization.CultureInfo.InvariantCulture));
+
+        // By name only, the entry had no actor id: the log showed no link to the account, and a
+        // filter by actor id left out every user and role change.
+        Assert.Equal(admin.Id, entry.ActorUserId);
+    }
+
+    [Fact]
     public async Task The_application_role_cannot_rewrite_or_delete_audit_history()
     {
         if (Skip(out var reason))

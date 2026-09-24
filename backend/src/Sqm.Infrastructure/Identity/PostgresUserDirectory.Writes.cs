@@ -567,7 +567,7 @@ public sealed partial class PostgresUserDirectory
         return [.. rows];
     }
 
-    private Task AuditAsync(
+    private async Task AuditAsync(
         NpgsqlConnection connection,
         IDbTransaction transaction,
         string actor,
@@ -577,10 +577,12 @@ public sealed partial class PostgresUserDirectory
         AuthenticationContext context,
         IReadOnlyDictionary<string, object?>? detail,
         CancellationToken ct) =>
-        IdentitySql.WriteAuditAsync(connection, transaction, new AuditEntry(
+        await IdentitySql.WriteAuditAsync(connection, transaction, new AuditEntry(
             ActorName: actor,
             Action: action,
             Category: AuditCategory.User,
+            ActorUserId: await IdentitySql.ResolveActorIdAsync(
+                connection, transaction, actor, _commandTimeout, ct).ConfigureAwait(false),
             Outcome: AuditOutcome.Success,
             TargetType: "user",
             TargetId: targetUserId.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -588,7 +590,7 @@ public sealed partial class PostgresUserDirectory
             Ip: context.Ip,
             UserAgent: context.UserAgent,
             CorrelationId: context.CorrelationId,
-            Detail: detail), _commandTimeout, ct);
+            Detail: detail), _commandTimeout, ct).ConfigureAwait(false);
 
     /// <summary>Turns an empty or whitespace string into null, so the column holds one absence.</summary>
     private static string? Blank(string? value) =>

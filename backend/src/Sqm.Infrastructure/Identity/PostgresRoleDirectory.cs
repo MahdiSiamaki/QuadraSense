@@ -373,7 +373,7 @@ public sealed partial class PostgresRoleDirectory : IRoleDirectory
     private static string NormaliseCode(string code) =>
         code.Trim().ToLowerInvariant().Replace(' ', '_').Replace('-', '_');
 
-    private Task AuditAsync(
+    private async Task AuditAsync(
         NpgsqlConnection connection,
         IDbTransaction transaction,
         string actor,
@@ -383,10 +383,12 @@ public sealed partial class PostgresRoleDirectory : IRoleDirectory
         AuthenticationContext context,
         IReadOnlyDictionary<string, object?>? detail,
         CancellationToken ct) =>
-        IdentitySql.WriteAuditAsync(connection, transaction, new AuditEntry(
+        await IdentitySql.WriteAuditAsync(connection, transaction, new AuditEntry(
             ActorName: actor,
             Action: action,
             Category: AuditCategory.Role,
+            ActorUserId: await IdentitySql.ResolveActorIdAsync(
+                connection, transaction, actor, _commandTimeout, ct).ConfigureAwait(false),
             Outcome: AuditOutcome.Success,
             TargetType: "role",
             TargetId: roleId.ToString(CultureInfo.InvariantCulture),
@@ -394,7 +396,7 @@ public sealed partial class PostgresRoleDirectory : IRoleDirectory
             Ip: context?.Ip,
             UserAgent: context?.UserAgent,
             CorrelationId: context?.CorrelationId,
-            Detail: detail), _commandTimeout, ct);
+            Detail: detail), _commandTimeout, ct).ConfigureAwait(false);
 
     /// <remarks>
     /// A class with settable properties rather than a positional record, and the reason is

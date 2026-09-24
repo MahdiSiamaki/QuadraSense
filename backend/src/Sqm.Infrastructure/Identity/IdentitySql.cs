@@ -50,6 +50,24 @@ internal static class IdentitySql
     /// the import platform gets by making the job queue and its audit trail one write, and it is
     /// why this takes a transaction rather than being a separate service call.
     /// </remarks>
+    /// <summary>The id of the account named <paramref name="actor"/>, or null for a non-account actor.</summary>
+    /// <remarks>
+    /// The administration writes are told who acted by name. Their audit entries went in with the
+    /// name only, so the log showed no link to the account behind a user or role change, and a
+    /// filter by actor id left out every administrative change. Resolved in the same transaction,
+    /// so it names the account as it was when the change was made.
+    /// </remarks>
+    public static async Task<long?> ResolveActorIdAsync(
+        NpgsqlConnection connection, IDbTransaction? transaction, string actor, int commandTimeout,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+
+        return await connection.ExecuteScalarAsync<long?>(new CommandDefinition(
+            "SELECT id FROM auth.user_account WHERE lower(username) = lower(@actor)",
+            new { actor }, transaction, commandTimeout, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
     public static async Task WriteAuditAsync(
         NpgsqlConnection connection,
         IDbTransaction? transaction,
