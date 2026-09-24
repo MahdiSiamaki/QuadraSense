@@ -81,8 +81,13 @@ export function useFilterState() {
     void router.replace({ query })
   }
 
+  // Clears the chips it sits beside, not the view. It emptied the whole query, so someone counting
+  // by handsets with unknown devices hidden was put back on bindings with them shown - two
+  // settings this file itself treats as a lens (replace, not push), not as filters.
   function clearAll() {
-    void router.push({ query: {} })
+    const query = { ...route.query }
+    for (const key of FILTER_KEYS) delete query[key]
+    void router.push({ query })
   }
 
   return { filters, activeFilters, setFilter, toggleUnknownDevice, clearAll, countBy, setCountBy }
