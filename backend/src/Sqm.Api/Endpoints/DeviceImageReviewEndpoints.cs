@@ -145,11 +145,25 @@ public static class DeviceImageReviewEndpoints
         return Results.Bytes(image.Bytes, image.ContentType);
     }
 
+    /// <summary>A model key as it arrived in the path, with its slashes restored.</summary>
+    /// <remarks>
+    /// GSMA marketing names carry slashes - "redmi note 8/8t" - and so do the keys built from them.
+    /// The SPA escapes the key, and routing decodes every escape in a route value except %2F,
+    /// which it leaves as it is so that it cannot be mistaken for a path separator. The key then
+    /// matched no image, and Verify, Remove and Current answered 404 for every such model. Only
+    /// %2F is decoded here: routing has already handled the rest, and decoding again could turn
+    /// a literal "%" in a name into something else.
+    /// </remarks>
+    private static string FromRoute(string modelKey) =>
+        modelKey.Replace("%2F", "/", StringComparison.OrdinalIgnoreCase);
+
     private static async Task<IResult> CurrentAsync(
         string modelKey, HttpContext http, IDeviceImageStore images, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(images);
         ArgumentNullException.ThrowIfNull(http);
+
+        modelKey = FromRoute(modelKey);
 
         var image = await images.GetAsync(modelKey, ct).ConfigureAwait(false);
 
@@ -244,6 +258,8 @@ public static class DeviceImageReviewEndpoints
     {
         ArgumentNullException.ThrowIfNull(images);
 
+        modelKey = FromRoute(modelKey);
+
         var user = CurrentUser.Require(http);
         var verified = await images.VerifyAsync(modelKey, user.UserId, ct).ConfigureAwait(false);
 
@@ -264,6 +280,8 @@ public static class DeviceImageReviewEndpoints
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(images);
+
+        modelKey = FromRoute(modelKey);
 
         var user = CurrentUser.Require(http);
         var removed = await images.DeleteAsync(modelKey, ct).ConfigureAwait(false);
