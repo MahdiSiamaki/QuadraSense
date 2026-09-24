@@ -89,14 +89,6 @@ public sealed partial class ClickHouseTacVersionStore : ITacVersionStore
     private ClickHouseConnection CreateConnection() =>
         new(_options.ConnectionString, _httpClientFactory, ClickHouseAnalyticsStore.HttpClientName);
 
-    public async Task<int> AllocateVersionIdAsync(CancellationToken ct)
-    {
-        var max = await ScalarAsync($"SELECT max(version_id) FROM {_database}.tac_all", ct)
-            .ConfigureAwait(false);
-
-        return (max is null or DBNull ? 0 : Convert.ToInt32(max, CultureInfo.InvariantCulture)) + 1;
-    }
-
     public async Task<int?> GetActiveVersionIdAsync(CancellationToken ct)
     {
         var value = await ScalarAsync(

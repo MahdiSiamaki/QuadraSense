@@ -74,8 +74,16 @@ internal sealed partial class TacSnapshotProcessor(
 
         await ScanStructureAsync(job, context, ct).ConfigureAwait(false);
 
-        var versionId = await store.AllocateVersionIdAsync(ct).ConfigureAwait(false);
+        // The job's own id, not max(version_id) + 1 read back from ClickHouse. Two TAC jobs
+        // running at once - two workers, or one API-hosted and one standalone - read the same
+        // max and loaded into the same version, and the duplicate check then dropped both. The
+        // job id is unique by construction.
+        var versionId = checked((int)job.JobId);
         var activeVersionId = await store.GetActiveVersionIdAsync(ct).ConfigureAwait(false);
+
+        // A retry of this job gets the same id, so whatever an earlier attempt left half-loaded
+        // is cleared first. Dropping a partition that does not exist is a no-op.
+        await store.DropVersionAsync(versionId, CancellationToken.None).ConfigureAwait(false);
 
         await context.EnterStageAsync(
             ImportJobStatus.Importing, $"Loading as TAC version {versionId} (not yet active)", ct)

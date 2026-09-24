@@ -11,9 +11,6 @@ namespace Sqm.Application.DataImport;
 /// </remarks>
 public interface ITacVersionStore
 {
-    /// <summary>The next unused version number.</summary>
-    Task<int> AllocateVersionIdAsync(CancellationToken ct);
-
     /// <summary>Which version the product is currently resolving TACs against.</summary>
     Task<int?> GetActiveVersionIdAsync(CancellationToken ct);
 
