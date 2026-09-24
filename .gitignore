@@ -37,6 +37,12 @@ dist/
 frontend/src/api/generated/
 backend/**/openapi.json
 
+# ---- python --------------------------------------------------------------
+# Bytecode of tools/ and db/operational/jobs/. Two .pyc files were committed by
+# accident; they are build output of files that are themselves committed.
+__pycache__/
+*.pyc
+
 # ---- os / editor ---------------------------------------------------------
 .DS_Store
 Thumbs.db
