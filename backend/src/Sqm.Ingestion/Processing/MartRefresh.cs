@@ -63,9 +63,12 @@ internal sealed partial class MartRefresh(
     /// </remarks>
     private const int MaxPasses = 3;
 
-    private static readonly TimeSpan BetweenStatements = TimeSpan.FromMilliseconds(750);
+    /// <summary>A breath between statements; see <see cref="RunPassAsync"/>.</summary>
+    /// <remarks>Settable only so that tests of the code around the refresh need not wait.</remarks>
+    internal TimeSpan BetweenStatements { get; init; } = TimeSpan.FromMilliseconds(750);
 
-    private static readonly TimeSpan BetweenPasses = TimeSpan.FromSeconds(20);
+    /// <summary>The wait before retrying a pass that had failures.</summary>
+    internal TimeSpan BetweenPasses { get; init; } = TimeSpan.FromSeconds(20);
 
     /// <summary>Runs the refresh, retrying the whole script until nothing fails.</summary>
     /// <returns>How many statements still failed after the last pass.</returns>

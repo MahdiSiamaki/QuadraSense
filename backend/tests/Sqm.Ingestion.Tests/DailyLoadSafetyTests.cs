@@ -104,12 +104,16 @@ public sealed class DailyLoadSafetyTests
         public async Task ProcessAsync()
         {
             var analytics = Stub.Create<IAnalyticsIngestionStore>(Analytics);
+            var repository = Stub.Create<IImportJobRepository>((m, _) => m.Name == "ResolveSchemaAsync"
+                ? Task.FromResult(new SchemaResolution(SchemaVerdict.Known, 1, "v1", "known"))
+                : Stub.Default(m));
             var processor = new SqmDailyProcessor(
                 analytics,
-                Stub.Create<IImportJobRepository>((m, _) => m.Name == "ResolveSchemaAsync"
-                    ? Task.FromResult(new SchemaResolution(SchemaVerdict.Known, 1, "v1", "known"))
-                    : Stub.Default(m)),
-                new MartRefresh(analytics, NullLogger<MartRefresh>.Instance),
+                repository,
+                new DashboardSnapshot(
+                    analytics, repository,
+                    new MartRefresh(analytics, NullLogger<MartRefresh>.Instance),
+                    NullLogger<DashboardSnapshot>.Instance),
                 NullLogger<SqmDailyProcessor>.Instance);
 
             var context = Stub.Create<IImportContext>((m, _) => m.Name switch

@@ -156,6 +156,18 @@ function formatRun(run: DayRun, withYear: boolean): string {
             figures below are from
             {{ martBehind.served ? formatDate(martBehind.served) : 'the initial dump' }}
           </dd>
+          <!--
+            A run of files is landing and the figures are rebuilt once, after the last of them.
+            The served date can match the imported one throughout - after a late day it does - so
+            without this the page would show figures that leave out the new days, under a date
+            that says nothing is missing.
+          -->
+          <dd v-if="sqm?.dashboardPendingSince" class="mt-1 text-[var(--text-xs)] text-[var(--c-warning)]">
+            figures below update once the queued files have landed
+            <span class="text-[var(--c-text-muted)]">
+              (pending since {{ formatDateTime(sqm.dashboardPendingSince) }})
+            </span>
+          </dd>
         </div>
 
         <!-- Missing days -->

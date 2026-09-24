@@ -23,6 +23,7 @@ public sealed partial class ImportWorker(
     IImportJobRepository repository,
     IImportFileStore fileStore,
     IEnumerable<IImportProcessor> processors,
+    IEnumerable<IIdleTask> idleTasks,
     IOptions<ImportWorkerOptions> options,
     ILogger<ImportWorker> logger) : BackgroundService
 {
@@ -50,6 +51,10 @@ public sealed partial class ImportWorker(
     [LoggerMessage(EventId = 3406, Level = LogLevel.Warning,
         Message = "Lease renewal for job {JobId} failed; retrying at the next interval")]
     private partial void LogRenewFailed(long jobId, Exception exception);
+
+    [LoggerMessage(EventId = 3407, Level = LogLevel.Warning,
+        Message = "Idle task {Task} failed; it is tried again the next time the worker is idle")]
+    private partial void LogIdleTaskFailed(string task, Exception exception);
 
     [LoggerMessage(EventId = 3405, Level = LogLevel.Warning,
         Message = "Could not record the worker heartbeat; the Import Center may report this "
@@ -104,6 +109,12 @@ public sealed partial class ImportWorker(
 
             if (job is null)
             {
+                // Nothing this worker can claim: the queue is empty, or what is left is blocked
+                // behind a failed day. The moment for work no job will do - such as a dashboard
+                // snapshot a run of files deferred and never got to rebuild. Done holding the
+                // slot, so it never runs beside a job of this worker's own.
+                await RunIdleTasksAsync(stoppingToken).ConfigureAwait(false);
+
                 slots.Release();
                 await DelayAsync(_options.PollInterval, stoppingToken).ConfigureAwait(false);
                 continue;
@@ -323,6 +334,21 @@ public sealed partial class ImportWorker(
         catch (OperationCanceledException)
         {
             // The job finished and cancelled this loop. Nothing to do.
+        }
+    }
+
+    private async Task RunIdleTasksAsync(CancellationToken ct)
+    {
+        foreach (var task in idleTasks)
+        {
+            try
+            {
+                await task.RunAsync(ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                LogIdleTaskFailed(task.GetType().Name, ex);
+            }
         }
     }
 
