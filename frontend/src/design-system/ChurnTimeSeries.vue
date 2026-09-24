@@ -7,6 +7,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { formatCompact, formatFull } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
 import { chartColor } from '@/lib/chart-colors'
+import { fillCalendar, isMissing } from '@/lib/calendar'
 import type { DailyChurn } from '@/api/dashboard'
 
 echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, CanvasRenderer])
@@ -44,6 +45,11 @@ function render() {
   const muted = cssVar('--c-text-muted')
   const border = cssVar('--c-border')
 
+  // Every calendar day, so a day not delivered breaks both lines rather than being bridged.
+  const days = fillCalendar(props.data)
+  const value = (pick: (row: DailyChurn) => number) =>
+    days.map((d) => (isMissing(d) ? null : pick(d)))
+
   chart.value.setOption(
     {
       animation: false,
@@ -55,8 +61,9 @@ function render() {
         borderColor: border,
         textStyle: { color: cssVar('--c-text'), fontSize: 12 },
         formatter: (params: Array<{ dataIndex: number }>) => {
-          const row = props.data[params[0]?.dataIndex ?? 0]
+          const row = days[params[0]?.dataIndex ?? 0]
           if (!row) return ''
+          if (isMissing(row)) return `<strong>${row.date}</strong><br/>not delivered - no data`
           return [
             `<strong>${row.date}</strong>`,
             `SIM changes &nbsp; ${formatFull(row.simChanges)}`,
@@ -66,7 +73,7 @@ function render() {
       },
       xAxis: {
         type: 'category',
-        data: props.data.map((d) => d.date),
+        data: days.map((d) => d.date),
         axisLabel: { color: muted, fontSize: 10, hideOverlap: true },
         axisLine: { lineStyle: { color: border } },
       },
@@ -80,7 +87,7 @@ function render() {
         {
           name: 'Handset changes',
           type: 'line',
-          data: props.data.map((d) => d.deviceChanges),
+          data: value((d) => d.deviceChanges),
           itemStyle: { color: cssVar('--viz-1') },
           areaStyle: { opacity: 0.12 },
           lineStyle: { width: 2 },
@@ -89,7 +96,7 @@ function render() {
         {
           name: 'SIM changes',
           type: 'line',
-          data: props.data.map((d) => d.simChanges),
+          data: value((d) => d.simChanges),
           itemStyle: { color: cssVar('--viz-5') },
           areaStyle: { opacity: 0.12 },
           lineStyle: { width: 2 },

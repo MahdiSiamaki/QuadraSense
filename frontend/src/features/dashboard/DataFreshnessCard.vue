@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useAuth, Permission } from '@/features/auth/useAuth'
 import { RouterLink } from 'vue-router'
 import Card from '@/design-system/Card.vue'
@@ -8,6 +8,7 @@ import { useFreshness, useWorkerHealth } from '@/features/imports/useImportQueri
 import { useKpiSummary } from '@/api/dashboard'
 import { useTacVersions } from '@/features/imports/useTacVersions'
 import { formatDate, formatDateTime, formatRelative } from '@/lib/format'
+import { dayRuns, type DayRun } from '@/lib/calendar'
 
 /**
  * How current the dashboard's data is.
@@ -74,19 +75,55 @@ const lagTone = computed(() => {
   return 'var(--c-success)'
 })
 
+/*
+  The missing days as the runs they form - "May 8-10, May 13, May 16-18" - not as first and last.
+  It used to print the first and the last alone, so 7 missing days read "May 8 - May 18", which
+  anyone takes to mean eleven. The dates themselves were only in a hover title, which touch and
+  keyboard users never see.
+*/
+const RUNS_SHOWN = 4
+const showAllRuns = ref(false)
+
 const missingSummary = computed(() => {
   const missing = sqm.value?.missingBusinessDates ?? []
   if (!missing.length) return null
 
-  // Newest first from the API; show the range rather than a wall of dates.
-  const sorted = [...missing].sort()
+  const runs = dayRuns(missing)
+  const years = new Set(runs.flatMap((r) => [r.first.slice(0, 4), r.last.slice(0, 4)]))
+  const oneYear = years.size === 1 ? [...years][0]! : null
+  const labels = runs.map((r) => formatRun(r, oneYear === null))
+
   return {
-    count: missing.length,
-    first: sorted[0]!,
-    last: sorted[sorted.length - 1]!,
-    all: sorted,
+    count: new Set(missing).size,
+    labels,
+    year: oneYear,
+    hidden: Math.max(0, labels.length - RUNS_SHOWN),
   }
 })
+
+const visibleRuns = computed(() => {
+  const labels = missingSummary.value?.labels ?? []
+  return showAllRuns.value ? labels : labels.slice(0, RUNS_SHOWN)
+})
+
+const shortDay = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+const dayOnly = new Intl.DateTimeFormat('en-US', { day: 'numeric', timeZone: 'UTC' })
+
+/** "May 13", "May 8–10", "Apr 30 – May 2"; with the year on each end when runs span years. */
+function formatRun(run: DayRun, withYear: boolean): string {
+  if (withYear) {
+    return run.first === run.last
+      ? formatDate(run.first)
+      : `${formatDate(run.first)} – ${formatDate(run.last)}`
+  }
+  const first = new Date(`${run.first}T00:00:00Z`)
+  const last = new Date(`${run.last}T00:00:00Z`)
+  if (run.first === run.last) return shortDay.format(first)
+  if (run.first.slice(0, 7) === run.last.slice(0, 7)) {
+    return `${shortDay.format(first)}–${dayOnly.format(last)}`
+  }
+  return `${shortDay.format(first)} – ${shortDay.format(last)}`
+}
 </script>
 
 <template>
@@ -130,13 +167,18 @@ const missingSummary = computed(() => {
           >
             {{ missingSummary?.count ?? 0 }}
           </dd>
-          <dd
-            class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]"
-            :title="missingSummary?.all.join(', ')"
-          >
+          <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
             <template v-if="missingSummary">
-              {{ formatDate(missingSummary.first) }} – {{ formatDate(missingSummary.last) }}. Charts
-              show gaps, never interpolated points.
+              {{ visibleRuns.join(', ') }}<template v-if="missingSummary.year">, {{ missingSummary.year }}</template><template v-if="missingSummary.hidden && !showAllRuns">
+                and
+                <button
+                  type="button"
+                  class="font-medium text-[var(--c-accent)] hover:underline"
+                  @click="showAllRuns = true"
+                >
+                  {{ missingSummary.hidden }} more {{ missingSummary.hidden === 1 ? 'period' : 'periods' }}
+                </button></template>.
+              Charts show gaps, never interpolated points.
             </template>
             <template v-else>Every expected day is present.</template>
           </dd>
