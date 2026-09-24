@@ -583,7 +583,9 @@ public sealed partial class ClickHouseAnalyticsStore
             // Matched against the curated vendor name, which is what the filter control offers:
             // picking "Samsung" must not return only the one spelling of six that happens to be
             // in the raw column.
-            clauses.Add($"AND {VendorExpression} = {{manufacturer:String}}");
+            // With the facets' own labels: they offer "(unknown TAC)" and "(not stated)" for the
+            // models with no value, and a filter comparing the raw column matched none of them.
+            clauses.Add($"AND coalesce(nullIf({VendorExpression}, ''), '(unknown TAC)') = {{manufacturer:String}}");
             parameters["manufacturer"] = criteria.Manufacturer;
         }
 
@@ -595,13 +597,13 @@ public sealed partial class ClickHouseAnalyticsStore
 
         if (!string.IsNullOrWhiteSpace(criteria.DeviceType))
         {
-            clauses.Add("AND t.deviceType = {deviceType:String}");
+            clauses.Add("AND coalesce(nullIf(t.deviceType, ''), '(not stated)') = {deviceType:String}");
             parameters["deviceType"] = criteria.DeviceType;
         }
 
         if (!string.IsNullOrWhiteSpace(criteria.OperatingSystem))
         {
-            clauses.Add("AND trim(t.operatingSystem) = {os:String}");
+            clauses.Add("AND coalesce(nullIf(trim(t.operatingSystem), ''), '(not stated)') = {os:String}");
             parameters["os"] = criteria.OperatingSystem;
         }
 
