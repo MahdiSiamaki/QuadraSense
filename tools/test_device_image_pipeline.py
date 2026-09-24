@@ -122,6 +122,62 @@ def test_source_policy() -> None:
         check("localhost is refused", "non-public" in str(exc), str(exc))
 
 
+def test_redirect_hops() -> None:
+    """Every hop is checked before it is requested, not only where the chain ends."""
+    import subprocess
+
+    requested: list[str] = []
+
+    def fake_curl(responses):
+        def run(command, capture_output=True):
+            requested.append(command[-1])
+            status, target, body = responses[len(requested) - 1]
+            meta = f"\n---META---{status} {target}".encode()
+            return subprocess.CompletedProcess(command, 0, body + meta, b"")
+        return run
+
+    saved = (pipeline.subprocess.run, pipeline.check_public_host, pipeline.POLITE_DELAY_SECONDS)
+    pipeline.check_public_host = lambda host: None      # no DNS in a test
+    pipeline.POLITE_DELAY_SECONDS = 0
+    try:
+        # An allowlisted host bounces through one that is not, and back again. Only the last
+        # URL was checked before, after all three had been requested.
+        pipeline.subprocess.run = fake_curl([
+            (302, "https://internal.example/hop", b""),
+            (302, "https://upload.wikimedia.org/b.jpg", b""),
+            (200, "", b"image"),
+        ])
+        try:
+            pipeline.fetch("https://upload.wikimedia.org/a.jpg")
+            check("a redirect through an unlisted host is refused", False, "no error raised")
+        except pipeline.FetchError as exc:
+            check("a redirect through an unlisted host is refused", "redirect" in str(exc), str(exc))
+        check("the unlisted hop is never requested", requested == ["https://upload.wikimedia.org/a.jpg"],
+              str(requested))
+
+        requested.clear()
+        pipeline.subprocess.run = fake_curl([
+            (302, "https://thumb.wikimedia.org/b.jpg", b""),
+            (200, "", b"image"),
+        ])
+        body, host = pipeline.fetch("https://upload.wikimedia.org/a.jpg")
+        check("a redirect between listed hosts is followed",
+              body == b"image" and host == "thumb.wikimedia.org", f"{body!r} {host}")
+
+        requested.clear()
+        pipeline.subprocess.run = fake_curl(
+            [(302, "https://upload.wikimedia.org/again.jpg", b"")] * 10)
+        try:
+            pipeline.fetch("https://upload.wikimedia.org/a.jpg")
+            check("a redirect loop is bounded", False, "no error raised")
+        except pipeline.FetchError as exc:
+            check("a redirect loop is bounded",
+                  "redirects" in str(exc) and len(requested) == pipeline.LIMITS["max_redirects"] + 1,
+                  f"{exc} after {len(requested)} requests")
+    finally:
+        pipeline.subprocess.run, pipeline.check_public_host, pipeline.POLITE_DELAY_SECONDS = saved
+
+
 def test_mime_sniffing() -> None:
     check("PNG is recognised from its magic bytes",
           pipeline.sniff(render(400, 400, fmt="PNG")) == "image/png")
@@ -241,8 +297,8 @@ def test_model_key() -> None:
 
 
 def main() -> int:
-    for test in (test_identity, test_source_policy, test_mime_sniffing, test_quality_rules,
-                 test_bad_bytes, test_normalisation, test_model_key):
+    for test in (test_identity, test_source_policy, test_redirect_hops, test_mime_sniffing,
+                 test_quality_rules, test_bad_bytes, test_normalisation, test_model_key):
         try:
             test()
         except Exception as exc:                         # noqa: BLE001

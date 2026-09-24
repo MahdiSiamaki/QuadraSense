@@ -302,14 +302,8 @@ def check_public_host(host: str) -> None:
             raise FetchError(f"{host} resolves to a non-public address ({address})")
 
 
-def fetch(url: str, *, expect_json: bool = False):
-    """
-    Download one thing, treating the far end as hostile.
-
-    https only, allowlisted host, public address, bounded redirects, bounded time, bounded size.
-    The effective URL is re-checked after redirects, because a redirect to a host nobody vetted is
-    exactly the trick this guards against.
-    """
+def check_target(url: str) -> str:
+    """The host of a URL we are about to request, or an error if it must not be requested."""
     if not url.lower().startswith("https://"):
         raise FetchError(f"not https: {url[:60]}")
 
@@ -317,57 +311,80 @@ def fetch(url: str, *, expect_json: bool = False):
     if host not in ALLOWED:
         raise FetchError(f"domain not allowlisted: {host}")
     check_public_host(host)
+    return host
+
+
+def fetch(url: str, *, expect_json: bool = False):
+    """
+    Download one thing, treating the far end as hostile.
+
+    https only, allowlisted host, public address, bounded redirects, bounded time, bounded size.
+
+    Redirects are followed here, one hop at a time, not by curl. With curl's --location only the
+    final URL could be checked, after every hop had already been requested - so an allowlisted
+    host could bounce the request through any address, private ones included, and back. Each hop
+    is now checked before a byte is sent to it.
+    """
+    host = check_target(url)
 
     marker = b"\n---META---"
-    command = [
-        "curl", "-sS", "--proto", "=https", "--proto-redir", "=https",
-        "--location", "--max-redirs", str(LIMITS["max_redirects"]),
-        "--max-time", str(LIMITS["timeout_seconds"]),
-        "--max-filesize", str(LIMITS["max_download_bytes"]),
-        "-A", UA,
-        "-w", marker.decode() + "%{http_code} %{url_effective}",
-        url,
-    ]
-
     last_error = "not attempted"
 
     for attempt in range(MAX_ATTEMPTS):
-        time.sleep(POLITE_DELAY_SECONDS)
-        out = subprocess.run(command, capture_output=True)
-        if out.returncode != 0:
-            raise FetchError(
-                f"transport failed ({out.returncode}): "
-                f"{out.stderr.decode(errors='replace')[:120]}")
+        current, current_host = url, host
 
-        body, separator, meta = out.stdout.rpartition(marker)
-        if not separator:
-            raise FetchError("no response metadata; cannot confirm the status")
+        for _hop in range(LIMITS["max_redirects"] + 1):
+            time.sleep(POLITE_DELAY_SECONDS)
+            command = [
+                "curl", "-sS", "--proto", "=https",
+                "--max-time", str(LIMITS["timeout_seconds"]),
+                "--max-filesize", str(LIMITS["max_download_bytes"]),
+                "-A", UA,
+                "-w", marker.decode() + "%{http_code} %{redirect_url}",
+                current,
+            ]
+            out = subprocess.run(command, capture_output=True)
+            if out.returncode != 0:
+                raise FetchError(
+                    f"transport failed ({out.returncode}): "
+                    f"{out.stderr.decode(errors='replace')[:120]}")
 
-        status_text, _, effective = meta.decode(errors="replace").partition(" ")
-        status = int(status_text) if status_text.isdigit() else 0
+            body, separator, meta = out.stdout.rpartition(marker)
+            if not separator:
+                raise FetchError("no response metadata; cannot confirm the status")
+
+            status_text, _, redirect = meta.decode(errors="replace").partition(" ")
+            status = int(status_text) if status_text.isdigit() else 0
+
+            if 300 <= status < 400 and redirect:
+                try:
+                    current_host = check_target(redirect)
+                except FetchError as exc:
+                    raise FetchError(f"redirect refused: {exc}") from exc
+                current = redirect
+                continue
+            break
+        else:
+            raise FetchError(f"more than {LIMITS['max_redirects']} redirects")
 
         # The status is checked BEFORE the bytes. Without this a rate-limited request looked like
         # a corrupt image: Wikimedia answers 429 with a 2,255-byte HTML page, which sniffed as no
         # known format and was reported as "bytes are not a supported image" - true, and the
         # wrong diagnosis entirely.
         if status == 429 or 500 <= status < 600:
-            last_error = f"HTTP {status} from {host}"
+            last_error = f"HTTP {status} from {current_host}"
             time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
             continue
 
         if status != 200:
-            raise FetchError(f"HTTP {status} from {host}")
-
-        final_host = host_of(effective) if effective else host
-        if final_host and final_host not in ALLOWED:
-            raise FetchError(f"redirected off the allowlist to {final_host}")
+            raise FetchError(f"HTTP {status} from {current_host}")
 
         if len(body) > LIMITS["max_download_bytes"]:
             raise FetchError("larger than the download ceiling")
 
         if expect_json:
             return json.loads(body.decode("utf-8"))
-        return body, final_host or host
+        return body, current_host
 
     raise FetchError(f"{last_error} after {MAX_ATTEMPTS} attempts")
 
