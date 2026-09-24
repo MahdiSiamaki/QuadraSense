@@ -192,13 +192,13 @@ public sealed partial class ClickHouseAnalyticsStore
             // meaningful even when every absolute change is negative.
             $"SELECT * FROM combined WHERE population_at_start >= 100000 ORDER BY "
             + $"population_change / nullIf(population_at_start, 0) DESC LIMIT {take} "
-            + "UNION ALL "
+            + "UNION DISTINCT "
             + $"SELECT * FROM combined WHERE population_at_start >= 100000 ORDER BY "
             + $"population_change / nullIf(population_at_start, 0) ASC LIMIT {take}",
 
         _ =>
             $"SELECT * FROM combined ORDER BY net DESC LIMIT {take} "
-            + "UNION ALL "
+            + "UNION DISTINCT "
             + $"SELECT * FROM combined ORDER BY net ASC LIMIT {take}",
     };
 
