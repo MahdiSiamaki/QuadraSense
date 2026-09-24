@@ -47,6 +47,10 @@ public sealed partial class ImportWorker(
         Message = "Import worker stopping; waiting up to {GraceSeconds}s for {Running} running job(s)")]
     private partial void LogStopping(double graceSeconds, int running);
 
+    [LoggerMessage(EventId = 3406, Level = LogLevel.Warning,
+        Message = "Lease renewal for job {JobId} failed; retrying at the next interval")]
+    private partial void LogRenewFailed(long jobId, Exception exception);
+
     [LoggerMessage(EventId = 3405, Level = LogLevel.Warning,
         Message = "Could not record the worker heartbeat; the Import Center may report this "
                   + "worker as absent while it is in fact running")]
@@ -191,7 +195,8 @@ public sealed partial class ImportWorker(
                 await repository.FailAsync(
                     job.JobId,
                     $"No processor is registered for data source '{job.SourceCode}'.",
-                    isRetryable: false, TimeSpan.Zero, stoppingToken).ConfigureAwait(false);
+                    isRetryable: false, TimeSpan.Zero, _options.WorkerId, stoppingToken)
+                    .ConfigureAwait(false);
                 return;
             }
 
@@ -202,15 +207,19 @@ public sealed partial class ImportWorker(
                 job.JobId, outcome.Status is ImportJobStatus.Completed ? "info" : "warning",
                 null, outcome.Message, null, stoppingToken).ConfigureAwait(false);
 
-            if (outcome.Status is ImportJobStatus.Cancelled)
-            {
-                await repository.MarkCancelledAsync(job.JobId, stoppingToken).ConfigureAwait(false);
-            }
-            else
-            {
-                await repository.CompleteAsync(
+            var recorded = outcome.Status is ImportJobStatus.Cancelled
+                ? await repository.MarkCancelledAsync(job.JobId, _options.WorkerId, stoppingToken)
+                    .ConfigureAwait(false)
+                : await repository.CompleteAsync(
                     job.JobId, outcome.Status, outcome.Counters, outcome.MakeEffective,
-                    outcome.BusinessDate, stoppingToken).ConfigureAwait(false);
+                    outcome.BusinessDate, _options.WorkerId, stoppingToken).ConfigureAwait(false);
+
+            if (!recorded)
+            {
+                // The lease was lost before the result could be written; the job is someone
+                // else's now, and their result stands.
+                LogLeaseLost(job.JobId);
+                return;
             }
 
             stopwatch.Stop();
@@ -254,7 +263,8 @@ public sealed partial class ImportWorker(
         // Recording the failure must not itself be cancellable by the shutdown token: a job that
         // failed and was never marked failed would sit in a working status until its lease
         // expired, which is a worse outcome than one extra database write during shutdown.
-        await repository.FailAsync(job.JobId, summary, retryable, delay, CancellationToken.None)
+        await repository.FailAsync(
+                job.JobId, summary, retryable, delay, _options.WorkerId, CancellationToken.None)
             .ConfigureAwait(false);
     }
 
@@ -284,9 +294,24 @@ public sealed partial class ImportWorker(
             {
                 await Task.Delay(_options.LeaseRenewInterval, ct).ConfigureAwait(false);
 
-                var held = await repository
-                    .RenewLeaseAsync(job.JobId, _options.WorkerId, _options.LeaseDuration, ct)
-                    .ConfigureAwait(false);
+                bool held;
+                try
+                {
+                    held = await repository
+                        .RenewLeaseAsync(job.JobId, _options.WorkerId, _options.LeaseDuration, ct)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // One failed renewal is not a lost lease. This loop used to end on the first
+                    // database error, silently: renewals stopped, the lease ran out while the job
+                    // kept working, and the recovery sweep handed it to another worker, which
+                    // dropped the day's partition under this one. The lease outlives several
+                    // intervals, so the next attempt is in time; if it is not, that renewal
+                    // reports the lease lost and the job stops cleanly.
+                    LogRenewFailed(job.JobId, ex);
+                    continue;
+                }
 
                 if (!held)
                 {

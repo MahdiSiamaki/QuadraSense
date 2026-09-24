@@ -85,7 +85,7 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
             // Landed, and the later day becomes claimable.
             await fixture.Repository.CompleteAsync(
                 earlier, ImportJobStatus.Completed, new ImportCounters(RowsInserted: 1),
-                makeEffective: true, businessDate: new DateOnly(2026, 4, 1), ct);
+                makeEffective: true, businessDate: new DateOnly(2026, 4, 1), workerId: null, ct);
 
             var third = await fixture.Repository.ClaimNextAsync(
                 "worker-b", TimeSpan.FromMinutes(5), ct);
@@ -137,7 +137,7 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
 
             await fixture.Repository.CompleteAsync(
                 bad, ImportJobStatus.Failed, new ImportCounters(),
-                makeEffective: false, businessDate: new DateOnly(2026, 5, 1), ct);
+                makeEffective: false, businessDate: new DateOnly(2026, 5, 1), workerId: null, ct);
 
             Assert.Null(await fixture.Repository.ClaimNextAsync(
                 "worker-b", TimeSpan.FromMinutes(5), ct));
@@ -183,7 +183,7 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
 
             await fixture.Repository.CompleteAsync(
                 bad, ImportJobStatus.Failed, new ImportCounters(),
-                makeEffective: false, businessDate: new DateOnly(2026, 5, 1), ct);
+                makeEffective: false, businessDate: new DateOnly(2026, 5, 1), workerId: null, ct);
 
             // Still blocked: 1 May has not landed by any route yet. This is the guarantee that
             // must survive the fix, so it is asserted before the fix is exercised.
@@ -205,7 +205,7 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
 
             await fixture.Repository.CompleteAsync(
                 retry, ImportJobStatus.PartiallyCompleted, new ImportCounters(),
-                makeEffective: true, businessDate: new DateOnly(2026, 5, 1), ct);
+                makeEffective: true, businessDate: new DateOnly(2026, 5, 1), workerId: null, ct);
 
             // 1 May has landed, so 2 May is claimable - the dead attempt is history, not a wall.
             var third = await fixture.Repository.ClaimNextAsync(
@@ -328,7 +328,7 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
 
             await fixture.Repository.CompleteAsync(
                 originalJob, ImportJobStatus.Completed, new ImportCounters(RowsInserted: 100),
-                makeEffective: true, businessDate: date, ct);
+                makeEffective: true, businessDate: date, workerId: null, ct);
 
             // A corrected file for the same day.
             var correctedFile = await fixture.Repository.RegisterFileAsync(
@@ -338,7 +338,7 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
 
             await fixture.Repository.CompleteAsync(
                 correctedJob, ImportJobStatus.Completed, new ImportCounters(RowsInserted: 105),
-                makeEffective: true, businessDate: date, ct);
+                makeEffective: true, businessDate: date, workerId: null, ct);
 
             var effective = await fixture.Repository.ListJobsAsync(
                 new ImportHistoryFilter(TestSource, EffectiveOnly: true), 50, 0, ct);
@@ -423,7 +423,7 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
             await fixture.Repository.ClaimNextAsync("worker", TimeSpan.FromMinutes(5), ct);
 
             var willRetry = await fixture.Repository.FailAsync(
-                jobId, "ClickHouse was unreachable", isRetryable: true, TimeSpan.FromSeconds(1), ct);
+                jobId, "ClickHouse was unreachable", isRetryable: true, TimeSpan.FromSeconds(1), workerId: null, ct);
 
             Assert.True(willRetry);
 
@@ -432,7 +432,7 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
             await fixture.Repository.ClaimNextAsync("worker", TimeSpan.FromMinutes(5), ct);
 
             var willRetryAgain = await fixture.Repository.FailAsync(
-                jobId, "Unexpected columns", isRetryable: false, TimeSpan.Zero, ct);
+                jobId, "Unexpected columns", isRetryable: false, TimeSpan.Zero, workerId: null, ct);
 
             Assert.False(willRetryAgain);
 
@@ -494,6 +494,135 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
         {
             await fixture.CleanupAsync(TestSource);
         }
+    }
+
+    [Fact]
+    public async Task Listing_and_counting_agree_with_each_other()
+    {
+        if (!fixture.IsAvailable)
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var filter = new ImportHistoryFilter();
+
+        var total = await fixture.Repository.CountJobsAsync(filter, ct).ConfigureAwait(true);
+        var page = await fixture.Repository.ListJobsAsync(filter, 500, 0, ct).ConfigureAwait(true);
+
+        // The count drives the pager; the list fills the table. If they disagree the UI shows a
+        // page number that cannot be reached.
+        Assert.Equal(Math.Min(total, 500), page.Count);
+
+        foreach (var job in page)
+        {
+            var detail = await fixture.Repository.GetJobAsync(job.JobId, ct).ConfigureAwait(true);
+
+            Assert.NotNull(detail);
+            Assert.Equal(job.Status, detail.Summary.Status);
+            break; // one is enough to prove the detail projection materialises
+        }
+    }
+
+    [Fact]
+    public async Task A_worker_that_lost_its_lease_cannot_end_the_job_for_the_one_that_took_it()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        try
+        {
+            var ct = TestContext.Current.CancellationToken;
+            var file = await fixture.Repository.RegisterFileAsync(
+                TestSource, "taken-over.csv", Stored(Hash("taken-over")), "tester", ct);
+            var jobId = await fixture.Repository.EnqueueAsync(
+                TestSource, file.FileId, new DateOnly(2026, 6, 4), "tester", ct: ct);
+
+            // Worker A claims, then goes quiet long enough for its lease to run out and the sweep
+            // to hand the job to worker B.
+            Assert.Equal(jobId, (await fixture.Repository.ClaimNextAsync("worker-a", TimeSpan.FromMinutes(5), ct))!.JobId);
+            await ExpireLeaseAsync(jobId);
+            await fixture.Repository.RecoverExpiredLeasesAsync(ct);
+            Assert.Equal(jobId, (await fixture.Repository.ClaimNextAsync("worker-b", TimeSpan.FromMinutes(5), ct))!.JobId);
+
+            // A wakes up and tries to end the job three ways. None of them may land.
+            Assert.False(await fixture.Repository.CompleteAsync(
+                jobId, ImportJobStatus.Completed, new ImportCounters(RowsInserted: 1),
+                makeEffective: true, businessDate: new DateOnly(2026, 6, 4), workerId: "worker-a", ct));
+            Assert.False(await fixture.Repository.FailAsync(
+                jobId, "stale failure", isRetryable: false, TimeSpan.Zero, workerId: "worker-a", ct));
+            Assert.False(await fixture.Repository.MarkCancelledAsync(jobId, workerId: "worker-a", ct));
+
+            var detail = await fixture.Repository.GetJobAsync(jobId, ct);
+            Assert.False(detail!.Summary.Status is ImportJobStatus.Completed or ImportJobStatus.Failed
+                or ImportJobStatus.Cancelled);
+
+            // B, which holds it, can.
+            Assert.True(await fixture.Repository.CompleteAsync(
+                jobId, ImportJobStatus.Completed, new ImportCounters(RowsInserted: 1),
+                makeEffective: true, businessDate: new DateOnly(2026, 6, 4), workerId: "worker-b", ct));
+            Assert.Equal(ImportJobStatus.Completed, (await fixture.Repository.GetJobAsync(jobId, ct))!.Summary.Status);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
+    [Fact]
+    public async Task A_job_whose_cancellation_is_pending_ends_cancelled_rather_than_retrying()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        try
+        {
+            var ct = TestContext.Current.CancellationToken;
+
+            // Through a failure: retryable, attempts left - but the operator asked it to stop.
+            var failing = await fixture.Repository.EnqueueAsync(TestSource,
+                (await fixture.Repository.RegisterFileAsync(TestSource, "c1.csv", Stored(Hash("c1")), "tester", ct)).FileId,
+                new DateOnly(2026, 6, 5), "tester", ct: ct);
+            await fixture.Repository.ClaimNextAsync("worker", TimeSpan.FromMinutes(5), ct);
+            Assert.True(await fixture.Repository.RequestCancellationAsync(failing, "tester", ct));
+
+            Assert.False(await fixture.Repository.FailAsync(
+                failing, "ClickHouse was unreachable", isRetryable: true, TimeSpan.FromSeconds(1), "worker", ct));
+            Assert.Equal(ImportJobStatus.Cancelled, (await fixture.Repository.GetJobAsync(failing, ct))!.Summary.Status);
+
+            // Through the lease sweep: the worker died after the request was made.
+            var abandoned = await fixture.Repository.EnqueueAsync(TestSource,
+                (await fixture.Repository.RegisterFileAsync(TestSource, "c2.csv", Stored(Hash("c2")), "tester", ct)).FileId,
+                new DateOnly(2026, 6, 6), "tester", ct: ct);
+            await fixture.Repository.ClaimNextAsync("worker", TimeSpan.FromMinutes(5), ct);
+            Assert.True(await fixture.Repository.RequestCancellationAsync(abandoned, "tester", ct));
+            await ExpireLeaseAsync(abandoned);
+            await fixture.Repository.RecoverExpiredLeasesAsync(ct);
+
+            Assert.Equal(ImportJobStatus.Cancelled, (await fixture.Repository.GetJobAsync(abandoned, ct))!.Summary.Status);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
+    private static async Task ExpireLeaseAsync(long jobId)
+    {
+        await using var connection = new Npgsql.NpgsqlConnection(ImportQueueFixture.ConnectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = new Npgsql.NpgsqlCommand(
+            "UPDATE imports.import_job SET lease_expires_at = now() - interval '1 minute' WHERE id = @id",
+            connection);
+        command.Parameters.AddWithValue("id", jobId);
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
     }
 }
 
@@ -568,32 +697,4 @@ public sealed class ImportReadTests(ImportQueueFixture fixture) : IClassFixture<
         Assert.True(health.ActiveWorkers >= 0);
     }
 
-    [Fact]
-    public async Task Listing_and_counting_agree_with_each_other()
-    {
-        if (!fixture.IsAvailable)
-        {
-            Assert.Skip(fixture.UnavailableReason ?? "no database");
-            return;
-        }
-
-        var ct = TestContext.Current.CancellationToken;
-        var filter = new ImportHistoryFilter();
-
-        var total = await fixture.Repository.CountJobsAsync(filter, ct).ConfigureAwait(true);
-        var page = await fixture.Repository.ListJobsAsync(filter, 500, 0, ct).ConfigureAwait(true);
-
-        // The count drives the pager; the list fills the table. If they disagree the UI shows a
-        // page number that cannot be reached.
-        Assert.Equal(Math.Min(total, 500), page.Count);
-
-        foreach (var job in page)
-        {
-            var detail = await fixture.Repository.GetJobAsync(job.JobId, ct).ConfigureAwait(true);
-
-            Assert.NotNull(detail);
-            Assert.Equal(job.Status, detail.Summary.Status);
-            break; // one is enough to prove the detail projection materialises
-        }
-    }
 }
