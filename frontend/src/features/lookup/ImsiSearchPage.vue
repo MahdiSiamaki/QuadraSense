@@ -65,8 +65,16 @@ const problem = computed(() => {
 /** The IMSI whose history is open, if any. Only ever a complete one. */
 const opened = ref<string | null>(null)
 
+/**
+ * Whether a search has been run, separately from whether its result is on screen. The filters
+ * keyed off the result, which a failed search clears: the filter that caused the failure then
+ * vanished with it, and every retry re-sent it.
+ */
+const searched = ref(false)
+
 function run(toPage = 1) {
   if (!term.value.ok) return
+  searched.value = true
   page.value = toPage
   opened.value = null
 
@@ -85,7 +93,7 @@ function run(toPage = 1) {
 // Re-running on a filter change rather than making the user press the button again: they have
 // already asked for this term, and the filters only narrow it.
 watch([activeOnly, deviceType, manufacturer, from, to], () => {
-  if (result.value) run(1)
+  if (searched.value) run(1)
 })
 
 // An exact search with exactly one SIM in it opens itself. The user typed a complete IMSI; making
@@ -168,8 +176,8 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
           </span>
         </p>
 
-        <!-- Filters appear only once there is something to filter. -->
-        <div v-if="result" class="flex flex-wrap items-end gap-3 border-t pt-3">
+        <!-- Filters appear once a search has been run, and stay if it fails. -->
+        <div v-if="searched" class="flex flex-wrap items-end gap-3 border-t pt-3">
           <label class="flex items-center gap-2 text-[var(--text-xs)]">
             <input v-model="activeOnly" type="checkbox" />
             Active bindings only
