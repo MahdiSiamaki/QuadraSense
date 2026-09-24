@@ -136,25 +136,56 @@ internal sealed partial class SqmDailyProcessor(
 
         long written;
 
-        if (validation.RejectedRows == 0)
+        try
         {
-            await using var raw = await context.OpenFileAsync(ct).ConfigureAwait(false);
-            written = await analytics.LoadDailyEventsAsync(
-                businessDate, sequence, raw,
-                bytes => ReportBytes(context, bytes, job.FileBytes, ct),
-                ct).ConfigureAwait(false);
-        }
-        else
-        {
-            await context.NoteAsync(
-                "warning",
-                $"{validation.RejectedRows:N0} rows will be excluded; the file is being rewritten "
-                + "row by row rather than streamed directly, which is slower",
-                null, ct).ConfigureAwait(false);
+            if (validation.RejectedRows == 0 && !validation.NeedsRewrite)
+            {
+                await using var raw = await context.OpenFileAsync(ct).ConfigureAwait(false);
+                written = await analytics.LoadDailyEventsAsync(
+                    businessDate, sequence, raw,
+                    bytes => ReportBytes(context, bytes, job.FileBytes, ct),
+                    ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await context.NoteAsync(
+                    "warning",
+                    validation.RejectedRows > 0
+                        ? $"{validation.RejectedRows:N0} rows will be excluded; the file is being "
+                          + "rewritten row by row rather than streamed directly, which is slower"
+                        : "The file has blank lines or bare-CR line endings, which ClickHouse "
+                          + "cannot stream; it is being rewritten row by row, which is slower",
+                    null, ct).ConfigureAwait(false);
 
-            await using var filtered = await OpenFilteredAsync(context, ct).ConfigureAwait(false);
-            written = await analytics.LoadDailyEventsAsync(
-                businessDate, sequence, filtered, null, ct).ConfigureAwait(false);
+                await using var filtered = await OpenFilteredAsync(context, ct).ConfigureAwait(false);
+                written = await analytics.LoadDailyEventsAsync(
+                    businessDate, sequence, filtered, null, ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            // An insert that fails partway is not atomic: the blocks before the failure stay.
+            // Left there, they are a partial day that nothing would ever fold or finish. The day
+            // goes, and the retry starts from nothing.
+            await analytics.RemoveDayAsync(businessDate, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+
+        // Checked now, before anything is derived from the day. It used to run at the end, after
+        // the fold and both mart rebuilds had published whatever landed - so a file ClickHouse
+        // read differently from the validator (an unclosed quote swallows the next line) put its
+        // garbage into current state and the dashboard before the job failed, and the failure
+        // removed nothing.
+        var stored = await analytics.CountEventsForDateAsync(businessDate, ct).ConfigureAwait(false);
+
+        if (stored != validation.AcceptedRows)
+        {
+            await analytics.RemoveDayAsync(businessDate, CancellationToken.None).ConfigureAwait(false);
+
+            throw new InvalidOperationException(
+                $"Row count mismatch for {businessDate:yyyy-MM-dd}: expected "
+                + $"{validation.AcceptedRows:N0} accepted rows, the store holds {stored:N0}. The "
+                + "day was removed rather than kept half-written.");
         }
 
         // ---------------------------------------------------------------- fold
@@ -212,19 +243,7 @@ internal sealed partial class SqmDailyProcessor(
 
         // ---------------------------------------------------------------- verify
         await context.EnterStageAsync(
-            ImportJobStatus.Finalizing, "Verifying what landed", ct).ConfigureAwait(false);
-
-        var stored = await analytics.CountEventsForDateAsync(businessDate, ct).ConfigureAwait(false);
-
-        if (stored != validation.AcceptedRows)
-        {
-            // Not a warning. The worker counted the rows it intended to write and the store
-            // reports a different number, which means the day is wrong in a way no later stage
-            // would notice. Failing here leaves the day removed rather than half-written.
-            throw new InvalidOperationException(
-                $"Row count mismatch for {businessDate:yyyy-MM-dd}: expected "
-                + $"{validation.AcceptedRows:N0} accepted rows, the store holds {stored:N0}.");
-        }
+            ImportJobStatus.Finalizing, "Recording what landed", ct).ConfigureAwait(false);
 
         var counters = new ImportCounters(
             RowsInput: validation.TotalRows,
@@ -280,7 +299,8 @@ internal sealed partial class SqmDailyProcessor(
     private static async Task<ValidationResult> ValidateAsync(
         ClaimedJob job, IImportContext context, IImportJobRepository repository, CancellationToken ct)
     {
-        await using var stream = await context.OpenFileAsync(ct).ConfigureAwait(false);
+        await using var stream = new BareCarriageReturnProbe(
+            await context.OpenFileAsync(ct).ConfigureAwait(false));
         using var reader = new StreamReader(
             stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 1 << 20);
 
@@ -333,6 +353,9 @@ internal sealed partial class SqmDailyProcessor(
 
             if (line.Length == 0)
             {
+                // Not a row, and harmless here - but ClickHouse refuses a blank line anywhere
+                // in a CSV stream, after it has already written the blocks before it.
+                result.NeedsRewrite = true;
                 continue;
             }
 
@@ -364,6 +387,8 @@ internal sealed partial class SqmDailyProcessor(
                 await context.ReportProgressAsync(bytesSeen, job.FileBytes, ct).ConfigureAwait(false);
             }
         }
+
+        result.NeedsRewrite |= stream.Seen;
 
         return result;
     }
@@ -460,6 +485,12 @@ internal sealed partial class SqmDailyProcessor(
     private sealed class ValidationResult
     {
         public long TotalRows { get; set; }
+
+        /// <summary>
+        /// True when the file validates but cannot be streamed to ClickHouse as it stands: it has
+        /// a blank line, or lines ending in a bare CR. Such a file goes through the rewriting path.
+        /// </summary>
+        public bool NeedsRewrite { get; set; }
 
         public long AcceptedRows { get; set; }
 
