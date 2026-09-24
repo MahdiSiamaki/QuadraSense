@@ -27,6 +27,17 @@ public sealed class ClickHouseOptions
 
     /// <summary>Hard cap on rows any single query may return to the API.</summary>
     public int MaxResultRows { get; set; } = 10_000;
+
+    /// <summary>
+    /// Bindings re-derived per statement when a late or replaced day is folded from history.
+    /// </summary>
+    /// <remarks>
+    /// Sized from a measurement, not a guess: in one statement the 6.5 million bindings of a real
+    /// day overran the fold's 1.2 GB cap in seven seconds; at about a million per range each range
+    /// stayed under it. Smaller only adds statements - the ranges together read the event log once
+    /// whatever their number. Tests set it low so that small data still takes several ranges.
+    /// </remarks>
+    public int FoldKeysPerRange { get; set; } = 1_000_000;
 }
 
 /// <summary>ClickHouse-backed implementation of the analytics queries.</summary>

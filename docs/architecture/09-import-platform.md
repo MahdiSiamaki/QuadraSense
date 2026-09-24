@@ -310,9 +310,67 @@ right for corrections, and corrections are the operation that actually happens.
 
 ### Re-folding after a correction
 
+> **SUPERSEDED (2026-09-24)** by the section below. This said a full re-fold was simplest and an
+> incremental one should wait for a measurement. What was built is incremental - only the
+> bindings the day touched - and it has now been measured.
+
 The fold takes the last event per binding, so replacing day *N* only affects bindings whose
 last event was on day *N*. A full re-fold is simplest and unconditionally correct; an
 incremental one is possible and should only be attempted once the full one is measured.
+
+### Late and corrected days - what happens, measured
+
+Missing days arrive late, and corrected files replace days already loaded. Both must leave the
+system exactly as if every day had arrived on time. What each derived store does:
+
+| Store | Late or corrected day | Why it is right |
+|---|---|---|
+| `binding_event` | Loaded into its own date partition; a corrected day drops and replaces it | Keyed by date, not by arrival |
+| `binding_current` | Every binding the day touched is re-derived from its **whole history, by date** | The last event by date decides; arrival order and sequence numbers do not |
+| Day-level marts (`agg_change_daily`, `agg_change_summary_daily`, SIM and device change) | Rebuilt for that date only | Each reads only its own day's rows |
+| Dashboard snapshot | Rebuilt for the delivery holding the **latest date** | The dashboard reads only that snapshot and the initial dump's |
+| Snapshots of in-between deliveries | Left as they were | Never read. State as of an old date cannot be recovered from current state, so the refresh refuses to build one rather than label today's state with an old date |
+
+**The history fold could not run at real scale.** Written as one statement, it built IN-sets
+from every binding the day touched. On 2026-07-20 (6,503,281 bindings) it passed the fold's
+1.2 GB cap after seven seconds - `MEMORY_LIMIT_EXCEEDED` in `CreatingSetsTransform` - and every
+late or corrected day would have failed the same way, and a failed day blocks every day after
+it. It now runs in msisdn ranges of about a million bindings. A binding's key begins with its
+msisdn, so its whole history is inside one range and the cut is exact; the event log is sorted
+by msisdn first, so the ranges together read it once.
+
+Measured on the real event log, 2026-07-20, read-only:
+
+| | |
+|---|---:|
+| Ranges | 7 |
+| Time per range | 71 - 107 s |
+| Peak memory per range | 513 - 745 MiB, against a 1.12 GiB cap |
+| Rows read, all ranges | ~1.6 billion - the event log plus the dump, once |
+| **Total** | **652 s** |
+| Result against `binding_current` | **identical** for all 6,503,281 bindings (2,103,739 active, same fingerprint) |
+
+`LateDayFoldTests` runs the real store against a scratch ClickHouse database: days in order, a
+gap, the missing days arriving late and out of order, an add arriving a day after its remove, a
+corrected day that drops a binding, then a normal day. It is checked against the plainest
+possible truth - last event by date, else the dump - with ranges forced to two bindings and with
+one range. With late days sent down the arrival-order path it fails.
+
+**What a late day costs**, from `system.query_log` for 31 August and the measurement above:
+
+| Step | Time |
+|---|---:|
+| Load the file | ~3 s |
+| Fold: newest day (fast path) / late or corrected day (history) | 84 s / **~11 min** |
+| Day-level marts | ~80 s |
+| Dashboard snapshot: 14 full scans of `binding_current FINAL`, single-threaded | **~31 min** |
+
+The snapshot is most of every import, and after a late day it rebuilds the same latest delivery
+each time. While it runs, that delivery is withdrawn and the dashboard shows the one before it.
+
+**Operationally:** a late or corrected day that fails blocks every later day, new daily files
+included, until it is reprocessed or removed - by design, because folding past a hole produces a
+state that never existed. It is visible in the Import Center.
 
 ---
 
