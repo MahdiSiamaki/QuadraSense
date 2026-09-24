@@ -13,6 +13,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { formatCompact, formatFull, formatSigned } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
 import { chartColor, withAlpha } from '@/lib/chart-colors'
+import { fillCalendar, isMissing } from '@/lib/calendar'
 import type { DailyChange } from '@/api/dashboard'
 
 echarts.use([
@@ -67,7 +68,12 @@ function render() {
   const removed = cssVar('--viz-6')
   const total = cssVar('--viz-1')
 
-  const dates = props.data.map((d) => d.date)
+  // Every calendar day, not only the delivered ones: a day with no delivery gets a slot and no
+  // value, so the bars leave a hole and the line breaks instead of joining across it.
+  const days = fillCalendar(props.data)
+  const dates = days.map((d) => d.date)
+  const value = (pick: (row: DailyChange) => number) =>
+    days.map((d) => (isMissing(d) ? null : pick(d)))
 
   chart.value.setOption(
     {
@@ -89,8 +95,9 @@ function render() {
         borderColor: border,
         textStyle: { color: cssVar('--c-text'), fontSize: 12 },
         formatter: (params: Array<{ dataIndex: number }>) => {
-          const row = props.data[params[0]?.dataIndex ?? 0]
+          const row = days[params[0]?.dataIndex ?? 0]
           if (!row) return ''
+          if (isMissing(row)) return `<strong>${row.date}</strong><br/>not delivered - no data`
           return [
             `<strong>${row.date}</strong>`,
             `added &nbsp; ${formatFull(row.added)}`,
@@ -150,7 +157,7 @@ function render() {
           name: 'Added',
           type: 'bar',
           stack: 'flow',
-          data: props.data.map((d) => d.added),
+          data: value((d) => d.added),
           itemStyle: { color: added },
           barMaxWidth: 14,
         },
@@ -160,7 +167,7 @@ function render() {
           stack: 'flow',
           // Negative so the two directions separate around zero and the net reads as the
           // visible imbalance.
-          data: props.data.map((d) => -d.removed),
+          data: value((d) => -d.removed),
           itemStyle: { color: removed },
           barMaxWidth: 14,
         },
@@ -168,7 +175,7 @@ function render() {
           name: 'Active bindings',
           type: 'line',
           yAxisIndex: 1,
-          data: props.data.map((d) => d.cumulative),
+          data: value((d) => d.cumulative),
           itemStyle: { color: total },
           lineStyle: { width: 2 },
           symbol: 'none',
