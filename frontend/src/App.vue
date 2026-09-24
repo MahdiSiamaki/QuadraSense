@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { computed, ref } from 'vue'
-import { useTheme } from '@/lib/theme'
 import { useFreshness } from '@/features/imports/useImportQueries'
 import { formatDate } from '@/lib/format'
 import { useAuth, Permission } from '@/features/auth/useAuth'
 import { useLogout } from '@/api/auth'
 import UserMenu from '@/features/auth/UserMenu.vue'
 import BrandMark from '@/design-system/BrandMark.vue'
+import ThemeToggle from '@/design-system/ThemeToggle.vue'
 
-const { isDark, toggle } = useTheme()
 const route = useRoute()
 const router = useRouter()
 
@@ -39,7 +38,6 @@ const nav = computed(() =>
     { to: '/devices', label: 'Devices', show: can(Permission.DeviceView) },
     { to: '/imports', label: 'Imports', show: can(Permission.ImportView) },
     { to: '/lookup', label: 'Lookup', show: can(Permission.LookupSubscriber) },
-    { to: '/devices/image-review', label: 'Image review', show: can(Permission.DeviceImageManage) },
     { to: '/lookup/imsi', label: 'IMSI', show: can(Permission.LookupImsi) },
     // Reachable by anybody who can look up any one of the three; the server decides per centre
     // which sections they actually get back.
@@ -48,24 +46,19 @@ const nav = computed(() =>
       label: 'Relationships',
       show: canAny(Permission.LookupSubscriber, Permission.LookupImsi, Permission.LookupImei),
     },
-    {
-      to: '/admin/users',
-      label: 'Users',
-      show: canAny(Permission.UserView, Permission.RoleView),
-    },
-    { to: '/admin/audit', label: 'Audit', show: can(Permission.AuditView) },
+    // Users, roles, the audit log and device image review moved to Settings (the gear): they
+    // configure the system, and this bar is for the work done in it.
   ].filter((item) => item.show),
 )
 
-/** Highlights /admin/users while the reader is on /admin/users/17 or /admin/roles. */
 function isCurrent(to: string): boolean {
   if (to === '/') return route.path === '/'
-  if (to === '/admin/users') return route.path.startsWith('/admin/users') || route.path.startsWith('/admin/roles')
-  if (to === '/devices') return route.path.startsWith('/devices') && !route.path.startsWith('/devices/image-review')
   // /lookup must not claim /lookup/imsi, which is its own destination.
   if (to === '/lookup') return route.path === '/lookup'
   return route.path.startsWith(to)
 }
+
+const inSettings = computed(() => route.path.startsWith('/settings'))
 
 const freshness = useFreshness({ enabled: computed(() => can(Permission.ImportView)) })
 const sqm = computed(() => freshness.data.value?.find((f) => f.sourceCode === 'SQM') ?? null)
@@ -98,12 +91,13 @@ async function signOut() {
           </span>
         </RouterLink>
 
-        <nav class="flex items-center gap-1" aria-label="Main">
+        <!-- Scrolls within the bar on a narrow screen rather than widening the whole page. -->
+        <nav class="flex min-w-0 items-center gap-1 overflow-x-auto" aria-label="Main">
           <RouterLink
             v-for="item in nav"
             :key="item.to"
             :to="item.to"
-            class="rounded-[var(--radius-md)] px-2.5 py-1.5 text-[var(--text-sm)] font-medium transition-colors"
+            class="shrink-0 rounded-[var(--radius-md)] px-2.5 py-1.5 text-[var(--text-sm)] font-medium whitespace-nowrap transition-colors"
             :class="
               isCurrent(item.to)
                 ? 'bg-[var(--c-surface-sunken)] text-[var(--c-text)]'
@@ -134,14 +128,23 @@ async function signOut() {
             data through {{ formatDate(sqm.latestBusinessDate) }}
           </RouterLink>
 
-          <button
-            type="button"
-            class="rounded-[var(--radius-md)] border px-2 py-1.5 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)]"
-            :aria-label="isDark ? 'Switch to light theme' : 'Switch to dark theme'"
-            @click="toggle"
-          >
-            {{ isDark ? 'Light' : 'Dark' }}
-          </button>
+          <div class="flex items-center gap-0.5">
+            <ThemeToggle />
+
+            <RouterLink
+              to="/settings"
+              class="settings-link grid size-9 place-items-center rounded-full text-[var(--c-text-secondary)] transition-colors hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
+              :class="{ 'is-current text-[var(--c-text)]': inSettings }"
+              aria-label="Settings"
+              title="Settings"
+              :aria-current="inSettings ? 'page' : undefined"
+            >
+              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+              </svg>
+            </RouterLink>
+          </div>
 
           <UserMenu
             v-if="isAuthenticated && user"
@@ -165,3 +168,21 @@ async function signOut() {
     </main>
   </div>
 </template>
+
+<style scoped>
+/* The gear turns a little on hover and while Settings is open; the one flourish it gets. */
+.settings-link svg {
+  transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.settings-link:hover svg,
+.settings-link.is-current svg {
+  transform: rotate(45deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-link svg {
+    transition: none;
+  }
+}
+</style>

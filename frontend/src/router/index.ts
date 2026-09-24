@@ -3,11 +3,18 @@ import { queryClient } from '@/lib/queryClient'
 import { CURRENT_USER_KEY, forgetSession, type CurrentUser } from '@/api/auth'
 import { api, ApiError, setUnauthenticatedHandler } from '@/api/client'
 import { Permission } from '@/features/auth/useAuth'
+import { sectionsFor } from '@/features/settings/sections'
 
 /*
   Route-level code splitting. The dashboard pulls in ECharts; the lookup page
   does not, and should not have to wait for it to parse.
 */
+/** An administrator lands on what they administer; everyone else on Appearance. */
+function firstSettingsSection(permissions: readonly string[]): string {
+  const sections = sectionsFor(permissions)
+  return (sections.find((s) => s.group !== 'Personal') ?? sections[0])?.to ?? '/settings/appearance'
+}
+
 const routes: RouteRecordRaw[] = [
   {
     path: '/login',
@@ -68,12 +75,6 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'IMSI search', permission: Permission.LookupImsi },
   },
   {
-    path: '/devices/image-review',
-    name: 'device-image-review',
-    component: () => import('@/features/devices/DeviceImageReviewPage.vue'),
-    meta: { title: 'Device image review', permission: Permission.DeviceImageManage },
-  },
-  {
     path: '/relationships',
     name: 'relationships',
     component: () => import('@/features/lookup/RelationshipExplorerPage.vue'),
@@ -87,42 +88,86 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/features/profile/ProfilePage.vue'),
     meta: { title: 'Your profile' },
   },
+  /*
+    Settings: everything that configures the system rather than uses it, under one frame whose
+    side menu lists the sections this user may open. Each page keeps its own permission; the
+    frame itself needs none, because Appearance is for everybody.
+  */
   {
-    path: '/admin/users',
-    name: 'users',
-    component: () => import('@/features/admin/users/UsersPage.vue'),
-    meta: { title: 'Users', permission: Permission.UserView },
+    path: '/settings',
+    component: () => import('@/features/settings/SettingsLayout.vue'),
+    meta: { title: 'Settings' },
+    children: [
+      {
+        // Lands on the first section this user can open, not on one that would refuse them.
+        // beforeEnter rather than a redirect: it runs after the global guard, so the user is
+        // known even on a hard refresh.
+        path: '',
+        name: 'settings',
+        component: () => import('@/features/settings/AppearanceSettings.vue'),
+        beforeEnter: () => {
+          const user = queryClient.getQueryData<CurrentUser>(CURRENT_USER_KEY)
+          return firstSettingsSection(user?.permissions ?? [])
+        },
+      },
+      {
+        path: 'appearance',
+        name: 'settings-appearance',
+        component: () => import('@/features/settings/AppearanceSettings.vue'),
+        meta: { title: 'Appearance' },
+      },
+      {
+        path: 'users',
+        name: 'users',
+        component: () => import('@/features/admin/users/UsersPage.vue'),
+        meta: { title: 'Users', permission: Permission.UserView },
+      },
+      {
+        path: 'users/:id(\\d+)',
+        name: 'user-detail',
+        component: () => import('@/features/admin/users/UserDetailPage.vue'),
+        meta: { title: 'User', permission: Permission.UserView },
+      },
+      {
+        path: 'roles',
+        name: 'roles',
+        component: () => import('@/features/admin/roles/RolesPage.vue'),
+        meta: { title: 'Roles', permission: Permission.RoleView },
+      },
+      {
+        path: 'roles/matrix',
+        name: 'permission-matrix',
+        component: () => import('@/features/admin/roles/PermissionMatrixPage.vue'),
+        meta: { title: 'Permission matrix', permission: Permission.RoleView },
+      },
+      {
+        path: 'roles/:id(\\d+)',
+        name: 'role-detail',
+        component: () => import('@/features/admin/roles/RoleDetailPage.vue'),
+        meta: { title: 'Role', permission: Permission.RoleView },
+      },
+      {
+        path: 'audit',
+        name: 'audit',
+        component: () => import('@/features/admin/audit/AuditLogPage.vue'),
+        meta: { title: 'Audit log', permission: Permission.AuditView },
+      },
+      {
+        path: 'device-images',
+        name: 'device-image-review',
+        component: () => import('@/features/devices/DeviceImageReviewPage.vue'),
+        meta: { title: 'Device images', permission: Permission.DeviceImageManage },
+      },
+    ],
   },
-  {
-    path: '/admin/users/:id(\\d+)',
-    name: 'user-detail',
-    component: () => import('@/features/admin/users/UserDetailPage.vue'),
-    meta: { title: 'User', permission: Permission.UserView },
-  },
-  {
-    path: '/admin/roles',
-    name: 'roles',
-    component: () => import('@/features/admin/roles/RolesPage.vue'),
-    meta: { title: 'Roles', permission: Permission.RoleView },
-  },
-  {
-    path: '/admin/roles/matrix',
-    name: 'permission-matrix',
-    component: () => import('@/features/admin/roles/PermissionMatrixPage.vue'),
-    meta: { title: 'Permission matrix', permission: Permission.RoleView },
-  },
-  {
-    path: '/admin/roles/:id(\\d+)',
-    name: 'role-detail',
-    component: () => import('@/features/admin/roles/RoleDetailPage.vue'),
-    meta: { title: 'Role', permission: Permission.RoleView },
-  },
-  {
-    path: '/admin/audit',
-    name: 'audit',
-    component: () => import('@/features/admin/audit/AuditLogPage.vue'),
-    meta: { title: 'Audit log', permission: Permission.AuditView },
-  },
+  // Where these pages used to live. Bookmarks and links already sent keep working.
+  { path: '/admin/users', redirect: (to) => ({ path: '/settings/users', query: to.query }) },
+  { path: '/admin/users/:id(\\d+)', redirect: (to) => `/settings/users/${String(to.params['id'])}` },
+  { path: '/admin/roles', redirect: '/settings/roles' },
+  { path: '/admin/roles/matrix', redirect: '/settings/roles/matrix' },
+  { path: '/admin/roles/:id(\\d+)', redirect: (to) => `/settings/roles/${String(to.params['id'])}` },
+  { path: '/admin/audit', redirect: (to) => ({ path: '/settings/audit', query: to.query }) },
+  { path: '/devices/image-review', redirect: (to) => ({ path: '/settings/device-images', query: to.query }) },
   {
     path: '/no-access',
     name: 'no-access',

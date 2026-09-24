@@ -141,7 +141,7 @@ async function submitDelete() {
   try {
     await remove.mutateAsync(roleId.value)
     deleting.value = false
-    await router.push('/admin/roles')
+    await router.push('/settings/roles')
   } catch {
     // Rendered in the dialog.
   }
@@ -162,7 +162,7 @@ const deleteError = computed(() => message(remove.error.value))
 <template>
   <div class="flex flex-col gap-5">
     <nav class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
-      <RouterLink to="/admin/roles" class="hover:text-[var(--c-text)] hover:underline">
+      <RouterLink to="/settings/roles" class="hover:text-[var(--c-text)] hover:underline">
         Roles
       </RouterLink>
       <span aria-hidden="true"> / </span>
@@ -179,7 +179,7 @@ const deleteError = computed(() => message(remove.error.value))
       <template v-if="role.data.value">
         <header class="flex flex-wrap items-start justify-between gap-4">
           <div class="min-w-0">
-            <h1 class="flex items-center gap-2 text-[var(--text-xl)] font-semibold tracking-tight">
+            <h2 class="flex items-center gap-2 text-[var(--text-lg)] font-semibold tracking-tight">
               {{ role.data.value.displayName }}
               <span
                 v-if="role.data.value.isSystem"
@@ -187,7 +187,7 @@ const deleteError = computed(() => message(remove.error.value))
               >
                 built-in
               </span>
-            </h1>
+            </h2>
             <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
               <code class="text-[var(--text-xs)]">{{ role.data.value.code }}</code>
               · {{ role.data.value.description || 'No description.' }}
@@ -323,7 +323,7 @@ const deleteError = computed(() => message(remove.error.value))
                 <ul class="divide-y">
                   <li v-for="member in members.data.value ?? []" :key="member.id">
                     <RouterLink
-                      :to="`/admin/users/${member.id}`"
+                      :to="`/settings/users/${member.id}`"
                       class="flex items-center justify-between gap-3 px-4 py-2 hover:bg-[var(--c-surface-hover)]"
                     >
                       <span class="min-w-0">

@@ -120,7 +120,7 @@ const total = computed(() => queue.data.value?.total ?? 0)
   <div class="space-y-5">
     <header class="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Device image review</h1>
+        <h2 class="text-[var(--text-lg)] font-semibold tracking-tight">Device images</h2>
         <p class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-muted)]">
           Images the sourcing pipeline has proposed. Nothing here is live until you approve it.
         </p>

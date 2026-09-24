@@ -60,20 +60,13 @@ const selectClass =
   <div class="flex flex-col gap-5">
     <header class="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Users</h1>
+        <h2 class="text-[var(--text-lg)] font-semibold tracking-tight">Users</h2>
         <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
           Who can sign in, and what each of them may do.
         </p>
       </div>
 
       <div class="flex items-center gap-2">
-        <RouterLink
-          v-if="can(Permission.RoleView)"
-          to="/admin/roles"
-          class="rounded-[var(--radius-md)] border px-3 py-1.5 text-[var(--text-sm)] font-medium hover:bg-[var(--c-surface-hover)]"
-        >
-          Roles
-        </RouterLink>
         <Button v-if="can(Permission.UserManage)" variant="primary" @click="creating = true">
           New user
         </Button>
@@ -149,7 +142,7 @@ const selectClass =
               >
                 <td class="px-4 py-2.5">
                   <RouterLink
-                    :to="`/admin/users/${user.id}`"
+                    :to="`/settings/users/${user.id}`"
                     class="font-medium hover:text-[var(--c-accent)] hover:underline"
                   >
                     {{ user.displayName }}

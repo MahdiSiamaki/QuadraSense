@@ -84,7 +84,7 @@ async function submit() {
       permissionCodes: selected.value,
     })
     creating.value = false
-    await router.push(`/admin/roles/${created.id}`)
+    await router.push(`/settings/roles/${created.id}`)
   } catch {
     // Rendered from create.error.
   }
@@ -95,7 +95,7 @@ async function submit() {
   <div class="flex flex-col gap-5">
     <header class="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Roles</h1>
+        <h2 class="text-[var(--text-lg)] font-semibold tracking-tight">Roles</h2>
         <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
           A role is a named set of permissions. Users receive the union of the roles they hold.
         </p>
@@ -103,7 +103,7 @@ async function submit() {
 
       <div class="flex items-center gap-2">
         <RouterLink
-          to="/admin/roles/matrix"
+          to="/settings/roles/matrix"
           class="rounded-[var(--radius-md)] border px-3 py-1.5 text-[var(--text-sm)] font-medium hover:bg-[var(--c-surface-hover)]"
         >
           Permission matrix
@@ -125,7 +125,7 @@ async function submit() {
         <RouterLink
           v-for="role in roles.data.value ?? []"
           :key="role.id"
-          :to="`/admin/roles/${role.id}`"
+          :to="`/settings/roles/${role.id}`"
           class="group flex flex-col rounded-[var(--radius-lg)] border bg-[var(--c-surface)] p-4 shadow-[var(--shadow-xs)] transition-colors hover:border-[var(--c-border-strong)]"
         >
           <div class="flex items-start justify-between gap-3">

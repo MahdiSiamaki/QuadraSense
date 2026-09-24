@@ -152,7 +152,7 @@ const resetError = computed(() => message(resetPassword.error.value))
 <template>
   <div class="flex flex-col gap-5">
     <nav class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
-      <RouterLink to="/admin/users" class="hover:text-[var(--c-text)] hover:underline">
+      <RouterLink to="/settings/users" class="hover:text-[var(--c-text)] hover:underline">
         Users
       </RouterLink>
       <span aria-hidden="true"> / </span>
@@ -169,7 +169,7 @@ const resetError = computed(() => message(resetPassword.error.value))
       <template v-if="user.data.value">
         <header class="flex flex-wrap items-start justify-between gap-4">
           <div class="min-w-0">
-            <h1 class="flex flex-wrap items-center gap-2 text-[var(--text-xl)] font-semibold tracking-tight">
+            <h2 class="flex flex-wrap items-center gap-2 text-[var(--text-lg)] font-semibold tracking-tight">
               {{ user.data.value.displayName }}
               <span
                 v-if="!user.data.value.isActive"
@@ -185,7 +185,7 @@ const resetError = computed(() => message(resetPassword.error.value))
               >
                 Locked
               </span>
-            </h1>
+            </h2>
             <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
               {{ user.data.value.username }}
               <template v-if="user.data.value.jobTitle"> · {{ user.data.value.jobTitle }}</template>
@@ -264,7 +264,7 @@ const resetError = computed(() => message(resetPassword.error.value))
                 <RouterLink
                   v-for="role in user.data.value.roles"
                   :key="role.id"
-                  :to="`/admin/roles/${role.id}`"
+                  :to="`/settings/roles/${role.id}`"
                   class="rounded-full border px-2.5 py-1 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)]"
                 >
                   {{ role.displayName }}

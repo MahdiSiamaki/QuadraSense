@@ -96,7 +96,7 @@ async function submit() {
     emit('close')
     // Straight to the detail page: the next thing an administrator does is check that the
     // permissions came out the way they expected.
-    await router.push(`/admin/users/${created.id}`)
+    await router.push(`/settings/users/${created.id}`)
   } catch {
     // Rendered from create.error.
   }
