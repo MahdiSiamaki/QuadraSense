@@ -839,9 +839,9 @@ def run(args: argparse.Namespace) -> int:
         say(f"DEVICE:    {device.describe()}")
         say(f"CURRENT:   {status}")
 
-        if status == "verified" and not args.include_unverified:
+        if status == "verified" and not args.include_verified:
             say("ACTION:    skipped")
-            say("REASON:    a reviewer has verified this image; pass --include-unverified "
+            say("REASON:    a reviewer has verified this image; pass --include-verified "
                 "to propose against it anyway")
             say("")
             skipped += 1
@@ -923,8 +923,13 @@ def main() -> int:
     parser.add_argument("--model", help="substring of the marketing name, e.g. 'Galaxy A32'")
     parser.add_argument("--only-missing", action="store_true",
                         help="only devices with no live image at all")
-    parser.add_argument("--include-unverified", action="store_true",
-                        help="also propose against images that exist but nobody has verified")
+    # Named for what it does. It was --include-unverified, documented as adding unverified
+    # images - which are always included - while what it actually added were the verified ones.
+    # The old spelling still works, with the behaviour it always had.
+    parser.add_argument("--include-verified", "--include-unverified", dest="include_verified",
+                        action="store_true",
+                        help="also propose against images a reviewer has already verified "
+                             "(unverified and missing images are always included)")
     parser.add_argument("--dry-run", action="store_true",
                         help="the default; accepted so it can be written explicitly")
     parser.add_argument("--apply", action="store_true",
