@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/vue-query'
+import { keepPreviousData, useMutation, useQuery } from '@tanstack/vue-query'
 import { computed, type MaybeRefOrGetter, toValue } from 'vue'
 import { api } from './client'
 
@@ -221,6 +221,10 @@ export function useDeviceSearch(filters: MaybeRefOrGetter<DeviceSearchFilters>) 
       )
     },
     staleTime: 60_000,
+    // Without it every sort or page change swapped the table for a loading panel, which took the
+    // header - and the focused sort button - out of the page: a keyboard user was dropped back at
+    // the top after every sort. The table stays while the next page loads.
+    placeholderData: keepPreviousData,
   })
 }
 

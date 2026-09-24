@@ -12,7 +12,7 @@ import {
 import { CanvasRenderer } from 'echarts/renderers'
 import { formatCompact, formatFull, formatSigned } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
-import { chartColor } from '@/lib/chart-colors'
+import { chartColor, withAlpha } from '@/lib/chart-colors'
 import type { DailyChange } from '@/api/dashboard'
 
 echarts.use([
@@ -140,7 +140,7 @@ function render() {
           height: 18,
           bottom: 4,
           borderColor: border,
-          fillerColor: `${cssVar('--c-accent')}22`,
+          fillerColor: withAlpha(cssVar('--c-accent'), 0.13),
           handleStyle: { color: cssVar('--c-accent') },
           textStyle: { color: muted, fontSize: 9 },
         },

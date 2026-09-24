@@ -69,13 +69,14 @@ def rows_for_day(container: str, business_date: datetime.date) -> int:
     Recording zero would be a lie of a specific and damaging kind: the Import Center shows a
     row count per import, and a history where every historical day reads 0 rows teaches the
     operator to ignore the column exactly when a real zero would matter.
+
+    So a failure to ask is an error, not a zero. It used to be caught and returned as 0 - and a
+    re-run takes the UPDATE branch, so one run with the analytics store unreachable overwrote
+    every real count already recorded with that zero.
     """
-    try:
-        return int(clickhouse(
-            container,
-            f"SELECT count() FROM sqm.binding_event WHERE data_date = '{business_date}'"))
-    except Exception:  # noqa: BLE001 - the analytics store may not be reachable
-        return 0
+    return int(clickhouse(
+        container,
+        f"SELECT count() FROM sqm.binding_event WHERE data_date = '{business_date}'"))
 
 
 def psql(container: str, sql: str) -> str:
@@ -252,7 +253,8 @@ def tac_version_label(file_name: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('--container', default='sqm-postgres')
-    parser.add_argument('--clickhouse', default='bench-ch',
+    # The stack's container (infra/docker-compose.yml), not the benchmark's 'bench-ch'.
+    parser.add_argument('--clickhouse', default='sqm-clickhouse',
                         help='analytics container, for reading the real per-day row counts')
     parser.add_argument('--daily', required=True, help='directory of dated daily files')
     parser.add_argument('--dump', help='the initial one-month dump')
@@ -274,6 +276,17 @@ def main() -> int:
     if args.dates_only:
         return 0
 
+    # Every count below comes from the analytics store. Checked once, before anything is written,
+    # so an unreachable store stops the run instead of half-recording it.
+    try:
+        clickhouse(args.clickhouse, 'SELECT 1')
+    except Exception as exc:  # noqa: BLE001 - reported, then stop
+        print(f'cannot reach the analytics store in container {args.clickhouse!r}: {exc}\n'
+              'The row counts come from there, and recording 0 instead would be false. '
+              'Pass --clickhouse <container>, or --dates-only to seed the calendar alone.',
+              file=sys.stderr)
+        return 1
+
     if args.dump:
         # No business date: the dump covers a 30-day window, not a day. Recording one would be
         # the first of many small lies about what this data is.
@@ -284,12 +297,8 @@ def main() -> int:
         print(f'  registered the initial dump: {os.path.basename(args.dump)}')
 
     if args.tac:
-        rows = 0
-        try:
-            rows = int(clickhouse(args.clickhouse,
-                                  'SELECT count() FROM sqm.tac_all WHERE version_id = 1'))
-        except Exception:  # noqa: BLE001
-            pass
+        rows = int(clickhouse(args.clickhouse,
+                              'SELECT count() FROM sqm.tac_all WHERE version_id = 1'))
 
         backfill_file(args.container, 'TAC', args.tac, None,
                       'GSMA TAC snapshot, loaded directly into the analytics store before the '

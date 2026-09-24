@@ -80,7 +80,7 @@ public sealed partial class ClickHouseAnalyticsStore
                            sumIf(c.n, c.label = 'remove') AS removed
                     FROM sqm.agg_change_daily AS c
                     LEFT JOIN sqm.tac AS t ON t.tac = c.tac
-                    LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+                    LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
                     WHERE c.data_date >= {fromDate:Date} AND c.data_date <= {toDate:Date}
                     GROUP BY k
                 ),
@@ -192,13 +192,13 @@ public sealed partial class ClickHouseAnalyticsStore
             // meaningful even when every absolute change is negative.
             $"SELECT * FROM combined WHERE population_at_start >= 100000 ORDER BY "
             + $"population_change / nullIf(population_at_start, 0) DESC LIMIT {take} "
-            + "UNION ALL "
+            + "UNION DISTINCT "
             + $"SELECT * FROM combined WHERE population_at_start >= 100000 ORDER BY "
             + $"population_change / nullIf(population_at_start, 0) ASC LIMIT {take}",
 
         _ =>
             $"SELECT * FROM combined ORDER BY net DESC LIMIT {take} "
-            + "UNION ALL "
+            + "UNION DISTINCT "
             + $"SELECT * FROM combined ORDER BY net ASC LIMIT {take}",
     };
 

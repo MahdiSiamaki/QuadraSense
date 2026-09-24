@@ -614,6 +614,40 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
         }
     }
 
+    [Fact]
+    public async Task A_retried_quarantine_keeps_one_copy_of_its_samples()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        try
+        {
+            var ct = TestContext.Current.CancellationToken;
+            var jobId = await fixture.Repository.EnqueueAsync(TestSource,
+                (await fixture.Repository.RegisterFileAsync(TestSource, "q.csv", Stored(Hash("q")), "tester", ct)).FileId,
+                new DateOnly(2026, 6, 7), "tester", ct: ct);
+            QuarantineWrite[] groups =
+            [
+                new("TEST_RULE", "imei", "warning", 2, 1, "A test rule.",
+                    [new QuarantineSample(1, "1,2,bad,add", "bad"), new QuarantineSample(2, "1,2,worse,add", "worse")]),
+            ];
+
+            // The same validation, recorded by the first attempt and again by the retry.
+            await fixture.Repository.RecordQuarantineAsync(jobId, groups, ct);
+            await fixture.Repository.RecordQuarantineAsync(jobId, groups, ct);
+
+            var group = Assert.Single((await fixture.Repository.GetJobAsync(jobId, ct))!.Quarantine);
+            Assert.Equal(2, (await fixture.Repository.GetQuarantineSamplesAsync(group.SummaryId, 10, ct)).Count);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
     private static async Task ExpireLeaseAsync(long jobId)
     {
         await using var connection = new Npgsql.NpgsqlConnection(ImportQueueFixture.ConnectionString);

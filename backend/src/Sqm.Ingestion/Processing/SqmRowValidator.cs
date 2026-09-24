@@ -1,3 +1,4 @@
+using System.Globalization;
 using Sqm.Application.DataImport;
 
 namespace Sqm.Ingestion.Processing;
@@ -74,15 +75,25 @@ internal static class SqmRowValidator
     /// <summary>
     /// Checks one line, appending anything it breaks to <paramref name="findings"/>.
     /// </summary>
+    /// <param name="line">One data row.</param>
+    /// <param name="findings">Where broken rules are appended.</param>
+    /// <param name="columns">
+    /// How many columns the header declared. A header the schema check accepted because it only
+    /// appends columns has more than four, and every row carries them; checking rows against a
+    /// fixed four rejected all of them, so an "accepted" schema change quarantined the whole file.
+    /// The first four are the ones read; ClickHouse skips the rest by name.
+    /// </param>
     /// <returns>The strongest verdict any rule produced.</returns>
-    public static RowVerdict Validate(ReadOnlySpan<char> line, List<RowFinding> findings)
+    public static RowVerdict Validate(ReadOnlySpan<char> line, List<RowFinding> findings, int columns = 4)
     {
         ArgumentNullException.ThrowIfNull(findings);
+        ArgumentOutOfRangeException.ThrowIfLessThan(columns, 4);
 
-        Span<Range> fields = stackalloc Range[5];
+        // One slot more than expected, so a row with too many fields is counted as such.
+        Span<Range> fields = columns < 32 ? stackalloc Range[columns + 1] : new Range[columns + 1];
         var count = SplitFields(line, fields);
 
-        if (count != 4)
+        if (count != columns)
         {
             findings.Add(new RowFinding(
                 SqmRules.FieldCount, null, RowVerdict.Reject, count.ToString()));
@@ -96,14 +107,17 @@ internal static class SqmRowValidator
 
         var verdict = RowVerdict.Accept;
 
-        if (msisdn.IsEmpty || !IsAllDigits(msisdn) || msisdn.Length > 20)
+        // Parsed, not measured. Twenty digits was the only bound, and a UInt64 holds nineteen and
+        // a bit: 99999999999999999999 passed, and ClickHouse stored it wrapped, as
+        // 7766279631452241919 - a number that exists nowhere, without an error.
+        if (msisdn.IsEmpty || !IsAllDigits(msisdn) || !FitsUInt64(msisdn))
         {
             findings.Add(new RowFinding(
                 SqmRules.MsisdnNotNumeric, "msisdn", RowVerdict.Reject, msisdn.ToString()));
             verdict = RowVerdict.Reject;
         }
 
-        if (imsi.IsEmpty || !IsAllDigits(imsi) || imsi.Length > 20)
+        if (imsi.IsEmpty || !IsAllDigits(imsi) || !FitsUInt64(imsi))
         {
             findings.Add(new RowFinding(
                 SqmRules.ImsiNotNumeric, "imsi", RowVerdict.Reject, imsi.ToString()));
@@ -186,6 +200,9 @@ internal static class SqmRowValidator
 
         return count;
     }
+
+    private static bool FitsUInt64(ReadOnlySpan<char> digits) =>
+        ulong.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out _);
 
     private static bool IsAllDigits(ReadOnlySpan<char> value)
     {

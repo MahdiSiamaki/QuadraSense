@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import Card from '@/design-system/Card.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
@@ -32,6 +32,12 @@ const detail = useImportDetail(jobId)
 const { cancel, reprocess } = useImportActions()
 
 const openRule = ref<number | null>(null)
+
+// The page is reused when a lineage link leads to another job, and an open rule belongs to the
+// job it was opened on: carried over, it asked the new job for a summary id that is not its own.
+watch(jobId, () => {
+  openRule.value = null
+})
 const showPreview = ref(false)
 const samples = useQuarantineSamples(jobId, openRule)
 
@@ -223,6 +229,11 @@ function toggleRule(summaryId: number) {
                   <div v-if="openRule === group.summaryId" class="px-4 pb-3">
                     <p v-if="samples.isPending.value" class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
                       Loading examples…
+                    </p>
+                    <!-- An error is not an absence: "no examples" would misreport a failed request. -->
+                    <p v-else-if="samples.isError.value" class="text-[var(--text-xs)] text-[var(--c-danger)]">
+                      The examples could not be loaded.
+                      <button type="button" class="underline" @click="samples.refetch()">Try again</button>
                     </p>
                     <table v-else-if="samples.data.value?.length" class="w-full text-[var(--text-2xs)]">
                       <thead class="text-left text-[var(--c-text-muted)]">

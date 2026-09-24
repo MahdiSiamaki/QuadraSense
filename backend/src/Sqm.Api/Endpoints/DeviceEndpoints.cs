@@ -186,7 +186,7 @@ public static class DeviceEndpoints
                 MinBindings: Math.Max(0, request.MinBindings),
                 Sort: MapSort(request.Sort),
                 Descending: request.Descending,
-                Offset: (page - 1) * pageSize,
+                Offset: (int)Math.Min((page - 1L) * pageSize, int.MaxValue),
                 Limit: pageSize),
             ct).ConfigureAwait(false);
 
@@ -476,7 +476,7 @@ public static class DeviceEndpoints
                 ActiveOnly: request.ActiveOnly,
                 From: request.From,
                 To: request.To,
-                Offset: (page - 1) * pageSize,
+                Offset: (int)Math.Min((page - 1L) * pageSize, int.MaxValue),
                 Limit: pageSize),
             ct).ConfigureAwait(false);
 

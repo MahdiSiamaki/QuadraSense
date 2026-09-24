@@ -59,13 +59,42 @@ internal sealed class ClickHouseTarget(string connectionString) : IMigrationTarg
 
     public async Task OpenAsync(CancellationToken cancellationToken)
     {
+        await EnsureDatabaseAsync(cancellationToken).ConfigureAwait(false);
+
         _connection = new ClickHouseConnection(
             connectionString, new SingleClientFactory(), "migrator");
         await _connection.OpenAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Creates the database the connection string names, through a connection that names none.
+    /// </summary>
+    /// <remarks>
+    /// The driver sends the connection string's database with every request, the first one
+    /// included - its version probe inside <c>OpenAsync</c>. Against a server where that database
+    /// does not exist yet, the server refuses the request before running it, so the
+    /// <c>CREATE DATABASE IF NOT EXISTS</c> this used to issue on the open connection could never
+    /// run on the one server that needed it. A fresh install failed at its first step.
+    /// </remarks>
+    private async Task EnsureDatabaseAsync(CancellationToken cancellationToken)
+    {
+        var builder = new ClickHouseConnectionStringBuilder(connectionString);
+        var database = string.IsNullOrEmpty(builder.Database) ? "sqm" : builder.Database;
+        builder.Database = string.Empty;
+
+        await using var bootstrap = new ClickHouseConnection(
+            builder.ConnectionString, new SingleClientFactory(), "migrator-bootstrap");
+        await bootstrap.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var command = bootstrap.CreateCommand();
+        command.CommandText = $"CREATE DATABASE IF NOT EXISTS `{database.Replace("`", "``", StringComparison.Ordinal)}`";
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task EnsureHistoryTableAsync(CancellationToken cancellationToken)
     {
+        // The migrations name the sqm database explicitly, so it must exist whatever the
+        // connection string's own database is.
         await ExecuteAsync("CREATE DATABASE IF NOT EXISTS sqm", cancellationToken).ConfigureAwait(false);
 
         // ReplacingMergeTree, not MergeTree: re-recording a version after a partial failure

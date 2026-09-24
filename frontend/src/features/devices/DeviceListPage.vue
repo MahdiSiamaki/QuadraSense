@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter, type LocationQuery } from 'vue-router'
 import Card from '@/design-system/Card.vue'
 import Pagination from '@/design-system/Pagination.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
@@ -13,6 +13,7 @@ import {
   type DeviceSummary,
 } from '@/api/devices'
 import { formatCompact, formatDate, formatFull } from '@/lib/format'
+import { recall, remember } from '@/lib/session-memory'
 
 /**
  * The device catalogue: ~98,000 models, searchable by name or by any identifier.
@@ -36,15 +37,99 @@ import { formatCompact, formatDate, formatFull } from '@/lib/format'
  * of a 2.35 s aggregate over 295 million — not the rendering.
  */
 
-const query = ref('')
-const submitted = ref('')
-const manufacturer = ref('')
-const deviceType = ref('')
-const operatingSystem = ref('')
-const sort = ref<DeviceSort>('bindings')
-const descending = ref(true)
-const page = ref(1)
+/*
+  Where the reader is lives in the URL - filters, sort and page - so opening a device and coming
+  back returns to the same place, and a view can be shared. The search text does not: it can be a
+  phone number, an IMSI or an IMEI, and a query string carries those into history, bookmarks and
+  every copied link. It is kept per tab in session storage instead (the product owner's choice),
+  and forgotten on sign-out.
+*/
+const route = useRoute()
+const router = useRouter()
+
+const SORTS: readonly DeviceSort[] = [
+  'bindings', 'handsets', 'sims', 'subscribers', 'model', 'manufacturer', 'tac', 'lastSeen',
+]
+const SEARCH_KEY = 'devices.search'
+
+// The route object is shared, so these watchers also see the navigation that leaves this page -
+// to a device, with an empty query - before it unmounts. Acting on it would reset the state the
+// reader is coming back to, and write the list's query onto the device page.
+const listPath = route.path
+const onList = () => route.path === listPath
+
+function text(q: LocationQuery, key: string): string {
+  const v = q[key]
+  return typeof v === 'string' ? v : ''
+}
+
+function readUrl(q: LocationQuery) {
+  const sortParam = text(q, 'sort') as DeviceSort
+  const sort = SORTS.includes(sortParam) ? sortParam : 'bindings'
+  const dir = text(q, 'dir')
+  const pageParam = Number.parseInt(text(q, 'page'), 10)
+  return {
+    manufacturer: text(q, 'manufacturer'),
+    deviceType: text(q, 'type'),
+    operatingSystem: text(q, 'os'),
+    sort,
+    descending: dir === 'asc' ? false : dir === 'desc' ? true : defaultDescending(sort),
+    page: Number.isFinite(pageParam) && pageParam > 1 ? pageParam : 1,
+  }
+}
+
+const initial = readUrl(route.query)
+const query = ref(recall(SEARCH_KEY))
+const submitted = ref(query.value.trim())
+const manufacturer = ref(initial.manufacturer)
+const deviceType = ref(initial.deviceType)
+const operatingSystem = ref(initial.operatingSystem)
+const sort = ref<DeviceSort>(initial.sort)
+const descending = ref(initial.descending)
+const page = ref(initial.page)
 const pageSize = 40
+
+/** The URL for the current state; defaults are left out so the plain page stays `/devices`. */
+function toUrl(): Record<string, string> {
+  const q: Record<string, string> = {}
+  if (manufacturer.value) q.manufacturer = manufacturer.value
+  if (deviceType.value) q.type = deviceType.value
+  if (operatingSystem.value) q.os = operatingSystem.value
+  if (sort.value !== 'bindings') q.sort = sort.value
+  // The direction is written whenever it is not the one sortBy() would pick, so it survives.
+  if (descending.value !== defaultDescending(sort.value)) q.dir = descending.value ? 'desc' : 'asc'
+  if (page.value > 1) q.page = String(page.value)
+  return q
+}
+
+// Set while the state is being taken from the URL, so the page-one rule below does not undo a
+// page that came with it. That rule runs synchronously for this reason: a deferred watcher would
+// run after the flag is cleared.
+let fromUrl = false
+
+watch(
+  () => route.query,
+  (q) => {
+    if (!onList()) return
+    const next = readUrl(q)
+    if (JSON.stringify(next) === JSON.stringify(readUrl(toUrl()))) return
+    fromUrl = true
+    manufacturer.value = next.manufacturer
+    deviceType.value = next.deviceType
+    operatingSystem.value = next.operatingSystem
+    sort.value = next.sort
+    descending.value = next.descending
+    page.value = next.page
+    fromUrl = false
+  },
+)
+
+watch([manufacturer, deviceType, operatingSystem, sort, descending, page], () => {
+  if (!onList()) return
+  const q = toUrl()
+  if (JSON.stringify(readUrl(q)) === JSON.stringify(readUrl(route.query))) return
+  void router.replace({ query: q })
+})
 
 const facets = useDeviceFacets()
 
@@ -66,17 +151,23 @@ const data = computed(() => search.data.value ?? null)
 const term = computed(() => classifyTerm(query.value))
 
 /** Any filter or sort change starts from page one; page 7 of a different result is meaningless. */
-watch([submitted, manufacturer, deviceType, operatingSystem, sort, descending], () => {
-  page.value = 1
-})
+watch(
+  [submitted, manufacturer, deviceType, operatingSystem, sort, descending],
+  () => {
+    if (!fromUrl) page.value = 1
+  },
+  { flush: 'sync' },
+)
 
 function submit() {
   submitted.value = query.value.trim()
+  remember(SEARCH_KEY, submitted.value)
 }
 
 function clearAll() {
   query.value = ''
   submitted.value = ''
+  remember(SEARCH_KEY, '')
   manufacturer.value = ''
   deviceType.value = ''
   operatingSystem.value = ''
@@ -92,10 +183,14 @@ function sortBy(column: DeviceSort) {
     descending.value = !descending.value
   } else {
     sort.value = column
-    // Counts are interesting from the top, names from A. Defaulting every column to descending
-    // would make an alphabetical sort start at Z.
-    descending.value = !['model', 'manufacturer', 'tac'].includes(column)
+    descending.value = defaultDescending(column)
   }
+}
+
+// Counts are interesting from the top, names from A. Defaulting every column to descending would
+// make an alphabetical sort start at Z.
+function defaultDescending(column: DeviceSort): boolean {
+  return !['model', 'manufacturer', 'tac'].includes(column)
 }
 
 function sortMark(column: DeviceSort): string {
@@ -124,8 +219,17 @@ function isRealDevice(d: DeviceSummary): boolean {
 // Alignment is left out on purpose and set per column. With `text-right` in here, the TAC header
 // carried both `text-right` and `text-left`, and whichever Tailwind emits later wins - not the
 // one written last in the template - so the header sat right while its values sat left.
-const sortableClass = 'cursor-pointer select-none px-3 py-2 font-medium hover:text-[var(--c-text)]'
+const sortableClass = 'px-3 py-2 font-medium'
 const columnClass = `${sortableClass} text-right`
+
+// The sort is a button inside the header, not a click on the header cell: a cell cannot take
+// focus, so sorting was mouse-only and screen readers were never told the column was actionable.
+const sortButtonClass = 'cursor-pointer select-none font-medium hover:text-[var(--c-text)]'
+
+function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
+  if (sort.value !== column) return 'none'
+  return descending.value ? 'descending' : 'ascending'
+}
 </script>
 
 <template>
@@ -266,24 +370,36 @@ const columnClass = `${sortableClass} text-right`
               >
                 <tr>
                   <th scope="col" class="px-3 py-2 text-left font-medium">Device</th>
-                  <th scope="col" :class="[sortableClass, 'text-left']" @click="sortBy('tac')">
-                    TAC{{ sortMark('tac') }}
+                  <th scope="col" :class="[sortableClass, 'text-left']" :aria-sort="ariaSort('tac')">
+                    <button type="button" :class="sortButtonClass" @click="sortBy('tac')">
+                      TAC{{ sortMark('tac') }}
+                    </button>
                   </th>
                   <th scope="col" class="px-3 py-2 text-left font-medium">Type</th>
-                  <th scope="col" :class="columnClass" @click="sortBy('bindings')">
-                    Bindings{{ sortMark('bindings') }}
+                  <th scope="col" :class="columnClass" :aria-sort="ariaSort('bindings')">
+                    <button type="button" :class="sortButtonClass" @click="sortBy('bindings')">
+                      Bindings{{ sortMark('bindings') }}
+                    </button>
                   </th>
-                  <th scope="col" :class="columnClass" @click="sortBy('handsets')">
-                    Handsets{{ sortMark('handsets') }}
+                  <th scope="col" :class="columnClass" :aria-sort="ariaSort('handsets')">
+                    <button type="button" :class="sortButtonClass" @click="sortBy('handsets')">
+                      Handsets{{ sortMark('handsets') }}
+                    </button>
                   </th>
-                  <th scope="col" :class="columnClass" @click="sortBy('sims')">
-                    SIMs{{ sortMark('sims') }}
+                  <th scope="col" :class="columnClass" :aria-sort="ariaSort('sims')">
+                    <button type="button" :class="sortButtonClass" @click="sortBy('sims')">
+                      SIMs{{ sortMark('sims') }}
+                    </button>
                   </th>
-                  <th scope="col" :class="columnClass" @click="sortBy('subscribers')">
-                    Numbers{{ sortMark('subscribers') }}
+                  <th scope="col" :class="columnClass" :aria-sort="ariaSort('subscribers')">
+                    <button type="button" :class="sortButtonClass" @click="sortBy('subscribers')">
+                      Numbers{{ sortMark('subscribers') }}
+                    </button>
                   </th>
-                  <th scope="col" :class="columnClass" @click="sortBy('lastSeen')">
-                    Last seen{{ sortMark('lastSeen') }}
+                  <th scope="col" :class="columnClass" :aria-sort="ariaSort('lastSeen')">
+                    <button type="button" :class="sortButtonClass" @click="sortBy('lastSeen')">
+                      Last seen{{ sortMark('lastSeen') }}
+                    </button>
                   </th>
                 </tr>
               </thead>

@@ -122,6 +122,62 @@ def test_source_policy() -> None:
         check("localhost is refused", "non-public" in str(exc), str(exc))
 
 
+def test_redirect_hops() -> None:
+    """Every hop is checked before it is requested, not only where the chain ends."""
+    import subprocess
+
+    requested: list[str] = []
+
+    def fake_curl(responses):
+        def run(command, capture_output=True):
+            requested.append(command[-1])
+            status, target, body = responses[len(requested) - 1]
+            meta = f"\n---META---{status} {target}".encode()
+            return subprocess.CompletedProcess(command, 0, body + meta, b"")
+        return run
+
+    saved = (pipeline.subprocess.run, pipeline.check_public_host, pipeline.POLITE_DELAY_SECONDS)
+    pipeline.check_public_host = lambda host: None      # no DNS in a test
+    pipeline.POLITE_DELAY_SECONDS = 0
+    try:
+        # An allowlisted host bounces through one that is not, and back again. Only the last
+        # URL was checked before, after all three had been requested.
+        pipeline.subprocess.run = fake_curl([
+            (302, "https://internal.example/hop", b""),
+            (302, "https://upload.wikimedia.org/b.jpg", b""),
+            (200, "", b"image"),
+        ])
+        try:
+            pipeline.fetch("https://upload.wikimedia.org/a.jpg")
+            check("a redirect through an unlisted host is refused", False, "no error raised")
+        except pipeline.FetchError as exc:
+            check("a redirect through an unlisted host is refused", "redirect" in str(exc), str(exc))
+        check("the unlisted hop is never requested", requested == ["https://upload.wikimedia.org/a.jpg"],
+              str(requested))
+
+        requested.clear()
+        pipeline.subprocess.run = fake_curl([
+            (302, "https://thumb.wikimedia.org/b.jpg", b""),
+            (200, "", b"image"),
+        ])
+        body, host = pipeline.fetch("https://upload.wikimedia.org/a.jpg")
+        check("a redirect between listed hosts is followed",
+              body == b"image" and host == "thumb.wikimedia.org", f"{body!r} {host}")
+
+        requested.clear()
+        pipeline.subprocess.run = fake_curl(
+            [(302, "https://upload.wikimedia.org/again.jpg", b"")] * 10)
+        try:
+            pipeline.fetch("https://upload.wikimedia.org/a.jpg")
+            check("a redirect loop is bounded", False, "no error raised")
+        except pipeline.FetchError as exc:
+            check("a redirect loop is bounded",
+                  "redirects" in str(exc) and len(requested) == pipeline.LIMITS["max_redirects"] + 1,
+                  f"{exc} after {len(requested)} requests")
+    finally:
+        pipeline.subprocess.run, pipeline.check_public_host, pipeline.POLITE_DELAY_SECONDS = saved
+
+
 def test_mime_sniffing() -> None:
     check("PNG is recognised from its magic bytes",
           pipeline.sniff(render(400, 400, fmt="PNG")) == "image/png")
@@ -218,9 +274,23 @@ def test_normalisation() -> None:
               bbox is not None and bbox[0] > 0 and bbox[1] > 0
               and bbox[2] < pipeline.CANVAS and bbox[3] < pipeline.CANVAS, str(bbox))
 
-        width_share = (bbox[2] - bbox[0]) / pipeline.CANVAS
+        # The longer side: the product here is portrait once trimmed. Measuring width alone passed
+        # only while the white margin was left in and counted as product.
+        share = max(bbox[2] - bbox[0], bbox[3] - bbox[1]) / pipeline.CANVAS
         check("the product fills most of the canvas without touching it",
-              0.7 <= width_share <= 0.95, f"{width_share:.0%} wide")
+              0.7 <= share <= 0.95, f"{share:.0%} on its longer side")
+
+    # The white margin of an opaque source is trimmed, so the product - not the photograph it sits
+    # in - is what fills the canvas. A JPEG on a wide white background came out at under half.
+    for fmt in ("PNG", "JPEG"):
+        with Image.open(io.BytesIO(pipeline.normalise(render(1400, 900, product=(0.4, 0.8),
+                                                              fmt=fmt))[0])) as out:
+            flat = Image.new("RGB", out.size, (255, 255, 255))
+            flat.paste(out.convert("RGBA"), mask=out.convert("RGBA").getchannel("A"))
+            dark = flat.convert("L").point(lambda v: 255 if v < 128 else 0).getbbox()
+            share = max(dark[2] - dark[0], dark[3] - dark[1]) / pipeline.CANVAS
+            check(f"a {fmt} product on white is trimmed to fill the canvas",
+                  0.78 <= share <= 0.9, f"{share:.0%} of the canvas")
 
     # Aspect ratio must survive: a 2:1 source must not come out square.
     tall = pipeline.normalise(render(600, 1200, product=(0.5, 0.9)))[0]
@@ -241,8 +311,8 @@ def test_model_key() -> None:
 
 
 def main() -> int:
-    for test in (test_identity, test_source_policy, test_mime_sniffing, test_quality_rules,
-                 test_bad_bytes, test_normalisation, test_model_key):
+    for test in (test_identity, test_source_policy, test_redirect_hops, test_mime_sniffing,
+                 test_quality_rules, test_bad_bytes, test_normalisation, test_model_key):
         try:
             test()
         except Exception as exc:                         # noqa: BLE001

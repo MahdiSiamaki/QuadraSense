@@ -196,7 +196,14 @@ public sealed partial class PostgresUserDirectory
         if (username is null)
         {
             await transaction.RollbackAsync(ct).ConfigureAwait(false);
-            return false;
+
+            // Nothing changed either because there is no such user or because the account is
+            // already in the state asked for. Only the first is "not found": activating an
+            // active account has succeeded, and answering 404 to it sent the admin looking for
+            // a user who was on the screen in front of them.
+            return await connection.ExecuteScalarAsync<bool>(_db.Command(
+                "SELECT EXISTS (SELECT 1 FROM auth.user_account WHERE id = @userId)",
+                new { userId }, ct)).ConfigureAwait(false);
         }
 
         var revoked = 0;
@@ -567,7 +574,7 @@ public sealed partial class PostgresUserDirectory
         return [.. rows];
     }
 
-    private Task AuditAsync(
+    private async Task AuditAsync(
         NpgsqlConnection connection,
         IDbTransaction transaction,
         string actor,
@@ -577,10 +584,12 @@ public sealed partial class PostgresUserDirectory
         AuthenticationContext context,
         IReadOnlyDictionary<string, object?>? detail,
         CancellationToken ct) =>
-        IdentitySql.WriteAuditAsync(connection, transaction, new AuditEntry(
+        await IdentitySql.WriteAuditAsync(connection, transaction, new AuditEntry(
             ActorName: actor,
             Action: action,
             Category: AuditCategory.User,
+            ActorUserId: await IdentitySql.ResolveActorIdAsync(
+                connection, transaction, actor, _commandTimeout, ct).ConfigureAwait(false),
             Outcome: AuditOutcome.Success,
             TargetType: "user",
             TargetId: targetUserId.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -588,7 +597,7 @@ public sealed partial class PostgresUserDirectory
             Ip: context.Ip,
             UserAgent: context.UserAgent,
             CorrelationId: context.CorrelationId,
-            Detail: detail), _commandTimeout, ct);
+            Detail: detail), _commandTimeout, ct).ConfigureAwait(false);
 
     /// <summary>Turns an empty or whitespace string into null, so the column holds one absence.</summary>
     private static string? Blank(string? value) =>

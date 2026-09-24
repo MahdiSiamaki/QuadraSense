@@ -559,6 +559,66 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
     }
 
     [Fact]
+    public async Task A_page_number_past_int_range_is_an_empty_page_not_a_negative_offset()
+    {
+        if (Skip(out var reason))
+        {
+            Assert.Skip(reason);
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+
+        // (page - 1) * pageSize wrapped negative in 32 bits, and PostgreSQL refuses a negative
+        // OFFSET: a 500 from any list with a page parameter.
+        var audit = await _fixture.Audit.QueryAsync(new AuditQuery(Page: int.MaxValue, PageSize: 100), ct);
+        var users = await _fixture.Users.SearchAsync(
+            new UserQuery(null, null, null, int.MaxValue, 100, UserSort.DisplayName), ct);
+
+        Assert.Empty(audit.Items);
+        Assert.Empty(users.Items);
+    }
+
+    [Fact]
+    public async Task Activating_an_active_account_succeeds_rather_than_not_found()
+    {
+        if (Skip(out var reason))
+        {
+            Assert.Skip(reason);
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var id = await CreateAsync("already-active", "viewer");
+
+        Assert.True(await _fixture.Users.SetActiveAsync(id, true, null, "tests", IdentityFixture.Context, ct));
+        Assert.False(await _fixture.Users.SetActiveAsync(long.MaxValue, true, null, "tests", IdentityFixture.Context, ct));
+    }
+
+    [Fact]
+    public async Task An_administrative_change_is_linked_to_the_account_that_made_it()
+    {
+        if (Skip(out var reason))
+        {
+            Assert.Skip(reason);
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var admin = await _fixture.Users.GetByUsernameAsync("admin", ct);
+        Assert.NotNull(admin); // the bootstrap administrator every database starts with
+
+        var id = await CreateAsync("linked", "analyst");
+        await _fixture.Users.SetRolesAsync(id, ["viewer"], admin.Username, IdentityFixture.Context, ct);
+
+        var page = await _fixture.Audit.QueryAsync(
+            new AuditQuery(Action: "user.roles.set", PageSize: 20), ct);
+        var entry = page.Items.First(e => e.TargetId == id.ToString(
+            System.Globalization.CultureInfo.InvariantCulture));
+
+        // By name only, the entry had no actor id: the log showed no link to the account, and a
+        // filter by actor id left out every user and role change.
+        Assert.Equal(admin.Id, entry.ActorUserId);
+    }
+
+    [Fact]
     public async Task The_application_role_cannot_rewrite_or_delete_audit_history()
     {
         if (Skip(out var reason))

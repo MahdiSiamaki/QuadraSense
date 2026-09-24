@@ -300,6 +300,17 @@ public static class UserEndpoints
                 o.Reason))
             .ToList();
 
+        // One override per permission. The same code twice - or a grant and a deny of it - hit
+        // the table's primary key, and only the foreign key was translated, so it was a 500.
+        if (overrides.GroupBy(o => o.PermissionCode, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1)
+            is { } repeated)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["overrides"] = [$"'{repeated.Key}' is listed more than once. Give each permission one grant or one deny."],
+            });
+        }
+
         var actor = CurrentUser.Require(http);
         if (id == actor.UserId)
         {

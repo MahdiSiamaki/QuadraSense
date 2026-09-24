@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/vue-query'
 import { api } from './client'
+import { forgetAll } from '@/lib/session-memory'
 
 /*
   The signed-in user, and everything a person can do about their own account.
@@ -74,11 +75,13 @@ export const CURRENT_USER_KEY = ['auth', 'me'] as const
  * user in on, while the shell goes on showing nobody: no navigation and no user menu until a
  * reload. So the current user is set to null in place, and only the other queries are removed -
  * they still must go, or the next person to sign in on this tab would see the last one's data.
+ * The same holds for the searches kept in session storage.
  */
 export function forgetSession(client: QueryClient): void {
   const currentUser = client.getQueryCache().find({ queryKey: CURRENT_USER_KEY, exact: true })
   client.removeQueries({ predicate: (query) => query !== currentUser })
   client.setQueryData<CurrentUser | null>(CURRENT_USER_KEY, null)
+  forgetAll()
 }
 
 /**

@@ -93,6 +93,20 @@ public readonly record struct DeviceSearchTerm
             return null;
         }
 
+        // A phone number written the way people write one - 09121234567, +98 912 123 4567,
+        // 0098... - is a number, not text. Classified by length alone these were eleven, twelve
+        // or thirteen digits (or not digits at all, for the plus), so they fell through to a name
+        // search that found nothing, and the relationship explorer refused them outright - while
+        // Subscriber Lookup, which normalises through Msisdn, accepted the same input. Only the
+        // lengths no other identifier has are tried: 0098 plus ten digits is fourteen, which is an
+        // IMEI's length, and stays one.
+        var dialled = text.Contains('+', StringComparison.Ordinal)
+                      || StripLength(text) is 11 or 12 or 13;
+        if (dialled && Msisdn.TryParse(text, out var number) && number.Value.IsWellFormed)
+        {
+            return new DeviceSearchTerm(DeviceSearchKind.Msisdn, number.Value.ToString(), text);
+        }
+
         var digits = Strip(text);
 
         // Not all digits, so there is nothing to resolve - it is a name.
@@ -135,6 +149,8 @@ public readonly record struct DeviceSearchTerm
 
         return tac is not null;
     }
+
+    private static int StripLength(string value) => Strip(value).Length;
 
     private static string Strip(string value)
     {

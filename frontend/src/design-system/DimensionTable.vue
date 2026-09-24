@@ -33,9 +33,9 @@ function isUnknown(key: string): boolean {
   <table class="w-full text-[var(--text-sm)]">
     <thead>
       <tr class="border-b text-left text-[var(--text-xs)] text-[var(--c-text-muted)]">
-        <th class="px-4 py-2 font-medium">{{ header }}</th>
-        <th class="px-4 py-2 text-right font-medium capitalize">{{ unit ?? 'bindings' }}</th>
-        <th class="px-4 py-2 text-right font-medium">Share</th>
+        <th scope="col" class="px-4 py-2 font-medium">{{ header }}</th>
+        <th scope="col" class="px-4 py-2 text-right font-medium capitalize">{{ unit ?? 'bindings' }}</th>
+        <th scope="col" class="px-4 py-2 text-right font-medium">Share</th>
       </tr>
     </thead>
     <tbody>
@@ -57,12 +57,19 @@ function isUnknown(key: string): boolean {
               backgroundColor: isUnknown(row.key) ? 'var(--viz-null)' : 'var(--viz-1)',
             }"
           />
-          <span
-            class="relative"
-            :class="isUnknown(row.key) ? 'text-[var(--c-text-muted)] italic' : ''"
-          >
+          <span v-if="isUnknown(row.key)" class="relative text-[var(--c-text-muted)] italic">
             {{ row.key }}
           </span>
+          <!-- The whole row stays clickable for the mouse; this is what a keyboard reaches. A
+               click on a row cannot take focus, so the drill-down was mouse-only. -->
+          <button
+            v-else
+            type="button"
+            class="relative cursor-pointer text-left"
+            @click.stop="$emit('select', row.key)"
+          >
+            {{ row.key }}
+          </button>
         </td>
         <td class="relative px-4 py-2.5 text-right tabular">{{ formatFull(row.count) }}</td>
         <td class="relative px-4 py-2.5 text-right tabular text-[var(--c-text-secondary)]">

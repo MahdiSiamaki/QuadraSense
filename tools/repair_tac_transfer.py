@@ -115,7 +115,12 @@ def main(argv):
     for number, text, tac in wellformed:
         by_suffix[text[-80:]].append(text)
 
+    # A fragment counts as recovered only when its tail names exactly one device. "Some intact
+    # record ends this way" was the test before, and a short tail - ',Smartphone,Android' - ends
+    # hundreds of records: it passed while proving nothing about which device the fragment was,
+    # so a model that survived only as that fragment would have been dropped unreported.
     orphaned = []
+    ambiguous = []
     for number, text, nfields in fragments:
         candidates = by_suffix.get(text[-80:], []) if len(text) >= 80 else []
         if not candidates:
@@ -123,11 +128,14 @@ def main(argv):
         else:
             candidates = [t for t in candidates if t.endswith(text)]
 
-        if not candidates:
+        tacs = {next(csv.reader([t]))[0] for t in candidates}
+        if not tacs:
             orphaned.append((number, nfields, text[:70]))
+        elif len(tacs) > 1:
+            ambiguous.append((number, nfields, text[:70], len(tacs)))
 
     print(f"fragments recoverable elsewhere in the file: "
-          f"{len(fragments) - len(orphaned)} of {len(fragments)}")
+          f"{len(fragments) - len(orphaned) - len(ambiguous)} of {len(fragments)}")
 
     if orphaned:
         print(f"\nREFUSED. {len(orphaned)} malformed record(s) have no intact counterpart, so "
@@ -135,6 +143,15 @@ def main(argv):
               "debris. Obtain a sound export instead.")
         for number, nfields, head in orphaned[:10]:
             print(f"  line {number}: {nfields} fields, starts {head!r}")
+        return 1
+
+    if ambiguous:
+        print(f"\nREFUSED. {len(ambiguous)} malformed record(s) are too short to say which "
+              "device they were: each ends the same way as several intact records with "
+              "different TACs, so whether its own device survives cannot be shown. Obtain a "
+              "sound export instead.")
+        for number, nfields, head, count in ambiguous[:10]:
+            print(f"  line {number}: {nfields} fields, {head!r} ends {count} different TACs")
         return 1
 
     # ---- write ---------------------------------------------------------------------------

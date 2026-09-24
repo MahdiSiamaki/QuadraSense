@@ -205,7 +205,11 @@ public sealed partial class DirectoryImportFileStore : IImportFileStore
     {
         var full = Path.GetFullPath(Path.Combine(_root, storedPath));
 
-        if (!full.StartsWith(_root, StringComparison.OrdinalIgnoreCase))
+        // With the separator: a bare prefix test let "/data/imports-evil" pass as inside
+        // "/data/imports".
+        var inside = Path.EndsInDirectorySeparator(_root) ? _root : _root + Path.DirectorySeparatorChar;
+
+        if (!full.StartsWith(inside, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException($"stored path escapes the storage root: {storedPath}");
         }

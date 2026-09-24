@@ -68,6 +68,7 @@ POSTGRES = ("sqm-postgres", "sqm", "sqm")
 # catalogue tile needs on every side, whatever shape the source was.
 CANVAS = 800
 PADDING_FRACTION = 0.08
+WHITE_TOLERANCE = 12   # of 255: what still counts as the white background when trimming
 STORED_FORMAT = "WEBP"
 STORED_MIME = "image/webp"
 MAX_STORED_BYTES = 512 * 1024          # matches the database CHECK
@@ -302,14 +303,8 @@ def check_public_host(host: str) -> None:
             raise FetchError(f"{host} resolves to a non-public address ({address})")
 
 
-def fetch(url: str, *, expect_json: bool = False):
-    """
-    Download one thing, treating the far end as hostile.
-
-    https only, allowlisted host, public address, bounded redirects, bounded time, bounded size.
-    The effective URL is re-checked after redirects, because a redirect to a host nobody vetted is
-    exactly the trick this guards against.
-    """
+def check_target(url: str) -> str:
+    """The host of a URL we are about to request, or an error if it must not be requested."""
     if not url.lower().startswith("https://"):
         raise FetchError(f"not https: {url[:60]}")
 
@@ -317,57 +312,80 @@ def fetch(url: str, *, expect_json: bool = False):
     if host not in ALLOWED:
         raise FetchError(f"domain not allowlisted: {host}")
     check_public_host(host)
+    return host
+
+
+def fetch(url: str, *, expect_json: bool = False):
+    """
+    Download one thing, treating the far end as hostile.
+
+    https only, allowlisted host, public address, bounded redirects, bounded time, bounded size.
+
+    Redirects are followed here, one hop at a time, not by curl. With curl's --location only the
+    final URL could be checked, after every hop had already been requested - so an allowlisted
+    host could bounce the request through any address, private ones included, and back. Each hop
+    is now checked before a byte is sent to it.
+    """
+    host = check_target(url)
 
     marker = b"\n---META---"
-    command = [
-        "curl", "-sS", "--proto", "=https", "--proto-redir", "=https",
-        "--location", "--max-redirs", str(LIMITS["max_redirects"]),
-        "--max-time", str(LIMITS["timeout_seconds"]),
-        "--max-filesize", str(LIMITS["max_download_bytes"]),
-        "-A", UA,
-        "-w", marker.decode() + "%{http_code} %{url_effective}",
-        url,
-    ]
-
     last_error = "not attempted"
 
     for attempt in range(MAX_ATTEMPTS):
-        time.sleep(POLITE_DELAY_SECONDS)
-        out = subprocess.run(command, capture_output=True)
-        if out.returncode != 0:
-            raise FetchError(
-                f"transport failed ({out.returncode}): "
-                f"{out.stderr.decode(errors='replace')[:120]}")
+        current, current_host = url, host
 
-        body, separator, meta = out.stdout.rpartition(marker)
-        if not separator:
-            raise FetchError("no response metadata; cannot confirm the status")
+        for _hop in range(LIMITS["max_redirects"] + 1):
+            time.sleep(POLITE_DELAY_SECONDS)
+            command = [
+                "curl", "-sS", "--proto", "=https",
+                "--max-time", str(LIMITS["timeout_seconds"]),
+                "--max-filesize", str(LIMITS["max_download_bytes"]),
+                "-A", UA,
+                "-w", marker.decode() + "%{http_code} %{redirect_url}",
+                current,
+            ]
+            out = subprocess.run(command, capture_output=True)
+            if out.returncode != 0:
+                raise FetchError(
+                    f"transport failed ({out.returncode}): "
+                    f"{out.stderr.decode(errors='replace')[:120]}")
 
-        status_text, _, effective = meta.decode(errors="replace").partition(" ")
-        status = int(status_text) if status_text.isdigit() else 0
+            body, separator, meta = out.stdout.rpartition(marker)
+            if not separator:
+                raise FetchError("no response metadata; cannot confirm the status")
+
+            status_text, _, redirect = meta.decode(errors="replace").partition(" ")
+            status = int(status_text) if status_text.isdigit() else 0
+
+            if 300 <= status < 400 and redirect:
+                try:
+                    current_host = check_target(redirect)
+                except FetchError as exc:
+                    raise FetchError(f"redirect refused: {exc}") from exc
+                current = redirect
+                continue
+            break
+        else:
+            raise FetchError(f"more than {LIMITS['max_redirects']} redirects")
 
         # The status is checked BEFORE the bytes. Without this a rate-limited request looked like
         # a corrupt image: Wikimedia answers 429 with a 2,255-byte HTML page, which sniffed as no
         # known format and was reported as "bytes are not a supported image" - true, and the
         # wrong diagnosis entirely.
         if status == 429 or 500 <= status < 600:
-            last_error = f"HTTP {status} from {host}"
+            last_error = f"HTTP {status} from {current_host}"
             time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
             continue
 
         if status != 200:
-            raise FetchError(f"HTTP {status} from {host}")
-
-        final_host = host_of(effective) if effective else host
-        if final_host and final_host not in ALLOWED:
-            raise FetchError(f"redirected off the allowlist to {final_host}")
+            raise FetchError(f"HTTP {status} from {current_host}")
 
         if len(body) > LIMITS["max_download_bytes"]:
             raise FetchError("larger than the download ceiling")
 
         if expect_json:
             return json.loads(body.decode("utf-8"))
-        return body, final_host or host
+        return body, current_host
 
     raise FetchError(f"{last_error} after {MAX_ATTEMPTS} attempts")
 
@@ -677,7 +695,7 @@ def normalise(data: bytes) -> tuple[bytes, str]:
     800x800 with 8% padding means the product occupies about 84% of the tile. Re-encoding drops
     the source metadata, which is how EXIF and anything else riding along leaves.
     """
-    from PIL import Image, ImageOps
+    from PIL import Image, ImageChops, ImageOps
 
     Image.MAX_IMAGE_PIXELS = LIMITS["max_decoded_pixels"]
 
@@ -687,9 +705,19 @@ def normalise(data: bytes) -> tuple[bytes, str]:
 
     # Trim the existing background so the padding below is measured from the product itself
     # rather than from whatever margin the source happened to have.
-    alpha_bbox = image.getchannel("A").getbbox()
-    white = Image.new("RGBA", image.size, (255, 255, 255, 255))
-    bbox = alpha_bbox or Image.alpha_composite(white, image).convert("RGB").getbbox()
+    #
+    # A transparent source is trimmed to what is opaque. An opaque one - every JPEG - is trimmed
+    # to what is not near-white. The earlier version never reached that second case: the alpha
+    # box of an opaque image is the whole image, not None, and getbbox() on the flattened RGB
+    # looks for non-black, which a white background is too. So a JPEG kept its margin and the
+    # product came out at a fraction of the size the padding rule promises.
+    if image.getchannel("A").getextrema()[0] < 255:
+        bbox = image.getchannel("A").getbbox()
+    else:
+        white = Image.new("RGB", image.size, (255, 255, 255))
+        distance = ImageChops.difference(image.convert("RGB"), white).convert("L")
+        # A few levels of tolerance, so JPEG ringing around the edge is not taken for product.
+        bbox = distance.point(lambda v: 255 if v > WHITE_TOLERANCE else 0).getbbox()
     if bbox:
         image = image.crop(bbox)
 
@@ -811,9 +839,9 @@ def run(args: argparse.Namespace) -> int:
         say(f"DEVICE:    {device.describe()}")
         say(f"CURRENT:   {status}")
 
-        if status == "verified" and not args.include_unverified:
+        if status == "verified" and not args.include_verified:
             say("ACTION:    skipped")
-            say("REASON:    a reviewer has verified this image; pass --include-unverified "
+            say("REASON:    a reviewer has verified this image; pass --include-verified "
                 "to propose against it anyway")
             say("")
             skipped += 1
@@ -895,8 +923,13 @@ def main() -> int:
     parser.add_argument("--model", help="substring of the marketing name, e.g. 'Galaxy A32'")
     parser.add_argument("--only-missing", action="store_true",
                         help="only devices with no live image at all")
-    parser.add_argument("--include-unverified", action="store_true",
-                        help="also propose against images that exist but nobody has verified")
+    # Named for what it does. It was --include-unverified, documented as adding unverified
+    # images - which are always included - while what it actually added were the verified ones.
+    # The old spelling still works, with the behaviour it always had.
+    parser.add_argument("--include-verified", "--include-unverified", dest="include_verified",
+                        action="store_true",
+                        help="also propose against images a reviewer has already verified "
+                             "(unverified and missing images are always included)")
     parser.add_argument("--dry-run", action="store_true",
                         help="the default; accepted so it can be written explicitly")
     parser.add_argument("--apply", action="store_true",

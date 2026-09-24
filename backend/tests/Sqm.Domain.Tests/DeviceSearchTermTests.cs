@@ -157,4 +157,31 @@ public sealed class DeviceSearchTermTests
         Assert.False(term!.Value.TryGetTac(out var tac));
         Assert.Null(tac);
     }
+
+    /// <summary>
+    /// A number written the way people dial it is a number, as Subscriber Lookup already reads it.
+    /// </summary>
+    [Theory]
+    [InlineData("09121234567")]
+    [InlineData("0912-123-4567")]
+    [InlineData("+98 912 123 4567")]
+    [InlineData("+989121234567")]
+    [InlineData("989121234567")]
+    public void ADialledNumberIsTheSubscriberItNames(string input)
+    {
+        var term = DeviceSearchTerm.Classify(input);
+
+        Assert.NotNull(term);
+        Assert.Equal(DeviceSearchKind.Msisdn, term!.Value.Kind);
+        Assert.Equal("9121234567", term.Value.Digits);
+    }
+
+    /// <summary>Fourteen digits are an IMEI's length, whatever they start with.</summary>
+    [Fact]
+    public void FourteenDigitsStayAnImeiEvenWhenTheyCouldBeADialledNumber()
+    {
+        var term = DeviceSearchTerm.Classify("00989121234567");
+
+        Assert.Equal(DeviceSearchKind.Imei, term!.Value.Kind);
+    }
 }

@@ -108,7 +108,7 @@ public sealed partial class PostgresAuditLog : IAuditLog
             from = query.From,
             to = query.To,
             limit = pageSize,
-            offset = (page - 1) * pageSize,
+            offset = (int)Math.Min((page - 1L) * pageSize, int.MaxValue),
         }, ct)).ConfigureAwait(false)).AsList();
 
         var items = rows.Select(r => new AuditRecord(

@@ -29,7 +29,7 @@ withDefaults(
         <h2 v-if="title" class="truncate text-[var(--text-sm)] font-semibold text-[var(--c-text)]">
           {{ title }}
         </h2>
-        <p v-if="subtitle" class="mt-0.5 truncate text-[var(--text-xs)] text-[var(--c-text-muted)]">
+        <p v-if="subtitle" class="mt-0.5 text-pretty break-words text-[var(--text-xs)] text-[var(--c-text-muted)]">
           {{ subtitle }}
         </p>
       </div>

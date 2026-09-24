@@ -212,6 +212,16 @@ public static class AuthEndpoints
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // A missing field is a form error, not a 500 from the password hasher.
+        if (string.IsNullOrEmpty(request.CurrentPassword) || string.IsNullOrEmpty(request.NewPassword))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [string.IsNullOrEmpty(request.CurrentPassword) ? "currentPassword" : "newPassword"] =
+                    ["Enter your current password and the new one."],
+            });
+        }
+
         var session = CurrentUser.Session(http)!;
 
         try
