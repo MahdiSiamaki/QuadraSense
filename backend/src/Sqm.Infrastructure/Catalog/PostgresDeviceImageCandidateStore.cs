@@ -127,8 +127,30 @@ public sealed class PostgresDeviceImageCandidateStore : IDeviceImageCandidateSto
         await using var transaction = await connection
             .BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
 
-        // Promote and mark in one transaction. Only a candidate still awaiting review can be
-        // approved, so a second click cannot re-run the promotion.
+        // Mark first, then promote. The conditional UPDATE locks the candidate row, so a reject
+        // arriving at the same moment waits for this transaction and then matches nothing - and
+        // a mark that matched nothing means someone else decided first, so nothing is promoted.
+        //
+        // The other order let a rejection win the race and still lose the image: the promotion
+        // read the candidate without locking it, a reject committed in between, the mark then
+        // updated no row, and the transaction committed anyway - a rejected candidate live in the
+        // catalogue, both reviewers told they had succeeded. ADR-011's one rule, broken.
+        const string Mark = """
+            UPDATE catalog.device_image_candidate
+               SET status = 'approved', reviewed_by = @userId, reviewed_at = now()
+             WHERE id = @id AND status = 'needs_review'
+            """;
+
+        var marked = await connection.ExecuteAsync(new CommandDefinition(
+            Mark, new { id, userId }, transaction, _commandTimeout, cancellationToken: ct))
+            .ConfigureAwait(false);
+
+        if (marked == 0)
+        {
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
+            return false;
+        }
+
         const string Promote = """
             INSERT INTO catalog.device_model_image
                 (model_key, brand, marketing_name, content_type, bytes, sha256, source_note,
@@ -141,7 +163,7 @@ public sealed class PostgresDeviceImageCandidateStore : IDeviceImageCandidateSto
                    'verified', c.source_type, c.source_domain, c.source_url,
                    c.original_width, c.original_height, c.quality_score, @userId, now()
             FROM catalog.device_image_candidate AS c
-            WHERE c.id = @id AND c.status = 'needs_review'
+            WHERE c.id = @id
             ON CONFLICT (model_key) DO UPDATE SET
                 brand          = EXCLUDED.brand,
                 marketing_name = EXCLUDED.marketing_name,
@@ -162,24 +184,8 @@ public sealed class PostgresDeviceImageCandidateStore : IDeviceImageCandidateSto
                 verified_at    = now()
             """;
 
-        var promoted = await connection.ExecuteAsync(new CommandDefinition(
-            Promote, new { id, userId }, transaction, _commandTimeout, cancellationToken: ct))
-            .ConfigureAwait(false);
-
-        if (promoted == 0)
-        {
-            await transaction.RollbackAsync(ct).ConfigureAwait(false);
-            return false;
-        }
-
-        const string Mark = """
-            UPDATE catalog.device_image_candidate
-               SET status = 'approved', reviewed_by = @userId, reviewed_at = now()
-             WHERE id = @id AND status = 'needs_review'
-            """;
-
         await connection.ExecuteAsync(new CommandDefinition(
-            Mark, new { id, userId }, transaction, _commandTimeout, cancellationToken: ct))
+            Promote, new { id, userId }, transaction, _commandTimeout, cancellationToken: ct))
             .ConfigureAwait(false);
 
         await transaction.CommitAsync(ct).ConfigureAwait(false);
