@@ -245,7 +245,7 @@ stateDiagram-v2
     IMPORTING --> AGGREGATING
     AGGREGATING --> FINALIZING
     FINALIZING --> COMPLETED
-    FINALIZING --> PARTIALLY_COMPLETED : rows quarantined
+    FINALIZING --> PARTIALLY_COMPLETED : rows rejected
     PARSING --> RETRYING : transient
     IMPORTING --> RETRYING : transient
     RETRYING --> QUEUED

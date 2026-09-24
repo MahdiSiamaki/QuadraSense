@@ -252,19 +252,50 @@ internal sealed partial class SqmDailyProcessor(
             RowsInserted: written == 0 ? stored : written,
             RowsRejected: validation.RejectedRows);
 
-        var status = validation.RejectedRows > 0 || validation.WarnedRows > 0
-            ? ImportJobStatus.PartiallyCompleted
-            : ImportJobStatus.Completed;
+        var status = StatusFor(validation.RejectedRows, validation.WarnedRows);
 
-        var message = status == ImportJobStatus.Completed
-            ? $"Imported {stored:N0} rows for {businessDate:yyyy-MM-dd} as day {sequence}."
-            : $"Imported {stored:N0} rows for {businessDate:yyyy-MM-dd} as day {sequence}; "
-              + $"{validation.RejectedRows:N0} rejected, {validation.WarnedRows:N0} imported with warnings.";
+        var message = (validation.RejectedRows, validation.WarnedRows) switch
+        {
+            (0, 0) => $"Imported {stored:N0} rows for {businessDate:yyyy-MM-dd} as day {sequence}.",
+            (0, var warned) =>
+                $"Imported {stored:N0} rows for {businessDate:yyyy-MM-dd} as day {sequence}; "
+                + $"{warned:N0} imported with warnings.",
+            var (rejected, warned) =>
+                $"Imported {stored:N0} rows for {businessDate:yyyy-MM-dd} as day {sequence}; "
+                + $"{rejected:N0} rejected and not imported, {warned:N0} imported with warnings.",
+        };
 
         // The date goes back with the outcome so CompleteAsync can record it. The job was
         // enqueued without one when the file came from the browser, and this is the only
         // place that knows which day it was.
         return new ImportOutcome(status, counters, MakeEffective: true, message, businessDate);
+    }
+
+    /// <summary>
+    /// Partially completed means rows were rejected and are not in the data. Nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A warning used to count too, and every daily file carries a few thousand IMEIs that are
+    /// neither 14 digits nor the unknown-device sentinel. So all 60 days imported through the
+    /// platform read "partially completed" while not one row of 422.9 million had been rejected,
+    /// and the status stopped meaning anything. Decided by the product owner, 2026-09-24: a day
+    /// whose every row landed is Completed, and its warnings are shown beside it.
+    /// </para>
+    /// <para>
+    /// The cost is the alarm the old rule was kept for. On 25 and 26 August about 10% of rows
+    /// carried IMEIs cut to eight digits - 250 times the usual count - and that went unnoticed,
+    /// because the status could not get any worse than it already was. The warning count beside
+    /// the status is where such a day now shows.
+    /// </para>
+    /// </remarks>
+    internal static ImportJobStatus StatusFor(long rejectedRows, long warnedRows)
+    {
+        // Taken and deliberately ignored, so that putting warnings back into the status is a
+        // change to this line - which ImportStatusTests fails on - not a quiet edit at the caller.
+        _ = warnedRows;
+
+        return rejectedRows > 0 ? ImportJobStatus.PartiallyCompleted : ImportJobStatus.Completed;
     }
 
     private static ImportOutcome Cancelled(ValidationResult validation) => new(

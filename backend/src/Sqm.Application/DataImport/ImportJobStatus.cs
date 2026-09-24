@@ -48,10 +48,13 @@ public enum ImportJobStatus
     /// <summary>Bookkeeping after a successful write.</summary>
     Finalizing,
 
-    /// <summary>Everything landed.</summary>
+    /// <summary>Every row landed. Some may carry warnings; the job's quarantine lists them.</summary>
     Completed,
 
-    /// <summary>Landed, but some rows were quarantined.</summary>
+    /// <summary>
+    /// A daily file: landed, but some rows were rejected and are not in the data. A TAC snapshot:
+    /// loaded, but not yet activated.
+    /// </summary>
     PartiallyCompleted,
 
     /// <summary>The identical file content was already imported. Not an error.</summary>
