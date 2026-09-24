@@ -120,9 +120,14 @@ environment's setup script, `tools/cloud/setup.sh`, installs it.
 dotnet --version
 ```
 
-It must print exactly the `sdk.version` in `global.json`. If `dotnet` is missing, or prints
-something else, stop and say so. The setup script logs why it failed, and the usual cause is that
-`builds.dotnet.microsoft.com` is not in the environment's allowed domains.
+It must print exactly the `sdk.version` in `global.json`. If `dotnet` is missing, run the same
+script the environment runs - `bash tools/cloud/setup.sh`, about half a minute - and check again.
+If that fails too, stop and say so: the usual cause is that `builds.dotnet.microsoft.com` is not
+in the environment's allowed domains, and that is a setting only the owner can change.
+
+The script missing at session start while the host is reachable means the environment's
+**Setup script** field is empty, or the session was resumed rather than started fresh (a resume
+never re-runs it). Say which, so it gets fixed once rather than paid for in every session.
 
 **Do not "fix" a missing SDK by editing `global.json`.** It will look like the obvious repair, and
 it is the one change that silently breaks the guarantee this file exists to keep. The analyzers
