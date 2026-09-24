@@ -79,7 +79,9 @@ function render() {
         itemWidth: 10,
         itemHeight: 10,
       },
-      grid: { left: 8, right: 8, top: 30, bottom: 46, containLabel: true },
+      // The axis titles are drawn above the plot, in the same corners as the legend. At top 30 the
+      // right-hand title sat on top of the legend's last entry; 52 gives each its own row.
+      grid: { left: 8, right: 8, top: 52, bottom: 46, containLabel: true },
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
