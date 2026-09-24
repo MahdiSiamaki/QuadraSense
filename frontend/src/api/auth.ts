@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/vue-query'
 import { api } from './client'
 
 /*
@@ -66,6 +66,22 @@ export interface SessionInfo {
 export const CURRENT_USER_KEY = ['auth', 'me'] as const
 
 /**
+ * Forgets everything the ended session loaded.
+ *
+ * Not `client.clear()`, which is what this replaced. The shell in App.vue reads the current user
+ * through a query that mounts once and never unmounts, and clearing the cache leaves it watching
+ * a removed entry. The next sign-in then seeds a new entry that the route guard reads and lets the
+ * user in on, while the shell goes on showing nobody: no navigation and no user menu until a
+ * reload. So the current user is set to null in place, and only the other queries are removed -
+ * they still must go, or the next person to sign in on this tab would see the last one's data.
+ */
+export function forgetSession(client: QueryClient): void {
+  const currentUser = client.getQueryCache().find({ queryKey: CURRENT_USER_KEY, exact: true })
+  client.removeQueries({ predicate: (query) => query !== currentUser })
+  client.setQueryData<CurrentUser | null>(CURRENT_USER_KEY, null)
+}
+
+/**
  * The current user, or null when nobody is signed in.
  *
  * `retry: false` matters: a 401 is a definite answer, and retrying it three times would delay
@@ -106,7 +122,7 @@ export function useLogout() {
       // Cleared on settle, not on success. If the sign-out request fails the session may still
       // be gone server-side, and leaving a stale cached user behind would show a signed-in shell
       // over an API that answers 401 to everything.
-      client.clear()
+      forgetSession(client)
     },
   })
 }
