@@ -288,58 +288,158 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             // day's: a binding added on 12 May and removed on 3 June read as active once 12 May
             // landed. And a replaced day's withdrawn bindings were never revisited at all.
             //
-            // So the bindings involved are re-derived from their whole history, in DATE order -
-            // the last event by date decides, and with no event left the initial dump does. The
-            // version is the highest sequence in the log, which no earlier row can exceed; a row
-            // with an equal version is replaced by the later insert. Days after this one keep
-            // winning, because they take the next sequence.
-            //
-            // Costlier than the fast path - it reads each binding's history, not one day - and
-            // only taken for late or replaced days. Not yet measured against the real event log.
-            var extraKeys = replacing
-                ? $"UNION ALL SELECT msisdn, imsi, imei FROM {_database}.{replaced}"
-                : string.Empty;
-
-            // One GROUP BY and no joins, because under the fold's one-thread, 1.2 GB limits a
-            // GROUP BY can spill to disk and a hash join cannot. Each binding's candidates are
-            // ranked: its events (2), then the initial dump (1), then nothing at all (0), and the
-            // highest-ranked, latest-dated one decides.
-            sql = $$"""
-                INSERT INTO {{_database}}.binding_current
-                    (msisdn, imsi, imei, active, last_change_seq, last_change_date)
-                WITH keys AS (
-                    SELECT msisdn, imsi, imei FROM {{_database}}.binding_event
-                    WHERE data_date = {businessDate:Date}
-                    {{extraKeys}}
-                )
-                SELECT
-                    msisdn, imsi, imei,
-                    argMax(is_add, (rank, data_date, seq))              AS active,
-                    (SELECT max(seq) FROM {{_database}}.binding_event)  AS last_change_seq,
-                    if(max(rank) = 2, maxIf(data_date, rank = 2), NULL) AS last_change_date
-                FROM (
-                    SELECT msisdn, imsi, imei, label = 'add' AS is_add, data_date, seq, 2 AS rank
-                    FROM {{_database}}.binding_event
-                    WHERE (msisdn, imsi, imei) IN (SELECT msisdn, imsi, imei FROM keys)
-                    UNION ALL
-                    SELECT msisdn, imsi, imei, 1, toDate(0), 0, 1
-                    FROM {{_database}}.binding_snapshot
-                    WHERE (msisdn, imsi, imei) IN (SELECT msisdn, imsi, imei FROM keys)
-                    UNION ALL
-                    SELECT msisdn, imsi, imei, 0, toDate(0), 0, 0
-                    FROM keys
-                )
-                GROUP BY msisdn, imsi, imei
-                """;
+            // So the bindings involved are re-derived from their whole history, in DATE order.
+            await FoldFromHistoryAsync(businessDate, replacing ? replaced : null, ct)
+                .ConfigureAwait(false);
         }
-
-        await ExecuteBoundedAsync(sql, businessDate, ct).ConfigureAwait(false);
+        else
+        {
+            await ExecuteBoundedAsync(sql, businessDate, ct).ConfigureAwait(false);
+        }
 
         // Only once the fold has landed: until then a retry needs these keys again.
         await ExecuteBoundedAsync($"DROP TABLE IF EXISTS {_database}.{replaced}", businessDate, ct)
             .ConfigureAwait(false);
 
         return await CountFoldedAsync(businessDate, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Re-derives every binding a late or replaced day touched from its whole history, one
+    /// msisdn range at a time.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The last event by date decides a binding's state, and with no event left the initial dump
+    /// does. The version written is the highest sequence in the log, which no earlier row can
+    /// exceed, so the re-derived row replaces what was there; days after this one keep winning,
+    /// because they take the next sequence. One GROUP BY and no joins: under the fold's
+    /// one-thread, 1.2 GB limits a GROUP BY can spill to disk and a hash join cannot. Each
+    /// binding's candidates are ranked - its events (2), the initial dump (1), nothing (0) - and
+    /// the highest-ranked, latest-dated one decides.
+    /// </para>
+    /// <para>
+    /// <b>In ranges, because in one statement it cannot run.</b> Written as a single statement
+    /// and never tried at scale, it failed on the first real day it was measured against:
+    /// 2026-07-20 touched 6,503,281 bindings, the IN-sets built from them passed the 1.2 GB cap
+    /// after seven seconds (MEMORY_LIMIT_EXCEEDED in CreatingSetsTransform), and every late day
+    /// would have failed the same way - and a failed day blocks every day after it.
+    /// </para>
+    /// <para>
+    /// A binding's key begins with its msisdn, so its whole history lies inside one msisdn range
+    /// and cutting by range is exact, not an approximation. binding_event and binding_snapshot are
+    /// sorted by msisdn first, so each range reads only its own part of them: the ranges together
+    /// read the event log once. Measured on 2026-07-20 with ranges of about a million bindings:
+    /// each ran in about a minute and a half, under the cap, and gave exactly the state
+    /// binding_current holds.
+    /// </para>
+    /// <para>
+    /// A retry after a failure part way is safe: a range already written is written again with
+    /// the same rows and the same version, and ReplacingMergeTree keeps one.
+    /// </para>
+    /// </remarks>
+    private async Task FoldFromHistoryAsync(
+        DateOnly businessDate, string? replacedKeysTable, CancellationToken ct)
+    {
+        var date = businessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var keySource = $"SELECT msisdn, imsi, imei FROM {_database}.binding_event "
+                        + $"WHERE data_date = toDate('{date}')"
+                        + (replacedKeysTable is null
+                            ? string.Empty
+                            : $" UNION ALL SELECT msisdn, imsi, imei FROM {_database}.{replacedKeysTable}");
+
+        // Taken once, before any range is written, so every range carries the same version.
+        var version = await ScalarAsync($"SELECT max(seq) FROM {_database}.binding_event", ct)
+            .ConfigureAwait(false) ?? 0;
+
+        var keys = await ScalarAsync($"SELECT count() FROM ({keySource})", ct)
+            .ConfigureAwait(false) ?? 0;
+
+        foreach (var (lo, hi) in await MsisdnRangesAsync(keySource, keys, ct).ConfigureAwait(false))
+        {
+            await ExecuteHttpAsync($$"""
+                INSERT INTO {{_database}}.binding_current
+                    (msisdn, imsi, imei, active, last_change_seq, last_change_date)
+                WITH keys AS (
+                    SELECT msisdn, imsi, imei FROM ({{keySource}})
+                    WHERE msisdn BETWEEN {lo:UInt64} AND {hi:UInt64}
+                )
+                SELECT
+                    msisdn, imsi, imei,
+                    argMax(is_add, (rank, data_date, seq))              AS active,
+                    {version:UInt16}                                    AS last_change_seq,
+                    if(max(rank) = 2, maxIf(data_date, rank = 2), NULL) AS last_change_date
+                FROM (
+                    SELECT msisdn, imsi, imei, label = 'add' AS is_add, data_date, seq, 2 AS rank
+                    FROM {{_database}}.binding_event
+                    WHERE msisdn BETWEEN {lo:UInt64} AND {hi:UInt64}
+                      AND (msisdn, imsi, imei) IN (SELECT msisdn, imsi, imei FROM keys)
+                    UNION ALL
+                    SELECT msisdn, imsi, imei, 1, toDate(0), 0, 1
+                    FROM {{_database}}.binding_snapshot
+                    WHERE msisdn BETWEEN {lo:UInt64} AND {hi:UInt64}
+                      AND (msisdn, imsi, imei) IN (SELECT msisdn, imsi, imei FROM keys)
+                    UNION ALL
+                    SELECT msisdn, imsi, imei, 0, toDate(0), 0, 0
+                    FROM keys
+                )
+                GROUP BY msisdn, imsi, imei
+                """,
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["param_lo"] = lo.ToString(CultureInfo.InvariantCulture),
+                    ["param_hi"] = hi.ToString(CultureInfo.InvariantCulture),
+                    ["param_version"] = version.ToString(CultureInfo.InvariantCulture),
+                },
+                ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Inclusive msisdn ranges holding about <see cref="ClickHouseOptions.FoldKeysPerRange"/>
+    /// keys each, together covering every msisdn there is.
+    /// </summary>
+    private async Task<IReadOnlyList<(ulong Lo, ulong Hi)>> MsisdnRangesAsync(
+        string keySource, long keys, CancellationToken ct)
+    {
+        var perRange = Math.Max(1, _options.FoldKeysPerRange);
+        var count = (int)Math.Max(1, (keys + perRange - 1) / perRange);
+
+        if (count == 1)
+        {
+            return [(0UL, ulong.MaxValue)];
+        }
+
+        var levels = string.Join(", ", Enumerable.Range(1, count - 1)
+            .Select(i => ((double)i / count).ToString("R", CultureInfo.InvariantCulture)));
+
+        await using var connection = CreateConnection();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT arrayJoin(arraySort(arrayDistinct(quantilesExact({levels})(msisdn)))) FROM ({keySource})";
+        command.CommandTimeout = _options.QueryTimeoutSeconds;
+
+        var cuts = new List<ulong>();
+        await using (var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                cuts.Add(Convert.ToUInt64(reader.GetValue(0), CultureInfo.InvariantCulture));
+            }
+        }
+
+        // Each cut starts a range and the range before it ends one below. A cut at zero would
+        // leave an empty first range, so it is skipped.
+        var ranges = new List<(ulong Lo, ulong Hi)>();
+        var lo = 0UL;
+        foreach (var cut in cuts.Where(c => c > 0))
+        {
+            ranges.Add((lo, cut - 1));
+            lo = cut;
+        }
+
+        ranges.Add((lo, ulong.MaxValue));
+        return ranges;
     }
 
     private async Task<long> CountFoldedAsync(DateOnly businessDate, CancellationToken ct)
