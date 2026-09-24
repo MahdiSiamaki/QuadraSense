@@ -137,7 +137,15 @@ public static class ImportEndpoints
             // The bytes just written duplicate a file already on disk. Removing the copy keeps
             // storage honest: one content hash, one stored blob.
             await fileStore.DeleteAsync(stored.StoredPath, ct).ConfigureAwait(false);
+        }
 
+        // A known file with no job is not a duplicate import, it is an unfinished upload: the
+        // file was registered and the request ended - a dropped connection, a database blip -
+        // before its job was queued. Refusing it as a duplicate left that content importable by
+        // no route at all, since reprocessing needs a job to start from. It is queued now, from
+        // the copy already stored.
+        if (!registered.IsNew && registered.ExistingJobId is not null)
+        {
             await repository.WriteAuditAsync(
                 actor, "import.upload.duplicate", registered.ExistingJobId, registered.FileId,
                 null, http.TraceIdentifier,
@@ -167,8 +175,10 @@ public static class ImportEndpoints
         // was actually imported, so a misnamed file is corrected rather than believed.
         var declaredDate = DailyFileName.BusinessDateOf(originalName);
 
+        // Not on the request's token. The file is registered by now, and a client that
+        // disconnects at this moment is how a file used to end up with no job.
         var jobId = await repository
-            .EnqueueAsync(source, registered.FileId, declaredDate, actor, ct: ct)
+            .EnqueueAsync(source, registered.FileId, declaredDate, actor, ct: CancellationToken.None)
             .ConfigureAwait(false);
 
         await repository.WriteAuditAsync(

@@ -141,9 +141,12 @@ public sealed partial class ClickHouseAnalyticsStore
                     PopulationAtStart: GetInt64(reader, 5),
                     PopulationChange: GetInt64(reader, 6),
                     SharePercent: GetDouble(reader, 7),
-                    PopulationChangePercent: GetDouble(reader, 8),
-                    VsNetworkPoints: GetDouble(reader, 9),
-                    NetPercentOfPopulation: GetDouble(reader, 10)));
+                    // NULL, and so null here, when the base is zero: a vendor with no population
+                    // at the start has no percentage change. Read as a double this threw, and the
+                    // whole widget failed for the one vendor that was new.
+                    PopulationChangePercent: reader.IsDBNull(8) ? null : GetDouble(reader, 8),
+                    VsNetworkPoints: reader.IsDBNull(9) ? null : GetDouble(reader, 9),
+                    NetPercentOfPopulation: reader.IsDBNull(10) ? null : GetDouble(reader, 10)));
 
                 networkNow = GetInt64(reader, 11);
                 networkStart = GetInt64(reader, 12);

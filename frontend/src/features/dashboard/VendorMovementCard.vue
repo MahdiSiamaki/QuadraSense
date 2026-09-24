@@ -149,6 +149,55 @@ watch(ranking, (value) => {
       </div>
     </template>
 
+    <!--
+      The date range, only where it does something - and outside the boundary below, so it stays
+      mounted while a request runs or fails. Inside it, the inputs unmounted on every keystroke that
+      formed a valid date (focus dropped, the rest of the typing was lost), and a range the server
+      refused took the inputs away with it, leaving only "Try again" to re-send the same range.
+    -->
+    <div
+      v-if="ranking === 'movement'"
+      class="mb-3 flex flex-wrap items-end gap-2 border-b pb-3"
+    >
+      <div>
+        <label for="vm-from" class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          Events from
+        </label>
+        <input
+          id="vm-from"
+          v-model="from"
+          type="date"
+          :min="data?.earliestAvailable ?? undefined"
+          :max="data?.latestAvailable ?? undefined"
+          class="tabular mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+        />
+      </div>
+      <div>
+        <label for="vm-to" class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          to
+        </label>
+        <input
+          id="vm-to"
+          v-model="to"
+          type="date"
+          :min="data?.earliestAvailable ?? undefined"
+          :max="data?.latestAvailable ?? undefined"
+          class="tabular mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+        />
+      </div>
+      <button
+        v-if="from || to"
+        type="button"
+        class="rounded-[var(--radius-md)] px-1.5 py-1 text-[var(--text-2xs)] text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
+        @click="clearRange"
+      >
+        clear
+      </button>
+      <p class="ml-auto text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        {{ windowLabel }}
+      </p>
+    </div>
+
     <AsyncBoundary
       :is-loading="query.isPending.value"
       :is-error="query.isError.value"
@@ -157,50 +206,6 @@ watch(ranking, (value) => {
       @retry="query.refetch()"
     >
       <template v-if="data">
-        <!-- The date range, only where it does something. -->
-        <div
-          v-if="ranking === 'movement'"
-          class="mb-3 flex flex-wrap items-end gap-2 border-b pb-3"
-        >
-          <div>
-            <label for="vm-from" class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
-              Events from
-            </label>
-            <input
-              id="vm-from"
-              v-model="from"
-              type="date"
-              :min="data.earliestAvailable ?? undefined"
-              :max="data.latestAvailable ?? undefined"
-              class="tabular mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
-            />
-          </div>
-          <div>
-            <label for="vm-to" class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
-              to
-            </label>
-            <input
-              id="vm-to"
-              v-model="to"
-              type="date"
-              :min="data.earliestAvailable ?? undefined"
-              :max="data.latestAvailable ?? undefined"
-              class="tabular mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
-            />
-          </div>
-          <button
-            v-if="from || to"
-            type="button"
-            class="rounded-[var(--radius-md)] px-1.5 py-1 text-[var(--text-2xs)] text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
-            @click="clearRange"
-          >
-            clear
-          </button>
-          <p class="ml-auto text-[var(--text-2xs)] text-[var(--c-text-muted)]">
-            {{ windowLabel }}
-          </p>
-        </div>
-
         <VendorMovementChart
           :rows="data.rows"
           :ranking="ranking"

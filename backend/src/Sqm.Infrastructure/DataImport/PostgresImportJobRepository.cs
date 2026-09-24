@@ -593,18 +593,30 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
         await transaction.CommitAsync(ct).ConfigureAwait(false);
     }
 
-    public async Task CompleteAsync(
+    public async Task<bool> CompleteAsync(
         long jobId,
         ImportJobStatus status,
         ImportCounters counters,
         bool makeEffective,
         DateOnly? businessDate,
+        string? workerId,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(counters);
 
         await using var connection = await OpenAsync(ct).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        // Only while this worker still holds the job - checked under a row lock, so the recovery
+        // sweep cannot hand it on between the check and the writes below. Every other write in
+        // the state machine already asked this; the three that end a job did not, so a worker
+        // that had lost its lease could overwrite the result of the one that took the job over.
+        if (workerId is not null && !await HoldsAsync(connection, transaction, jobId, workerId, ct)
+                .ConfigureAwait(false))
+        {
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
+            return false;
+        }
 
         // The day this job turned out to describe, written BEFORE effectiveness is decided.
         //
@@ -699,10 +711,28 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
             null, message, counters, ct).ConfigureAwait(false);
 
         await transaction.CommitAsync(ct).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>Whether <paramref name="workerId"/> holds the job, locking its row if so.</summary>
+    private async Task<bool> HoldsAsync(
+        Npgsql.NpgsqlConnection connection, System.Data.IDbTransaction transaction,
+        long jobId, string workerId, CancellationToken ct)
+    {
+        const string Sql = """
+            SELECT id FROM imports.import_job
+             WHERE id = @job AND worker_id = @worker
+               FOR UPDATE
+            """;
+
+        return await connection.ExecuteScalarAsync<long?>(
+            Command(Sql, new { job = jobId, worker = workerId }, ct, transaction))
+            .ConfigureAwait(false) is not null;
     }
 
     public async Task<bool> FailAsync(
-        long jobId, string errorSummary, bool isRetryable, TimeSpan retryDelay, CancellationToken ct)
+        long jobId, string errorSummary, bool isRetryable, TimeSpan retryDelay, string? workerId,
+        CancellationToken ct)
     {
         await using var connection = await OpenAsync(ct).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -710,18 +740,23 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
         // Whether another attempt happens is decided in SQL, against the row's own attempt count,
         // rather than in the worker. The worker that just failed is the least trustworthy place
         // to make that decision - it may be the thing that is broken.
+        // A pending cancellation wins over a retry. The claim skips cancel_requested jobs, so a
+        // job set to RETRYING with one pending was never claimed again and never finished - and
+        // RETRYING is not "landed", so every later day of its source waited behind it.
         const string Sql = """
             UPDATE imports.import_job
                SET status = CASE
+                       WHEN cancel_requested THEN 'CANCELLED'::imports.job_status
                        WHEN @retryable AND attempt < max_attempts THEN 'RETRYING'::imports.job_status
                        ELSE 'FAILED'::imports.job_status
                    END,
                    run_after = CASE
-                       WHEN @retryable AND attempt < max_attempts THEN now() + @delay
+                       WHEN NOT cancel_requested AND @retryable AND attempt < max_attempts
+                       THEN now() + @delay
                        ELSE NULL
                    END,
                    finished_at = CASE
-                       WHEN @retryable AND attempt < max_attempts THEN NULL
+                       WHEN NOT cancel_requested AND @retryable AND attempt < max_attempts THEN NULL
                        ELSE now()
                    END,
                    current_stage    = NULL,
@@ -729,23 +764,37 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                    lease_expires_at = NULL,
                    error_summary    = @error
              WHERE id = @job
-            RETURNING status = 'RETRYING'::imports.job_status
+               AND (@worker::text IS NULL OR worker_id = @worker)
+            RETURNING status::text
             """;
 
-        var willRetry = await connection.ExecuteScalarAsync<bool>(Command(Sql, new
+        var outcome = await connection.ExecuteScalarAsync<string?>(Command(Sql, new
         {
             job = jobId,
             retryable = isRetryable,
             delay = retryDelay,
             error = errorSummary,
+            worker = workerId,
         }, ct, transaction)).ConfigureAwait(false);
+
+        if (outcome is null)
+        {
+            // Not this worker's any more: whoever holds it now decides how it ends.
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
+            return false;
+        }
+
+        var willRetry = outcome == "RETRYING";
+        var cancelled = outcome == "CANCELLED";
 
         await AppendEventCoreAsync(
             connection, transaction, jobId, "error", null,
             // Three endings, not two. "No attempts remain" on attempt 1 of 3 is a contradiction
             // on screen, and it sends the reader looking for a retry that was never going to
             // happen: a rejected file is not a failed attempt, it is an answer.
-            willRetry
+            cancelled
+                ? $"Failed: {errorSummary}. Cancelled, as requested, rather than retried."
+                : willRetry
                 ? $"Failed: {errorSummary}. Retrying in {retryDelay.TotalSeconds:F0}s."
                 : isRetryable
                     ? $"Failed: {errorSummary}. No attempts remain."
@@ -757,7 +806,7 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
         return willRetry;
     }
 
-    public async Task MarkCancelledAsync(long jobId, CancellationToken ct)
+    public async Task<bool> MarkCancelledAsync(long jobId, string? workerId, CancellationToken ct)
     {
         await using var connection = await OpenAsync(ct).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -767,16 +816,25 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                SET status = 'CANCELLED', finished_at = now(), current_stage = NULL,
                    worker_id = NULL, lease_expires_at = NULL
              WHERE id = @job
+               AND (@worker::text IS NULL OR worker_id = @worker)
             """;
 
-        await connection.ExecuteAsync(Command(Sql, new { job = jobId }, ct, transaction))
+        var affected = await connection.ExecuteAsync(
+            Command(Sql, new { job = jobId, worker = workerId }, ct, transaction))
             .ConfigureAwait(false);
+
+        if (affected == 0)
+        {
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
+            return false;
+        }
         await AppendEventCoreAsync(
             connection, transaction, jobId, "warning", null,
             "Cancelled at a stage boundary; nothing partial was left behind", null, ct)
             .ConfigureAwait(false);
 
         await transaction.CommitAsync(ct).ConfigureAwait(false);
+        return true;
     }
 
     public async Task<bool> IsCancellationRequestedAsync(long jobId, CancellationToken ct)
@@ -796,14 +854,17 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
         // visible: this job has been attempted, and the attempt counter already reflects it.
         const string Sql = """
             UPDATE imports.import_job
-               SET status = CASE WHEN attempt < max_attempts
+               SET status = CASE WHEN cancel_requested
+                                 THEN 'CANCELLED'::imports.job_status
+                                 WHEN attempt < max_attempts
                                  THEN 'RETRYING'::imports.job_status
                                  ELSE 'FAILED'::imports.job_status END,
                    worker_id = NULL,
                    lease_expires_at = NULL,
                    current_stage = NULL,
                    run_after = now(),
-                   finished_at = CASE WHEN attempt < max_attempts THEN NULL ELSE now() END,
+                   finished_at = CASE WHEN NOT cancel_requested AND attempt < max_attempts
+                                      THEN NULL ELSE now() END,
                    error_summary = COALESCE(error_summary,
                        'Worker stopped responding; the lease expired while the job was ' || status)
              WHERE lease_expires_at IS NOT NULL

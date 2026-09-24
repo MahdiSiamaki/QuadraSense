@@ -1,3 +1,4 @@
+import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { api } from '@/api/client'
 
@@ -22,11 +23,13 @@ export interface TacVersion {
   supersededAt: string | null
 }
 
-export function useTacVersions() {
+/** `enabled`, as for useFreshness: the list needs import.view, and a 403 is audited. */
+export function useTacVersions(options: { enabled?: MaybeRefOrGetter<boolean> } = {}) {
   return useQuery({
     queryKey: ['tac-versions'],
     queryFn: ({ signal }) => api.get<TacVersion[]>('/api/v1/tac-versions', undefined, signal),
     staleTime: 60_000,
+    enabled: computed(() => toValue(options.enabled ?? true)),
   })
 }
 

@@ -124,21 +124,37 @@ public sealed class PostgresDeviceImageStore : IDeviceImageStore
         // it makes browsers keep an image that has been replaced.
         var sha = SHA256.HashData(bytes);
 
+        // A manual upload replaces the whole record of where the image came from, not only the
+        // bytes. The update used to leave status, source and reviewer as they were: an admin's own
+        // photo, uploaded over a scraped one, showed on the review page as an unreviewed Wikimedia
+        // image, and one uploaded over a verified image credited the earlier reviewer with bytes
+        // they never saw. Both paths now write what a manual upload is: verified, by its uploader.
         const string Sql = """
             INSERT INTO catalog.device_model_image
                 (model_key, brand, marketing_name, content_type, bytes, sha256,
-                 source_note, uploaded_by, uploaded_at, updated_at)
+                 source_note, uploaded_by, uploaded_at, updated_at,
+                 status, source_type, source_domain, source_url, verified_by, verified_at)
             VALUES (@modelKey, @brand, @marketingName, @contentType, @bytes, @sha,
-                    @sourceNote, @userId, now(), now())
+                    @sourceNote, @userId, now(), now(),
+                    'verified', 'manual', '', '', @userId, now())
             ON CONFLICT (model_key) DO UPDATE SET
-                brand          = EXCLUDED.brand,
-                marketing_name = EXCLUDED.marketing_name,
-                content_type   = EXCLUDED.content_type,
-                bytes          = EXCLUDED.bytes,
-                sha256         = EXCLUDED.sha256,
-                source_note    = EXCLUDED.source_note,
-                uploaded_by    = EXCLUDED.uploaded_by,
-                updated_at     = now()
+                brand           = EXCLUDED.brand,
+                marketing_name  = EXCLUDED.marketing_name,
+                content_type    = EXCLUDED.content_type,
+                bytes           = EXCLUDED.bytes,
+                sha256          = EXCLUDED.sha256,
+                source_note     = EXCLUDED.source_note,
+                uploaded_by     = EXCLUDED.uploaded_by,
+                updated_at      = now(),
+                status          = 'verified',
+                source_type     = 'manual',
+                source_domain   = '',
+                source_url      = '',
+                original_width  = NULL,
+                original_height = NULL,
+                quality_score   = NULL,
+                verified_by     = EXCLUDED.verified_by,
+                verified_at     = now()
             """;
 
         await using var connection = await _db.OpenAsync(ct).ConfigureAwait(false);

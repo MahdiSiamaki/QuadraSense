@@ -45,6 +45,9 @@ export function useImportDetail(jobId: MaybeRefOrGetter<number>) {
     queryKey: ['imports', 'detail', computed(() => toValue(jobId))],
     queryFn: ({ signal }) => importsApi.get(toValue(jobId), signal),
     refetchInterval: (q) => {
+      // An error is an answer, not a job still loading: a 404 for a job that does not exist
+      // used to be asked again every two seconds for as long as the page stayed open.
+      if (q.state.status === 'error') return false
       const data = q.state.data as ImportJobDetail | undefined
       if (!data) return RUNNING_POLL_MS
       return isTerminal(data.summary.status) ? false : RUNNING_POLL_MS
@@ -81,11 +84,13 @@ export function useFreshness(options: { enabled?: MaybeRefOrGetter<boolean> } = 
   })
 }
 
-export function useWorkerHealth() {
+/** `enabled`, as for {@link useFreshness}: without import.view this is a 403 every five seconds. */
+export function useWorkerHealth(options: { enabled?: MaybeRefOrGetter<boolean> } = {}) {
   return useQuery({
     queryKey: ['imports', 'worker-health'],
     queryFn: ({ signal }) => importsApi.workerHealth(signal),
     refetchInterval: 5000,
+    enabled: computed(() => toValue(options.enabled ?? true)),
   })
 }
 

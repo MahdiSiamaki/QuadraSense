@@ -31,7 +31,17 @@ const pageSize = 50
 const query = useDeviceIdentifiers()
 const data = computed(() => query.data.value ?? null)
 
+/**
+ * Whether the panel has been asked for, separately from whether it holds data.
+ *
+ * The filters and the "Load" button used to key off the data. A failed request clears it, so
+ * a filter that made the server fail took the filters away with it and put the button back: the
+ * error was never shown, and every retry re-sent the same bad filter.
+ */
+const opened = ref(false)
+
 function load(toPage = 1) {
+  opened.value = true
   page.value = toPage
   query.mutate({
     tac: props.tac,
@@ -46,11 +56,17 @@ function load(toPage = 1) {
 // Filters only narrow a list that has already been asked for, so they re-run it. They do not
 // start one: this panel stays closed until somebody opens it.
 watch([activeOnly, from, to], () => {
-  if (data.value) load(1)
+  if (opened.value) load(1)
 })
 
 // A different device is a different question. Anything on screen belongs to the previous one.
-watch(() => props.tac, () => query.reset())
+watch(
+  () => props.tac,
+  () => {
+    query.reset()
+    opened.value = false
+  },
+)
 
 const masked = computed(() => data.value?.identifiers === 'Masked')
 
@@ -67,7 +83,7 @@ const problem = computed(() => {
 <template>
   <Card title="Identifiers" subtitle="Every IMEI, SIM and number bound to this model.">
     <template #actions>
-      <div v-if="data" class="flex flex-wrap items-end gap-2">
+      <div v-if="opened" class="flex flex-wrap items-end gap-2">
         <label
           class="flex items-center gap-1.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]"
         >
@@ -90,7 +106,7 @@ const problem = computed(() => {
     </template>
 
     <!-- Closed until asked. -->
-    <div v-if="!data && !query.isPending.value" class="py-6 text-center">
+    <div v-if="!opened" class="py-6 text-center">
       <button
         type="button"
         class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-4 py-2 text-[var(--text-sm)] font-medium text-[var(--c-accent-text)]"

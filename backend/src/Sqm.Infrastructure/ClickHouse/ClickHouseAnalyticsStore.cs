@@ -91,8 +91,12 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
     {
         ArgumentNullException.ThrowIfNull(filter);
 
+        // The mart counts the unknown-device population, so "hide unknown devices" needs the raw
+        // path too. Without it the KPI row went on counting them while every chart beside it,
+        // under the same toggle, did not.
         var unfiltered =
             MartRouting.CanUseMart(filter) &&
+            filter.IncludeUnknownDevice &&
             string.IsNullOrWhiteSpace(filter.Manufacturer) &&
             string.IsNullOrWhiteSpace(filter.VendorCanonical) &&
             string.IsNullOrWhiteSpace(filter.DeviceType) &&
@@ -124,7 +128,8 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 unknown_device_bindings,
                 malformed_imei_bindings,
                 tac_matched_bindings,
-                round(100.0 * tac_matched_bindings / nullIf(active_bindings, 0), 3) AS tac_coverage_pct,
+                -- Zero when there is nothing to cover, not NULL: the reader takes a number.
+                ifNull(round(100.0 * tac_matched_bindings / nullIf(active_bindings, 0), 3), 0) AS tac_coverage_pct,
                 seq,
                 -- The delivery's own day, so the caller can say which delivery these figures
                 -- describe rather than implying they are the newest data imported.
@@ -184,13 +189,16 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 countIf(b.imei = '000000')                     AS unknown_device_bindings,
                 countIf(length(b.imei) != 14 AND b.imei != '000000') AS malformed_imei_bindings,
                 countIf(t.tac != '')                           AS tac_matched_bindings,
-                round(100.0 * countIf(t.tac != '') / count(), 3) AS tac_coverage_pct,
+                -- A filter that matches nothing made this 0/0: NaN, which JSON cannot carry, so the
+                -- whole KPI request failed. Zero coverage of zero bindings is the honest figure.
+                if(count() = 0, 0, round(100.0 * countIf(t.tac != '') / count(), 3)) AS tac_coverage_pct,
                 -- The raw path reads current state, which already has every delivery folded in,
                 -- so it reports the newest delivery rather than whichever one the marts serve.
                 -- agg_change_summary_daily is 133 rows; reading max(seq) off binding_event would
                 -- be a full column scan of a billion.
                 (SELECT argMax(seq, data_date) FROM sqm.agg_change_summary_daily) AS delivery_seq,
-                (SELECT max(data_date) FROM sqm.agg_change_summary_daily) AS delivery_date
+                -- NULL before the first daily file, not max() of nothing, which is 1970-01-01.
+                (SELECT if(count() = 0, NULL, max(data_date)) FROM sqm.agg_change_summary_daily) AS delivery_date
             FROM sqm.binding_current AS b FINAL
             LEFT JOIN sqm.tac AS t ON t.tac = b.tac
             LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
@@ -297,21 +305,32 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
 
         // Under a filter the population is the filtered population, so the denominator is computed
         // over the same WHERE clause rather than read from the unfiltered KPI mart.
+        //
+        // And with the same measure, ungrouped - not the sum of the groups. For bindings those are
+        // equal; for subscribers or handsets they are not, because one subscriber with a phone and
+        // a tablet is in both groups: the sum counted them twice and the shares came out 50/50
+        // where they are 100% each. The empty grouping set is that ungrouped total, taken in the
+        // same pass rather than a second scan.
         var sql = $$"""
-            WITH grouped AS (
-                SELECT
-                    multiIf(b.tac = '', {unknown_device:String},
-                            t.tac = '',  {unknown_tac:String},
-                            coalesce(nullIf({{column}}, ''), {unknown_tac:String})) AS k,
-                    {{measure}} AS n
-                FROM sqm.binding_current AS b FINAL
-                LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-                LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
-                WHERE b.active = 1 AND {{f.WhereClause}}
-                GROUP BY k
+            SELECT k, n, round(100.0 * n / nullIf(total, 0), 3) AS pct
+            FROM (
+                SELECT k, n, is_total, max(if(is_total = 1, n, 0)) OVER () AS total
+                FROM (
+                    SELECT
+                        multiIf(b.tac = '', {unknown_device:String},
+                                t.tac = '',  {unknown_tac:String},
+                                coalesce(nullIf({{column}}, ''), {unknown_tac:String})) AS k,
+                        {{measure}} AS n,
+                        grouping(k) AS is_total
+                    FROM sqm.binding_current AS b FINAL
+                    LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+                    LEFT JOIN sqm.tac_vendor_map AS v ON v.raw_manufacturer = t.manufacturer
+                    WHERE b.active = 1 AND {{f.WhereClause}}
+                    GROUP BY GROUPING SETS ((k), ())
+                )
             )
-            SELECT k, n, round(100.0 * n / nullIf((SELECT sum(n) FROM grouped), 0), 3) AS pct
-            FROM grouped ORDER BY n DESC LIMIT {{take}}
+            WHERE is_total = 0
+            ORDER BY n DESC LIMIT {{take}}
             """;
 
         await using var connection = CreateConnection();

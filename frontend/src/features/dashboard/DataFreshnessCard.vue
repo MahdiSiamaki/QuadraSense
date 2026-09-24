@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useAuth, Permission } from '@/features/auth/useAuth'
 import { RouterLink } from 'vue-router'
 import Card from '@/design-system/Card.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
@@ -19,9 +20,14 @@ import { formatDate, formatDateTime, formatRelative } from '@/lib/format'
  * Three facts, in the order they change a reader's interpretation: how recent the data is, which
  * days are missing from it, and which TAC mapping the names and models come from.
  */
-const freshness = useFreshness()
-const health = useWorkerHealth()
-const tacVersions = useTacVersions()
+// Gated like the header's freshness chip. The card polls three import endpoints, and a user with
+// dashboard.view but not import.view got a 403 on each - one worker-health denial every five
+// seconds, each written to the audit log, and a "Forbidden" alert at the top of the dashboard.
+const { can } = useAuth()
+const allowed = computed(() => can(Permission.ImportView))
+const freshness = useFreshness({ enabled: allowed })
+const health = useWorkerHealth({ enabled: allowed })
+const tacVersions = useTacVersions({ enabled: allowed })
 
 const sqm = computed(() => freshness.data.value?.find((f) => f.sourceCode === 'SQM') ?? null)
 const activeTac = computed(() => tacVersions.data.value?.find((v) => v.status === 'Active') ?? null)

@@ -146,25 +146,42 @@ public interface IImportJobRepository
     /// The day the job turned out to describe, when the processor determined it. A file uploaded
     /// through the browser is enqueued without one; this is where it gets recorded.
     /// </param>
+    /// <param name="workerId">
+    /// The worker finishing the job. The completion applies only while that worker still holds
+    /// it; <see langword="null"/> applies it unconditionally, for tests and tooling.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
-    Task CompleteAsync(
+    /// <returns><see langword="false"/> when the worker no longer held the job, so nothing changed.</returns>
+    Task<bool> CompleteAsync(
         long jobId,
         ImportJobStatus status,
         ImportCounters counters,
         bool makeEffective,
         DateOnly? businessDate,
+        string? workerId,
         CancellationToken ct);
 
     /// <summary>
     /// Records a failure and decides what happens next: another attempt after a backoff, or a
     /// terminal failure once the attempts are used up.
     /// </summary>
-    /// <returns><see langword="true"/> when the job was scheduled for another attempt.</returns>
+    /// <remarks>
+    /// A job whose cancellation was requested ends CANCELLED rather than being retried: the claim
+    /// never picks up a job with a cancellation pending, so a retry would wait forever. Like
+    /// <see cref="CompleteAsync"/>, it applies only while the given worker holds the job, or
+    /// unconditionally when the worker is <see langword="null"/>.
+    /// </remarks>
+    /// <returns>
+    /// <see langword="true"/> when the job was scheduled for another attempt; <see langword="false"/>
+    /// when it failed for good, was cancelled, or was no longer this worker's.
+    /// </returns>
     Task<bool> FailAsync(
-        long jobId, string errorSummary, bool isRetryable, TimeSpan retryDelay, CancellationToken ct);
+        long jobId, string errorSummary, bool isRetryable, TimeSpan retryDelay, string? workerId,
+        CancellationToken ct);
 
     /// <summary>Marks a job cancelled after a worker noticed the cancellation request.</summary>
-    Task MarkCancelledAsync(long jobId, CancellationToken ct);
+    /// <returns><see langword="false"/> when the worker no longer held the job.</returns>
+    Task<bool> MarkCancelledAsync(long jobId, string? workerId, CancellationToken ct);
 
     /// <summary>Whether an operator has asked for this job to stop.</summary>
     Task<bool> IsCancellationRequestedAsync(long jobId, CancellationToken ct);

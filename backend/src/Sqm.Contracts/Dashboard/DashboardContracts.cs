@@ -194,7 +194,8 @@ public enum VendorRanking
 /// <param name="SharePercent">Population as a percentage of the whole active network.</param>
 /// <param name="PopulationAtStart">Active bindings in the first delivery on record.</param>
 /// <param name="PopulationChange">Population now minus population then.</param>
-/// <param name="PopulationChangePercent">That change as a percentage of where it started.</param>
+/// <param name="PopulationChangePercent">That change as a percentage of where it started; null when
+/// it started at zero.</param>
 /// <param name="VsNetworkPoints">
 /// The vendor's percentage change minus the network's. This is the figure that means something:
 /// the whole network fell 9.3% between the first delivery and now, so a vendor down 6.4% actually
@@ -213,9 +214,9 @@ public sealed record VendorMovementRow(
     double SharePercent,
     long PopulationAtStart,
     long PopulationChange,
-    double PopulationChangePercent,
-    double VsNetworkPoints,
-    double NetPercentOfPopulation);
+    double? PopulationChangePercent,
+    double? VsNetworkPoints,
+    double? NetPercentOfPopulation);
 
 /// <summary>The vendor widget's data, with the context needed to read it honestly.</summary>
 /// <param name="From">Start of the movement window actually used.</param>
