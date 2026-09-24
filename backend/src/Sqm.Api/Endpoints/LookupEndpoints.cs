@@ -1,4 +1,5 @@
 using Sqm.Application.Abstractions;
+using Sqm.Contracts.Lookup;
 using Sqm.Domain.Identifiers;
 
 using Sqm.Api.Auth;
@@ -85,12 +86,24 @@ public static class LookupEndpoints
                 ["wellFormed"] = msisdn.Value.IsWellFormed,
             }), ct).ConfigureAwait(false);
 
+        // identifier.reveal decides complete identifiers, here as on every other page. The number
+        // is what the user typed, so it stays; the SIMs and handsets behind it are what the
+        // permission protects.
+        var reveal = user.Can(Permissions.IdentifierReveal);
+
         return Results.Ok(new
         {
             msisdn = msisdn.Value.ToString(),
             wellFormed = msisdn.Value.IsWellFormed,
             count = rows.Count,
-            bindings = rows,
+            identifiers = reveal ? IdentifierVisibility.Full : IdentifierVisibility.Masked,
+            bindings = reveal
+                ? rows
+                : [.. rows.Select(r => r with
+                {
+                    Imsi = IdentifierMask.Imsi(r.Imsi),
+                    Imei = IdentifierMask.Imei(r.Imei),
+                })],
         });
     }
 }

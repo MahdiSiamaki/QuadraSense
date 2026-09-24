@@ -134,8 +134,25 @@ public static class RelationshipEndpoints
                 ["withheld"] = string.Join(",", graph.Withheld),
             }), ct).ConfigureAwait(false);
 
-        return Results.Ok(graph);
+        return Results.Ok(user.Can(Permissions.IdentifierReveal) ? graph : Masked(graph));
     }
+
+    /// <summary>The graph with every neighbour's identifier redacted.</summary>
+    /// <remarks>
+    /// identifier.reveal is what decides complete identifiers everywhere else - IMSI search, a
+    /// device's identifier list - and this page ignored it, so a user whose reveal was denied saw
+    /// every IMSI, IMEI and number here in full. The centre is left as typed: masking an
+    /// identifier back to the person who supplied it protects nothing. TACs and models stay, as
+    /// they do elsewhere - they describe devices, not people.
+    /// </remarks>
+    private static RelationshipGraph Masked(RelationshipGraph graph) => graph with
+    {
+        Subscribers = [.. graph.Subscribers.Select(n => n with { Value = IdentifierMask.Msisdn(n.Value) })],
+        Sims = [.. graph.Sims.Select(n => n with { Value = IdentifierMask.Imsi(n.Value) })],
+        Handsets = [.. graph.Handsets.Select(n => n with { Value = IdentifierMask.Imei(n.Value) })],
+        Paired = [.. graph.Paired.Select(p => p with { Imei = IdentifierMask.Imei(p.Imei) })],
+        Identifiers = IdentifierVisibility.Masked,
+    };
 
     private static string PermissionFor(RelatedKind kind) => kind switch
     {

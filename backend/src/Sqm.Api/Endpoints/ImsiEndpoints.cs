@@ -137,6 +137,7 @@ public static class ImsiEndpoints
         ImsiHistoryRequest request,
         HttpContext http,
         IDeviceAnalyticsStore store,
+        IAuditLog audit,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -168,7 +169,31 @@ public static class ImsiEndpoints
         var outcome = await store.GetImsiHistoryAsync(
             term.Value.Low, request.From, request.To, MaxHistoryEvents, ct).ConfigureAwait(false);
 
-        var reveal = CurrentUser.Require(http).Can(Permissions.IdentifierReveal);
+        var user = CurrentUser.Require(http);
+        var reveal = user.Can(Permissions.IdentifierReveal);
+
+        // Recorded like every other lookup. History is the most revealing of them - every number
+        // and handset one SIM was ever bound to - and it was the one that left no trace. The IMSI
+        // is not recorded, for the reason the search gives.
+        await audit.WriteAsync(new AuditEntry(
+            ActorName: user.Username,
+            Action: Permissions.LookupImsi,
+            Category: AuditCategory.Data,
+            Outcome: AuditOutcome.Success,
+            ActorUserId: user.UserId,
+            TargetType: "imsi.history",
+            Ip: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            CorrelationId: http.TraceIdentifier,
+            Detail: new Dictionary<string, object?>
+            {
+                ["events"] = outcome.Events.Count,
+                ["truncated"] = outcome.Truncated,
+                ["from"] = request.From,
+                ["to"] = request.To,
+                ["masked"] = !reveal,
+                ["elapsedMs"] = outcome.ElapsedMs,
+            }), ct).ConfigureAwait(false);
 
         return Results.Ok(new ImsiHistoryResponse(
             Imsi: term.Value.Digits,
