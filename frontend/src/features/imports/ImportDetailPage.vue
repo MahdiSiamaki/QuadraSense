@@ -89,6 +89,13 @@ function toggleRule(summaryId: number) {
               </h1>
               <StatusBadge :status="summary.status" />
               <span
+                v-if="summary.status === 'Completed' && summary.warningCount > 0"
+                class="text-[var(--text-2xs)] font-medium text-[var(--c-warning)]"
+                title="Every row was imported. Validation raised warnings on some of them - open the import for the rows and the rules."
+              >
+                with warnings
+              </span>
+              <span
                 v-if="summary.isEffective"
                 class="rounded-full bg-[var(--c-success-subtle)] px-2 py-0.5 text-[var(--text-2xs)] font-medium text-[var(--c-success)]"
                 title="This import is the one currently in effect for its business day."
