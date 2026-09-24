@@ -550,6 +550,12 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
             VALUES (@summary, @row, @line, @value)
             """;
 
+        // A retry records the same rule again. The summary row is replaced by its ON CONFLICT;
+        // the samples were only ever appended, so each attempt added another copy of each.
+        const string ClearSamplesSql = """
+            DELETE FROM imports.quarantine_sample WHERE summary_id = @summary
+            """;
+
         foreach (var group in groups)
         {
             var summaryId = await connection.ExecuteScalarAsync<long>(Command(GroupSql, new
@@ -562,6 +568,9 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                 firstRow = group.FirstRowNumber,
                 message = group.Message,
             }, ct, transaction)).ConfigureAwait(false);
+
+            await connection.ExecuteAsync(Command(ClearSamplesSql, new { summary = summaryId }, ct, transaction))
+                .ConfigureAwait(false);
 
             foreach (var sample in group.Samples)
             {
