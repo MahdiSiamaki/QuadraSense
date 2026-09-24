@@ -203,7 +203,9 @@ public sealed partial class ClickHouseAnalyticsStore
                 countIf(active = 1)                  AS active_bindings,
                 min(last_change_date)                AS first_seen,
                 max(last_change_date)                AS last_seen,
-                max(last_change_seq) > 0             AS ever_touched
+                -- By date, not by sequence: a binding re-derived after a late or replaced day
+                -- carries the log's highest sequence as its version, dated or not.
+                countIf(last_change_date IS NOT NULL) > 0 AS ever_touched
             FROM sqm.binding_by_imsi AS b FINAL
             WHERE b.imsi = {imsi:UInt64}
             """;
