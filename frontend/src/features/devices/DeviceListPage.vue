@@ -219,8 +219,17 @@ function isRealDevice(d: DeviceSummary): boolean {
 // Alignment is left out on purpose and set per column. With `text-right` in here, the TAC header
 // carried both `text-right` and `text-left`, and whichever Tailwind emits later wins - not the
 // one written last in the template - so the header sat right while its values sat left.
-const sortableClass = 'cursor-pointer select-none px-3 py-2 font-medium hover:text-[var(--c-text)]'
+const sortableClass = 'px-3 py-2 font-medium'
 const columnClass = `${sortableClass} text-right`
+
+// The sort is a button inside the header, not a click on the header cell: a cell cannot take
+// focus, so sorting was mouse-only and screen readers were never told the column was actionable.
+const sortButtonClass = 'cursor-pointer select-none font-medium hover:text-[var(--c-text)]'
+
+function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
+  if (sort.value !== column) return 'none'
+  return descending.value ? 'descending' : 'ascending'
+}
 </script>
 
 <template>
@@ -361,24 +370,36 @@ const columnClass = `${sortableClass} text-right`
               >
                 <tr>
                   <th scope="col" class="px-3 py-2 text-left font-medium">Device</th>
-                  <th scope="col" :class="[sortableClass, 'text-left']" @click="sortBy('tac')">
-                    TAC{{ sortMark('tac') }}
+                  <th scope="col" :class="[sortableClass, 'text-left']" :aria-sort="ariaSort('tac')">
+                    <button type="button" :class="sortButtonClass" @click="sortBy('tac')">
+                      TAC{{ sortMark('tac') }}
+                    </button>
                   </th>
                   <th scope="col" class="px-3 py-2 text-left font-medium">Type</th>
-                  <th scope="col" :class="columnClass" @click="sortBy('bindings')">
-                    Bindings{{ sortMark('bindings') }}
+                  <th scope="col" :class="columnClass" :aria-sort="ariaSort('bindings')">
+                    <button type="button" :class="sortButtonClass" @click="sortBy('bindings')">
+                      Bindings{{ sortMark('bindings') }}
+                    </button>
                   </th>
-                  <th scope="col" :class="columnClass" @click="sortBy('handsets')">
-                    Handsets{{ sortMark('handsets') }}
+                  <th scope="col" :class="columnClass" :aria-sort="ariaSort('handsets')">
+                    <button type="button" :class="sortButtonClass" @click="sortBy('handsets')">
+                      Handsets{{ sortMark('handsets') }}
+                    </button>
                   </th>
-                  <th scope="col" :class="columnClass" @click="sortBy('sims')">
-                    SIMs{{ sortMark('sims') }}
+                  <th scope="col" :class="columnClass" :aria-sort="ariaSort('sims')">
+                    <button type="button" :class="sortButtonClass" @click="sortBy('sims')">
+                      SIMs{{ sortMark('sims') }}
+                    </button>
                   </th>
-                  <th scope="col" :class="columnClass" @click="sortBy('subscribers')">
-                    Numbers{{ sortMark('subscribers') }}
+                  <th scope="col" :class="columnClass" :aria-sort="ariaSort('subscribers')">
+                    <button type="button" :class="sortButtonClass" @click="sortBy('subscribers')">
+                      Numbers{{ sortMark('subscribers') }}
+                    </button>
                   </th>
-                  <th scope="col" :class="columnClass" @click="sortBy('lastSeen')">
-                    Last seen{{ sortMark('lastSeen') }}
+                  <th scope="col" :class="columnClass" :aria-sort="ariaSort('lastSeen')">
+                    <button type="button" :class="sortButtonClass" @click="sortBy('lastSeen')">
+                      Last seen{{ sortMark('lastSeen') }}
+                    </button>
                   </th>
                 </tr>
               </thead>
