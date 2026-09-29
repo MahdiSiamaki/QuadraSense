@@ -51,6 +51,29 @@ public sealed class ImportQueueFixture : IAsyncLifetime
                 return;
             }
 
+            // The queue tests claim whatever the queue offers next and recover every expired
+            // lease, whoever's it is - that is what they test. Run while a real import is waiting,
+            // they take it: on 2026-09-24 a test run claimed the real 18 September file as
+            // "worker", held it until its lease ran out, and cost it one of its three attempts.
+            // So they do not run while real work is waiting or running on this database.
+            await using var busy = new NpgsqlCommand(
+                """
+                SELECT count(*) FROM imports.import_job j
+                  JOIN imports.data_source ds ON ds.code = j.source_code
+                 WHERE ds.description IS DISTINCT FROM 'Created by a test.'
+                   AND j.status IN ('QUEUED', 'RETRYING', 'VALIDATING', 'PARSING', 'NORMALIZING',
+                                    'DEDUPLICATING', 'ENRICHING', 'IMPORTING', 'AGGREGATING',
+                                    'FINALIZING')
+                """, probe);
+
+            if (await busy.ExecuteScalarAsync() is long waiting && waiting > 0)
+            {
+                UnavailableReason =
+                    $"{waiting} real import job(s) are waiting or running on this database; the "
+                    + "queue tests would claim them. Run these once the queue is empty.";
+                return;
+            }
+
             Repository = new PostgresImportJobRepository(
                 Options.Create(new PostgresOptions { ConnectionString = ConnectionString }),
                 NullLogger<PostgresImportJobRepository>.Instance);
