@@ -512,43 +512,54 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             """,
 
             // SIM changes: a number that on this day had a remove carrying one IMSI and an add
-            // carrying a different one.
+            // carrying a different one - some IMSI was removed, and some IMSI was added that was
+            // not also removed.
+            //
+            // Two GROUP BYs, not arrays. It used to collect each number's added and removed
+            // IMSIs into arrays and filter one against the other, and that lambda copies the
+            // removed array once per added element: memory grows with the SQUARE of what one
+            // number carries in a day. Early August has numbers carrying ~8,900 devices a day,
+            // and the handset version below needed 1.18 GiB for 2026-08-06 against a 1.12 GiB
+            // cap - five attempts, five failures, and the day blocked every day after it. Two
+            // aggregations are linear, and a GROUP BY spills to disk where an array cannot.
+            // Same result: checked against the array form on real days where that one fits.
             $$"""
             INSERT INTO {{_database}}.agg_sim_change_daily (data_date, msisdn_changed)
             SELECT data_date, count()
             FROM (
-                SELECT
-                    data_date,
-                    msisdn,
-                    groupUniqArrayIf(imsi, label = 'add')    AS added_sims,
-                    groupUniqArrayIf(imsi, label = 'remove') AS removed_sims
-                FROM {{_database}}.binding_event
-                WHERE data_date = {businessDate:Date}
+                SELECT data_date, msisdn
+                FROM (
+                    SELECT data_date, msisdn, imsi,
+                           max(label = 'add')    AS added,
+                           max(label = 'remove') AS removed
+                    FROM {{_database}}.binding_event
+                    WHERE data_date = {businessDate:Date}
+                    GROUP BY data_date, msisdn, imsi
+                )
                 GROUP BY data_date, msisdn
-                HAVING length(added_sims) > 0
-                   AND length(removed_sims) > 0
-                   AND length(arrayFilter(x -> NOT has(removed_sims, x), added_sims)) > 0
+                HAVING countIf(removed) > 0 AND countIf(added AND NOT removed) > 0
             )
             GROUP BY data_date
             """,
 
             // Handset changes: the same shape, on IMEI. Measured over the whole window at 51.3%
-            // of subscribers, so this is the largest churn signal in the dataset.
+            // of subscribers, so this is the largest churn signal in the dataset - and, keyed by a
+            // string, the one the array form ran out of memory on.
             $$"""
             INSERT INTO {{_database}}.agg_device_change_daily (data_date, msisdn_changed)
             SELECT data_date, count()
             FROM (
-                SELECT
-                    data_date,
-                    msisdn,
-                    groupUniqArrayIf(imei, label = 'add')    AS added_devices,
-                    groupUniqArrayIf(imei, label = 'remove') AS removed_devices
-                FROM {{_database}}.binding_event
-                WHERE data_date = {businessDate:Date}
+                SELECT data_date, msisdn
+                FROM (
+                    SELECT data_date, msisdn, imei,
+                           max(label = 'add')    AS added,
+                           max(label = 'remove') AS removed
+                    FROM {{_database}}.binding_event
+                    WHERE data_date = {businessDate:Date}
+                    GROUP BY data_date, msisdn, imei
+                )
                 GROUP BY data_date, msisdn
-                HAVING length(added_devices) > 0
-                   AND length(removed_devices) > 0
-                   AND length(arrayFilter(x -> NOT has(removed_devices, x), added_devices)) > 0
+                HAVING countIf(removed) > 0 AND countIf(added AND NOT removed) > 0
             )
             GROUP BY data_date
             """,

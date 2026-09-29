@@ -68,7 +68,12 @@ public sealed class LateDayFoldTests : IAsyncLifetime
             }
 
             await QueryAsync($"CREATE DATABASE {_database}");
-            foreach (var table in new[] { "binding_event", "binding_current", "binding_snapshot" })
+            foreach (var table in new[]
+                     {
+                         "binding_event", "binding_current", "binding_snapshot",
+                         "agg_change_daily", "agg_change_summary_daily",
+                         "agg_sim_change_daily", "agg_device_change_daily",
+                     })
             {
                 await QueryAsync($"CREATE TABLE {_database}.{table} AS sqm.{table}");
             }
@@ -271,5 +276,57 @@ public sealed class LateDayFoldTests : IAsyncLifetime
 
         // The scratch table a replaced day leaves behind is dropped once its fold lands.
         Assert.Equal("0", await QueryAsync($"EXISTS TABLE {_database}.fold_replaced_20260506"));
+    }
+
+    /// <summary>
+    /// SIM and handset changes are counted exactly, and in memory that grows with a day's rows,
+    /// not with the square of what one number carries.
+    /// </summary>
+    /// <remarks>
+    /// The array form of these marts copied each number's removed identifiers once per added one.
+    /// On 2026-08-06 one number carried 8,886 handsets in a day, the handset mart needed 1.18 GiB
+    /// against a 1.12 GiB cap, and the day failed five times and blocked every day after it. Number
+    /// 9 below carries 9,500 removed and 9,500 added - past what the array form can hold.
+    /// </remarks>
+    [Fact]
+    public async Task Sim_and_handset_changes_are_counted_exactly_even_for_a_number_with_thousands_of_devices()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var store = Store(1_000_000);
+        var day = new DateOnly(2026, 8, 6);
+
+        var csv = new StringBuilder("msisdn,imsi,imei,label\n");
+        void Row(int number, long imsi, string imei, string label) =>
+            csv.Append(CultureInfo.InvariantCulture, $"{9_120_000_000 + number},{imsi},{imei},{label}\n");
+
+        Row(1, 1, "35000000000001", "remove"); Row(1, 1, "35000000000002", "add");   // handset change
+        Row(2, 2, "35000000000003", "add");                                          // added only
+        Row(3, 3, "35000000000004", "remove");                                       // removed only
+        Row(4, 4, "35000000000005", "remove"); Row(4, 4, "35000000000005", "add");   // same handset back
+        Row(5, 5, "35000000000006", "remove"); Row(5, 5, "35000000000006", "add");
+        Row(5, 5, "35000000000007", "add");                                          // one back, one new: change
+        Row(6, 61, "35000000000008", "remove"); Row(6, 62, "35000000000008", "add"); // SIM change, same handset
+
+        for (var i = 0; i < 9_500; i++)
+        {
+            Row(9, 9, $"3510{i:0000000000}", "remove");
+            Row(9, 9, $"3520{i:0000000000}", "add");
+        }
+
+        await using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv.ToString())))
+        {
+            await store.LoadDailyEventsAsync(day, 1, stream, null, ct);
+        }
+
+        await store.RefreshChangeMartsForDayAsync(day, 1, ct);
+
+        Assert.Equal("3", await QueryAsync($"SELECT sum(msisdn_changed) FROM {_database}.agg_device_change_daily WHERE data_date = '2026-08-06'"));
+        Assert.Equal("1", await QueryAsync($"SELECT sum(msisdn_changed) FROM {_database}.agg_sim_change_daily WHERE data_date = '2026-08-06'"));
     }
 }
