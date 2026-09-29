@@ -800,6 +800,56 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
         }
     }
 
+    /// <summary>
+    /// With two workers, an earlier day is not claimed while a later day of the same source runs.
+    /// </summary>
+    /// <remarks>
+    /// The ordering rule only blocks a day behind EARLIER unlanded days, which is enough for one
+    /// worker. On 2026-09-27 two were running - the API's own and a standalone one - and 1 August
+    /// was claimed while 14 August was being folded, the two overlapping for thirteen minutes.
+    /// </remarks>
+    [Fact]
+    public async Task An_earlier_day_waits_while_a_later_day_of_the_same_source_is_running()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+
+        try
+        {
+            var laterFile = await fixture.Repository.RegisterFileAsync(
+                TestSource, "2026-04-14.csv", Stored(Hash("busy-later")), "tester", ct);
+            var later = await fixture.Repository.EnqueueAsync(
+                TestSource, laterFile.FileId, new DateOnly(2026, 4, 14), "tester", ct: ct);
+
+            var running = await fixture.Repository.ClaimNextAsync("worker-api", TimeSpan.FromMinutes(5), ct);
+            Assert.Equal(later, running?.JobId);
+
+            // The missing earlier day arrives while the later one is still being worked on.
+            var earlierFile = await fixture.Repository.RegisterFileAsync(
+                TestSource, "2026-04-01.csv", Stored(Hash("busy-earlier")), "tester", ct);
+            var earlier = await fixture.Repository.EnqueueAsync(
+                TestSource, earlierFile.FileId, new DateOnly(2026, 4, 1), "tester", ct: ct);
+
+            Assert.Null(await fixture.Repository.ClaimNextAsync("worker-standalone", TimeSpan.FromMinutes(5), ct));
+
+            // Once the running day has landed, the earlier one is the next to go.
+            await fixture.Repository.CompleteAsync(
+                later, ImportJobStatus.Completed, new ImportCounters(RowsInserted: 1),
+                makeEffective: true, businessDate: new DateOnly(2026, 4, 14), workerId: null, ct);
+
+            Assert.Equal(earlier, (await fixture.Repository.ClaimNextAsync("worker-standalone", TimeSpan.FromMinutes(5), ct))?.JobId);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
     private static async Task ExpireLeaseAsync(long jobId)
     {
         await using var connection = new Npgsql.NpgsqlConnection(ImportQueueFixture.ConnectionString);
