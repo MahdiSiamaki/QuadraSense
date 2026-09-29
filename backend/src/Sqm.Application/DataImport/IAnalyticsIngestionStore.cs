@@ -172,4 +172,10 @@ public interface IAnalyticsIngestionStore
 
     /// <summary>Sequence already assigned to a business date, or <see langword="null"/>.</summary>
     Task<int?> GetSequenceForDateAsync(DateOnly businessDate, CancellationToken ct);
+
+    /// <summary>
+    /// The sequence a file for <paramref name="businessDate"/> is loaded under: the day's own when
+    /// it has one no other day shares, otherwise the next one.
+    /// </summary>
+    Task<int> ResolveSequenceForDateAsync(DateOnly businessDate, CancellationToken ct);
 }

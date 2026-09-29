@@ -197,8 +197,7 @@ public sealed class LateDayFoldTests : IAsyncLifetime
         var ct = TestContext.Current.CancellationToken;
 
         var existing = await store.CountEventsForDateAsync(day, ct);
-        var sequence = await store.GetSequenceForDateAsync(day, ct)
-                       ?? await store.GetMaxSequenceAsync(ct) + 1;
+        var sequence = await store.ResolveSequenceForDateAsync(day, ct);
 
         if (existing > 0)
         {
@@ -328,5 +327,60 @@ public sealed class LateDayFoldTests : IAsyncLifetime
 
         Assert.Equal("3", await QueryAsync($"SELECT sum(msisdn_changed) FROM {_database}.agg_device_change_daily WHERE data_date = '2026-08-06'"));
         Assert.Equal("1", await QueryAsync($"SELECT sum(msisdn_changed) FROM {_database}.agg_sim_change_daily WHERE data_date = '2026-08-06'"));
+    }
+
+    /// <summary>
+    /// A day found sharing its sequence with another is given its own when imported again, and
+    /// the bindings the collision left wrong are re-derived by date.
+    /// </summary>
+    /// <remarks>
+    /// The state 2026-09-27 left behind: 14 August (late) and 26 September both loaded as delivery
+    /// 216 by two workers at once, and 14 August's fold - which had not seen 26 September - landed
+    /// last with the same version, so bindings kept a state from before 26 September. Built here
+    /// directly, then repaired the way it is repaired for real: by importing the late day again.
+    /// </remarks>
+    [Fact]
+    public async Task Reimporting_a_day_that_shares_its_sequence_gives_it_its_own_and_repairs_the_bindings()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var store = Store(2);
+        var late = new DateOnly(2026, 8, 14);
+        var newest = new DateOnly(2026, 9, 26);
+        var events = new[] { new Event(K(1), true), new Event(K(2), true) };
+
+        // 26 September: both bindings removed. The truth is that both are inactive.
+        await ImportAsync(store, D1, [new(K(1), true), new(K(2), true)]);
+        await ImportAsync(store, newest, [new(K(1), false), new(K(2), false)]);
+        var shared = await QueryAsync($"SELECT any(seq) FROM {_database}.binding_event WHERE data_date = '2026-09-26'");
+
+        // The collision: 14 August loaded under the SAME sequence, and a stale fold of it - one
+        // that never saw 26 September - written last, at that same version.
+        await QueryAsync($"""
+            INSERT INTO {_database}.binding_event (seq, data_date, msisdn, imsi, imei, label)
+            VALUES ({shared}, '2026-08-14', {K(1).Msisdn}, {K(1).Imsi}, '{K(1).Imei}', 'add'),
+                   ({shared}, '2026-08-14', {K(2).Msisdn}, {K(2).Imsi}, '{K(2).Imei}', 'add')
+            """);
+        await QueryAsync($"""
+            INSERT INTO {_database}.binding_current (msisdn, imsi, imei, active, last_change_seq, last_change_date)
+            VALUES ({K(1).Msisdn}, {K(1).Imsi}, '{K(1).Imei}', 1, {shared}, '2026-08-14'),
+                   ({K(2).Msisdn}, {K(2).Imsi}, '{K(2).Imei}', 1, {shared}, '2026-08-14')
+            """);
+        Assert.Equal("2", await QueryAsync($"SELECT sum(active) FROM {_database}.binding_current FINAL"));
+
+        // The repair: 14 August imported again, through the real code.
+        await ImportAsync(store, late, events);
+
+        Assert.Equal("0", await QueryAsync($"""
+            SELECT count() FROM (SELECT seq FROM (SELECT DISTINCT seq, data_date FROM {_database}.binding_event)
+                                 GROUP BY seq HAVING count() > 1)
+            """));
+        Assert.Equal(shared, await QueryAsync($"SELECT any(seq) FROM {_database}.binding_event WHERE data_date = '2026-09-26'"));
+        Assert.Equal("0", await QueryAsync($"SELECT sum(active) FROM {_database}.binding_current FINAL"));
     }
 }

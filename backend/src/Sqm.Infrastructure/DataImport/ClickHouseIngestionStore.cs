@@ -841,6 +841,52 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
         return scalar is null or DBNull ? 0 : Convert.ToInt32(scalar, CultureInfo.InvariantCulture);
     }
 
+    /// <remarks>
+    /// <para>
+    /// A day that already has a sequence keeps it, so a corrected file replaces the day in place
+    /// rather than appearing as a new one at the end of the series. A day that does not gets the
+    /// next number - including a missing day that arrives late, whose number then does not match
+    /// its calendar position. Nothing that decides state reads the number as an order: the fold
+    /// re-derives a late day's bindings by date, and the dashboard marts follow the latest date.
+    /// </para>
+    /// <para>
+    /// <b>Unless another day shares it.</b> "Next" is the highest number plus one, read without a
+    /// lock, so two files processed at once can both read it: on 2026-09-27 two workers gave
+    /// 14 August and 26 September the same sequence, 216. Rows of both days then carried one
+    /// version, whichever write landed last won, and 7,011 bindings kept a state from before
+    /// 26 September. Only one day of a source runs at a time now, so it cannot happen again;
+    /// a day found sharing its number is given a new one when it is next imported, which is
+    /// what reprocessing it does - and the fold that follows re-derives its bindings by date.
+    /// </para>
+    /// </remarks>
+    public async Task<int> ResolveSequenceForDateAsync(DateOnly businessDate, CancellationToken ct)
+    {
+        if (await GetSequenceForDateAsync(businessDate, ct).ConfigureAwait(false) is { } own)
+        {
+            await using var connection = CreateConnection();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $$"""
+                SELECT count() FROM {{_database}}.binding_event
+                WHERE seq = {seq:UInt16} AND data_date != {businessDate:Date}
+                """;
+            AddDateParameter(command, "businessDate", businessDate);
+            var seq = command.CreateParameter();
+            seq.ParameterName = "seq";
+            seq.Value = own;
+            command.Parameters.Add(seq);
+
+            var shared = Convert.ToInt64(
+                await command.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+
+            if (shared == 0)
+            {
+                return own;
+            }
+        }
+
+        return await GetMaxSequenceAsync(ct).ConfigureAwait(false) + 1;
+    }
+
     public async Task<int?> GetSequenceForDateAsync(DateOnly businessDate, CancellationToken ct)
     {
         await using var connection = CreateConnection();

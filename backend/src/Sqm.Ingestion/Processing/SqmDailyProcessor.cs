@@ -281,26 +281,11 @@ internal sealed partial class SqmDailyProcessor(
         "Cancelled after validation, before anything was written.");
 
     /// <summary>
-    /// Decides which day number this file is.
+    /// Decides which day number this file is; see
+    /// <see cref="IAnalyticsIngestionStore.ResolveSequenceForDateAsync"/>.
     /// </summary>
-    /// <remarks>
-    /// A day that already has a sequence keeps it, so a corrected file replaces the day in place
-    /// rather than appearing as a new one at the end of the series. A day that does not gets the
-    /// next number - including a missing day that arrives late, whose number then does not match
-    /// its calendar position. Nothing that decides state reads the number as an order: the fold
-    /// re-derives a late day's bindings by date, and the dashboard marts follow the latest date.
-    /// </remarks>
-    private async Task<int> ResolveSequenceAsync(DateOnly businessDate, CancellationToken ct)
-    {
-        var existing = await analytics.GetSequenceForDateAsync(businessDate, ct).ConfigureAwait(false);
-        if (existing is { } sequence)
-        {
-            return sequence;
-        }
-
-        var max = await analytics.GetMaxSequenceAsync(ct).ConfigureAwait(false);
-        return max + 1;
-    }
+    private Task<int> ResolveSequenceAsync(DateOnly businessDate, CancellationToken ct) =>
+        analytics.ResolveSequenceForDateAsync(businessDate, ct);
 
     /// <summary>Reads the whole file, checking every row, writing nothing.</summary>
     private static async Task<ValidationResult> ValidateAsync(
