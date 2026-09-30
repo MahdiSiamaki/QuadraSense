@@ -11,6 +11,11 @@
     <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The ClickHouse query runner is internal; its limits are tested against a real server. -->
+    <InternalsVisibleTo Include="Sqm.Integration.Tests" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
