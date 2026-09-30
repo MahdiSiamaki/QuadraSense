@@ -19,10 +19,14 @@ namespace Sqm.Infrastructure.ClickHouse;
 /// <param name="MaxRowsToRead">Rows the query may read from storage, all tables together.</param>
 /// <param name="MaxExecutionSeconds">Wall-clock seconds on the server.</param>
 /// <param name="MaxResultRows">Rows the result may hold.</param>
+/// <param name="MaxMemoryBytes">Replaces the read path's 500 MB cap; a third of it is where aggregation spills to disk.</param>
+/// <param name="MaxThreads">Replaces the read path's one thread.</param>
 internal sealed record QueryBudget(
     long? MaxRowsToRead = null,
     int? MaxExecutionSeconds = null,
-    long? MaxResultRows = null)
+    long? MaxResultRows = null,
+    long? MaxMemoryBytes = null,
+    int? MaxThreads = null)
 {
     /// <summary>Adds the limits to a request's settings.</summary>
     public void WriteTo(IDictionary<string, string> settings)
@@ -37,6 +41,18 @@ internal sealed record QueryBudget(
         {
             settings["max_execution_time"] = seconds.ToString(CultureInfo.InvariantCulture);
             settings["timeout_overflow_mode"] = "throw";
+        }
+
+        if (MaxMemoryBytes is { } memory)
+        {
+            settings["max_memory_usage"] = memory.ToString(CultureInfo.InvariantCulture);
+            settings["max_bytes_before_external_group_by"] = (memory / 3).ToString(CultureInfo.InvariantCulture);
+            settings["max_bytes_before_external_sort"] = (memory / 3).ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (MaxThreads is { } threads)
+        {
+            settings["max_threads"] = threads.ToString(CultureInfo.InvariantCulture);
         }
 
         if (MaxResultRows is { } result)
