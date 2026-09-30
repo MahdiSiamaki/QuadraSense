@@ -2,15 +2,30 @@
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent, DataZoomComponent } from 'echarts/components'
+import {
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  DataZoomComponent,
+  MarkAreaComponent,
+} from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { formatCompact, formatFull } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
 import { chartColor } from '@/lib/chart-colors'
 import { fillCalendar, isMissing } from '@/lib/calendar'
+import { feedQualityMarkArea, feedQualityTooltip } from '@/lib/feed-quality-bands'
 import type { DailyChurn } from '@/api/dashboard'
 
-echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, CanvasRenderer])
+echarts.use([
+  LineChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  DataZoomComponent,
+  MarkAreaComponent,
+  CanvasRenderer,
+])
 
 /**
  * SIM changes and handset changes per day.
@@ -23,8 +38,13 @@ echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, DataZo
  * seeing that handset changes dwarf SIM changes is the main thing this chart has to say.
  */
 const props = withDefaults(
-  defineProps<{ data: DailyChurn[]; height?: string }>(),
-  { height: '18rem' },
+  defineProps<{
+    data: DailyChurn[]
+    height?: string
+    /** Days the feed itself looked wrong, date to reason: shaded, and said in the tooltip. */
+    flagged?: ReadonlyMap<string, string>
+  }>(),
+  { height: '18rem', flagged: () => new Map<string, string>() },
 )
 
 const container = ref<HTMLElement | null>(null)
@@ -68,7 +88,7 @@ function render() {
             `<strong>${row.date}</strong>`,
             `SIM changes &nbsp; ${formatFull(row.simChanges)}`,
             `Handset changes &nbsp; ${formatFull(row.deviceChanges)}`,
-          ].join('<br/>')
+          ].join('<br/>') + feedQualityTooltip(row.date, props.flagged)
         },
       },
       xAxis: {
@@ -92,6 +112,10 @@ function render() {
           areaStyle: { opacity: 0.12 },
           lineStyle: { width: 2 },
           symbol: 'none',
+          markArea: feedQualityMarkArea(
+            days.map((d) => d.date),
+            props.flagged,
+          ),
         },
         {
           name: 'SIM changes',
@@ -124,7 +148,7 @@ onBeforeUnmount(() => {
   chart.value = null
 })
 
-watch(() => props.data, render, { deep: true })
+watch(() => [props.data, props.flagged], render, { deep: true })
 watch(isDark, () => requestAnimationFrame(render))
 </script>
 

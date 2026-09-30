@@ -8,17 +8,19 @@ import {
   LegendComponent,
   DataZoomComponent,
   MarkLineComponent,
+  MarkAreaComponent,
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { formatCompact, formatFull, formatSigned } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
 import { chartColor, withAlpha } from '@/lib/chart-colors'
 import { fillCalendar, isMissing } from '@/lib/calendar'
+import { feedQualityMarkArea, feedQualityTooltip } from '@/lib/feed-quality-bands'
 import type { DailyChange } from '@/api/dashboard'
 
 echarts.use([
   BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent,
-  DataZoomComponent, MarkLineComponent, CanvasRenderer,
+  DataZoomComponent, MarkLineComponent, MarkAreaComponent, CanvasRenderer,
 ])
 
 /**
@@ -43,8 +45,10 @@ const props = withDefaults(
     height?: string
     /** Missing days are drawn as gaps, not interpolated. */
     missingDates?: string[]
+    /** Days the feed itself looked wrong, date to reason: shaded, and said in the tooltip. */
+    flagged?: ReadonlyMap<string, string>
   }>(),
-  { height: '20rem', missingDates: () => [] },
+  { height: '20rem', missingDates: () => [], flagged: () => new Map<string, string>() },
 )
 
 const container = ref<HTMLElement | null>(null)
@@ -104,7 +108,7 @@ function render() {
             `removed &nbsp; ${formatFull(row.removed)}`,
             `net &nbsp; <strong>${formatSigned(row.net)}</strong>`,
             `active &nbsp; ${formatFull(row.cumulative)}`,
-          ].join('<br/>')
+          ].join('<br/>') + feedQualityTooltip(row.date, props.flagged)
         },
       },
       xAxis: {
@@ -160,6 +164,7 @@ function render() {
           data: value((d) => d.added),
           itemStyle: { color: added },
           barMaxWidth: 14,
+          markArea: feedQualityMarkArea(dates, props.flagged),
         },
         {
           name: 'Removed',
@@ -203,7 +208,7 @@ onBeforeUnmount(() => {
   chart.value = null
 })
 
-watch(() => props.data, render, { deep: true })
+watch(() => [props.data, props.flagged], render, { deep: true })
 watch(isDark, () => requestAnimationFrame(render))
 </script>
 
