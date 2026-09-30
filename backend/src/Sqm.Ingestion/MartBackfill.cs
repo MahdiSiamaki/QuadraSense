@@ -1,4 +1,3 @@
-using System.Globalization;
 using Sqm.Application.DataImport;
 
 namespace Sqm.Ingestion;
@@ -22,13 +21,12 @@ namespace Sqm.Ingestion;
 /// </remarks>
 internal static class MartBackfill
 {
-    /// <summary>
-    /// Runs the backfill and returns a process exit code.
-    /// </summary>
+    /// <summary>Runs the backfill and returns a process exit code.</summary>
     /// <remarks>
-    /// A failure on one day does not stop the run. Days are independent, so stopping at the
-    /// first failure would leave the operator re-running the ones that already worked to reach
-    /// the ones that did not; reporting the failures at the end lets them re-run just those.
+    /// Skips what is already built, unless asked not to. On a constrained machine a pass can lose
+    /// a handful of days to memory pressure, and converging then means running again; rebuilding
+    /// all 133 to redo four is fifty minutes of work for four minutes of it. <c>--force</c> is for
+    /// the case that needs it: the aggregates themselves changed, so every day is recomputed.
     /// </remarks>
     public static async Task<int> RunAsync(
         IAnalyticsIngestionStore analytics,
@@ -37,102 +35,20 @@ internal static class MartBackfill
         bool force,
         CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(analytics);
+
         var days = await analytics.GetBusinessDatesAsync(from, to, ct).ConfigureAwait(false);
+        var built = force
+            ? []
+            : (await analytics.GetBuiltMartDatesAsync(ct).ConfigureAwait(false)).ToHashSet();
 
-        if (days.Count == 0)
+        return await DayBackfill.RunAsync("day-level marts", days, built, async day =>
         {
-            Console.WriteLine("no days in the event log for that range");
-            return 0;
-        }
-
-        var total = days.Count;
-
-        // Skip what is already built, unless asked not to.
-        //
-        // On a constrained machine a pass can lose a handful of days to memory pressure, and
-        // converging then means running again. Rebuilding all 133 to redo four is fifty minutes
-        // of work for four minutes of it - and it is why this loop was taking passes rather than
-        // finishing. --force is there for the case that actually needs it: the aggregates
-        // themselves changed, so every day has to be recomputed.
-        if (!force)
-        {
-            var built = (await analytics.GetBuiltMartDatesAsync(ct).ConfigureAwait(false)).ToHashSet();
-            days = [.. days.Where(d => !built.Contains(d))];
-
-            if (days.Count == 0)
-            {
-                Console.WriteLine($"all {total} day(s) already built; pass --force to rebuild them");
-                return 0;
-            }
-
-            if (days.Count < total)
-            {
-                Console.WriteLine($"{total - days.Count} day(s) already built, skipping them");
-            }
-        }
-
-        Console.WriteLine($"rebuilding day-level marts for {days.Count} day(s), "
-            + $"{days[0]:yyyy-MM-dd} .. {days[^1]:yyyy-MM-dd}");
-
-        var failures = new List<string>();
-        var started = DateTime.UtcNow;
-
-        for (var i = 0; i < days.Count; i++)
-        {
-            var day = days[i];
             var sequence = await analytics.GetSequenceForDateAsync(day, ct).ConfigureAwait(false) ?? 0;
-            var dayStarted = DateTime.UtcNow;
-
-            try
-            {
-                await analytics.RefreshChangeMartsForDayAsync(day, sequence, ct).ConfigureAwait(false);
-
-                var elapsed = (DateTime.UtcNow - dayStarted).TotalSeconds;
-                Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
-                    $"  {i + 1,3}/{days.Count}  {day:yyyy-MM-dd}  {elapsed,6:F1}s"));
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                Console.WriteLine($"  {i + 1,3}/{days.Count}  {day:yyyy-MM-dd}  FAILED: {ex.Message}");
-                failures.Add(day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-            }
-        }
-
-        var minutes = (DateTime.UtcNow - started).TotalMinutes;
-        Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"finished in {minutes:F1} minutes, {failures.Count} failed"));
-
-        if (failures.Count > 0)
-        {
-            Console.WriteLine("re-run just these: --from " + failures[0] + " --to " + failures[^1]);
-            return 1;
-        }
-
-        return 0;
+            await analytics.RefreshChangeMartsForDayAsync(day, sequence, ct).ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
     }
 
     /// <summary>Reads <c>--from</c> and <c>--to</c> off the command line.</summary>
-    public static (DateOnly? From, DateOnly? To) ParseRange(string[] args)
-    {
-        DateOnly? from = null;
-        DateOnly? to = null;
-
-        for (var i = 0; i < args.Length - 1; i++)
-        {
-            if (args[i] == "--from" && TryDate(args[i + 1], out var f))
-            {
-                from = f;
-            }
-            else if (args[i] == "--to" && TryDate(args[i + 1], out var t))
-            {
-                to = t;
-            }
-        }
-
-        return (from, to);
-    }
-
-    private static bool TryDate(string value, out DateOnly date) =>
-        DateOnly.TryParseExact(
-            value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+    public static (DateOnly? From, DateOnly? To) ParseRange(string[] args) => DayBackfill.ParseRange(args);
 }
