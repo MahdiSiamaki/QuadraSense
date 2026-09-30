@@ -523,9 +523,12 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             // cap - five attempts, five failures, and the day blocked every day after it. Two
             // aggregations are linear, and a GROUP BY spills to disk where an array cannot.
             // Same result: checked against the array form on real days where that one fits.
+            //
+            // One row whatever the count, so a day with no changes reads zero rather than
+            // missing - and a day missing from this mart is one whose refresh did not finish.
             $$"""
             INSERT INTO {{_database}}.agg_sim_change_daily (data_date, msisdn_changed)
-            SELECT data_date, count()
+            SELECT {businessDate:Date}, count()
             FROM (
                 SELECT data_date, msisdn
                 FROM (
@@ -539,7 +542,6 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
                 GROUP BY data_date, msisdn
                 HAVING countIf(removed) > 0 AND countIf(added AND NOT removed) > 0
             )
-            GROUP BY data_date
             """,
 
             // Handset changes: the same shape, on IMEI. Measured over the whole window at 51.3%
@@ -547,7 +549,7 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             // string, the one the array form ran out of memory on.
             $$"""
             INSERT INTO {{_database}}.agg_device_change_daily (data_date, msisdn_changed)
-            SELECT data_date, count()
+            SELECT {businessDate:Date}, count()
             FROM (
                 SELECT data_date, msisdn
                 FROM (
@@ -561,7 +563,6 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
                 GROUP BY data_date, msisdn
                 HAVING countIf(removed) > 0 AND countIf(added AND NOT removed) > 0
             )
-            GROUP BY data_date
             """,
         ];
 
@@ -766,12 +767,21 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
         await using var connection = CreateConnection();
         await using var command = connection.CreateCommand();
 
-        // agg_change_summary_daily is the last of the four day-level marts a refresh writes, so
-        // a day present here had all four succeed. Checking the cheapest one would report days
-        // as done that are only partly built.
-        command.CommandText =
-            $"SELECT DISTINCT toString(data_date) FROM {_database}.agg_change_summary_daily "
-            + "ORDER BY data_date";
+        // Built means present in all four day-level marts. This used to read the summary mart
+        // alone, on the belief that it was the last one a refresh writes - it is the second. On
+        // 2026-09-30, 54 of the 233 days had a summary and no SIM or handset figures: the first
+        // backfill lost them to memory (the array form of those two marts), and every later run
+        // skipped them as done. The churn chart drew 18 of them as zero handset changes and left
+        // the other 36 out. Every refresh writes a row to each of the four, zero changes
+        // included, so a day missing from any one of them did not finish.
+        command.CommandText = $"""
+            SELECT toString(data_date) FROM (
+                SELECT DISTINCT data_date FROM {_database}.agg_change_daily
+                INTERSECT SELECT DISTINCT data_date FROM {_database}.agg_change_summary_daily
+                INTERSECT SELECT DISTINCT data_date FROM {_database}.agg_sim_change_daily
+                INTERSECT SELECT DISTINCT data_date FROM {_database}.agg_device_change_daily)
+            ORDER BY data_date
+            """;
 
         var dates = new List<DateOnly>();
         await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);

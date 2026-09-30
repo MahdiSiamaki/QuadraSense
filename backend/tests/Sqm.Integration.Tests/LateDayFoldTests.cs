@@ -330,6 +330,48 @@ public sealed class LateDayFoldTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// A day counts as built only when all four of its day-level marts are, and a day with no
+    /// changes at all is built too.
+    /// </summary>
+    /// <remarks>
+    /// On 2026-09-30, 54 real days had a summary and no SIM or handset figures. The first backfill
+    /// lost those two marts to memory, and every later run skipped the days as done because the
+    /// check read the summary alone. Here the same partial state is made directly.
+    /// </remarks>
+    [Fact]
+    public async Task A_day_is_built_only_when_all_four_of_its_marts_are()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var store = Store(1_000_000);
+        var quiet = new DateOnly(2026, 5, 1);
+        var busy = new DateOnly(2026, 5, 2);
+
+        // Adds only: no SIM change and no handset change anywhere on the day.
+        await ImportAsync(store, quiet, [new(K(1), true), new(K(2), true)]);
+
+        // K(1)'s number moves to another handset.
+        await ImportAsync(store, busy, [new(K(1), false), new(new Binding(K(1).Msisdn, K(1).Imsi, "35000000009999"), true)]);
+
+        await store.RefreshChangeMartsForDayAsync(quiet, 1, ct);
+        await store.RefreshChangeMartsForDayAsync(busy, 2, ct);
+
+        Assert.Equal([quiet, busy], await store.GetBuiltMartDatesAsync(ct));
+        Assert.Equal("1\t0", await QueryAsync($"SELECT count(), sum(msisdn_changed) FROM {_database}.agg_device_change_daily WHERE data_date = '2026-05-01'"));
+        Assert.Equal("1", await QueryAsync($"SELECT sum(msisdn_changed) FROM {_database}.agg_device_change_daily WHERE data_date = '2026-05-02'"));
+
+        // What the lost backfill left: the refresh got past the summary and no further.
+        await QueryAsync($"ALTER TABLE {_database}.agg_device_change_daily DROP PARTITION '2026-05-02'");
+
+        Assert.Equal([quiet], await store.GetBuiltMartDatesAsync(ct));
+    }
+
+    /// <summary>
     /// A day found sharing its sequence with another is given its own when imported again, and
     /// the bindings the collision left wrong are re-derived by date.
     /// </summary>
