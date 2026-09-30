@@ -83,6 +83,20 @@ public interface IAnalyticsIngestionStore
     Task RefreshChangeMartsForDayAsync(DateOnly businessDate, int sequence, CancellationToken ct);
 
     /// <summary>
+    /// Measures one day's file for the feed-quality checks and stores the counts.
+    /// </summary>
+    /// <remarks>
+    /// Idempotent: the day's multi-number SIM list is dropped and rebuilt, and its counts row is
+    /// replaced. Separate from the marts because it describes the feed, not the network - see
+    /// <c>db/analytics/migrations/020_feed_quality.sql</c>.
+    /// </remarks>
+    /// <returns>
+    /// False, having measured nothing, when that migration has not been applied - so a worker
+    /// started ahead of its schema says so on each job instead of failing every import.
+    /// </returns>
+    Task<bool> RefreshFeedQualityForDayAsync(DateOnly businessDate, CancellationToken ct);
+
+    /// <summary>
     /// Confirms the analytics schema is the one this code requires.
     /// </summary>
     /// <remarks>

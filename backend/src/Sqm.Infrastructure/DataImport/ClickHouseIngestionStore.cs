@@ -572,6 +572,95 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
         }
     }
 
+    public async Task<bool> RefreshFeedQualityForDayAsync(DateOnly businessDate, CancellationToken ct)
+    {
+        await using (var connection = CreateConnection())
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"EXISTS TABLE {_database}.dq_daily";
+            if (Convert.ToInt32(await command.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture) != 1)
+            {
+                return false;
+            }
+        }
+
+        var partition = businessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        string[] statements =
+        [
+            $"ALTER TABLE {_database}.dq_multi_number_sim_day DROP PARTITION '{partition}'",
+
+            // SIMs carrying two or more phone numbers today. Two GROUP BYs rather than
+            // uniqExact(msisdn) per SIM, for the reason the churn marts give: linear, and able to
+            // spill. A day has 5-9 million SIMs.
+            $$"""
+            INSERT INTO {{_database}}.dq_multi_number_sim_day (data_date, imsi, numbers, rows)
+            SELECT {businessDate:Date}, imsi, count() AS numbers, sum(r) AS rows
+            FROM (
+                SELECT imsi, msisdn, count() AS r
+                FROM {{_database}}.binding_event
+                WHERE data_date = {businessDate:Date}
+                GROUP BY imsi, msisdn
+            )
+            GROUP BY imsi
+            HAVING numbers > 1
+            """,
+
+            // The day's counts. The shifted-IMEI test is the one measured on the real files: a
+            // 14-digit IMEI whose TAC GSMA does not know, ending in 0, that becomes a GSMA TAC
+            // with one digit put back in front. 99.6% of the unknown IMEIs on 20 September pass
+            // it; by chance about 2.7% would, which is part of the ordinary days' reference.
+            $$"""
+            INSERT INTO {{_database}}.dq_daily
+                (data_date, rows_total, sims_total, unknown_device_rows, malformed_imei_rows,
+                 unknown_tac_rows, shifted_imei_rows, multi_number_sims, multi_number_sim_rows,
+                 tac_version_id, computed_at)
+            WITH
+                (SELECT count() FROM {{_database}}.dq_multi_number_sim_day
+                  WHERE data_date = {businessDate:Date}) AS multi_sims,
+                (SELECT sum(rows) FROM {{_database}}.dq_multi_number_sim_day
+                  WHERE data_date = {businessDate:Date}) AS multi_rows,
+                (SELECT version_id FROM {{_database}}.tac_active FINAL
+                  ORDER BY activated_at DESC LIMIT 1) AS tac_version,
+                (SELECT sum(n) FROM (
+                    SELECT imei, any(n) AS n
+                    FROM (
+                        SELECT imei, count() AS n
+                        FROM {{_database}}.binding_event
+                        WHERE data_date = {businessDate:Date}
+                          AND length(imei) = 14 AND endsWith(imei, '0') AND imei != '00000000000000'
+                          AND tac NOT IN (SELECT tac FROM {{_database}}.tac)
+                        GROUP BY imei
+                    )
+                    ARRAY JOIN range(10) AS lead
+                    WHERE concat(toString(lead), substring(imei, 1, 7)) IN (SELECT tac FROM {{_database}}.tac)
+                    GROUP BY imei
+                )) AS shifted
+            SELECT
+                {businessDate:Date},
+                count(),
+                uniqExact(imsi),
+                countIf(imei = '000000'),
+                countIf(length(imei) != 14 AND imei != '000000'),
+                countIf(length(imei) = 14 AND tac NOT IN (SELECT tac FROM {{_database}}.tac)),
+                ifNull(shifted, 0),
+                multi_sims,
+                ifNull(multi_rows, 0),
+                ifNull(tac_version, 0),
+                now64(3)
+            FROM {{_database}}.binding_event
+            WHERE data_date = {businessDate:Date}
+            """,
+        ];
+
+        foreach (var sql in statements)
+        {
+            await ExecuteBoundedAsync(sql, businessDate, ct).ConfigureAwait(false);
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// Runs one statement over HTTP with its resource limits as query parameters.
     /// </summary>
