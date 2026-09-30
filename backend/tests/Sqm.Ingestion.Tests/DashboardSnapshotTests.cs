@@ -29,6 +29,9 @@ public sealed class DashboardSnapshotTests
 
         public bool StatementsFail { get; init; }
 
+        /// <summary>What the duplicate checks find: extra rows, by the check's SQL.</summary>
+        public Func<string, long?> Duplicates { get; init; } = _ => 0;
+
         /// <summary>Every store call, in order, with its interesting argument.</summary>
         public List<string> Calls { get; } = [];
 
@@ -77,6 +80,8 @@ public sealed class DashboardSnapshotTests
                 case "SetMartsReadyAsync":
                     Calls.Add($"marts ready {args[0]} {args[1]}");
                     return Task.CompletedTask;
+                case "ScalarAsync":
+                    return Task.FromResult(Duplicates((string)args[0]!));
                 default:
                     return Stub.Default(method);
             }
@@ -157,6 +162,50 @@ public sealed class DashboardSnapshotTests
     public async Task A_rebuild_that_fails_leaves_the_snapshot_owed_rather_than_forgotten()
     {
         var run = new Harness { Waiting = 0, OwedSince = OwedAt, StatementsFail = true };
+
+        await run.Build().AfterDayAsync(Job, run.Context(), CancellationToken.None);
+
+        Assert.DoesNotContain("marts ready 7 True", run.Calls);
+        Assert.DoesNotContain(run.Calls, c => c.StartsWith("settle", StringComparison.Ordinal));
+        Assert.Equal("owed SQM", run.Calls[^1]);
+    }
+
+    /// <summary>
+    /// A delivery another writer doubled is rebuilt, not published.
+    /// </summary>
+    /// <remarks>
+    /// 2026-09-30: the laptop slept mid-rebuild, the idle worker started a fresh one, and the lost
+    /// job's INSERT - still running in ClickHouse - landed after the fresh rebuild had dropped the
+    /// partition. Every device row of delivery 216 was there twice.
+    /// </remarks>
+    [Fact]
+    public async Task A_delivery_found_with_duplicate_rows_is_rebuilt_instead_of_published()
+    {
+        var checks = 0;
+        var run = new Harness
+        {
+            Waiting = 0,
+            OwedSince = OwedAt,
+
+            // The first check of the first pass finds the device mart doubled; after that, clean.
+            Duplicates = sql => Interlocked.Increment(ref checks) == 1 && sql.Contains("agg_device_daily", StringComparison.Ordinal)
+                ? 431_189
+                : 0,
+        };
+
+        await run.Build().AfterDayAsync(Job, run.Context(), CancellationToken.None);
+
+        var statementsPerPass = run.Calls.Count(c => c == "mart statement") / 2;
+        Assert.True(statementsPerPass > 0);
+        Assert.Equal(1, run.Calls.Count(c => c == "marts ready 7 True"));
+        Assert.Equal($"settle SQM {OwedAt:O}", run.Calls[^1]);
+        Assert.Contains(run.Notes, n => n.Contains("Not published: agg_device_daily has 431,189 duplicate row(s)", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Duplicates_that_do_not_go_away_are_never_published_and_stay_owed()
+    {
+        var run = new Harness { Waiting = 0, OwedSince = OwedAt, Duplicates = _ => 1 };
 
         await run.Build().AfterDayAsync(Job, run.Context(), CancellationToken.None);
 

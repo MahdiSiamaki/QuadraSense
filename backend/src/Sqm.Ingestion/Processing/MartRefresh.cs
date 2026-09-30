@@ -150,6 +150,30 @@ internal sealed partial class MartRefresh(
 
             if (failures == 0)
             {
+                // Checked before it is published, not assumed. Every statement dropping its own
+                // partition first makes the script idempotent - but only against itself. A write
+                // from somewhere else that lands after the drop is simply added to: on 2026-09-30
+                // the laptop slept mid-rebuild, the job was declared lost, the idle worker began a
+                // fresh rebuild, and the lost job's INSERT - still running inside ClickHouse -
+                // finished two minutes after the fresh one had dropped the partition. Delivery 216
+                // held every device row twice: 244,507,534 active bindings against 122,253,767.
+                var duplicated = await FindDuplicatesAsync(sequence, ct).ConfigureAwait(false);
+
+                if (duplicated.Count > 0)
+                {
+                    failures = duplicated.Count;
+
+                    if (onProgress is not null)
+                    {
+                        await onProgress(
+                            $"Not published: {string.Join(", ", duplicated)} - a write from outside "
+                            + "this rebuild landed in the delivery. Rebuilding it.").ConfigureAwait(false);
+                    }
+                }
+            }
+
+            if (failures == 0)
+            {
                 // Published only now. Completion is a fact the refresh records, not something
                 // inferred from rows existing.
                 await analytics.SetMartsReadyAsync(sequence, true, statements, ct)
@@ -172,6 +196,54 @@ internal sealed partial class MartRefresh(
         }
 
         return failures;
+    }
+
+    /// <summary>
+    /// Each mart and the key every one of its rows is unique on, within one delivery.
+    /// </summary>
+    /// <remarks>
+    /// Taken from each table's sorting key. One refresh writes each key once, so more rows than
+    /// keys means a second writer. The marts are Summing- and ReplacingMergeTrees and are read
+    /// without FINAL, so a duplicate row is not a cosmetic problem: it is a doubled figure.
+    /// </remarks>
+    private static readonly (string Table, string Key)[] UniqueWithinDelivery =
+    [
+        ("agg_device_daily", "tac, active"),
+        ("agg_device_model", "tac"),
+        ("agg_kpi_daily", "seq"),
+        ("agg_device_class_daily", "measure, device_class"),
+        ("agg_capability_daily", "measure, capability"),
+        ("agg_dimension_daily", "dimension, dim_value"),
+    ];
+
+    /// <summary>The marts holding more rows than keys for this delivery, if any.</summary>
+    private async Task<IReadOnlyList<string>> FindDuplicatesAsync(int sequence, CancellationToken ct)
+    {
+        var duplicated = new List<string>();
+
+        foreach (var (table, key) in UniqueWithinDelivery)
+        {
+            var extra = await analytics.ScalarAsync(
+                $"SELECT count() - uniqExact({key}) FROM sqm.{table} WHERE seq = {sequence}", ct)
+                .ConfigureAwait(false) ?? 0;
+
+            if (extra > 0)
+            {
+                duplicated.Add($"{table} has {extra:N0} duplicate row(s)");
+            }
+        }
+
+        // Not per delivery - one table, truncated and refilled by every refresh - so it is open to
+        // the same second writer.
+        var capability = await analytics.ScalarAsync(
+            "SELECT count() - uniqExact(tac) FROM sqm.tac_capability", ct).ConfigureAwait(false) ?? 0;
+
+        if (capability > 0)
+        {
+            duplicated.Add($"tac_capability has {capability:N0} duplicate row(s)");
+        }
+
+        return duplicated;
     }
 
     private async Task<int> RunPassAsync(
