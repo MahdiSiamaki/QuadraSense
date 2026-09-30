@@ -14,6 +14,7 @@ export const Permission = {
   DataExport: 'data.export',
   LookupImsi: 'lookup.imsi',
   IdentifierReveal: 'identifier.reveal',
+  ExplorerQuery: 'explorer.query',
   DeviceView: 'device.view',
   LookupImei: 'lookup.imei',
   DeviceIdentifiers: 'device.identifiers',

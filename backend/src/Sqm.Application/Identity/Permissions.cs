@@ -85,6 +85,17 @@ public static class Permissions
     /// </remarks>
     public const string IdentifierReveal = "identifier.reveal";
 
+    /// <summary>Compose and run ad-hoc queries in the Explorer.</summary>
+    /// <remarks>
+    /// Bulk by design, so separate from the lookups - decided by the product owner, 2026-09-30.
+    /// It does not replace them: a query that filters on or returns numbers, SIMs or handsets
+    /// also needs <see cref="LookupSubscriber"/>, <see cref="LookupImsi"/> or
+    /// <see cref="LookupImei"/>, and <see cref="IdentifierReveal"/> decides whether they come
+    /// back complete. With this alone a person can query models, TACs and dates, and nobody by
+    /// name. See db/operational/migrations/012_explorer_permission.sql.
+    /// </remarks>
+    public const string ExplorerQuery = "explorer.query";
+
     // ------------------------------------------------------------------ imports
     /// <summary>Open the Import Center and read job history.</summary>
     public const string ImportView = "import.view";
@@ -132,7 +143,7 @@ public static class Permissions
     /// <summary>Every permission code known to this build.</summary>
     public static readonly FrozenSet<string> All = new[]
     {
-        DashboardView, LookupSubscriber, DataExport, LookupImsi, IdentifierReveal,
+        DashboardView, LookupSubscriber, DataExport, LookupImsi, IdentifierReveal, ExplorerQuery,
         DeviceView, LookupImei, DeviceIdentifiers, DeviceImageManage,
         ImportView, ImportUploadSqm, ImportUploadTac, ImportReprocess, ImportCancel, ImportDelete,
         TacActivate, TacRollback,
