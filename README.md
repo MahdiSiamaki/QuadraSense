@@ -95,6 +95,25 @@ Forward-only. The runner refuses to start if an already-applied migration's chec
 an edited migration is a different migration, and the database it ran against no longer matches the
 repository.
 
+**When it refuses.** Find out whether the edit changed the schema, not only the text. Compare
+`SHOW CREATE TABLE` for every object the migration creates with the file. If they differ, the fix is
+a new migration that brings the database to the file. If they are identical, the edit was comments
+or layout, and a person with access to the database records the file's checksum as applied — a
+deliberate, reviewed act, because it is the migration history that is being changed:
+
+```sql
+INSERT INTO sqm.schema_migration (version, name, checksum, applied_at, duration_ms)
+VALUES ('<version>', '<name>', '<sha-256 of the file, CRLF normalised to LF>', now64(3), 0);
+```
+
+The table keeps the latest row per version, so the old checksum stays in its history.
+
+Done once so far, on the development database: `019_device_module` was edited after it ran on
+2026-09-15 (applied 18:25 UTC, committed 18:57 UTC). On 2026-09-30 the live `binding_by_imei`,
+`mv_binding_by_imei` and `agg_device_model` were compared with the file and are identical — columns,
+types, engine, sort key, partitioning and the view's query. Recorded checksum `f4ee6c0f…`, file
+checksum `e66cac95…`. A fresh environment runs the file as it stands and never meets this.
+
 ### 4. Grants, and the first administrator
 
 ```bash
