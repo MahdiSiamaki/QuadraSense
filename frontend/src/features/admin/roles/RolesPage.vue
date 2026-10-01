@@ -95,8 +95,8 @@ async function submit() {
   <div class="flex flex-col gap-5">
     <header class="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h2 class="text-[var(--text-lg)] font-semibold tracking-tight">Roles</h2>
-        <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+        <h2 class="text-lg font-semibold tracking-tight">Roles</h2>
+        <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
           A role is a named set of permissions. Users receive the union of the roles they hold.
         </p>
       </div>
@@ -104,7 +104,7 @@ async function submit() {
       <div class="flex items-center gap-2">
         <RouterLink
           to="/settings/roles/matrix"
-          class="rounded-[var(--radius-md)] border px-3 py-1.5 text-[var(--text-sm)] font-medium hover:bg-[var(--c-surface-hover)]"
+          class="rounded-[var(--radius-md)] border px-3 py-1.5 text-sm font-medium hover:bg-[var(--c-surface-hover)]"
         >
           Permission matrix
         </RouterLink>
@@ -130,30 +130,30 @@ async function submit() {
         >
           <div class="flex items-start justify-between gap-3">
             <h2
-              class="text-[var(--text-sm)] font-semibold group-hover:text-[var(--c-accent)]"
+              class="text-sm font-semibold group-hover:text-[var(--c-accent)]"
             >
               {{ role.displayName }}
             </h2>
             <span
               v-if="role.isSystem"
-              class="shrink-0 rounded-full bg-[var(--c-surface-sunken)] px-1.5 py-0.5 text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+              class="shrink-0 rounded-full bg-[var(--c-surface-sunken)] px-1.5 py-0.5 text-2xs text-[var(--c-text-muted)]"
               title="Built in. Cannot be deleted or renamed; its permissions can still be changed."
             >
               built-in
             </span>
           </div>
 
-          <code class="mt-0.5 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          <code class="mt-0.5 text-2xs text-[var(--c-text-muted)]">
             {{ role.code }}
           </code>
 
-          <p class="mt-2 flex-1 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+          <p class="mt-2 flex-1 text-xs text-[var(--c-text-secondary)]">
             {{ role.description || 'No description.' }}
           </p>
 
-          <dl class="tabular mt-3 flex gap-5 border-t pt-2.5 text-[var(--text-xs)]">
+          <dl class="tabular mt-3 flex gap-5 border-t pt-2.5 text-xs">
             <div>
-              <dt class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">Permissions</dt>
+              <dt class="text-2xs text-[var(--c-text-muted)]">Permissions</dt>
               <dd class="font-semibold">
                 {{ role.permissionCodes.length }}
                 <span class="font-normal text-[var(--c-text-muted)]">
@@ -162,7 +162,7 @@ async function submit() {
               </dd>
             </div>
             <div>
-              <dt class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">Members</dt>
+              <dt class="text-2xs text-[var(--c-text-muted)]">Members</dt>
               <dd
                 class="font-semibold"
                 :style="role.memberCount === 0 ? { color: 'var(--c-text-muted)' } : undefined"
@@ -209,14 +209,14 @@ async function submit() {
         />
 
         <fieldset>
-          <legend class="text-[var(--text-xs)] font-medium text-[var(--c-text-secondary)]">
+          <legend class="text-xs font-medium text-[var(--c-text-secondary)]">
             Permissions ({{ selected.length }} selected)
           </legend>
 
           <div class="mt-2 flex flex-col gap-3">
             <div v-for="[category, permissions] in categories" :key="category">
               <h4
-                class="mb-1 text-[var(--text-2xs)] font-medium tracking-wide text-[var(--c-text-muted)] uppercase"
+                class="mb-1 text-2xs font-medium tracking-wide text-[var(--c-text-muted)] uppercase"
               >
                 {{ category }}
               </h4>
@@ -238,11 +238,11 @@ async function submit() {
                     @change="toggle(permission.code)"
                   />
                   <span class="min-w-0">
-                    <span class="flex items-center gap-1.5 text-[var(--text-sm)]">
+                    <span class="flex items-center gap-1.5 text-sm">
                       {{ permission.displayName }}
                       <span
                         v-if="permission.isDangerous"
-                        class="rounded-full px-1.5 text-[var(--text-2xs)] font-medium"
+                        class="rounded-full px-1.5 text-2xs font-medium"
                         :style="{
                           backgroundColor: 'var(--c-warning-subtle)',
                           color: 'var(--c-warning)',
@@ -251,7 +251,7 @@ async function submit() {
                         sensitive
                       </span>
                     </span>
-                    <span class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+                    <span class="block text-2xs text-[var(--c-text-muted)]">
                       {{ permission.description }}
                     </span>
                   </span>

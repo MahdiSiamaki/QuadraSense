@@ -52,7 +52,7 @@ watch([search, roleFilter, activeFilter, sort], () => {
 })
 
 const selectClass =
-  'rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-[var(--text-xs)] ' +
+  'rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-xs ' +
   'text-[var(--c-text)]'
 </script>
 
@@ -60,8 +60,8 @@ const selectClass =
   <div class="flex flex-col gap-5">
     <header class="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h2 class="text-[var(--text-lg)] font-semibold tracking-tight">Users</h2>
-        <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+        <h2 class="text-lg font-semibold tracking-tight">Users</h2>
+        <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
           Who can sign in, and what each of them may do.
         </p>
       </div>
@@ -75,7 +75,7 @@ const selectClass =
 
     <Card flush>
       <template #actions>
-        <span class="tabular text-[var(--text-xs)] text-[var(--c-text-muted)]">
+        <span class="tabular text-xs text-[var(--c-text-muted)]">
           {{ users.data.value?.total ?? 0 }} total
         </span>
       </template>
@@ -87,7 +87,7 @@ const selectClass =
           v-model="search"
           type="search"
           placeholder="Search name, username or email"
-          class="min-w-0 flex-1 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2.5 py-1.5 text-[var(--text-sm)] placeholder:text-[var(--c-text-muted)]"
+          class="min-w-0 flex-1 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2.5 py-1.5 text-sm placeholder:text-[var(--c-text-muted)]"
         />
 
         <label class="sr-only" for="user-role">Role</label>
@@ -123,9 +123,9 @@ const selectClass =
         @retry="users.refetch()"
       >
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-[var(--text-sm)]">
+          <table class="w-full text-left text-sm">
             <thead
-              class="border-b text-[var(--text-2xs)] tracking-wide text-[var(--c-text-muted)] uppercase"
+              class="border-b text-2xs tracking-wide text-[var(--c-text-muted)] uppercase"
             >
               <tr>
                 <th scope="col" class="px-4 py-2 font-medium">User</th>
@@ -147,7 +147,7 @@ const selectClass =
                   >
                     {{ user.displayName }}
                   </RouterLink>
-                  <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+                  <p class="text-2xs text-[var(--c-text-muted)]">
                     {{ user.username
                     }}<template v-if="user.jobTitle"> · {{ user.jobTitle }}</template>
                   </p>
@@ -163,19 +163,19 @@ const selectClass =
                     <span
                       v-for="role in user.roles"
                       :key="role.id"
-                      class="rounded-full bg-[var(--c-surface-sunken)] px-1.5 py-0.5 text-[var(--text-2xs)] text-[var(--c-text-secondary)]"
+                      class="rounded-full bg-[var(--c-surface-sunken)] px-1.5 py-0.5 text-2xs text-[var(--c-text-secondary)]"
                     >
                       {{ role.displayName }}
                     </span>
                   </div>
-                  <span v-else class="text-[var(--text-2xs)] text-[var(--c-warning)]">
+                  <span v-else class="text-2xs text-[var(--c-warning)]">
                     no role
                   </span>
                 </td>
 
                 <td class="px-4 py-2.5">
                   <span
-                    class="inline-flex items-center gap-1.5 text-[var(--text-xs)]"
+                    class="inline-flex items-center gap-1.5 text-xs"
                     :style="{
                       color: user.isActive ? 'var(--c-text-secondary)' : 'var(--c-text-muted)',
                     }"
@@ -193,7 +193,7 @@ const selectClass =
                   </span>
                   <span
                     v-if="user.isLocked"
-                    class="ml-1.5 rounded-full px-1.5 py-0.5 text-[var(--text-2xs)] font-medium"
+                    class="ml-1.5 rounded-full px-1.5 py-0.5 text-2xs font-medium"
                     :style="{
                       backgroundColor: 'var(--c-warning-subtle)',
                       color: 'var(--c-warning)',
@@ -204,7 +204,7 @@ const selectClass =
                   </span>
                 </td>
 
-                <td class="tabular px-4 py-2.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+                <td class="tabular px-4 py-2.5 text-xs text-[var(--c-text-secondary)]">
                   <span v-if="user.lastLoginAt" :title="formatDateTime(user.lastLoginAt)">
                     {{ formatRelative(user.lastLoginAt) }}
                   </span>

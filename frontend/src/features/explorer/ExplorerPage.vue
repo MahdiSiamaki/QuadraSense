@@ -352,8 +352,8 @@ const eventsNote = computed(() =>
   <div class="flex flex-col gap-5">
     <header class="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Explorer</h1>
-        <p class="mt-0.5 max-w-3xl text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+        <h1 class="text-xl font-semibold tracking-tight">Explorer</h1>
+        <p class="mt-0.5 max-w-3xl text-sm text-[var(--c-text-secondary)]">
           Ask questions of current bindings and the dated event log. Every query is costed by the server before it
           runs, kept within a budget, and recorded in the audit log - which fields, never which values.
         </p>
@@ -361,7 +361,7 @@ const eventsNote = computed(() =>
 
       <p
         v-if="dataThrough"
-        class="tabular inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[var(--text-xs)] text-[var(--c-text-secondary)]"
+        class="tabular inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-[var(--c-text-secondary)]"
         title="The latest day in the event log. Every answer here is as of this day."
       >
         <span class="size-1.5 rounded-full bg-[var(--c-success)]" aria-hidden="true" />
@@ -409,11 +409,11 @@ const eventsNote = computed(() =>
                 {{ d.label }}
               </button>
             </div>
-            <p class="min-w-0 flex-1 text-[var(--text-xs)] text-[var(--c-text-muted)]">{{ dataset?.description }}</p>
+            <p class="min-w-0 flex-1 text-xs text-[var(--c-text-muted)]">{{ dataset?.description }}</p>
 
             <span
               v-if="editing"
-              class="inline-flex items-center gap-1 rounded-full bg-[var(--c-accent-subtle)] px-2 py-0.5 text-[var(--text-2xs)] font-medium text-[var(--c-accent)]"
+              class="inline-flex items-center gap-1 rounded-full bg-[var(--c-accent-subtle)] px-2 py-0.5 text-2xs font-medium text-[var(--c-accent)]"
             >
               Saved query: {{ editing.name }}
             </span>
@@ -421,8 +421,8 @@ const eventsNote = computed(() =>
           </div>
 
           <section class="flex flex-col gap-2" aria-labelledby="explorer-where">
-            <h2 id="explorer-where" class="text-[var(--text-sm)] font-semibold">Which rows</h2>
-            <p v-if="eventsNote" class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">{{ eventsNote }}</p>
+            <h2 id="explorer-where" class="text-sm font-semibold">Which rows</h2>
+            <p v-if="eventsNote" class="text-2xs text-[var(--c-text-muted)]">{{ eventsNote }}</p>
             <ConditionTree
               :node="draft.where"
               :fields="fields"
@@ -433,7 +433,7 @@ const eventsNote = computed(() =>
           </section>
 
           <section class="flex flex-col gap-2 border-t pt-4" aria-labelledby="explorer-shape">
-            <h2 id="explorer-shape" class="text-[var(--text-sm)] font-semibold">What to return</h2>
+            <h2 id="explorer-shape" class="text-sm font-semibold">What to return</h2>
             <ShapeEditor
               :draft="draft"
               :fields="fields"
@@ -446,7 +446,7 @@ const eventsNote = computed(() =>
 
           <ul
             v-if="problems.general.length"
-            class="flex flex-col gap-0.5 rounded-[var(--radius-md)] border border-[var(--c-danger)] bg-[var(--c-danger-subtle)] px-3 py-2 text-[var(--text-xs)] text-[var(--c-danger)]"
+            class="flex flex-col gap-0.5 rounded-[var(--radius-md)] border border-[var(--c-danger)] bg-[var(--c-danger-subtle)] px-3 py-2 text-xs text-[var(--c-danger)]"
             role="alert"
           >
             <li v-for="(p, i) in problems.general" :key="i">{{ p }}</li>
@@ -460,7 +460,7 @@ const eventsNote = computed(() =>
 
           <p
             v-if="message"
-            class="rounded-[var(--radius-md)] border px-3 py-2 text-[var(--text-xs)]"
+            class="rounded-[var(--radius-md)] border px-3 py-2 text-xs"
             :style="{
               borderColor: `var(--c-${message.tone})`,
               backgroundColor: `var(--c-${message.tone}-subtle)`,
@@ -516,7 +516,7 @@ const eventsNote = computed(() =>
       <div class="flex min-w-0 flex-col gap-3">
         <p
           v-if="template?.caution && result"
-          class="rounded-[var(--radius-md)] border px-3 py-2 text-[var(--text-xs)] text-[var(--c-text-secondary)]"
+          class="rounded-[var(--radius-md)] border px-3 py-2 text-xs text-[var(--c-text-secondary)]"
         >
           <span class="font-semibold">{{ template.title }}.</span> {{ template.caution }}
         </p>
@@ -569,10 +569,10 @@ const eventsNote = computed(() =>
       :busy="deleteQuery.isPending.value"
       @close="confirmDelete = null"
     >
-      <p v-if="deleteQuery.isError.value" class="text-[var(--text-xs)] text-[var(--c-danger)]" role="alert">
+      <p v-if="deleteQuery.isError.value" class="text-xs text-[var(--c-danger)]" role="alert">
         Could not delete it. Try again.
       </p>
-      <p v-else class="text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+      <p v-else class="text-xs text-[var(--c-text-secondary)]">
         Only the definition is deleted; no data is.
       </p>
       <template #actions>

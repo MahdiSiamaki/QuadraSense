@@ -104,7 +104,7 @@ const diverging = computed(() => measure.value.diverging)
       :title="bar.detail"
     >
       <span
-        class="w-28 shrink-0 truncate text-right text-[var(--text-xs)]"
+        class="w-28 shrink-0 truncate text-right text-xs"
         :title="bar.row.vendor"
       >
         {{ bar.row.vendor }}
@@ -131,7 +131,7 @@ const diverging = computed(() => measure.value.diverging)
       </div>
 
       <span
-        class="tabular w-24 shrink-0 text-right text-[var(--text-xs)] font-medium"
+        class="tabular w-24 shrink-0 text-right text-xs font-medium"
         :style="{
           color: diverging
             ? bar.positive

@@ -113,13 +113,13 @@ async function submit() {
       session, which is the point of doing it when one is believed compromised - but someone who
       finds their other laptop signed out without warning reasonably reads it as a fault.
     -->
-    <p class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+    <p class="text-xs text-[var(--c-text-muted)]">
       Changing your password signs you out everywhere except this browser.
     </p>
 
     <p
       v-if="unexpected"
-      class="rounded-[var(--radius-md)] border px-2.5 py-2 text-[var(--text-xs)]"
+      class="rounded-[var(--radius-md)] border px-2.5 py-2 text-xs"
       :style="{
         borderColor: 'var(--c-danger)',
         backgroundColor: 'var(--c-danger-subtle)',
@@ -132,7 +132,7 @@ async function submit() {
 
     <p
       v-else-if="change.isSuccess.value"
-      class="rounded-[var(--radius-md)] border px-2.5 py-2 text-[var(--text-xs)]"
+      class="rounded-[var(--radius-md)] border px-2.5 py-2 text-xs"
       :style="{
         borderColor: 'var(--c-success)',
         backgroundColor: 'var(--c-success-subtle)',

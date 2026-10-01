@@ -83,8 +83,8 @@ async function submit() {
       <div class="mb-7 flex items-center gap-2.5">
         <BrandMark :size="34" />
         <div>
-          <h1 class="text-[var(--text-base)] font-semibold tracking-tight">QuadraSense</h1>
-          <p class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+          <h1 class="text-base font-semibold tracking-tight">QuadraSense</h1>
+          <p class="text-xs text-[var(--c-text-muted)]">
             Primary SIM &amp; Device Inventory
           </p>
         </div>
@@ -93,8 +93,8 @@ async function submit() {
       <section
         class="rounded-[var(--radius-lg)] border bg-[var(--c-surface)] p-5 shadow-[var(--shadow-sm)]"
       >
-        <h2 class="text-[var(--text-sm)] font-semibold">Sign in</h2>
-        <p class="mt-0.5 mb-4 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+        <h2 class="text-sm font-semibold">Sign in</h2>
+        <p class="mt-0.5 mb-4 text-xs text-[var(--c-text-muted)]">
           Use the account your administrator created for you.
         </p>
 
@@ -121,7 +121,7 @@ async function submit() {
           -->
           <p
             v-if="failure"
-            class="rounded-[var(--radius-md)] border px-2.5 py-2 text-[var(--text-xs)]"
+            class="rounded-[var(--radius-md)] border px-2.5 py-2 text-xs"
             :style="{
               borderColor: 'var(--c-danger)',
               backgroundColor: 'var(--c-danger-subtle)',
@@ -135,7 +135,7 @@ async function submit() {
 
           <p
             v-else-if="unexpected"
-            class="rounded-[var(--radius-md)] border px-2.5 py-2 text-[var(--text-xs)]"
+            class="rounded-[var(--radius-md)] border px-2.5 py-2 text-xs"
             :style="{
               borderColor: 'var(--c-warning)',
               backgroundColor: 'var(--c-warning-subtle)',
@@ -158,7 +158,7 @@ async function submit() {
         </form>
       </section>
 
-      <p class="mt-4 text-center text-[var(--text-xs)] text-[var(--c-text-muted)]">
+      <p class="mt-4 text-center text-xs text-[var(--c-text-muted)]">
         Forgotten your password? An administrator can reset it for you.
       </p>
     </div>

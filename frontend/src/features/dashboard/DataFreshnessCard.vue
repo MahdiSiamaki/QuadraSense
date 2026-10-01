@@ -138,11 +138,11 @@ function formatRun(run: DayRun, withYear: boolean): string {
       <div class="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
         <!-- Latest day -->
         <div>
-          <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Data through</dt>
-          <dd class="tabular mt-1 text-[var(--text-lg)] font-semibold tracking-tight">
+          <dt class="text-xs text-[var(--c-text-muted)]">Data through</dt>
+          <dd class="tabular mt-1 text-lg font-semibold tracking-tight">
             {{ formatDate(sqm?.latestBusinessDate ?? null) }}
           </dd>
-          <dd class="mt-0.5 text-[var(--text-xs)]" :style="{ color: lagTone }">
+          <dd class="mt-0.5 text-xs" :style="{ color: lagTone }">
             <template v-if="sqm?.daysBehind !== null && sqm?.daysBehind !== undefined">
               {{ sqm.daysBehind }} days behind today
             </template>
@@ -150,7 +150,7 @@ function formatRun(run: DayRun, withYear: boolean): string {
           </dd>
           <dd
             v-if="martBehind"
-            class="mt-1 text-[var(--text-xs)] text-[var(--c-warning)]"
+            class="mt-1 text-xs text-[var(--c-warning)]"
             :title="`The marts are being rebuilt. Figures below are from the last complete delivery.`"
           >
             figures below are from
@@ -162,7 +162,7 @@ function formatRun(run: DayRun, withYear: boolean): string {
             without this the page would show figures that leave out the new days, under a date
             that says nothing is missing.
           -->
-          <dd v-if="sqm?.dashboardPendingSince" class="mt-1 text-[var(--text-xs)] text-[var(--c-warning)]">
+          <dd v-if="sqm?.dashboardPendingSince" class="mt-1 text-xs text-[var(--c-warning)]">
             figures below update once the queued files have landed
             <span class="text-[var(--c-text-muted)]">
               (pending since {{ formatDateTime(sqm.dashboardPendingSince) }})
@@ -172,14 +172,14 @@ function formatRun(run: DayRun, withYear: boolean): string {
 
         <!-- Missing days -->
         <div>
-          <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Days not delivered</dt>
+          <dt class="text-xs text-[var(--c-text-muted)]">Days not delivered</dt>
           <dd
-            class="tabular mt-1 text-[var(--text-lg)] font-semibold tracking-tight"
+            class="tabular mt-1 text-lg font-semibold tracking-tight"
             :style="{ color: missingSummary ? 'var(--c-warning)' : 'var(--c-success)' }"
           >
             {{ missingSummary?.count ?? 0 }}
           </dd>
-          <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+          <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">
             <template v-if="missingSummary">
               {{ visibleRuns.join(', ') }}<template v-if="missingSummary.year">, {{ missingSummary.year }}</template><template v-if="missingSummary.hidden && !showAllRuns">
                 and
@@ -198,11 +198,11 @@ function formatRun(run: DayRun, withYear: boolean): string {
 
         <!-- TAC version -->
         <div>
-          <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Device database</dt>
-          <dd class="mt-1 text-[var(--text-lg)] font-semibold tracking-tight">
+          <dt class="text-xs text-[var(--c-text-muted)]">Device database</dt>
+          <dd class="mt-1 text-lg font-semibold tracking-tight">
             {{ activeTac?.versionLabel ?? 'none active' }}
           </dd>
-          <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+          <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">
             <template v-if="pendingTac.length">
               <RouterLink to="/imports" class="font-medium text-[var(--c-warning)] hover:underline">
                 {{ pendingTac.length }} version(s) waiting for activation
@@ -220,9 +220,9 @@ function formatRun(run: DayRun, withYear: boolean): string {
 
         <!-- Pipeline -->
         <div>
-          <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Import pipeline</dt>
+          <dt class="text-xs text-[var(--c-text-muted)]">Import pipeline</dt>
           <dd
-            class="mt-1 text-[var(--text-lg)] font-semibold tracking-tight"
+            class="mt-1 text-lg font-semibold tracking-tight"
             :style="{
               color:
                 (sqm?.failedLast7Days ?? 0) > 0 ? 'var(--c-danger)' : 'var(--c-text)',
@@ -236,7 +236,7 @@ function formatRun(run: DayRun, withYear: boolean): string {
             </template>
             <template v-else>idle</template>
           </dd>
-          <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+          <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">
             <RouterLink to="/imports" class="hover:text-[var(--c-text)] hover:underline">
               {{ health.data.value?.queued ?? 0 }} queued · open the Import Center
             </RouterLink>

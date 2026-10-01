@@ -99,7 +99,7 @@ async function remove() {
   <div class="shrink-0">
     <button
       type="button"
-      class="rounded-[var(--radius-md)] border px-2.5 py-1.5 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)]"
+      class="rounded-[var(--radius-md)] border px-2.5 py-1.5 text-xs font-medium hover:bg-[var(--c-surface-hover)]"
       @click="open = !open"
     >
       {{ hasImage ? 'Replace image' : 'Add image' }}
@@ -109,19 +109,19 @@ async function remove() {
       v-if="open"
       class="mt-2 w-72 rounded-[var(--radius-md)] border bg-[var(--c-surface)] p-3 shadow-sm"
     >
-      <p class="text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+      <p class="text-xs text-[var(--c-text-secondary)]">
         PNG, JPEG or WebP, up to {{ formatBytes(MAX_BYTES) }}.
       </p>
 
       <input
         type="file"
         accept="image/png,image/jpeg,image/webp"
-        class="mt-2 w-full text-[var(--text-xs)]"
+        class="mt-2 w-full text-xs"
         @change="pick"
       />
 
       <label class="mt-2 block">
-        <span class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        <span class="text-2xs text-[var(--c-text-muted)]">
           Where it came from (kept for provenance)
         </span>
         <input
@@ -129,13 +129,13 @@ async function remove() {
           type="text"
           maxlength="200"
           placeholder="e.g. manufacturer press kit"
-          class="mt-0.5 w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+          class="mt-0.5 w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs"
         />
       </label>
 
       <p
         v-if="problem"
-        class="mt-2 text-[var(--text-2xs)] text-[var(--c-danger)]"
+        class="mt-2 text-2xs text-[var(--c-danger)]"
       >
         {{ problem }}
       </p>
@@ -143,7 +143,7 @@ async function remove() {
       <div class="mt-3 flex items-center gap-2">
         <button
           type="button"
-          class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-3 py-1.5 text-[var(--text-xs)] font-medium text-[var(--c-accent-text)] disabled:opacity-50"
+          class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-3 py-1.5 text-xs font-medium text-[var(--c-accent-text)] disabled:opacity-50"
           :disabled="!chosen || busy"
           @click="upload"
         >
@@ -152,7 +152,7 @@ async function remove() {
         <button
           v-if="hasImage"
           type="button"
-          class="rounded-[var(--radius-md)] px-2 py-1.5 text-[var(--text-xs)] text-[var(--c-danger)] hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
+          class="rounded-[var(--radius-md)] px-2 py-1.5 text-xs text-[var(--c-danger)] hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
           :disabled="busy"
           @click="remove"
         >
@@ -160,7 +160,7 @@ async function remove() {
         </button>
         <button
           type="button"
-          class="ml-auto rounded-[var(--radius-md)] px-2 py-1.5 text-[var(--text-xs)] text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)]"
+          class="ml-auto rounded-[var(--radius-md)] px-2 py-1.5 text-xs text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)]"
           @click="open = false"
         >
           Cancel
@@ -169,7 +169,7 @@ async function remove() {
 
       <p
         v-if="hasImage && updatedAt"
-        class="mt-2 border-t pt-2 text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+        class="mt-2 border-t pt-2 text-2xs text-[var(--c-text-muted)]"
       >
         Current image saved {{ formatDateTime(updatedAt) }}<template v-if="sourceNote">
           · {{ sourceNote }}</template>.

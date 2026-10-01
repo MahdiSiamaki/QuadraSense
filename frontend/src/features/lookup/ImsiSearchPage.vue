@@ -115,8 +115,8 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
 <template>
   <div class="flex flex-col gap-5">
     <header>
-      <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">IMSI search</h1>
-      <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+      <h1 class="text-xl font-semibold tracking-tight">IMSI search</h1>
+      <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
         Find the numbers and handsets bound to a SIM, by full IMSI or by prefix.
       </p>
     </header>
@@ -127,7 +127,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
           <div class="min-w-0 flex-1">
             <label
               for="imsi-input"
-              class="mb-1 block text-[var(--text-xs)] font-medium text-[var(--c-text-secondary)]"
+              class="mb-1 block text-xs font-medium text-[var(--c-text-secondary)]"
             >
               IMSI or prefix
             </label>
@@ -138,7 +138,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
               autocomplete="off"
               spellcheck="false"
               placeholder="432 11 3991761332"
-              class="tabular w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-3 py-2 font-mono text-[var(--text-base)] tracking-wide placeholder:font-sans placeholder:tracking-normal placeholder:text-[var(--c-text-muted)]"
+              class="tabular w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-3 py-2 font-mono text-base tracking-wide placeholder:font-sans placeholder:tracking-normal placeholder:text-[var(--c-text-muted)]"
               :style="problem ? { borderColor: 'var(--c-danger)' } : undefined"
               :aria-invalid="problem ? 'true' : undefined"
               aria-describedby="imsi-help"
@@ -157,7 +157,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
           the term would match, so the minimum reads as a consequence of the network's numbering
           rather than as an arbitrary rule somebody chose.
         -->
-        <p id="imsi-help" class="text-[var(--text-xs)]" role="status">
+        <p id="imsi-help" class="text-xs" role="status">
           <span v-if="problem" class="text-[var(--c-danger)]">{{ problem }}</span>
 
           <span v-else-if="term.digits.length === 0" class="text-[var(--c-text-muted)]">
@@ -178,19 +178,19 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
 
         <!-- Filters appear once a search has been run, and stay if it fails. -->
         <div v-if="searched" class="flex flex-wrap items-end gap-3 border-t pt-3">
-          <label class="flex items-center gap-2 text-[var(--text-xs)]">
+          <label class="flex items-center gap-2 text-xs">
             <input v-model="activeOnly" type="checkbox" />
             Active bindings only
           </label>
 
           <div>
-            <label for="f-type" class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            <label for="f-type" class="block text-2xs text-[var(--c-text-muted)]">
               Device type
             </label>
             <select
               id="f-type"
               v-model="deviceType"
-              class="mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+              class="mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs"
             >
               <option value="">Any</option>
               <option v-for="d in deviceTypes.data.value ?? []" :key="d.key" :value="d.key">
@@ -200,13 +200,13 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
           </div>
 
           <div>
-            <label for="f-vendor" class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            <label for="f-vendor" class="block text-2xs text-[var(--c-text-muted)]">
               Manufacturer
             </label>
             <select
               id="f-vendor"
               v-model="manufacturer"
-              class="mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+              class="mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs"
             >
               <option value="">Any</option>
               <option v-for="v in vendors.data.value ?? []" :key="v.key" :value="v.key">
@@ -216,26 +216,26 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
           </div>
 
           <div>
-            <label for="f-from" class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            <label for="f-from" class="block text-2xs text-[var(--c-text-muted)]">
               Changed from
             </label>
             <input
               id="f-from"
               v-model="from"
               type="date"
-              class="tabular mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+              class="tabular mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs"
             />
           </div>
 
           <div>
-            <label for="f-to" class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            <label for="f-to" class="block text-2xs text-[var(--c-text-muted)]">
               to
             </label>
             <input
               id="f-to"
               v-model="to"
               type="date"
-              class="tabular mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+              class="tabular mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs"
             />
           </div>
 
@@ -246,7 +246,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
           -->
           <p
             v-if="from || to"
-            class="basis-full text-[var(--text-2xs)] text-[var(--c-warning)]"
+            class="basis-full text-2xs text-[var(--c-warning)]"
           >
             A date filter excludes bindings no daily file has ever mentioned — they have no change
             date at all, not a date outside the range.
@@ -259,7 +259,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
       <!-- Masking is a server decision; the page reports it rather than performing it. -->
       <p
         v-if="masked"
-        class="rounded-[var(--radius-md)] border px-3 py-2 text-[var(--text-xs)]"
+        class="rounded-[var(--radius-md)] border px-3 py-2 text-xs"
         :style="{
           borderColor: 'var(--c-warning)',
           backgroundColor: 'var(--c-warning-subtle)',
@@ -273,7 +273,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
 
       <p
         v-if="!result.wellFormed"
-        class="rounded-[var(--radius-md)] border px-3 py-2 text-[var(--text-xs)]"
+        class="rounded-[var(--radius-md)] border px-3 py-2 text-xs"
         :style="{
           borderColor: 'var(--c-warning)',
           backgroundColor: 'var(--c-warning-subtle)',
@@ -293,27 +293,27 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
             thousand rows and a scan reads 295 million; elapsed time alone moves with cache warmth
             and hides the difference.
           -->
-          <span class="tabular text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          <span class="tabular text-2xs text-[var(--c-text-muted)]">
             {{ result.timing.elapsedMs }} ms ·
             {{ formatFull(result.timing.rowsExamined) }} rows examined
           </span>
         </template>
 
         <div v-if="result.items.length === 0" class="px-4 py-10 text-center">
-          <p class="text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+          <p class="text-sm text-[var(--c-text-secondary)]">
             No binding matches
             <code class="font-mono">{{ result.term }}</code
             ><template v-if="!result.isExact">…</template>.
           </p>
-          <p class="mt-1 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+          <p class="mt-1 text-xs text-[var(--c-text-muted)]">
             The SIM may not be on this network, or the filters may exclude it.
           </p>
         </div>
 
         <div v-else class="overflow-x-auto">
-          <table class="w-full text-left text-[var(--text-sm)]">
+          <table class="w-full text-left text-sm">
             <thead
-              class="border-b text-[var(--text-2xs)] tracking-wide text-[var(--c-text-muted)] uppercase"
+              class="border-b text-2xs tracking-wide text-[var(--c-text-muted)] uppercase"
             >
               <tr>
                 <th scope="col" class="px-4 py-2 font-medium">IMSI</th>
@@ -332,7 +332,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
                 class="hover:bg-[var(--c-surface-hover)]"
                 :class="opened === match.imsi ? 'bg-[var(--c-surface-sunken)]' : ''"
               >
-                <td class="tabular px-4 py-2 font-mono text-[var(--text-xs)]">
+                <td class="tabular px-4 py-2 font-mono text-xs">
                   <button
                     v-if="!masked"
                     type="button"
@@ -344,18 +344,18 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
                   <span v-else>{{ match.imsi }}</span>
                 </td>
 
-                <td class="tabular px-4 py-2 font-mono text-[var(--text-xs)]">
+                <td class="tabular px-4 py-2 font-mono text-xs">
                   {{ match.msisdn }}
                 </td>
 
-                <td class="tabular px-4 py-2 font-mono text-[var(--text-xs)]">
+                <td class="tabular px-4 py-2 font-mono text-xs">
                   {{ match.imei }}
                 </td>
 
                 <td class="px-4 py-2">
                   <template v-if="match.marketingName || match.manufacturer">
                     <span class="block">{{ match.marketingName ?? match.manufacturer }}</span>
-                    <span class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+                    <span class="block text-2xs text-[var(--c-text-muted)]">
                       {{ match.manufacturer }}
                       <template v-if="match.deviceType"> · {{ match.deviceType }}</template>
                       <template v-if="match.operatingSystem"> · {{ match.operatingSystem }}</template>
@@ -365,7 +365,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
                     Absence stated rather than left blank. 7.4% of bindings have no TAC match and
                     an empty cell reads as a rendering fault.
                   -->
-                  <span v-else class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+                  <span v-else class="text-xs text-[var(--c-text-muted)]">
                     <template v-if="match.imei === '000000'">device not reported</template>
                     <template v-else-if="match.tac">TAC {{ match.tac }} not in the database</template>
                     <template v-else>no usable IMEI</template>
@@ -374,7 +374,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
 
                 <td class="px-4 py-2">
                   <span
-                    class="inline-flex items-center gap-1.5 text-[var(--text-xs)]"
+                    class="inline-flex items-center gap-1.5 text-xs"
                     :style="{
                       color: match.isActive ? 'var(--c-text-secondary)' : 'var(--c-text-muted)',
                     }"
@@ -392,7 +392,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
                   </span>
                 </td>
 
-                <td class="tabular px-4 py-2 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+                <td class="tabular px-4 py-2 text-xs text-[var(--c-text-secondary)]">
                   <template v-if="match.lastChangeDate">
                     {{ formatDate(match.lastChangeDate) }}
                   </template>
@@ -425,11 +425,11 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
     <!-- The empty state carries the explanation, so nobody has to fail first to learn the rule. -->
     <Card v-else-if="!search.isPending.value">
       <div class="py-8 text-center">
-        <p class="text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+        <p class="text-sm text-[var(--c-text-secondary)]">
           Enter an IMSI to see the numbers and handsets bound to that SIM.
         </p>
         <dl
-          class="tabular mx-auto mt-5 grid max-w-md grid-cols-3 gap-4 text-[var(--text-xs)]"
+          class="tabular mx-auto mt-5 grid max-w-md grid-cols-3 gap-4 text-xs"
         >
           <div>
             <dt class="text-[var(--c-text-muted)]">5 digits</dt>
@@ -444,7 +444,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
             <dd class="font-medium">one SIM</dd>
           </div>
         </dl>
-        <p class="mx-auto mt-3 max-w-md text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        <p class="mx-auto mt-3 max-w-md text-2xs text-[var(--c-text-muted)]">
           Measured over 295,013,916 bindings. Searches are recorded in the audit log — who and how
           many results, never the IMSI itself.
         </p>

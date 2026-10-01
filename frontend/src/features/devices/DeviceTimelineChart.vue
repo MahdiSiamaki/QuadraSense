@@ -41,13 +41,13 @@ const totals = computed(() => ({
 
 <template>
   <div v-if="points.length === 0" class="grid h-40 place-items-center">
-    <p class="text-[var(--text-sm)] text-[var(--c-text-muted)]">
+    <p class="text-sm text-[var(--c-text-muted)]">
       No daily file changed a binding of this model in this range.
     </p>
   </div>
 
   <div v-else class="flex flex-col gap-2">
-    <div class="flex items-center gap-4 text-[var(--text-2xs)]">
+    <div class="flex items-center gap-4 text-2xs">
       <span class="flex items-center gap-1.5">
         <span class="size-2 rounded-[1px]" :style="{ backgroundColor: 'var(--viz-3)' }" />
         <span class="tabular">{{ formatFull(totals.added) }} added</span>
@@ -91,7 +91,7 @@ const totals = computed(() => ({
       </div>
     </div>
 
-    <div class="tabular flex justify-between text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+    <div class="tabular flex justify-between text-2xs text-[var(--c-text-muted)]">
       <span>{{ formatDate(bars[0]!.date) }}</span>
       <span>{{ bars.length }} day{{ bars.length === 1 ? '' : 's' }} with movement</span>
       <span>{{ formatDate(bars[bars.length - 1]!.date) }}</span>

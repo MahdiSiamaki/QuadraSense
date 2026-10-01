@@ -117,7 +117,7 @@ async function submit() {
 
     <div v-for="[category, permissions] in categories" :key="category" class="border-b last:border-b-0">
       <h3
-        class="bg-[var(--c-surface-sunken)] px-4 py-1.5 text-[var(--text-2xs)] font-medium tracking-wide text-[var(--c-text-muted)] uppercase"
+        class="bg-[var(--c-surface-sunken)] px-4 py-1.5 text-2xs font-medium tracking-wide text-[var(--c-text-muted)] uppercase"
       >
         {{ category }}
       </h3>
@@ -142,14 +142,14 @@ async function submit() {
           />
 
           <div class="min-w-0 flex-1">
-            <p class="flex flex-wrap items-center gap-1.5 text-[var(--text-sm)]">
+            <p class="flex flex-wrap items-center gap-1.5 text-sm">
               <span class="font-medium">{{ permission.displayName }}</span>
-              <code class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+              <code class="text-2xs text-[var(--c-text-muted)]">
                 {{ permission.code }}
               </code>
               <span
                 v-if="permission.isDangerous"
-                class="rounded-full px-1.5 py-0.5 text-[var(--text-2xs)] font-medium"
+                class="rounded-full px-1.5 py-0.5 text-2xs font-medium"
                 :style="{
                   backgroundColor: 'var(--c-warning-subtle)',
                   color: 'var(--c-warning)',
@@ -160,7 +160,7 @@ async function submit() {
               </span>
             </p>
 
-            <p class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+            <p class="mt-0.5 text-xs text-[var(--c-text-muted)]">
               {{ permission.description }}
             </p>
 
@@ -169,7 +169,7 @@ async function submit() {
               rather than as a set of flags, so the answer to "why" is the same text as the
               answer to "whether".
             -->
-            <p class="mt-1 text-[var(--text-xs)]">
+            <p class="mt-1 text-xs">
               <template v-if="permission.deniedDirectly">
                 <span class="font-medium text-[var(--c-danger)]">Denied directly.</span>
                 <template v-if="permission.grantedByRoles.length">
@@ -215,14 +215,14 @@ async function submit() {
       :busy="save.isPending.value"
       @close="editing = false"
     >
-      <p class="mb-3 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+      <p class="mb-3 text-xs text-[var(--c-text-muted)]">
         Click a permission to cycle it: no override &rarr; grant &rarr; deny &rarr; no override.
         Use overrides for exceptions; if several people need the same set, make a role instead.
       </p>
 
       <div class="flex flex-col gap-3">
         <div v-for="[category, permissions] in categories" :key="category">
-          <h4 class="mb-1 text-[var(--text-2xs)] font-medium tracking-wide text-[var(--c-text-muted)] uppercase">
+          <h4 class="mb-1 text-2xs font-medium tracking-wide text-[var(--c-text-muted)] uppercase">
             {{ category }}
           </h4>
 
@@ -241,7 +241,7 @@ async function submit() {
                 @click="cycle(permission)"
               >
                 <span
-                  class="w-14 shrink-0 text-center text-[var(--text-2xs)] font-medium"
+                  class="w-14 shrink-0 text-center text-2xs font-medium"
                   :style="{
                     color:
                       draft.get(permission.code) === 'deny'
@@ -255,10 +255,10 @@ async function submit() {
                 </span>
 
                 <span class="min-w-0 flex-1">
-                  <span class="block truncate text-[var(--text-sm)]">
+                  <span class="block truncate text-sm">
                     {{ permission.displayName }}
                   </span>
-                  <span class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+                  <span class="block text-2xs text-[var(--c-text-muted)]">
                     {{
                       permission.grantedByRoles.length
                         ? `roles grant this: ${permission.grantedByRoles.join(', ')}`
@@ -269,7 +269,7 @@ async function submit() {
 
                 <!-- The resulting answer, so nobody has to work out what a deny does. -->
                 <span
-                  class="shrink-0 text-[var(--text-2xs)] font-medium"
+                  class="shrink-0 text-2xs font-medium"
                   :style="{
                     color: draftOutcome(permission) ? 'var(--c-success)' : 'var(--c-text-muted)',
                   }"
@@ -295,7 +295,7 @@ async function submit() {
 
       <p
         v-if="unexpected"
-        class="mt-3 rounded-[var(--radius-md)] border px-2.5 py-2 text-[var(--text-xs)]"
+        class="mt-3 rounded-[var(--radius-md)] border px-2.5 py-2 text-xs"
         :style="{
           borderColor: 'var(--c-danger)',
           backgroundColor: 'var(--c-danger-subtle)',

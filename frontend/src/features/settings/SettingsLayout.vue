@@ -34,14 +34,14 @@ function isCurrent(to: string): boolean {
 <template>
   <div class="flex flex-col gap-6 lg:flex-row lg:gap-8">
     <aside class="shrink-0 lg:w-56">
-      <h1 class="mb-3 text-[var(--text-xl)] font-semibold tracking-tight lg:mb-5">Settings</h1>
+      <h1 class="mb-3 text-xl font-semibold tracking-tight lg:mb-5">Settings</h1>
 
       <nav aria-label="Settings">
         <!-- Wide: grouped vertical list. -->
         <div class="hidden flex-col gap-5 lg:flex">
           <div v-for="group in groups" :key="group.name">
             <p
-              class="mb-1.5 px-2.5 text-[var(--text-2xs)] font-semibold tracking-wider text-[var(--c-text-muted)] uppercase"
+              class="mb-1.5 px-2.5 text-2xs font-semibold tracking-wider text-[var(--c-text-muted)] uppercase"
             >
               {{ group.name }}
             </p>
@@ -50,7 +50,7 @@ function isCurrent(to: string): boolean {
                 <RouterLink
                   :to="item.to"
                   :aria-current="isCurrent(item.to) ? 'page' : undefined"
-                  class="block rounded-[var(--radius-md)] px-2.5 py-1.5 text-[var(--text-sm)] font-medium transition-colors"
+                  class="block rounded-[var(--radius-md)] px-2.5 py-1.5 text-sm font-medium transition-colors"
                   :class="
                     isCurrent(item.to)
                       ? 'bg-[var(--c-surface-sunken)] text-[var(--c-text)]'
@@ -70,7 +70,7 @@ function isCurrent(to: string): boolean {
             <RouterLink
               :to="item.to"
               :aria-current="isCurrent(item.to) ? 'page' : undefined"
-              class="block rounded-[var(--radius-md)] px-2.5 py-1.5 text-[var(--text-sm)] font-medium whitespace-nowrap"
+              class="block rounded-[var(--radius-md)] px-2.5 py-1.5 text-sm font-medium whitespace-nowrap"
               :class="
                 isCurrent(item.to)
                   ? 'bg-[var(--c-surface-sunken)] text-[var(--c-text)]'

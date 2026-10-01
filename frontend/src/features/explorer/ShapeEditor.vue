@@ -117,7 +117,7 @@ const PAGE_SIZES = computed(() => [25, 50, 100, 200, 500].filter((n) => n <= pro
           :aria-label="allowed(f) ? f.label : `${f.label}, needs ${f.permission}`"
           :disabled="!allowed(f)"
           :title="allowed(f) ? f.description : `Needs ${f.permission}`"
-          class="rounded-full border px-2.5 py-0.5 text-[var(--text-xs)] transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+          class="rounded-full border px-2.5 py-0.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40"
           :class="
             draft.columns.includes(f.name)
               ? 'border-[var(--c-accent)] bg-[var(--c-accent-subtle)] text-[var(--c-accent)]'
@@ -129,7 +129,7 @@ const PAGE_SIZES = computed(() => [25, 50, 100, 200, 500].filter((n) => n <= pro
           {{ f.label }}
         </button>
       </div>
-      <p v-if="draft.columns.length === 0" class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+      <p v-if="draft.columns.length === 0" class="text-2xs text-[var(--c-text-muted)]">
         None chosen: the dataset's default columns, of those you may see.
       </p>
     </fieldset>
@@ -146,7 +146,7 @@ const PAGE_SIZES = computed(() => [25, 50, 100, 200, 500].filter((n) => n <= pro
             :aria-label="allowed(f) ? f.label : `${f.label}, needs ${f.permission}`"
             :disabled="!allowed(f)"
             :title="allowed(f) ? f.description : `Needs ${f.permission}`"
-            class="rounded-full border px-2.5 py-0.5 text-[var(--text-xs)] transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+            class="rounded-full border px-2.5 py-0.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40"
             :class="
               draft.groupBy.includes(f.name)
                 ? 'border-[var(--c-accent)] bg-[var(--c-accent-subtle)] text-[var(--c-accent)]'
@@ -157,7 +157,7 @@ const PAGE_SIZES = computed(() => [25, 50, 100, 200, 500].filter((n) => n <= pro
             {{ f.label }}
           </button>
         </div>
-        <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        <p class="text-2xs text-[var(--c-text-muted)]">
           No grouping: one row of measures over everything that matches.
         </p>
       </fieldset>
@@ -188,7 +188,7 @@ const PAGE_SIZES = computed(() => [25, 50, 100, 200, 500].filter((n) => n <= pro
 
           <label
             v-if="draft.dataset === 'Bindings'"
-            class="inline-flex items-center gap-1 text-[var(--text-2xs)] text-[var(--c-text-secondary)]"
+            class="inline-flex items-center gap-1 text-2xs text-[var(--c-text-secondary)]"
             title="Count only bindings the feed has not yet removed"
           >
             <input
@@ -199,7 +199,7 @@ const PAGE_SIZES = computed(() => [25, 50, 100, 200, 500].filter((n) => n <= pro
             active only
           </label>
 
-          <span class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">as</span>
+          <span class="text-2xs text-[var(--c-text-muted)]">as</span>
           <input v-model="m.name" :class="mono" class="w-36" aria-label="Measure name" spellcheck="false" />
 
           <button
@@ -208,7 +208,7 @@ const PAGE_SIZES = computed(() => [25, 50, 100, 200, 500].filter((n) => n <= pro
             aria-label="Remove measure"
             @click="draft.measures.splice(draft.measures.indexOf(m), 1)"
           >
-            <span aria-hidden="true" class="text-[var(--text-lg)] leading-none">&times;</span>
+            <span aria-hidden="true" class="text-lg leading-none">&times;</span>
           </button>
         </div>
         <Button size="sm" variant="ghost" class="w-fit" :disabled="draft.measures.length >= 10" @click="addMeasure">
@@ -227,7 +227,7 @@ const PAGE_SIZES = computed(() => [25, 50, 100, 200, 500].filter((n) => n <= pro
           :allowed="() => true"
           noun="condition on a measure"
         />
-        <p v-else class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">Add a measure to filter groups by it.</p>
+        <p v-else class="text-2xs text-[var(--c-text-muted)]">Add a measure to filter groups by it.</p>
       </fieldset>
     </template>
 
@@ -243,7 +243,7 @@ const PAGE_SIZES = computed(() => [25, 50, 100, 200, 500].filter((n) => n <= pro
             <option :value="true">descending</option>
           </select>
           <button type="button" :class="iconButton" aria-label="Remove ordering" @click="draft.sort.splice(i, 1)">
-            <span aria-hidden="true" class="text-[var(--text-lg)] leading-none">&times;</span>
+            <span aria-hidden="true" class="text-lg leading-none">&times;</span>
           </button>
         </div>
         <Button

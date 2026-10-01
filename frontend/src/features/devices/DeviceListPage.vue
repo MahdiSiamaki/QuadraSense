@@ -235,8 +235,8 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
 <template>
   <div class="flex flex-col gap-5">
     <header>
-      <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Devices</h1>
-      <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+      <h1 class="text-xl font-semibold tracking-tight">Devices</h1>
+      <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
         Every device model on the network, by name or by any identifier.
       </p>
     </header>
@@ -252,11 +252,11 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
               type="search"
               autocomplete="off"
               placeholder="Model name, brand, TAC, IMEI, IMSI or number"
-              class="w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-3 py-2 text-[var(--text-sm)]"
+              class="w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-3 py-2 text-sm"
             />
             <p
               v-if="term.hint"
-              class="mt-1 text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+              class="mt-1 text-2xs text-[var(--c-text-muted)]"
             >
               {{ term.hint }}
             </p>
@@ -264,7 +264,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
 
           <button
             type="submit"
-            class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-4 py-2 text-[var(--text-sm)] font-medium text-[var(--c-accent-text)]"
+            class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-4 py-2 text-sm font-medium text-[var(--c-accent-text)]"
           >
             Search
           </button>
@@ -273,7 +273,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
         <div class="flex flex-wrap items-center gap-2 border-t pt-3">
           <select
             v-model="manufacturer"
-            class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-[var(--text-xs)]"
+            class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-xs"
             aria-label="Manufacturer"
           >
             <option value="">All manufacturers</option>
@@ -284,7 +284,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
 
           <select
             v-model="deviceType"
-            class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-[var(--text-xs)]"
+            class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-xs"
             aria-label="Device type"
           >
             <option value="">All device types</option>
@@ -295,7 +295,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
 
           <select
             v-model="operatingSystem"
-            class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-[var(--text-xs)]"
+            class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-xs"
             aria-label="Operating system"
           >
             <option value="">All operating systems</option>
@@ -307,7 +307,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
           <button
             v-if="hasFilters"
             type="button"
-            class="rounded-[var(--radius-md)] px-2 py-1.5 text-[var(--text-xs)] text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
+            class="rounded-[var(--radius-md)] px-2 py-1.5 text-xs text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
             @click="clearAll"
           >
             Clear
@@ -315,7 +315,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
 
           <p
             v-if="data"
-            class="tabular ml-auto text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+            class="tabular ml-auto text-2xs text-[var(--c-text-muted)]"
           >
             {{ formatFull(data.total) }} model{{ data.total === 1 ? '' : 's' }}
             · {{ data.timing.elapsedMs }} ms
@@ -330,7 +330,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
     -->
     <div
       v-if="data?.resolution?.note"
-      class="rounded-[var(--radius-md)] border px-3 py-2 text-[var(--text-sm)]"
+      class="rounded-[var(--radius-md)] border px-3 py-2 text-sm"
       :class="
         data.resolution.permitted
           ? 'border-[var(--c-border)] text-[var(--c-text-secondary)]'
@@ -350,13 +350,13 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
       >
         <template v-if="data">
           <div v-if="data.items.length === 0" class="px-4 py-14 text-center">
-            <p class="text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+            <p class="text-sm text-[var(--c-text-secondary)]">
               No device models match.
             </p>
             <button
               v-if="hasFilters"
               type="button"
-              class="mt-2 text-[var(--text-xs)] text-[var(--c-accent)] hover:underline"
+              class="mt-2 text-xs text-[var(--c-accent)] hover:underline"
               @click="clearAll"
             >
               Clear the filters
@@ -364,9 +364,9 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
           </div>
 
           <div v-else class="overflow-x-auto">
-            <table class="w-full border-collapse text-[var(--text-sm)]">
+            <table class="w-full border-collapse text-sm">
               <thead
-                class="border-b text-[var(--text-xs)] text-[var(--c-text-secondary)]"
+                class="border-b text-xs text-[var(--c-text-secondary)]"
               >
                 <tr>
                   <th scope="col" class="px-3 py-2 text-left font-medium">Device</th>
@@ -427,7 +427,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
                       <span class="min-w-0">
                         <span class="block truncate font-medium">{{ displayName(d) }}</span>
                         <span
-                          class="block truncate text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+                          class="block truncate text-2xs text-[var(--c-text-muted)]"
                         >
                           {{
                             isRealDevice(d)
@@ -438,10 +438,10 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
                       </span>
                     </component>
                   </td>
-                  <td class="tabular px-3 py-2 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+                  <td class="tabular px-3 py-2 text-xs text-[var(--c-text-secondary)]">
                     {{ d.tac || '—' }}
                   </td>
-                  <td class="px-3 py-2 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+                  <td class="px-3 py-2 text-xs text-[var(--c-text-secondary)]">
                     {{ d.deviceType ?? '—' }}
                   </td>
                   <td class="tabular px-3 py-2 text-right">{{ formatFull(d.bindings) }}</td>
@@ -455,7 +455,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
                     {{ formatFull(d.subscribers) }}
                   </td>
                   <td
-                    class="tabular whitespace-nowrap px-3 py-2 text-right text-[var(--text-xs)] text-[var(--c-text-muted)]"
+                    class="tabular whitespace-nowrap px-3 py-2 text-right text-xs text-[var(--c-text-muted)]"
                     :title="
                       d.lastSeen
                         ? undefined
@@ -482,7 +482,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
       </AsyncBoundary>
     </Card>
 
-    <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+    <p class="text-2xs text-[var(--c-text-muted)]">
       A device is a <strong>model</strong>, identified by its 8-digit TAC. Handset, SIM and number
       counts are HyperLogLog estimates at roughly 0.5% error — the same estimator the dashboard
       uses, so the two cannot disagree about one population. Handsets sit below bindings whenever a

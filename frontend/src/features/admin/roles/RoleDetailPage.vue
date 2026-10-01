@@ -161,7 +161,7 @@ const deleteError = computed(() => message(remove.error.value))
 
 <template>
   <div class="flex flex-col gap-5">
-    <nav class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+    <nav class="text-xs text-[var(--c-text-muted)]">
       <RouterLink to="/settings/roles" class="hover:text-[var(--c-text)] hover:underline">
         Roles
       </RouterLink>
@@ -179,17 +179,17 @@ const deleteError = computed(() => message(remove.error.value))
       <template v-if="role.data.value">
         <header class="flex flex-wrap items-start justify-between gap-4">
           <div class="min-w-0">
-            <h2 class="flex items-center gap-2 text-[var(--text-lg)] font-semibold tracking-tight">
+            <h2 class="flex items-center gap-2 text-lg font-semibold tracking-tight">
               {{ role.data.value.displayName }}
               <span
                 v-if="role.data.value.isSystem"
-                class="rounded-full bg-[var(--c-surface-sunken)] px-2 py-0.5 text-[var(--text-xs)] text-[var(--c-text-muted)]"
+                class="rounded-full bg-[var(--c-surface-sunken)] px-2 py-0.5 text-xs text-[var(--c-text-muted)]"
               >
                 built-in
               </span>
             </h2>
-            <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
-              <code class="text-[var(--text-xs)]">{{ role.data.value.code }}</code>
+            <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
+              <code class="text-xs">{{ role.data.value.code }}</code>
               · {{ role.data.value.description || 'No description.' }}
             </p>
           </div>
@@ -235,7 +235,7 @@ const deleteError = computed(() => message(remove.error.value))
             -->
             <p
               v-if="dirty"
-              class="border-b px-4 py-2 text-[var(--text-xs)]"
+              class="border-b px-4 py-2 text-xs"
               :style="{ backgroundColor: 'var(--c-warning-subtle)', color: 'var(--c-warning)' }"
             >
               <template v-if="added.length">+{{ added.length }} added</template>
@@ -251,7 +251,7 @@ const deleteError = computed(() => message(remove.error.value))
 
             <p
               v-if="permissionError"
-              class="border-b px-4 py-2 text-[var(--text-xs)]"
+              class="border-b px-4 py-2 text-xs"
               :style="{ backgroundColor: 'var(--c-danger-subtle)', color: 'var(--c-danger)' }"
               role="alert"
             >
@@ -264,7 +264,7 @@ const deleteError = computed(() => message(remove.error.value))
               class="border-b last:border-b-0"
             >
               <h3
-                class="bg-[var(--c-surface-sunken)] px-4 py-1.5 text-[var(--text-2xs)] font-medium tracking-wide text-[var(--c-text-muted)] uppercase"
+                class="bg-[var(--c-surface-sunken)] px-4 py-1.5 text-2xs font-medium tracking-wide text-[var(--c-text-muted)] uppercase"
               >
                 {{ category }}
               </h3>
@@ -283,14 +283,14 @@ const deleteError = computed(() => message(remove.error.value))
                       @change="toggle(permission.code)"
                     />
                     <span class="min-w-0 flex-1">
-                      <span class="flex flex-wrap items-center gap-1.5 text-[var(--text-sm)]">
+                      <span class="flex flex-wrap items-center gap-1.5 text-sm">
                         <span class="font-medium">{{ permission.displayName }}</span>
-                        <code class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+                        <code class="text-2xs text-[var(--c-text-muted)]">
                           {{ permission.code }}
                         </code>
                         <span
                           v-if="permission.isDangerous"
-                          class="rounded-full px-1.5 py-0.5 text-[var(--text-2xs)] font-medium"
+                          class="rounded-full px-1.5 py-0.5 text-2xs font-medium"
                           :style="{
                             backgroundColor: 'var(--c-warning-subtle)',
                             color: 'var(--c-warning)',
@@ -299,7 +299,7 @@ const deleteError = computed(() => message(remove.error.value))
                           sensitive
                         </span>
                       </span>
-                      <span class="mt-0.5 block text-[var(--text-xs)] text-[var(--c-text-muted)]">
+                      <span class="mt-0.5 block text-xs text-[var(--c-text-muted)]">
                         {{ permission.description }}
                       </span>
                     </span>
@@ -327,16 +327,16 @@ const deleteError = computed(() => message(remove.error.value))
                       class="flex items-center justify-between gap-3 px-4 py-2 hover:bg-[var(--c-surface-hover)]"
                     >
                       <span class="min-w-0">
-                        <span class="block truncate text-[var(--text-sm)]">
+                        <span class="block truncate text-sm">
                           {{ member.displayName }}
                         </span>
-                        <span class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+                        <span class="block text-2xs text-[var(--c-text-muted)]">
                           {{ member.username }}
                         </span>
                       </span>
                       <span
                         v-if="!member.isActive"
-                        class="shrink-0 text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+                        class="shrink-0 text-2xs text-[var(--c-text-muted)]"
                       >
                         deactivated
                       </span>
@@ -347,7 +347,7 @@ const deleteError = computed(() => message(remove.error.value))
             </Card>
 
             <Card title="History">
-              <dl class="flex flex-col gap-2 text-[var(--text-xs)]">
+              <dl class="flex flex-col gap-2 text-xs">
                 <div>
                   <dt class="text-[var(--c-text-muted)]">Created</dt>
                   <dd class="tabular">
@@ -367,7 +367,7 @@ const deleteError = computed(() => message(remove.error.value))
                   </dd>
                 </div>
               </dl>
-              <p class="mt-3 border-t pt-2.5 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+              <p class="mt-3 border-t pt-2.5 text-xs text-[var(--c-text-muted)]">
                 Every change to this role's permissions is in the audit log, with what was added
                 and what was removed.
               </p>
@@ -412,7 +412,7 @@ const deleteError = computed(() => message(remove.error.value))
       :busy="remove.isPending.value"
       @close="deleting = false"
     >
-      <p class="text-[var(--text-sm)]">
+      <p class="text-sm">
         <template v-if="(role.data.value?.memberCount ?? 0) > 0">
           {{ role.data.value?.memberCount }} user(s) still hold this role. Remove it from them
           first.
@@ -422,7 +422,7 @@ const deleteError = computed(() => message(remove.error.value))
 
       <p
         v-if="deleteError"
-        class="mt-3 rounded-[var(--radius-md)] border px-2.5 py-2 text-[var(--text-xs)]"
+        class="mt-3 rounded-[var(--radius-md)] border px-2.5 py-2 text-xs"
         :style="{
           borderColor: 'var(--c-danger)',
           backgroundColor: 'var(--c-danger-subtle)',

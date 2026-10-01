@@ -39,8 +39,8 @@ const emit = defineEmits<{
     @retry="emit('retry')"
   >
     <div class="overflow-x-auto">
-      <table class="w-full text-left text-[var(--text-sm)]">
-        <thead class="border-b text-[var(--text-2xs)] tracking-wide text-[var(--c-text-muted)] uppercase">
+      <table class="w-full text-left text-sm">
+        <thead class="border-b text-2xs tracking-wide text-[var(--c-text-muted)] uppercase">
           <tr>
             <th scope="col" class="px-4 py-2 font-medium">Name</th>
             <th scope="col" class="px-4 py-2 font-medium">Reads</th>
@@ -57,13 +57,13 @@ const emit = defineEmits<{
           >
             <td class="px-4 py-2">
               <span class="block font-medium">{{ q.name }}</span>
-              <span v-if="q.description" class="block text-[var(--text-xs)] text-[var(--c-text-muted)]">{{ q.description }}</span>
+              <span v-if="q.description" class="block text-xs text-[var(--c-text-muted)]">{{ q.description }}</span>
             </td>
-            <td class="px-4 py-2 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+            <td class="px-4 py-2 text-xs text-[var(--c-text-secondary)]">
               {{ q.query.dataset === 'Events' ? 'Events' : 'Bindings' }}
               <template v-if="(q.query.groupBy?.length ?? 0) > 0 || (q.query.measures?.length ?? 0) > 0"> · grouped</template>
             </td>
-            <td class="tabular px-4 py-2 text-[var(--text-xs)] whitespace-nowrap text-[var(--c-text-secondary)]">
+            <td class="tabular px-4 py-2 text-xs whitespace-nowrap text-[var(--c-text-secondary)]">
               {{ formatDateTime(q.updatedAt) }}
             </td>
             <td class="px-4 py-2">

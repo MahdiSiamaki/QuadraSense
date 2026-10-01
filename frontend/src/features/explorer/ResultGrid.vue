@@ -88,7 +88,7 @@ function toggleSort(column: ExplorerColumn) {
 <template>
   <div class="flex flex-col">
     <div class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5">
-      <p class="tabular text-[var(--text-xs)] text-[var(--c-text-secondary)]" role="status">
+      <p class="tabular text-xs text-[var(--c-text-secondary)]" role="status">
         <span class="font-semibold text-[var(--c-text)]">{{ formatFull(result.total) }}</span>
         {{ grouped ? (result.total === 1 ? 'group' : 'groups') : result.total === 1 ? 'row' : 'rows' }}
         <span class="text-[var(--c-text-muted)]">
@@ -109,7 +109,7 @@ function toggleSort(column: ExplorerColumn) {
 
     <p
       v-if="truncated"
-      class="border-b bg-[var(--c-warning-subtle)] px-4 py-1.5 text-[var(--text-2xs)] text-[var(--c-warning)]"
+      class="border-b bg-[var(--c-warning-subtle)] px-4 py-1.5 text-2xs text-[var(--c-warning)]"
     >
       Paging reaches the first {{ formatFull(result.reachable) }} of {{ formatFull(result.total) }}. Narrow the
       query to see the rest - a shorter date range, a model, a number prefix.
@@ -117,19 +117,19 @@ function toggleSort(column: ExplorerColumn) {
 
     <p
       v-if="masked"
-      class="border-b bg-[var(--c-warning-subtle)] px-4 py-1.5 text-[var(--text-2xs)] text-[var(--c-warning)]"
+      class="border-b bg-[var(--c-warning-subtle)] px-4 py-1.5 text-2xs text-[var(--c-warning)]"
     >
       Identifiers are masked: your account does not hold <code class="font-mono">identifier.reveal</code>, so the
       server redacted them before sending. A masked value cannot be opened.
     </p>
 
-    <div v-if="result.rows.length === 0" class="px-4 py-10 text-center text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+    <div v-if="result.rows.length === 0" class="px-4 py-10 text-center text-sm text-[var(--c-text-secondary)]">
       Nothing matches.
     </div>
 
     <div v-else class="overflow-x-auto" :class="loading ? 'opacity-60' : ''">
-      <table class="w-full text-left text-[var(--text-sm)]">
-        <thead class="border-b text-[var(--text-2xs)] tracking-wide text-[var(--c-text-muted)] uppercase">
+      <table class="w-full text-left text-sm">
+        <thead class="border-b text-2xs tracking-wide text-[var(--c-text-muted)] uppercase">
           <tr>
             <th
               v-for="column in result.columns"
@@ -163,7 +163,7 @@ function toggleSort(column: ExplorerColumn) {
               class="px-4 py-1.5 whitespace-nowrap"
               :class="[
                 numeric(column) ? 'tabular text-right' : '',
-                digits(column) ? 'tabular font-mono text-[var(--text-xs)]' : '',
+                digits(column) ? 'tabular font-mono text-xs' : '',
               ]"
             >
               <button
@@ -178,13 +178,13 @@ function toggleSort(column: ExplorerColumn) {
               </button>
               <span
                 v-else-if="(row[c] ?? null) === null && emptyReason(column)"
-                class="text-[var(--text-xs)] text-[var(--c-text-muted)]"
+                class="text-xs text-[var(--c-text-muted)]"
               >
                 {{ emptyReason(column) }}
               </span>
               <span
                 v-else-if="column.name === 'active'"
-                class="inline-flex items-center gap-1.5 text-[var(--text-xs)]"
+                class="inline-flex items-center gap-1.5 text-xs"
                 :style="{ color: row[c] ? 'var(--c-text-secondary)' : 'var(--c-text-muted)' }"
               >
                 <span

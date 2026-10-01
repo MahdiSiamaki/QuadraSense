@@ -114,7 +114,7 @@ watch(ranking, (value) => {
             v-for="m in MODES"
             :key="m.id"
             type="button"
-            class="px-2.5 py-1 text-[var(--text-xs)] font-medium transition-colors"
+            class="px-2.5 py-1 text-xs font-medium transition-colors"
             :class="
               ranking === m.id
                 ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
@@ -129,7 +129,7 @@ watch(ranking, (value) => {
 
         <label
           v-if="ranking === 'movement'"
-          class="flex items-center gap-1.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]"
+          class="flex items-center gap-1.5 text-xs text-[var(--c-text-secondary)]"
           title="Net movement as a percentage of the vendor's own population, which is what makes a vendor with fifty million bindings comparable to one with fifty thousand."
         >
           <input v-model="normalised" type="checkbox" />
@@ -138,7 +138,7 @@ watch(ranking, (value) => {
 
         <select
           v-model.number="limit"
-          class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-1.5 py-1 text-[var(--text-xs)]"
+          class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-1.5 py-1 text-xs"
           aria-label="How many vendors"
         >
           <option :value="5">5</option>
@@ -160,7 +160,7 @@ watch(ranking, (value) => {
       class="mb-3 flex flex-wrap items-end gap-2 border-b pb-3"
     >
       <div>
-        <label for="vm-from" class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        <label for="vm-from" class="block text-2xs text-[var(--c-text-muted)]">
           Events from
         </label>
         <input
@@ -169,11 +169,11 @@ watch(ranking, (value) => {
           type="date"
           :min="data?.earliestAvailable ?? undefined"
           :max="data?.latestAvailable ?? undefined"
-          class="tabular mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+          class="tabular mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs"
         />
       </div>
       <div>
-        <label for="vm-to" class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        <label for="vm-to" class="block text-2xs text-[var(--c-text-muted)]">
           to
         </label>
         <input
@@ -182,18 +182,18 @@ watch(ranking, (value) => {
           type="date"
           :min="data?.earliestAvailable ?? undefined"
           :max="data?.latestAvailable ?? undefined"
-          class="tabular mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+          class="tabular mt-0.5 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs"
         />
       </div>
       <button
         v-if="from || to"
         type="button"
-        class="rounded-[var(--radius-md)] px-1.5 py-1 text-[var(--text-2xs)] text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
+        class="rounded-[var(--radius-md)] px-1.5 py-1 text-2xs text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
         @click="clearRange"
       >
         clear
       </button>
-      <p class="ml-auto text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+      <p class="ml-auto text-2xs text-[var(--c-text-muted)]">
         {{ windowLabel }}
       </p>
     </div>
@@ -218,7 +218,7 @@ watch(ranking, (value) => {
           because a reader who does not know it will draw the wrong conclusion without ever
           thinking to hover.
         -->
-        <div class="mt-3 border-t pt-2 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        <div class="mt-3 border-t pt-2 text-2xs text-[var(--c-text-muted)]">
           <p v-if="ranking === 'growth'">
             Network:
             <span class="tabular">{{ formatFull(data.networkPopulationAtStart) }}</span>

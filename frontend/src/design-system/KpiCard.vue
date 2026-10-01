@@ -64,22 +64,22 @@ const toneClass = computed(
     class="rounded-[var(--radius-lg)] border bg-[var(--c-surface)] px-4 py-3.5 shadow-[var(--shadow-xs)]"
     :title="tooltip || undefined"
   >
-    <p class="text-[var(--text-xs)] font-medium tracking-wide text-[var(--c-text-muted)]">
+    <p class="text-xs font-medium tracking-wide text-[var(--c-text-muted)]">
       {{ label }}
     </p>
 
-    <p class="kpi-value mt-1.5 text-[var(--text-2xl)] leading-none font-semibold" :class="toneClass">
+    <p class="kpi-value mt-1.5 text-2xl leading-none font-semibold" :class="toneClass">
       {{ display }}
     </p>
 
     <p v-if="identifier || qualifier" class="mt-2 flex flex-wrap items-baseline gap-x-1.5">
       <code
         v-if="identifier"
-        class="rounded-[var(--radius-sm)] bg-[var(--c-surface-sunken)] px-1.5 py-0.5 font-[var(--font-mono)] text-[var(--text-2xs)] text-[var(--c-text-secondary)]"
+        class="rounded-[var(--radius-sm)] bg-[var(--c-surface-sunken)] px-1.5 py-0.5 font-mono text-2xs text-[var(--c-text-secondary)]"
       >
         {{ identifier }}
       </code>
-      <span v-if="qualifier" class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+      <span v-if="qualifier" class="text-2xs text-[var(--c-text-muted)]">
         {{ qualifier }}
       </span>
     </p>

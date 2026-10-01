@@ -20,9 +20,9 @@ defineProps<{ rows: ImportJobSummary[] }>()
 
 <template>
   <div class="overflow-x-auto">
-    <table class="w-full border-collapse text-[var(--text-sm)]">
+    <table class="w-full border-collapse text-sm">
       <thead>
-        <tr class="border-b text-left text-[var(--text-xs)] text-[var(--c-text-muted)]">
+        <tr class="border-b text-left text-xs text-[var(--c-text-muted)]">
           <th scope="col" class="px-3 py-2 font-medium">File</th>
           <th scope="col" class="px-3 py-2 font-medium">Day</th>
           <th scope="col" class="px-3 py-2 font-medium">Status</th>
@@ -49,7 +49,7 @@ defineProps<{ rows: ImportJobSummary[] }>()
             >
               {{ row.originalFileName }}
             </RouterLink>
-            <span class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            <span class="text-2xs text-[var(--c-text-muted)]">
               {{ row.sourceCode }} · {{ formatBytes(row.fileBytes) }}
               <template v-if="row.revision > 1"> · revision {{ row.revision }}</template>
               <template v-if="!row.isEffective && row.status === 'Completed'"> · superseded</template>
@@ -62,14 +62,14 @@ defineProps<{ rows: ImportJobSummary[] }>()
             <StatusBadge :status="row.status" />
             <span
               v-if="row.status === 'Completed' && row.warningCount > 0"
-              class="ml-1 text-[var(--text-2xs)] font-medium text-[var(--c-warning)]"
+              class="ml-1 text-2xs font-medium text-[var(--c-warning)]"
               title="Every row was imported. Validation raised warnings on some of them - open the import for the rows and the rules."
             >
               with warnings
             </span>
             <span
               v-if="row.attempt > 1"
-              class="ml-1 text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+              class="ml-1 text-2xs text-[var(--c-text-muted)]"
             >
               attempt {{ row.attempt }}
             </span>
@@ -98,7 +98,7 @@ defineProps<{ rows: ImportJobSummary[] }>()
       </tbody>
     </table>
 
-    <p v-if="!rows.length" class="px-3 py-8 text-center text-[var(--text-sm)] text-[var(--c-text-muted)]">
+    <p v-if="!rows.length" class="px-3 py-8 text-center text-sm text-[var(--c-text-muted)]">
       No imports match these filters.
     </p>
   </div>

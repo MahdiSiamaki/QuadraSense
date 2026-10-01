@@ -46,7 +46,7 @@ const orphaned = computed(() =>
 
 <template>
   <div class="flex flex-col gap-5">
-    <nav class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+    <nav class="text-xs text-[var(--c-text-muted)]">
       <RouterLink to="/settings/roles" class="hover:text-[var(--c-text)] hover:underline">
         Roles
       </RouterLink>
@@ -55,8 +55,8 @@ const orphaned = computed(() =>
     </nav>
 
     <header>
-      <h2 class="text-[var(--text-lg)] font-semibold tracking-tight">Permission matrix</h2>
-      <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+      <h2 class="text-lg font-semibold tracking-tight">Permission matrix</h2>
+      <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
         What every role can do, side by side. Edit a role from its own page.
       </p>
     </header>
@@ -75,7 +75,7 @@ const orphaned = computed(() =>
     >
       <p
         v-if="orphaned.length"
-        class="rounded-[var(--radius-md)] border px-3 py-2 text-[var(--text-xs)]"
+        class="rounded-[var(--radius-md)] border px-3 py-2 text-xs"
         :style="{
           borderColor: 'var(--c-warning)',
           backgroundColor: 'var(--c-warning-subtle)',
@@ -93,12 +93,12 @@ const orphaned = computed(() =>
           grid works on a laptop.
         -->
         <div class="overflow-x-auto">
-          <table class="w-full border-collapse text-left text-[var(--text-sm)]">
+          <table class="w-full border-collapse text-left text-sm">
             <thead>
               <tr class="border-b">
                 <th
                   scope="col"
-                  class="sticky left-0 z-10 bg-[var(--c-surface)] px-4 py-2 text-[var(--text-2xs)] font-medium tracking-wide text-[var(--c-text-muted)] uppercase"
+                  class="sticky left-0 z-10 bg-[var(--c-surface)] px-4 py-2 text-2xs font-medium tracking-wide text-[var(--c-text-muted)] uppercase"
                 >
                   Permission
                 </th>
@@ -110,11 +110,11 @@ const orphaned = computed(() =>
                 >
                   <RouterLink
                     :to="`/settings/roles/${role.id}`"
-                    class="text-[var(--text-xs)] font-semibold hover:text-[var(--c-accent)] hover:underline"
+                    class="text-xs font-semibold hover:text-[var(--c-accent)] hover:underline"
                   >
                     {{ role.displayName }}
                   </RouterLink>
-                  <span class="tabular block text-[var(--text-2xs)] font-normal text-[var(--c-text-muted)]">
+                  <span class="tabular block text-2xs font-normal text-[var(--c-text-muted)]">
                     {{ role.memberCount }} member(s)
                   </span>
                 </th>
@@ -127,7 +127,7 @@ const orphaned = computed(() =>
                   <th
                     :colspan="roleList.length + 1"
                     scope="colgroup"
-                    class="sticky left-0 bg-[var(--c-surface-sunken)] px-4 py-1.5 text-left text-[var(--text-2xs)] font-medium tracking-wide text-[var(--c-text-muted)] uppercase"
+                    class="sticky left-0 bg-[var(--c-surface-sunken)] px-4 py-1.5 text-left text-2xs font-medium tracking-wide text-[var(--c-text-muted)] uppercase"
                   >
                     {{ category }}
                   </th>
@@ -143,10 +143,10 @@ const orphaned = computed(() =>
                     class="sticky left-0 z-10 max-w-[18rem] bg-[var(--c-surface)] px-4 py-2 text-left font-normal"
                   >
                     <span class="flex items-center gap-1.5">
-                      <span class="text-[var(--text-sm)]">{{ permission.displayName }}</span>
+                      <span class="text-sm">{{ permission.displayName }}</span>
                       <span
                         v-if="permission.isDangerous"
-                        class="rounded-full px-1.5 text-[var(--text-2xs)] font-medium"
+                        class="rounded-full px-1.5 text-2xs font-medium"
                         :style="{
                           backgroundColor: 'var(--c-warning-subtle)',
                           color: 'var(--c-warning)',
@@ -156,7 +156,7 @@ const orphaned = computed(() =>
                         !
                       </span>
                     </span>
-                    <code class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+                    <code class="block text-2xs text-[var(--c-text-muted)]">
                       {{ permission.code }}
                     </code>
                   </th>

@@ -81,7 +81,7 @@ function save(asNew: boolean) {
       />
 
       <div class="flex flex-col gap-1">
-        <label for="saved-query-notes" class="text-[var(--text-xs)] font-medium text-[var(--c-text-secondary)]">
+        <label for="saved-query-notes" class="text-xs font-medium text-[var(--c-text-secondary)]">
           Notes
         </label>
         <textarea
@@ -89,12 +89,12 @@ function save(asNew: boolean) {
           v-model="description"
           rows="3"
           maxlength="1000"
-          class="w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2.5 py-1.5 text-[var(--text-sm)]"
+          class="w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2.5 py-1.5 text-sm"
           placeholder="What it is for - optional"
         />
       </div>
 
-      <p v-if="serverProblem" class="text-[var(--text-xs)] text-[var(--c-danger)]" role="alert">{{ serverProblem }}</p>
+      <p v-if="serverProblem" class="text-xs text-[var(--c-danger)]" role="alert">{{ serverProblem }}</p>
     </div>
 
     <template #actions>

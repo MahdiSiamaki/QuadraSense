@@ -33,8 +33,8 @@ const classes = computed(() => {
 
   const size =
     props.size === 'sm'
-      ? 'px-2 py-1 text-[var(--text-xs)]'
-      : 'px-3 py-1.5 text-[var(--text-sm)]'
+      ? 'px-2 py-1 text-xs'
+      : 'px-3 py-1.5 text-sm'
 
   const variants: Record<string, string> = {
     primary:

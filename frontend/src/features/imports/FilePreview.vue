@@ -35,19 +35,19 @@ const preview = useQuery({
 
 <template>
   <div v-if="open" class="space-y-2">
-    <p v-if="preview.isPending.value" class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+    <p v-if="preview.isPending.value" class="text-xs text-[var(--c-text-muted)]">
       Reading the first rows…
     </p>
 
     <p
       v-else-if="preview.isError.value"
-      class="text-[var(--text-xs)] text-[var(--c-text-secondary)]"
+      class="text-xs text-[var(--c-text-secondary)]"
     >
       The original file could not be read. It may have been deleted.
     </p>
 
     <template v-else-if="preview.data.value">
-      <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+      <p class="text-2xs text-[var(--c-text-muted)]">
         {{ preview.data.value.columns.length }} columns ·
         {{ formatBytes(preview.data.value.fileBytes) }}
         <template v-if="preview.data.value.totalRows > 0">
@@ -57,7 +57,7 @@ const preview = useQuery({
       </p>
 
       <div class="overflow-x-auto rounded-[var(--radius-md)] border">
-        <table class="w-full border-collapse font-[var(--font-mono)] text-[var(--text-2xs)]">
+        <table class="w-full border-collapse font-mono text-2xs">
           <thead class="bg-[var(--c-surface-sunken)]">
             <tr>
               <th scope="col" class="px-2 py-1 text-right font-medium text-[var(--c-text-muted)]">

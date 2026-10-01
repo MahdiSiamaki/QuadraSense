@@ -63,19 +63,19 @@ function detailText(record: AuditRecord): string {
 }
 
 const selectClass =
-  'rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-[var(--text-xs)]'
+  'rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-xs'
 </script>
 
 <template>
   <div class="flex flex-col gap-5">
     <header class="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h2 class="text-[var(--text-lg)] font-semibold tracking-tight">Audit log</h2>
-        <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+        <h2 class="text-lg font-semibold tracking-tight">Audit log</h2>
+        <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
           Append-only. Sign-ins, administrative changes, imports and every refused request.
         </p>
       </div>
-      <p class="tabular text-[var(--text-xs)] text-[var(--c-text-muted)]">
+      <p class="tabular text-xs text-[var(--c-text-muted)]">
         {{ (log.data.value?.total ?? 0).toLocaleString() }} entries
       </p>
     </header>
@@ -88,7 +88,7 @@ const selectClass =
           v-model="search"
           type="search"
           placeholder="Search actor, action or target"
-          class="min-w-0 flex-1 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2.5 py-1.5 text-[var(--text-sm)] placeholder:text-[var(--c-text-muted)]"
+          class="min-w-0 flex-1 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2.5 py-1.5 text-sm placeholder:text-[var(--c-text-muted)]"
         />
 
         <label class="sr-only" for="audit-outcome">Outcome</label>
@@ -129,9 +129,9 @@ const selectClass =
         @retry="log.refetch()"
       >
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-[var(--text-sm)]">
+          <table class="w-full text-left text-sm">
             <thead
-              class="border-b text-[var(--text-2xs)] tracking-wide text-[var(--c-text-muted)] uppercase"
+              class="border-b text-2xs tracking-wide text-[var(--c-text-muted)] uppercase"
             >
               <tr>
                 <th scope="col" class="px-4 py-2 font-medium">When</th>
@@ -180,7 +180,7 @@ const selectClass =
                     </span>
                     <span
                       v-if="entry.outcome !== 'success'"
-                      class="ml-1.5 rounded-full px-1.5 py-0.5 text-[var(--text-2xs)] font-medium"
+                      class="ml-1.5 rounded-full px-1.5 py-0.5 text-2xs font-medium"
                       :style="{
                         backgroundColor: 'var(--c-surface)',
                         color: tone[entry.outcome]?.fg,
@@ -190,7 +190,7 @@ const selectClass =
                     </span>
                   </td>
 
-                  <td class="px-4 py-2 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+                  <td class="px-4 py-2 text-xs text-[var(--c-text-secondary)]">
                     <template v-if="entry.targetName || entry.targetId">
                       {{ entry.targetName ?? entry.targetId }}
                       <span v-if="entry.targetType" class="text-[var(--c-text-muted)]">
@@ -200,14 +200,14 @@ const selectClass =
                     <span v-else class="text-[var(--c-text-muted)]">—</span>
                   </td>
 
-                  <td class="tabular px-4 py-2 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+                  <td class="tabular px-4 py-2 text-xs text-[var(--c-text-muted)]">
                     {{ entry.sourceIp ?? '—' }}
                   </td>
                 </tr>
 
                 <tr v-if="expanded === entry.entryId">
                   <td colspan="5" class="bg-[var(--c-surface-sunken)] px-4 py-3">
-                    <dl class="mb-2 flex flex-wrap gap-x-6 gap-y-1 text-[var(--text-xs)]">
+                    <dl class="mb-2 flex flex-wrap gap-x-6 gap-y-1 text-xs">
                       <div>
                         <dt class="inline text-[var(--c-text-muted)]">Exact time:</dt>
                         <dd class="tabular inline"> {{ formatDateTime(entry.occurredAt) }}</dd>
@@ -224,10 +224,10 @@ const selectClass =
 
                     <pre
                       v-if="entry.detail"
-                      class="overflow-x-auto rounded-[var(--radius-md)] border bg-[var(--c-surface)] p-2.5 font-mono text-[var(--text-2xs)] text-[var(--c-text-secondary)]"
+                      class="overflow-x-auto rounded-[var(--radius-md)] border bg-[var(--c-surface)] p-2.5 font-mono text-2xs text-[var(--c-text-secondary)]"
                       >{{ detailText(entry) }}</pre
                     >
-                    <p v-else class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+                    <p v-else class="text-xs text-[var(--c-text-muted)]">
                       No additional detail recorded.
                     </p>
                   </td>
@@ -247,7 +247,7 @@ const selectClass =
       </AsyncBoundary>
     </Card>
 
-    <p class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+    <p class="text-xs text-[var(--c-text-muted)]">
       Subscriber numbers are never recorded here. A lookup is audited as who, when and how many
       results — an audit log full of MSISDNs would be a second copy of the data it exists to
       protect.

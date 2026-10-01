@@ -132,7 +132,7 @@ const box = computed(() => ({
     <!-- Says the picture has not been checked, where a reader can do something about it. -->
     <span
       v-if="showPhoto && imageStatus === 'needs_review'"
-      class="absolute top-1 right-1 rounded-full bg-[var(--c-warning)] px-1.5 py-0.5 text-[var(--text-2xs)] font-medium text-white"
+      class="absolute top-1 right-1 rounded-full bg-[var(--c-warning)] px-1.5 py-0.5 text-2xs font-medium text-white"
       title="This image was sourced automatically and nobody has verified it."
     >
       unverified
@@ -183,7 +183,7 @@ const box = computed(() => ({
       -->
       <span
         v-if="initials && size !== 'sm'"
-        class="absolute bottom-1 text-[var(--text-2xs)] font-semibold tracking-wide text-[var(--c-text-muted)]"
+        class="absolute bottom-1 text-2xs font-semibold tracking-wide text-[var(--c-text-muted)]"
       >
         {{ initials }}
       </span>

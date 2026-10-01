@@ -71,18 +71,18 @@ function correlationId(error: unknown): string | null {
       class="flex flex-col items-start gap-2 rounded-[var(--radius-md)] border border-[var(--c-danger)] bg-[var(--c-danger-subtle)] p-4"
       role="alert"
     >
-      <p class="text-[var(--text-sm)] font-semibold text-[var(--c-text)]">
+      <p class="text-sm font-semibold text-[var(--c-text)]">
         {{ errorTitle(error) }}
       </p>
-      <p v-if="errorDetail(error)" class="text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+      <p v-if="errorDetail(error)" class="text-xs text-[var(--c-text-secondary)]">
         {{ errorDetail(error) }}
       </p>
-      <p v-if="correlationId(error)" class="font-[var(--font-mono)] text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+      <p v-if="correlationId(error)" class="font-mono text-2xs text-[var(--c-text-muted)]">
         Reference: {{ correlationId(error) }}
       </p>
       <button
         type="button"
-        class="mt-1 rounded-[var(--radius-sm)] border border-[var(--c-border-strong)] px-2.5 py-1 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)]"
+        class="mt-1 rounded-[var(--radius-sm)] border border-[var(--c-border-strong)] px-2.5 py-1 text-xs font-medium hover:bg-[var(--c-surface-hover)]"
         @click="$emit('retry')"
       >
         Try again
@@ -94,7 +94,7 @@ function correlationId(error: unknown): string | null {
       v-else-if="isEmpty"
       class="flex h-full flex-col items-center justify-center gap-1 py-8 text-center"
     >
-      <p class="text-[var(--text-sm)] text-[var(--c-text-secondary)]">{{ emptyMessage }}</p>
+      <p class="text-sm text-[var(--c-text-secondary)]">{{ emptyMessage }}</p>
       <slot name="empty-action" />
     </div>
 
