@@ -69,6 +69,13 @@ builder.Services.Configure<Sqm.Application.Quality.FeedQualityOptions>(
     builder.Configuration.GetSection(Sqm.Application.Quality.FeedQualityOptions.SectionName));
 builder.Services.TryAddSingleton<Sqm.Application.Quality.IFeedQualityReader, ClickHouseFeedQualityStore>();
 
+// The Explorer's query engine: allow-listed fields compiled to parameterised SQL, planned with
+// EXPLAIN ESTIMATE, run within a budget the server enforces. See ADR-012.
+builder.Services.Configure<Sqm.Application.Explorer.ExplorerOptions>(
+    builder.Configuration.GetSection(Sqm.Application.Explorer.ExplorerOptions.SectionName));
+builder.Services.AddSingleton<Sqm.Application.Explorer.IExplorerEngine,
+    Sqm.Infrastructure.ClickHouse.Explorer.ClickHouseExplorerEngine>();
+
 // Curated device photographs. The GSMA TAC record carries none and this deployment has no
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.
 builder.Services.AddSingleton<IDeviceImageStore, PostgresDeviceImageStore>();
@@ -241,6 +248,7 @@ app.MapImsiEndpoints();
 app.MapDeviceEndpoints();
 app.MapRelationshipEndpoints();
 app.MapQualityEndpoints();
+app.MapExplorerEndpoints();
 app.MapDeviceImageReviewEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);

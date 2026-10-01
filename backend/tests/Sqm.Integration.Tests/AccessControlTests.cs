@@ -114,6 +114,12 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
         Assert.Contains(Permissions.LookupSubscriber, analyst.PermissionCodes);
         Assert.DoesNotContain(Permissions.ImportUploadSqm, analyst.PermissionCodes);
 
+        // The Explorer's query builder is bulk by design: the roles trusted to resolve individuals,
+        // and not Viewer - decided by the product owner, 2026-09-30.
+        Assert.DoesNotContain(Permissions.ExplorerQuery, viewer.PermissionCodes);
+        Assert.Contains(Permissions.ExplorerQuery, analyst.PermissionCodes);
+        Assert.Contains(Permissions.ExplorerQuery, operatorRole.PermissionCodes);
+
         // Operator imports, Admin activates - decision D4 of the import platform.
         Assert.Contains(Permissions.ImportUploadTac, operatorRole.PermissionCodes);
         Assert.DoesNotContain(Permissions.TacActivate, operatorRole.PermissionCodes);
