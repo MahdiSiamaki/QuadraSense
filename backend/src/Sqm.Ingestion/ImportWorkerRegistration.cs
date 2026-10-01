@@ -94,6 +94,9 @@ public static class ImportWorkerRegistration
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
             {
                 PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+
+                // Below ClickHouse's 10 s keep_alive_timeout; see the same setting in Sqm.Api.
+                PooledConnectionIdleTimeout = TimeSpan.FromSeconds(5),
                 MaxConnectionsPerServer = 8,
                 AutomaticDecompression = System.Net.DecompressionMethods.All,
             });

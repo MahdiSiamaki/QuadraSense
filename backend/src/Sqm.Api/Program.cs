@@ -52,6 +52,12 @@ builder.Services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName, client =
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+
+        // Below ClickHouse's keep_alive_timeout (10 s on this server, measured 2026-10-01). The
+        // default here is a minute, so a connection idle between 10 and 60 seconds is one the
+        // server has already closed - and a request sent on it as the close arrives fails with
+        // "connection forcibly closed". Dropping it first costs one new connection.
+        PooledConnectionIdleTimeout = TimeSpan.FromSeconds(5),
         MaxConnectionsPerServer = 32,
 
         // Required, not optional. ClickHouse compresses its HTTP responses, and
