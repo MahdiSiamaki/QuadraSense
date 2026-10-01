@@ -175,7 +175,19 @@ dotnet run -- --verify-marts [--seq 133]
 
 # Populate the IMSI-ordered copy of current state. Run once after migration 018.
 dotnet run -- --backfill-imsi [--truncate]
+
+# Fill the binding history (timelines). Run once after migration 022, while nothing imports.
+# Resumable: months that already reconcile are skipped; --force rebuilds them all.
+dotnet run -- --backfill-history [--from 2026-01-26] [--to 2026-09-26] [--force]
 ```
+
+**`--backfill-history` is what timelines wait for.** The history holds every binding's dated
+events, one row per binding per month, by number, by SIM and by IMEI - so one entity's whole
+timeline is a key read, 34 ms for a handset with 218 bindings where the event log took 65 s for
+the most-shared one. Until every day of the event log is in it, the timeline API answers 503
+rather than show a history with days missing. After that the daily import keeps it current: a new
+day is added, a corrected or retried one rebuilds its month. See
+`docs/adr/ADR-013-binding-history.md`.
 
 **`--verify-marts` is the one worth knowing about.** The refresh writes fifteen INSERTs across
 six marts, so a partly-failed run leaves every mart holding rows for the delivery while several
