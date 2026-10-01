@@ -40,6 +40,18 @@ public sealed class ClickHouseOptions
     /// their number. Tests set it low so that small data still takes several ranges.
     /// </remarks>
     public int FoldKeysPerRange { get; set; } = 500_000;
+
+    /// <summary>
+    /// Events aggregated per statement when a month of the binding history is rebuilt.
+    /// </summary>
+    /// <remarks>
+    /// Measured on a block of a million numbers: 13,048,419 events became 3,810,910 binding
+    /// summaries, so ten million events is about three million groups - each with its events
+    /// array, which is the part of the state that grows. The statement spills to disk past 300 MB
+    /// like every bounded statement here; the range keeps the part that cannot spill small.
+    /// Tests set it low so that small data still takes several ranges.
+    /// </remarks>
+    public int HistoryEventsPerRange { get; set; } = 10_000_000;
 }
 
 /// <summary>ClickHouse-backed implementation of the analytics queries.</summary>
