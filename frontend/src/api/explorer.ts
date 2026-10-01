@@ -166,6 +166,10 @@ export interface EntitySummary {
   brand: string | null
   model: string | null
   plan: ExplorerPlan
+  /** From the binding history once it is complete; null for a TAC and before then. */
+  firstSeen: string | null
+  /** firstSeen stands for the initial dump's window, not a known day. */
+  firstSeenIsDumpWindow: boolean
 }
 
 const SAVED_KEY = ['explorer', 'saved'] as const

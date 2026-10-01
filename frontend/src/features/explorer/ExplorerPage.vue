@@ -40,6 +40,7 @@ import SavedQueriesPanel from './SavedQueriesPanel.vue'
 import SaveQueryDialog from './SaveQueryDialog.vue'
 import ShapeEditor from './ShapeEditor.vue'
 import TemplatesPanel from './TemplatesPanel.vue'
+import TimelineView from '@/features/timeline/TimelineView.vue'
 import type { ExplorerTemplate } from './templates'
 import { segment } from './ui'
 
@@ -259,6 +260,19 @@ const current = computed(() => stack.value[stack.value.length - 1] ?? null)
 
 function drill(identifier: string) {
   if (current.value !== identifier) stack.value.push(identifier)
+}
+
+/**
+ * The timeline, when open, is of whatever the summary panel shows: following a SIM out of a
+ * handset's timeline moves both to the SIM, and Back moves both back. Closed with the panel.
+ */
+const timelineOpen = ref(false)
+watch(current, (identifier) => {
+  if (identifier === null) timelineOpen.value = false
+})
+
+function closePanel() {
+  stack.value = []
 }
 
 function explore(request: ExplorerQueryRequest) {
@@ -546,10 +560,18 @@ const eventsNote = computed(() =>
         :can-open-device="can(Permission.DeviceView)"
         class="xl:sticky xl:top-20"
         @back="stack.pop()"
-        @close="stack = []"
+        @close="closePanel"
         @explore="explore"
+        @timeline="timelineOpen = true"
       />
     </div>
+
+    <TimelineView
+      v-if="timelineOpen && current"
+      :identifier="current"
+      @drill="drill"
+      @close="timelineOpen = false"
+    />
 
     <SaveQueryDialog
       :open="dialog !== null"

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import Card from '@/design-system/Card.vue'
 import type { ImsiSummary } from '@/api/imsi'
 import { formatDate } from '@/lib/format'
+import { INITIAL_DUMP } from '@/lib/initial-dump'
 
 /**
  * What is known about one SIM.
@@ -63,8 +64,16 @@ const renumbered = computed(() => props.summary.distinctSubscribers > 1)
           <dt class="text-2xs text-[var(--c-text-muted)]">Seen</dt>
           <dd class="text-sm">
             <template v-if="summary.firstSeen">
-              {{ formatDate(summary.firstSeen) }}
-              <template v-if="summary.lastSeen !== summary.firstSeen">
+              <span
+                v-if="summary.firstSeenIsDumpWindow"
+                :title="`Seen at some point between ${formatDate(INITIAL_DUMP.start)} and ${formatDate(INITIAL_DUMP.end)}: the initial dump is a month, not a moment`"
+              >
+                initial dump
+              </span>
+              <template v-else>{{ formatDate(summary.firstSeen) }}</template>
+              <!-- A SIM still bound has no end: its last change is not when it was last seen. -->
+              <template v-if="summary.activeBindings > 0"> – still active</template>
+              <template v-else-if="summary.lastSeen && summary.lastSeen !== summary.firstSeen">
                 – {{ formatDate(summary.lastSeen) }}
               </template>
             </template>

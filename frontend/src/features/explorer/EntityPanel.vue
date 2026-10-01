@@ -6,6 +6,7 @@ import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import Button from '@/design-system/Button.vue'
 import Card from '@/design-system/Card.vue'
 import { formatDate, formatFull, formatImei, formatMsisdn } from '@/lib/format'
+import { INITIAL_DUMP } from '@/lib/initial-dump'
 import { daysBefore } from './model'
 import PlanSummary from './PlanSummary.vue'
 
@@ -32,6 +33,7 @@ const emit = defineEmits<{
   back: []
   close: []
   explore: [request: ExplorerQueryRequest]
+  timeline: []
 }>()
 
 const summary = useEntitySummary()
@@ -139,6 +141,17 @@ function history() {
               </span>
             </dd>
           </div>
+          <div v-if="data.firstSeen">
+            <dt class="text-2xs text-[var(--c-text-muted)]">First seen</dt>
+            <dd class="tabular text-sm font-medium">
+              <template v-if="data.firstSeenIsDumpWindow">
+                <span :title="`Seen at some point between ${formatDate(INITIAL_DUMP.start)} and ${formatDate(INITIAL_DUMP.end)}`">
+                  Initial dump
+                </span>
+              </template>
+              <template v-else>{{ formatDate(data.firstSeen) }}</template>
+            </dd>
+          </div>
           <div>
             <dt class="text-2xs text-[var(--c-text-muted)]">Last change</dt>
             <dd class="tabular text-sm font-medium">
@@ -174,7 +187,8 @@ function history() {
           <Button size="sm" variant="primary" @click="listBindings">
             {{ data.kind === 'tac' ? 'Its handsets, by SIM count' : 'List its bindings' }}
           </Button>
-          <Button v-if="data.kind !== 'tac' && dataThrough" size="sm" @click="history">History, last 90 days</Button>
+          <Button v-if="data.kind !== 'tac'" size="sm" @click="emit('timeline')">Timeline</Button>
+          <Button v-if="data.kind !== 'tac' && dataThrough" size="sm" variant="ghost" @click="history">Events, last 90 days</Button>
         </div>
 
         <!-- What the numbers above are not; said where they are read. -->
