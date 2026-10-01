@@ -9,9 +9,9 @@ docker run -d --name bench-ch `
   --memory=4g --cpus=6 `
   -p 18123:8123 -p 19000:9000 `
   -e CLICKHOUSE_SKIP_USER_SETUP=1 `
-  -v "D:\SQM:/var/lib/clickhouse/user_files/sqm:ro" `
-  -v "D:\TAC:/var/lib/clickhouse/user_files/tac:ro" `
-  -v "D:\_sqm_discovery\chdata:/var/lib/clickhouse" `
+  -v "E:\job\QuadraSense\SQM:/var/lib/clickhouse/user_files/sqm:ro" `
+  -v "E:\job\QuadraSense\TAC:/var/lib/clickhouse/user_files/tac:ro" `
+  -v "E:\job\QuadraSense\_sqm_discovery\chdata:/var/lib/clickhouse" `
   clickhouse/clickhouse-server:25.8 | Out-Null
 
 Write-Host "waiting for clickhouse..."

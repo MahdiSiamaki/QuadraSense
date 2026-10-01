@@ -320,5 +320,5 @@ python tools/profiling/to_parquet_base.py
 python tools/profiling/q.py tools/profiling/a1.py
 ```
 
-Scripts read from `D:\SQM` and `D:\TAC` and write working Parquet projections outside the
-repository.
+Scripts read from `E:\job\QuadraSense\SQM` and `E:\job\QuadraSense\TAC` and write working Parquet
+projections outside the repository, under `E:\job\QuadraSense\_sqm_discovery`.

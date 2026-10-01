@@ -20,8 +20,8 @@ services:
       # The image restricts the built-in 'default' user to loopback, so the application needs
       # its own. ClickHouse hot-reloads users.d, so changing this does not need a restart.
       - ./clickhouse/sqm-app-user.xml:/etc/clickhouse-server/users.d/sqm-app-user.xml:ro
-      - ${SQM_SOURCE_DIR:-D:/SQM}:/srcdata/sqm:ro
-      - ${TAC_SOURCE_DIR:-D:/TAC}:/srcdata/tac:ro
+      - ${SQM_SOURCE_DIR:-E:/job/QuadraSense/SQM}:/srcdata/sqm:ro
+      - ${TAC_SOURCE_DIR:-E:/job/QuadraSense/TAC}:/srcdata/tac:ro
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
     healthcheck:
