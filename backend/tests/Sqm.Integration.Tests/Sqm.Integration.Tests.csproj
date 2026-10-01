@@ -25,4 +25,12 @@
     <ProjectReference Include="..\..\src\Sqm.Api\Sqm.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      The analytics migrations, copied beside the tests, so a test can build its scratch tables
+      from the DDL that ships rather than from a copy of it that could drift.
+    -->
+    <None Include="..\..\..\db\analytics\migrations\*.sql" LinkBase="Migrations\analytics" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

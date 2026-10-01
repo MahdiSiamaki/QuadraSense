@@ -22,6 +22,7 @@ import VendorMovementCard from './VendorMovementCard.vue'
 import DimensionTable from '@/design-system/DimensionTable.vue'
 import DataFreshnessCard from './DataFreshnessCard.vue'
 import { useFreshness } from '@/features/imports/useImportQueries'
+import { flaggedDays, useFeedQuality } from '@/api/quality'
 import { useTacVersions } from '@/features/imports/useTacVersions'
 import { formatFull, formatPercent } from '@/lib/format'
 import { useFilterState, FILTER_LABELS } from './useFilterState'
@@ -64,6 +65,14 @@ const dailyChurn = useDailyChurn()
 const { can } = useAuth()
 const canSeeImports = computed(() => can(Permission.ImportView))
 const freshness = useFreshness({ enabled: canSeeImports })
+
+/*
+  Days whose file looked unlike the ordinary days - shifted IMEIs, SIMs with several numbers -
+  shaded on both daily charts. Without import.view there is nothing to shade, and the charts are
+  drawn as before.
+*/
+const feedQuality = useFeedQuality({ enabled: canSeeImports })
+const flagged = computed(() => flaggedDays(feedQuality.data.value))
 
 const missingDays = computed(
   () => freshness.data.value?.find((f) => f.sourceCode === 'SQM')?.missingBusinessDates ?? [],
@@ -342,7 +351,7 @@ const activeTacRows = computed(
         min-height="20rem"
         @retry="dailyChanges.refetch()"
       >
-        <ChangeTimeSeries :data="dailyChanges.data.value ?? []" />
+        <ChangeTimeSeries :data="dailyChanges.data.value ?? []" :flagged="flagged" />
       </AsyncBoundary>
 
       <template #footer>
@@ -352,6 +361,11 @@ const activeTacRows = computed(
             gaps rather than interpolated points: {{ [...missingDays].sort().join(', ') }}.
           </template>
           <template v-else>Every expected day in this range was delivered and imported.</template>
+        </p>
+        <p v-if="flagged.size" class="mt-1.5 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          <strong>{{ flagged.size }} shaded days</strong> are ones whose file looked unlike the ordinary
+          days - IMEIs shifted by a digit, or SIMs carrying several numbers. Their figures may be
+          distorted; hover a day for what was found.
         </p>
       </template>
     </Card>
@@ -371,7 +385,7 @@ const activeTacRows = computed(
           min-height="18rem"
           @retry="dailyChurn.refetch()"
         >
-          <ChurnTimeSeries :data="dailyChurn.data.value ?? []" />
+          <ChurnTimeSeries :data="dailyChurn.data.value ?? []" :flagged="flagged" />
         </AsyncBoundary>
 
         <template #footer>
@@ -379,6 +393,11 @@ const activeTacRows = computed(
             Same-day definition: the number has a remove carrying one SIM (or handset) and an add
             carrying another on the same date. A change spanning midnight is not counted, so these
             are a floor, not a total.
+          </p>
+          <p v-if="flagged.size" class="mt-1.5 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            Shaded days: the feed itself looked wrong. From 2026-07-27 SIMs began carrying several
+            numbers a day, and from 2026-09-15 IMEIs arrived shifted by a digit; both show here as SIM
+            and handset changes that did not happen.
           </p>
         </template>
       </Card>

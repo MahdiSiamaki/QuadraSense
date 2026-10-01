@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Sqm.Api.Auth;
 using Sqm.Api.Endpoints;
 using Sqm.Api.Infrastructure;
@@ -61,6 +62,12 @@ builder.Services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName, client =
     });
 
 builder.Services.AddSingleton<IDeviceAnalyticsStore, ClickHouseAnalyticsStore>();
+
+// Each day's file judged against the ordinary days. TryAdd, because the in-process worker
+// registers the same reader and options for the import's own check - one instance, one judgement.
+builder.Services.Configure<Sqm.Application.Quality.FeedQualityOptions>(
+    builder.Configuration.GetSection(Sqm.Application.Quality.FeedQualityOptions.SectionName));
+builder.Services.TryAddSingleton<Sqm.Application.Quality.IFeedQualityReader, ClickHouseFeedQualityStore>();
 
 // Curated device photographs. The GSMA TAC record carries none and this deployment has no
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.
@@ -233,6 +240,7 @@ app.MapLookupEndpoints();
 app.MapImsiEndpoints();
 app.MapDeviceEndpoints();
 app.MapRelationshipEndpoints();
+app.MapQualityEndpoints();
 app.MapDeviceImageReviewEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);
