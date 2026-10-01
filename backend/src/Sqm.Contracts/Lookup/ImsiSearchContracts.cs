@@ -50,9 +50,15 @@ public sealed record ImsiMatch(
 /// <summary>Facts about one IMSI, shown when the search term was a complete one.</summary>
 /// <remarks>
 /// <c>DistinctSubscribers</c> above one is a number change; <c>DistinctHandsets</c> above one is
-/// the SIM-swap signal. <c>FirstSeen</c> and <c>LastSeen</c> are null when only the initial dump
-/// mentions this SIM. <c>EverTouchedByDailyFile</c> is false in exactly that case - the state
-/// comes from the dump alone and has never been confirmed or contradicted.
+/// the SIM-swap signal. <c>EverTouchedByDailyFile</c> is false when the state comes from the
+/// initial dump alone and has never been confirmed or contradicted.
+/// <para>
+/// <c>FirstSeen</c> and <c>LastSeen</c> come from the binding history once it is complete (analytics
+/// migration 022): the SIM's first binding, which for one from the initial dump is the dump window -
+/// <c>FirstSeenIsDumpWindow</c> says so - and the last day the feed changed any of its bindings.
+/// Before that they were the earliest and latest last-change dates, which is later than the SIM
+/// first appeared and ignores the dump (corrected with the product owner, 2026-10-01).
+/// </para>
 /// </remarks>
 public sealed record ImsiSummary(
     int DistinctSubscribers,
@@ -60,7 +66,8 @@ public sealed record ImsiSummary(
     int ActiveBindings,
     DateOnly? FirstSeen,
     DateOnly? LastSeen,
-    bool EverTouchedByDailyFile);
+    bool EverTouchedByDailyFile,
+    bool FirstSeenIsDumpWindow = false);
 
 /// <summary>The result of an IMSI search.</summary>
 /// <remarks>

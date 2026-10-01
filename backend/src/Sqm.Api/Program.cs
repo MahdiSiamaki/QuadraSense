@@ -52,6 +52,12 @@ builder.Services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName, client =
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+
+        // Below ClickHouse's keep_alive_timeout (10 s on this server, measured 2026-10-01). The
+        // default here is a minute, so a connection idle between 10 and 60 seconds is one the
+        // server has already closed - and a request sent on it as the close arrives fails with
+        // "connection forcibly closed". Dropping it first costs one new connection.
+        PooledConnectionIdleTimeout = TimeSpan.FromSeconds(5),
         MaxConnectionsPerServer = 32,
 
         // Required, not optional. ClickHouse compresses its HTTP responses, and
@@ -76,6 +82,13 @@ builder.Services.Configure<Sqm.Application.Explorer.ExplorerOptions>(
 builder.Services.AddSingleton<Sqm.Application.Explorer.IExplorerEngine,
     Sqm.Infrastructure.ClickHouse.Explorer.ClickHouseExplorerEngine>();
 builder.Services.AddSingleton<Sqm.Application.Explorer.IExplorerSavedQueryStore, PostgresExplorerSavedQueryStore>();
+
+// Timelines, from the binding history (analytics migration 022). A singleton: it caches for a
+// minute whether the history is complete, which every timeline request asks.
+builder.Services.Configure<Sqm.Application.Timeline.TimelineOptions>(
+    builder.Configuration.GetSection(Sqm.Application.Timeline.TimelineOptions.SectionName));
+builder.Services.AddSingleton<Sqm.Application.Timeline.ITimelineStore,
+    Sqm.Infrastructure.ClickHouse.ClickHouseTimelineStore>();
 
 // Curated device photographs. The GSMA TAC record carries none and this deployment has no
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.
@@ -250,6 +263,7 @@ app.MapDeviceEndpoints();
 app.MapRelationshipEndpoints();
 app.MapQualityEndpoints();
 app.MapExplorerEndpoints();
+app.MapTimelineEndpoints();
 app.MapDeviceImageReviewEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);

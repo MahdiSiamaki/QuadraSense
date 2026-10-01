@@ -30,11 +30,14 @@ public sealed record ExplorerEntityRequest(string Identifier);
 /// <param name="Brand">For a handset or TAC: the GSMA brand.</param>
 /// <param name="Model">For a handset or TAC: the GSMA marketing name.</param>
 /// <param name="Plan">What the summary cost.</param>
+/// <param name="FirstSeen">From the binding history, once complete: its first binding, yyyy-MM-dd. Null for a TAC.</param>
+/// <param name="FirstSeenIsDumpWindow">FirstSeen stands for the initial dump's window, not a known day.</param>
 public sealed record ExplorerEntitySummary(
     string Kind, string Identifier, bool Found,
     long Bindings, long ActiveBindings, long Numbers, long ActiveNumbers,
     long Sims, long ActiveSims, long Handsets, long ActiveHandsets,
-    string? LastChange, string? Tac, string? Brand, string? Model, ExplorerPlanInfo Plan);
+    string? LastChange, string? Tac, string? Brand, string? Model, ExplorerPlanInfo Plan,
+    string? FirstSeen = null, bool FirstSeenIsDumpWindow = false);
 
 /// <summary>The Explorer: a query builder over current state and the event log, and entity summaries.</summary>
 /// <remarks>
@@ -393,7 +396,8 @@ public static class ExplorerEndpoints
 
     private static async Task<IResult> EntityAsync(
         ExplorerEntityRequest request, HttpContext http, IExplorerEngine engine, IDeviceAnalyticsStore devices,
-        IAuditLog audit, IOptions<ExplorerOptions> options, CancellationToken ct)
+        Sqm.Application.Timeline.ITimelineStore timelines, IAuditLog audit, IOptions<ExplorerOptions> options,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -468,6 +472,20 @@ public static class ExplorerEndpoints
         var tac = field is "imei" or "tac" ? parsed.Digits[..8] : null;
         var identity = tac is null ? null : await devices.GetModelIdentityAsync(tac, ct).ConfigureAwait(false);
 
+        // When it first appeared, from the binding history once that is complete. Not for a TAC: a
+        // model's first appearance is the device page's question, over millions of bindings.
+        Sqm.Application.Timeline.TimelineCentre? centre = field switch
+        {
+            "msisdn" => Sqm.Application.Timeline.TimelineCentre.Msisdn,
+            "imsi" => Sqm.Application.Timeline.TimelineCentre.Imsi,
+            "imei" => Sqm.Application.Timeline.TimelineCentre.Imei,
+            _ => null,
+        };
+        var seen = centre is { } c && Count(0) > 0
+            && await timelines.GetReadinessAsync(ct).ConfigureAwait(false) == Sqm.Application.Timeline.HistoryReadiness.Ready
+            ? await timelines.GetSeenAsync(c, parsed.Digits, ct).ConfigureAwait(false)
+            : null;
+
         await audit.WriteAsync(new AuditEntry(
             user.Username, permission, AuditCategory.Data, AuditOutcome.Success, user.UserId, "explorer-entity",
             Ip: http.Connection.RemoteIpAddress?.ToString(), UserAgent: http.Request.Headers.UserAgent.ToString(),
@@ -477,7 +495,9 @@ public static class ExplorerEndpoints
         return Results.Ok(new ExplorerEntitySummary(
             field, parsed.Digits, Count(0) > 0,
             Count(0), Count(1), Count(2), Count(3), Count(4), Count(5), Count(6), Count(7),
-            values?[8] as string, tac, identity?.Brand, identity?.MarketingName, rows.Plan));
+            values?[8] as string, tac, identity?.Brand, identity?.MarketingName, rows.Plan,
+            seen?.FirstSeen.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            seen?.FirstSeenIsDumpWindow ?? false));
     }
 
     /// <summary>

@@ -76,7 +76,16 @@ public sealed class ExplorerEndpointTests : IClassFixture<WebApplicationFactory<
                 };
             }));
             services.AddSingleton<IExplorerSavedQueryStore>(_saved);
+            services.AddSingleton(TestStubs.Create<Sqm.Application.Timeline.ITimelineStore>((method, _) => method.Name switch
+            {
+                "GetReadinessAsync" => Task.FromResult(_history),
+                "GetSeenAsync" => Task.FromResult<Sqm.Application.Timeline.EntitySeen?>(
+                    new(new DateOnly(2025, 12, 27), true, new DateOnly(2026, 9, 26))),
+                _ => throw new NotSupportedException(method.Name),
+            }));
         }));
+
+    private Sqm.Application.Timeline.HistoryReadiness _history = Sqm.Application.Timeline.HistoryReadiness.NotDeployed;
 
     /// <summary>
     /// An owner-scoped store in memory. What the database itself guarantees is proven against
@@ -313,6 +322,20 @@ public sealed class ExplorerEndpointTests : IClassFixture<WebApplicationFactory<
             body.GetProperty("sims").GetInt64(),
             body.GetProperty("handsets").GetInt64(),
             body.GetProperty("lastChange").GetString()));
+    }
+
+    /// <summary>First seen comes from the binding history, and only once it is complete.</summary>
+    [Fact]
+    public async Task An_entity_summary_says_when_it_was_first_seen_once_the_history_is_complete()
+    {
+        _engine = q => new ExplorerRows(Plan, [[3L, 2L, 1L, 1L, 2L, 1L, 3L, 2L, "2026-09-26"]], 1, 5, 400_000);
+
+        var (_, before) = await PostAsync("/api/v1/explorer/entity", new { identifier = Msisdn });
+        _history = Sqm.Application.Timeline.HistoryReadiness.Ready;
+        var (_, after) = await PostAsync("/api/v1/explorer/entity", new { identifier = Msisdn });
+
+        Assert.Equal(JsonValueKind.Null, before.GetProperty("firstSeen").ValueKind);
+        Assert.Equal(("2025-12-27", true), (after.GetProperty("firstSeen").GetString(), after.GetProperty("firstSeenIsDumpWindow").GetBoolean()));
     }
 
     [Fact]

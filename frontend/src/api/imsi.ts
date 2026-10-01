@@ -50,6 +50,12 @@ export interface ImsiSummary {
   lastSeen: string | null
   /** False when every binding is still at sequence 0 - dump-only, never confirmed. */
   everTouchedByDailyFile: boolean
+  /**
+   * firstSeen stands for the initial dump's window, not a known day. First and last seen come from
+   * the binding history once it is complete (corrected 2026-10-01: they were the earliest and
+   * latest last-change dates).
+   */
+  firstSeenIsDumpWindow: boolean
 }
 
 export interface SearchTiming {

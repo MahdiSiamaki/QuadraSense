@@ -97,6 +97,39 @@ public interface IAnalyticsIngestionStore
     Task<bool> RefreshFeedQualityForDayAsync(DateOnly businessDate, CancellationToken ct);
 
     /// <summary>
+    /// Brings the binding history (analytics migration 022) up to date with one loaded day.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The history's rows are aggregates - min, max, sum, concatenation - which merge correctly
+    /// whatever order days arrive in, so a day the history has never seen is simply added: a few
+    /// seconds of one day's events. That includes a missing day imported late.
+    /// </para>
+    /// <para>
+    /// A day it has seen before - a retry, or a corrected file replacing the day - would be
+    /// counted twice by the same insert. So would any day of a month whose last write did not
+    /// finish. Those rebuild the month from the event log instead, which is exact whatever came
+    /// before. A per-day ledger, written before each insert, is what tells the cases apart.
+    /// </para>
+    /// </remarks>
+    Task<HistoryRefresh> RefreshHistoryForDayAsync(DateOnly businessDate, CancellationToken ct);
+
+    /// <summary>
+    /// Rebuilds one month of the binding history from the event log, in msisdn ranges.
+    /// </summary>
+    /// <param name="anyDayOfMonth">Any date in the month.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The events the month holds, as the history now records them.</returns>
+    Task<long> RebuildHistoryMonthAsync(DateOnly anyDayOfMonth, CancellationToken ct);
+
+    /// <summary>
+    /// Loads the initial dump's bindings into the history: partition 0, no events, the window as
+    /// their first-seen date. The dump never changes, so this runs once, from the backfill.
+    /// </summary>
+    /// <returns>Bindings written.</returns>
+    Task<long> RebuildHistoryDumpAsync(CancellationToken ct);
+
+    /// <summary>
     /// Confirms the analytics schema is the one this code requires.
     /// </summary>
     /// <remarks>
