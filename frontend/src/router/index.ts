@@ -63,6 +63,13 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Device', permission: Permission.DeviceView },
   },
   {
+    // No identifiers in this route, by design: queries are POSTed, and drill-down is a panel.
+    path: '/explorer',
+    name: 'explorer',
+    component: () => import('@/features/explorer/ExplorerPage.vue'),
+    meta: { title: 'Explorer', permission: Permission.ExplorerQuery },
+  },
+  {
     path: '/lookup',
     name: 'lookup',
     component: () => import('@/features/lookup/LookupPage.vue'),

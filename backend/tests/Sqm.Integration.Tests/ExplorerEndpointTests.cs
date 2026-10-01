@@ -32,6 +32,7 @@ public sealed class ExplorerEndpointTests : IClassFixture<WebApplicationFactory<
     private readonly List<CheckedExplorerQuery> _ran = [];
     private string[] _held = [Permissions.ExplorerQuery, Permissions.LookupSubscriber, Permissions.LookupImsi, Permissions.LookupImei];
     private Func<CheckedExplorerQuery, ExplorerRows>? _engine;
+    private readonly SavedQueries _saved = new();
 
     private static readonly ExplorerPlanInfo Plan = new("Current state, read by number", "KeyRead", 400_000, "Light", 100_000_000, []);
 
@@ -60,6 +61,11 @@ public sealed class ExplorerEndpointTests : IClassFixture<WebApplicationFactory<
             }));
             services.AddSingleton(TestStubs.Create<IExplorerEngine>((method, args) =>
             {
+                if (method.Name == "DataThroughAsync")
+                {
+                    return Task.FromResult<DateOnly?>(new DateOnly(2026, 9, 28));
+                }
+
                 var query = (CheckedExplorerQuery)args[0]!;
                 _ran.Add(query);
                 return method.Name switch
@@ -69,7 +75,63 @@ public sealed class ExplorerEndpointTests : IClassFixture<WebApplicationFactory<
                     _ => throw new NotSupportedException(method.Name),
                 };
             }));
+            services.AddSingleton<IExplorerSavedQueryStore>(_saved);
         }));
+
+    /// <summary>
+    /// An owner-scoped store in memory. What the database itself guarantees is proven against
+    /// PostgreSQL in <see cref="ExplorerSavedQueryStoreTests"/>; here the question is only what the
+    /// API does with each answer.
+    /// </summary>
+    private sealed class SavedQueries : IExplorerSavedQueryStore
+    {
+        private readonly List<(long Owner, SavedExplorerQuery Query)> _all = [];
+        private long _next = 100;
+
+        public long Seed(long owner, string name, ExplorerQueryRequest query)
+        {
+            var saved = new SavedExplorerQuery(_next++, name, "", query, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+            _all.Add((owner, saved));
+            return saved.Id;
+        }
+
+        public IEnumerable<SavedExplorerQuery> Of(long owner) => _all.Where(e => e.Owner == owner).Select(e => e.Query);
+
+        public Task<IReadOnlyList<SavedExplorerQuery>> ListAsync(long ownerId, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<SavedExplorerQuery>>([.. Of(ownerId)]);
+
+        public Task<SavedExplorerQuery?> GetAsync(long ownerId, long id, CancellationToken ct) =>
+            Task.FromResult(Of(ownerId).FirstOrDefault(q => q.Id == id));
+
+        public Task<(SavedQueryOutcome Outcome, SavedExplorerQuery? Query)> CreateAsync(
+            long ownerId, string name, string description, ExplorerQueryRequest query, CancellationToken ct)
+        {
+            if (Of(ownerId).Any(q => string.Equals(q.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)))
+            {
+                return Task.FromResult<(SavedQueryOutcome, SavedExplorerQuery?)>((SavedQueryOutcome.NameTaken, null));
+            }
+
+            var id = Seed(ownerId, name.Trim(), query);
+            return Task.FromResult<(SavedQueryOutcome, SavedExplorerQuery?)>((SavedQueryOutcome.Saved, Of(ownerId).Single(q => q.Id == id)));
+        }
+
+        public Task<(SavedQueryOutcome Outcome, SavedExplorerQuery? Query)> UpdateAsync(
+            long ownerId, long id, string name, string description, ExplorerQueryRequest query, CancellationToken ct)
+        {
+            var index = _all.FindIndex(e => e.Owner == ownerId && e.Query.Id == id);
+            if (index < 0)
+            {
+                return Task.FromResult<(SavedQueryOutcome, SavedExplorerQuery?)>((SavedQueryOutcome.NotFound, null));
+            }
+
+            var updated = _all[index].Query with { Name = name.Trim(), Description = description, Query = query };
+            _all[index] = (ownerId, updated);
+            return Task.FromResult<(SavedQueryOutcome, SavedExplorerQuery?)>((SavedQueryOutcome.Saved, updated));
+        }
+
+        public Task<bool> DeleteAsync(long ownerId, long id, CancellationToken ct) =>
+            Task.FromResult(_all.RemoveAll(e => e.Owner == ownerId && e.Query.Id == id) > 0);
+    }
 
     /// <summary>One row with a plausible value for every column.</summary>
     private static ExplorerRows Rows(CheckedExplorerQuery query) => new(Plan,
@@ -91,16 +153,26 @@ public sealed class ExplorerEndpointTests : IClassFixture<WebApplicationFactory<
         columns,
     };
 
-    private async Task<(HttpStatusCode Status, JsonElement Body)> PostAsync(string path, object body)
+    private Task<(HttpStatusCode Status, JsonElement Body)> PostAsync(string path, object body) =>
+        SendAsync(HttpMethod.Post, path, body);
+
+    private async Task<(HttpStatusCode Status, JsonElement Body)> SendAsync(HttpMethod method, string path, object? body = null)
+    {
+        var (status, text, _) = await SendRawAsync(method, path, body);
+        return (status, string.IsNullOrEmpty(text) ? default : JsonDocument.Parse(text).RootElement.Clone());
+    }
+
+    private async Task<(HttpStatusCode Status, string Text, System.Net.Http.Headers.HttpContentHeaders Headers)> SendRawAsync(
+        HttpMethod method, string path, object? body = null)
     {
         using var client = _factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
+        using var request = new HttpRequestMessage(method, path) { Content = body is null ? null : JsonContent.Create(body) };
         request.Headers.Add("Cookie", "sqm_session=analyst; sqm_csrf=t");
         request.Headers.Add("X-CSRF-Token", "t");
 
         using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
         var text = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
-        return (response.StatusCode, string.IsNullOrEmpty(text) ? default : JsonDocument.Parse(text).RootElement.Clone());
+        return (response.StatusCode, text, response.Content.Headers);
     }
 
     [Fact]
@@ -241,5 +313,202 @@ public sealed class ExplorerEndpointTests : IClassFixture<WebApplicationFactory<
             body.GetProperty("sims").GetInt64(),
             body.GetProperty("handsets").GetInt64(),
             body.GetProperty("lastChange").GetString()));
+    }
+
+    [Fact]
+    public async Task The_catalogue_says_what_day_the_data_runs_to()
+    {
+        var (status, body) = await SendAsync(HttpMethod.Get, "/api/v1/explorer/catalogue");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("2026-09-28", body.GetProperty("dataThrough").GetString());
+
+        // What the builder needs to offer a list rather than free text, and to show its defaults.
+        var events = body.GetProperty("datasets").EnumerateArray().Single(d => d.GetProperty("dataset").GetString() == "Events");
+        var change = events.GetProperty("fields").EnumerateArray().Single(f => f.GetProperty("name").GetString() == "change");
+        Assert.Equal(["add", "remove"], change.GetProperty("values").EnumerateArray().Select(v => v.GetString()));
+        Assert.Equal("date", events.GetProperty("defaultColumns")[0].GetString());
+    }
+
+    // ------------------------------------------------------------------ export
+
+    [Fact]
+    public async Task Exporting_needs_data_export_on_top_of_explorer_query()
+    {
+        var (status, _) = await PostAsync("/api/v1/explorer/export", Query("model"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Empty(_ran);
+    }
+
+    /// <summary>
+    /// One run of every reachable row, not the page the grid happens to show - whatever page and
+    /// size the request carried.
+    /// </summary>
+    [Fact]
+    public async Task An_export_is_one_run_of_every_reachable_row()
+    {
+        _held = [.. _held, Permissions.DataExport];
+
+        var (status, _, headers) = await SendRawAsync(HttpMethod.Post, "/api/v1/explorer/export", new
+        {
+            dataset = "Bindings",
+            where = new { field = "tac", @operator = "Equals", values = new[] { "35085748" } },
+            columns = new[] { "model" },
+            page = 7,
+            pageSize = 25,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("text/csv", headers.ContentType?.MediaType);
+        Assert.StartsWith("explorer-bindings-", headers.ContentDisposition?.FileNameStar ?? headers.ContentDisposition?.FileName, StringComparison.Ordinal);
+
+        var ran = Assert.Single(_ran);
+        Assert.Equal((1, 10_000, 0), (ran.Page, ran.PageSize, ran.Offset));
+    }
+
+    [Fact]
+    public async Task An_export_masks_like_the_grid_and_is_audited_as_an_export_without_values()
+    {
+        _held = [.. _held, Permissions.DataExport];
+
+        var (status, csv, _) = await SendRawAsync(HttpMethod.Post, "/api/v1/explorer/export", new
+        {
+            dataset = "Bindings",
+            where = new { field = "msisdn", @operator = "Equals", values = new[] { Msisdn } },
+            columns = new[] { "msisdn", "imsi", "imei", "model" },
+        });
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.DoesNotContain(Msisdn, csv, StringComparison.Ordinal);
+        Assert.DoesNotContain(Imsi, csv, StringComparison.Ordinal);
+        Assert.DoesNotContain(Imei, csv, StringComparison.Ordinal);
+        Assert.Contains("Galaxy A32", csv, StringComparison.Ordinal);
+
+        var entry = Assert.Single(_audited);
+        Assert.Equal((Permissions.DataExport, AuditOutcome.Success), (entry.Action, entry.Outcome));
+        Assert.Equal((1, true), (entry.Detail!["rows"], entry.Detail["masked"]));
+        Assert.DoesNotContain(Msisdn, JsonSerializer.Serialize(entry), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_export_over_the_budget_is_refused_and_audited()
+    {
+        _held = [.. _held, Permissions.DataExport];
+        _engine = _ => throw new ExplorerRefusedException(Plan with { Verdict = "Refused" }, "Too much.");
+
+        var (status, body) = await PostAsync("/api/v1/explorer/export", Query("model"));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, status);
+        Assert.Equal("Refused", body.GetProperty("plan").GetProperty("verdict").GetString());
+        Assert.Equal((Permissions.DataExport, AuditOutcome.Failure), (Assert.Single(_audited).Action, _audited[0].Outcome));
+    }
+
+    [Fact]
+    public void A_csv_cell_cannot_become_a_formula()
+    {
+        var csv = System.Text.Encoding.UTF8.GetString(Sqm.Api.Infrastructure.CsvExport.Write(
+            ["Model", "Count"],
+            [
+                ["=HYPERLINK(\"http://x\")", 1L],
+                ["+1", -2L],
+                ["-cmd", null],
+                ["@SUM(A1)", true],
+                ["Redmi Note 8, \"Pro\"", 3L],
+            ]));
+
+        Assert.Equal(
+            "﻿Model,Count\r\n"
+            + "\"'=HYPERLINK(\"\"http://x\"\")\",1\r\n"
+            + "'+1,'-2\r\n"
+            + "'-cmd,\r\n"
+            + "'@SUM(A1),true\r\n"
+            + "\"Redmi Note 8, \"\"Pro\"\"\",3\r\n",
+            csv);
+    }
+
+    // ------------------------------------------------------------------ My Queries
+
+    private static object Saved(string name, object? query = null) => new
+    {
+        name,
+        description = "notes",
+        query = query ?? Query("model"),
+    };
+
+    [Fact]
+    public async Task A_query_is_saved_listed_renamed_and_deleted_by_its_owner()
+    {
+        var (created, body) = await PostAsync("/api/v1/explorer/saved", Saved("Galaxy A32 SIMs"));
+        var id = body.GetProperty("id").GetInt64();
+
+        var (_, list) = await SendAsync(HttpMethod.Get, "/api/v1/explorer/saved");
+        var (renamed, _) = await SendAsync(HttpMethod.Put, $"/api/v1/explorer/saved/{id}", Saved("A32 SIMs"));
+        var (deleted, _) = await SendAsync(HttpMethod.Delete, $"/api/v1/explorer/saved/{id}");
+
+        Assert.Equal(HttpStatusCode.Created, created);
+        Assert.Equal("Galaxy A32 SIMs", Assert.Single(list.EnumerateArray()).GetProperty("name").GetString());
+        Assert.Equal("35085748", list[0].GetProperty("query").GetProperty("where").GetProperty("values")[0].GetString());
+        Assert.Equal(HttpStatusCode.OK, renamed);
+        Assert.Equal(HttpStatusCode.NoContent, deleted);
+        Assert.Empty(_saved.Of(7));
+    }
+
+    [Fact]
+    public async Task Another_persons_query_is_not_listed_and_cannot_be_changed_or_deleted()
+    {
+        var theirs = _saved.Seed(8, "Theirs", new ExplorerQueryRequest(ExplorerDataset.Bindings));
+
+        var (_, list) = await SendAsync(HttpMethod.Get, "/api/v1/explorer/saved");
+        var (changed, _) = await SendAsync(HttpMethod.Put, $"/api/v1/explorer/saved/{theirs}", Saved("Mine now"));
+        var (deleted, _) = await SendAsync(HttpMethod.Delete, $"/api/v1/explorer/saved/{theirs}");
+
+        Assert.Empty(list.EnumerateArray());
+        Assert.Equal(HttpStatusCode.NotFound, changed);
+        Assert.Equal(HttpStatusCode.NotFound, deleted);
+        Assert.Equal("Theirs", Assert.Single(_saved.Of(8)).Name);
+    }
+
+    [Fact]
+    public async Task A_second_query_by_the_same_name_is_a_conflict()
+    {
+        await PostAsync("/api/v1/explorer/saved", Saved("Weekly check"));
+        var (status, _) = await PostAsync("/api/v1/explorer/saved", Saved("weekly CHECK"));
+
+        Assert.Equal(HttpStatusCode.Conflict, status);
+    }
+
+    /// <summary>A query is saved only if the person saving it could run it.</summary>
+    [Fact]
+    public async Task A_query_the_caller_could_not_run_is_not_saved()
+    {
+        _held = [Permissions.ExplorerQuery, Permissions.LookupImei];
+
+        var (forbidden, _) = await PostAsync("/api/v1/explorer/saved", Saved("Numbers", Query("msisdn")));
+        var (invalid, body) = await PostAsync("/api/v1/explorer/saved", Saved("Broken", new
+        {
+            dataset = "Bindings",
+            where = new { field = "tac", @operator = "Equals", values = new[] { "123" } },
+        }));
+
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid);
+        Assert.True(body.GetProperty("errors").TryGetProperty("where.values[0]", out _));
+        Assert.Empty(_saved.Of(7));
+    }
+
+    [Fact]
+    public async Task Saving_is_audited_by_id_and_name_never_by_the_values_in_the_query()
+    {
+        await PostAsync("/api/v1/explorer/saved", Saved("One number", new
+        {
+            dataset = "Bindings",
+            where = new { field = "msisdn", @operator = "Equals", values = new[] { Msisdn } },
+            columns = new[] { "imsi" },
+        }));
+
+        var entry = Assert.Single(_audited);
+        Assert.Equal(($"{Permissions.ExplorerQuery}.save", "One number"), (entry.Action, entry.TargetName));
+        Assert.DoesNotContain(Msisdn, JsonSerializer.Serialize(entry), StringComparison.Ordinal);
     }
 }

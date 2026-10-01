@@ -115,3 +115,50 @@ The estimates are within 1.1% of what was read.
   Explorer; `docs/architecture/14-relationship-explorer.md` explains why pairing stays confined to the
   Relationships page.
 - **"Active" means not yet removed by the feed**, and the catalogue says so where the field is offered.
+
+## Phase 2: the page, saved queries and export (2026-09-30)
+
+Decisions by the product owner, 2026-09-30, and what they cost in code:
+
+- **"Explorer" is a top-level page** after Devices. Lookup, IMSI and Relationships are unchanged.
+- **Identifiers never reach a URL.** The page's route carries none; drill-down opens a panel beside the
+  results with a back stack in page state. A route per entity was the obvious alternative and was
+  rejected because the address bar feeds history, bookmarks and Referer headers.
+- **My Queries are private to their owner and hold the definition, never results.** One table,
+  `explorer.saved_query` (operational migration 013): owner, name (unique per owner, ignoring case and
+  surrounding spaces), notes, the query as `jsonb`, capped at 64 KB. Every statement is scoped by owner,
+  and someone else's query answers 404, not 403 - whether it exists is the owner's business. A query is
+  checked when saved (valid, and within what the saver may see) and again every time it runs, because
+  permissions change. Audited by id and name, never the query body, which can hold identifiers. Sharing
+  was considered and left out: it needs a decision about whose permissions a shared query runs under.
+- **Export is CSV, up to the 10,000 reachable rows, in one run** rather than twenty pages - the same
+  budget, and one run cannot see the data change between pages. It needs `data.export` on top of
+  `explorer.query`, is masked like the grid without `identifier.reveal`, and is audited as `data.export`
+  with the row count and no values. A cell beginning `=`, `+`, `-`, `@`, a tab or a carriage return is
+  prefixed with an apostrophe so a spreadsheet shows it rather than running it.
+- **Data freshness** - the latest day in the event log - comes with the catalogue and is shown on the
+  page: every answer is as of that day.
+
+### Templates, measured
+
+The page offers ready-made questions; each one fills the builder and runs, so what it asks is visible.
+Their defaults were chosen from `EXPLAIN ESTIMATE` on the real data, and
+`ExplorerRealDataPlanTests.Every_template_plans_within_the_budget_with_its_defaults` keeps them there
+(estimates vary a little because the test samples its identifiers from the data):
+
+| Template, default parameters | Read | Rows (estimate) | Verdict |
+|---|---|---|---|
+| History of a number, 90 days | key | 1.3M | Light |
+| History of a SIM, 90 days | `idx_imsi` | 0.86-1.2M | Light |
+| History of a handset, 90 days | `idx_imei` | **647.5M without the index** | Refused until analytics migration 021 is applied |
+| SIMs on many handsets, one day | that day's partition | 11.4M | Moderate; ran in 2.4-5.5 s |
+| Handsets of a model with many SIMs (Galaxy A01) | TAC ranges | 7.4M | Moderate |
+| Numbers with many SIMs, 6-digit prefix | range | 0.16-0.23M | Light |
+| Unknown TAC, 6-digit number prefix | range | 0.43-0.5M | Light |
+
+The one-day group-by was also run, not only planned: on 2026-09-10, 87,229 SIMs had more than two IMEIs
+in the day's events (the busiest, 413); on 2026-09-26, 520,442 (busiest 288) - after the feed changed on
+2026-09-15. A SIM on many IMEIs in a day is therefore an **observation**, not a risk signal, and the
+template says so beside its results: the feed itself, test SIMs and re-flashed handsets all produce it.
+The risk layer (Phase 4) is where such observations may become signals, with evidence and a proposal
+first.

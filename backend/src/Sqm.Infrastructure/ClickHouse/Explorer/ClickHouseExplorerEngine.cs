@@ -146,6 +146,19 @@ public sealed partial class ClickHouseExplorerEngine : IExplorerEngine, IDisposa
         }
     }
 
+    /// <inheritdoc />
+    public async Task<DateOnly?> DataThroughAsync(CancellationToken ct)
+    {
+        // Answered from partition metadata: the log is partitioned by day, so the newest day is
+        // known without reading a row.
+        var result = await _query.ExecuteAsync(
+            "SELECT max(data_date) FROM binding_event", new Dictionary<string, string>(), ct).ConfigureAwait(false);
+
+        return result.Rows.Count > 0 && ClickHouseJsonResult.Date(result.Rows[0], 0) is { } day && day.Year > 1970
+            ? day
+            : null;
+    }
+
     /// <summary>Compiled SQL and its plan; no SQL when the query can match nothing.</summary>
     private sealed record Prepared(CompiledExplorerQuery? Compiled, ExplorerPlanInfo Plan);
 

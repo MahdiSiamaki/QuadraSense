@@ -75,6 +75,7 @@ builder.Services.Configure<Sqm.Application.Explorer.ExplorerOptions>(
     builder.Configuration.GetSection(Sqm.Application.Explorer.ExplorerOptions.SectionName));
 builder.Services.AddSingleton<Sqm.Application.Explorer.IExplorerEngine,
     Sqm.Infrastructure.ClickHouse.Explorer.ClickHouseExplorerEngine>();
+builder.Services.AddSingleton<Sqm.Application.Explorer.IExplorerSavedQueryStore, PostgresExplorerSavedQueryStore>();
 
 // Curated device photographs. The GSMA TAC record carries none and this deployment has no
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.

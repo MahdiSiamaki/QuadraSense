@@ -208,4 +208,67 @@ public sealed class ExplorerRealDataPlanTests : IAsyncLifetime
         Assert.Equal("KeyRead", plan.Access);
         Assert.InRange(plan.EstimatedRows, 1, 2_000_000);
     }
+
+    /// <summary>
+    /// The Explorer's templates (<c>frontend/src/features/explorer/templates.ts</c>), with their
+    /// default parameters, plan within the budget: a template that is refused the moment it is
+    /// opened teaches nobody anything. The shapes are repeated here, not shared - keep the two in step.
+    /// </summary>
+    [Fact]
+    public async Task Every_template_plans_within_the_budget_with_its_defaults()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        string Day(int back) => _lastDay.AddDays(-back).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var prefix = _msisdn[..6];
+
+        var templates = new Dictionary<string, ExplorerQueryRequest>(StringComparer.Ordinal)
+        {
+            ["number-history (90 days)"] = new(ExplorerDataset.Events, new ExplorerFilter(ExplorerLogic.And,
+                [Is("msisdn", ExplorerOperator.Equals, _msisdn), Is("date", ExplorerOperator.Between, Day(89), Day(0))])),
+            ["sim-history (90 days)"] = new(ExplorerDataset.Events, new ExplorerFilter(ExplorerLogic.And,
+                [Is("imsi", ExplorerOperator.Equals, _imsi), Is("date", ExplorerOperator.Between, Day(89), Day(0))])),
+            ["handset-history (90 days)"] = new(ExplorerDataset.Events, new ExplorerFilter(ExplorerLogic.And,
+                [Is("imei", ExplorerOperator.Equals, _imei), Is("date", ExplorerOperator.Between, Day(89), Day(0))])),
+            ["sims-on-many-handsets (1 day)"] = new(ExplorerDataset.Events,
+                Is("date", ExplorerOperator.Between, Day(0), Day(0)),
+                GroupBy: ["imsi"], Measures: [new("handsets", ExplorerAggregate.CountDistinct, "imei")],
+                Having: Is("handsets", ExplorerOperator.GreaterThan, "5")),
+            ["model-handsets-many-sims (Galaxy A01)"] = new(ExplorerDataset.Bindings,
+                new ExplorerFilter(ExplorerLogic.And, [Is("model", ExplorerOperator.Equals, "Galaxy A01")]),
+                GroupBy: ["imei"], Measures: [new("sims", ExplorerAggregate.CountDistinct, "imsi")],
+                Having: Is("sims", ExplorerOperator.GreaterThan, "10")),
+            ["numbers-with-many-sims (prefix)"] = new(ExplorerDataset.Bindings,
+                Is("msisdn", ExplorerOperator.StartsWith, prefix),
+                GroupBy: ["msisdn"], Measures: [new("sims", ExplorerAggregate.CountDistinct, "imsi")],
+                Having: Is("sims", ExplorerOperator.GreaterThan, "3")),
+            ["unknown-tac (prefix)"] = new(ExplorerDataset.Bindings, new ExplorerFilter(ExplorerLogic.And,
+                [Is("msisdn", ExplorerOperator.StartsWith, prefix), Is("model", ExplorerOperator.IsNull)])),
+        };
+
+        var refused = new List<string>();
+        foreach (var (name, request) in templates)
+        {
+            var plan = await PlanAsync(request);
+            TestContext.Current.TestOutputHelper?.WriteLine($"  ^ {name}");
+            if (plan.Verdict == "Refused")
+            {
+                refused.Add($"{name}: {plan.EstimatedRows:N0} rows");
+            }
+        }
+
+        // A handset's history is cheap only with the bloom index on imei that analytics migration
+        // 021 adds: without it every day of the range is read whole - measured 647,523,106 rows
+        // for 90 days, against 1,024,549 for a SIM's history through idx_imsi.
+        var hasImeiIndex = await QueryAsync(
+            "SELECT count() FROM system.data_skipping_indices WHERE database = 'sqm' AND table = 'binding_event' AND name = 'idx_imei'") == "1";
+
+        Assert.True(refused.Count == 0,
+            "Refused: " + string.Join("; ", refused)
+            + (hasImeiIndex ? string.Empty : ". idx_imei is not on binding_event - apply analytics migration 021."));
+    }
 }
