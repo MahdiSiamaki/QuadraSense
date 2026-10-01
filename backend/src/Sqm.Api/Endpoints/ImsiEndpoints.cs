@@ -2,6 +2,7 @@ using System.Globalization;
 using Sqm.Api.Auth;
 using Sqm.Application.Abstractions;
 using Sqm.Application.Identity;
+using Sqm.Application.Timeline;
 using Sqm.Contracts.Lookup;
 using Sqm.Domain.Identifiers;
 
@@ -58,6 +59,7 @@ public static class ImsiEndpoints
         ImsiSearchRequest request,
         HttpContext http,
         IDeviceAnalyticsStore store,
+        ITimelineStore timelines,
         IAuditLog audit,
         CancellationToken ct)
     {
@@ -90,6 +92,14 @@ public static class ImsiEndpoints
 
         var user = CurrentUser.Require(http);
         var reveal = user.Can(Permissions.IdentifierReveal);
+
+        // First and last seen from the binding history when it is complete: the SIM's first
+        // binding (the dump window, if it was in the dump) and its last change - not the earliest
+        // last-change date, which is what these were before.
+        var seen = outcome.Facts is not null && term.Value.IsExact
+            && await timelines.GetReadinessAsync(ct).ConfigureAwait(false) == HistoryReadiness.Ready
+            ? await timelines.GetSeenAsync(TimelineCentre.Imsi, term.Value.Digits, ct).ConfigureAwait(false)
+            : null;
 
         await audit.WriteAsync(new AuditEntry(
             ActorName: user.Username,
@@ -127,9 +137,10 @@ public static class ImsiEndpoints
                 outcome.Facts.DistinctSubscribers,
                 outcome.Facts.DistinctHandsets,
                 outcome.Facts.ActiveBindings,
-                outcome.Facts.FirstSeen,
-                outcome.Facts.LastSeen,
-                outcome.Facts.EverTouchedByDailyFile),
+                seen is null ? outcome.Facts.FirstSeen : seen.FirstSeen,
+                seen is null ? outcome.Facts.LastSeen : seen.LastChange,
+                outcome.Facts.EverTouchedByDailyFile,
+                seen?.FirstSeenIsDumpWindow ?? false),
             Timing: new SearchTiming(outcome.ElapsedMs, outcome.RowsExamined)));
     }
 

@@ -83,6 +83,13 @@ builder.Services.AddSingleton<Sqm.Application.Explorer.IExplorerEngine,
     Sqm.Infrastructure.ClickHouse.Explorer.ClickHouseExplorerEngine>();
 builder.Services.AddSingleton<Sqm.Application.Explorer.IExplorerSavedQueryStore, PostgresExplorerSavedQueryStore>();
 
+// Timelines, from the binding history (analytics migration 022). A singleton: it caches for a
+// minute whether the history is complete, which every timeline request asks.
+builder.Services.Configure<Sqm.Application.Timeline.TimelineOptions>(
+    builder.Configuration.GetSection(Sqm.Application.Timeline.TimelineOptions.SectionName));
+builder.Services.AddSingleton<Sqm.Application.Timeline.ITimelineStore,
+    Sqm.Infrastructure.ClickHouse.ClickHouseTimelineStore>();
+
 // Curated device photographs. The GSMA TAC record carries none and this deployment has no
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.
 builder.Services.AddSingleton<IDeviceImageStore, PostgresDeviceImageStore>();
@@ -256,6 +263,7 @@ app.MapDeviceEndpoints();
 app.MapRelationshipEndpoints();
 app.MapQualityEndpoints();
 app.MapExplorerEndpoints();
+app.MapTimelineEndpoints();
 app.MapDeviceImageReviewEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);
