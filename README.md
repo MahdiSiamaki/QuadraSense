@@ -111,8 +111,9 @@ The table keeps the latest row per version, so the old checksum stays in its his
 Done once so far, on the development database: `019_device_module` was edited after it ran on
 2026-09-15 (applied 18:25 UTC, committed 18:57 UTC). On 2026-09-30 the live `binding_by_imei`,
 `mv_binding_by_imei` and `agg_device_model` were compared with the file and are identical — columns,
-types, engine, sort key, partitioning and the view's query. Recorded checksum `f4ee6c0f…`, file
-checksum `e66cac95…`. A fresh environment runs the file as it stands and never meets this.
+types, engine, sort key, partitioning and the view's query. On 2026-10-01, with the product owner's
+authorisation, the file's checksum `e66cac95…` was recorded over the original `f4ee6c0f…`, and the
+migrator then applied 020–022. A fresh environment runs the file as it stands and never meets this.
 
 ### 4. Grants, and the first administrator
 
@@ -124,6 +125,16 @@ psql -U sqm -d sqm -v app_password="a-strong-password" \
 Creates the `sqm_app` role the application connects as. It holds INSERT and SELECT on the audit
 tables and nothing else, which is what makes the audit trail append-only in fact rather than by
 convention — `UPDATE` and `DELETE` on it are refused by PostgreSQL.
+
+A schema added after that gets its own grants file, run once after the migration that creates it.
+There are two so far; both are safe to re-run:
+
+```bash
+psql -U sqm -d sqm -f db/operational/grants/005_device_catalog.sql   # after migration 005
+psql -U sqm -d sqm -f db/operational/grants/013_explorer.sql         # after migration 013
+```
+
+Without them `sqm_app` has no privileges on the new schema at all.
 
 ```bash
 SQM_BOOTSTRAP_PASSWORD='...' \
