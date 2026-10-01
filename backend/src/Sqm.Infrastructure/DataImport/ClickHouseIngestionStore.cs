@@ -512,45 +512,57 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             """,
 
             // SIM changes: a number that on this day had a remove carrying one IMSI and an add
-            // carrying a different one.
+            // carrying a different one - some IMSI was removed, and some IMSI was added that was
+            // not also removed.
+            //
+            // Two GROUP BYs, not arrays. It used to collect each number's added and removed
+            // IMSIs into arrays and filter one against the other, and that lambda copies the
+            // removed array once per added element: memory grows with the SQUARE of what one
+            // number carries in a day. Early August has numbers carrying ~8,900 devices a day,
+            // and the handset version below needed 1.18 GiB for 2026-08-06 against a 1.12 GiB
+            // cap - five attempts, five failures, and the day blocked every day after it. Two
+            // aggregations are linear, and a GROUP BY spills to disk where an array cannot.
+            // Same result: checked against the array form on real days where that one fits.
+            //
+            // One row whatever the count, so a day with no changes reads zero rather than
+            // missing - and a day missing from this mart is one whose refresh did not finish.
             $$"""
             INSERT INTO {{_database}}.agg_sim_change_daily (data_date, msisdn_changed)
-            SELECT data_date, count()
+            SELECT {businessDate:Date}, count()
             FROM (
-                SELECT
-                    data_date,
-                    msisdn,
-                    groupUniqArrayIf(imsi, label = 'add')    AS added_sims,
-                    groupUniqArrayIf(imsi, label = 'remove') AS removed_sims
-                FROM {{_database}}.binding_event
-                WHERE data_date = {businessDate:Date}
+                SELECT data_date, msisdn
+                FROM (
+                    SELECT data_date, msisdn, imsi,
+                           max(label = 'add')    AS added,
+                           max(label = 'remove') AS removed
+                    FROM {{_database}}.binding_event
+                    WHERE data_date = {businessDate:Date}
+                    GROUP BY data_date, msisdn, imsi
+                )
                 GROUP BY data_date, msisdn
-                HAVING length(added_sims) > 0
-                   AND length(removed_sims) > 0
-                   AND length(arrayFilter(x -> NOT has(removed_sims, x), added_sims)) > 0
+                HAVING countIf(removed) > 0 AND countIf(added AND NOT removed) > 0
             )
-            GROUP BY data_date
             """,
 
             // Handset changes: the same shape, on IMEI. Measured over the whole window at 51.3%
-            // of subscribers, so this is the largest churn signal in the dataset.
+            // of subscribers, so this is the largest churn signal in the dataset - and, keyed by a
+            // string, the one the array form ran out of memory on.
             $$"""
             INSERT INTO {{_database}}.agg_device_change_daily (data_date, msisdn_changed)
-            SELECT data_date, count()
+            SELECT {businessDate:Date}, count()
             FROM (
-                SELECT
-                    data_date,
-                    msisdn,
-                    groupUniqArrayIf(imei, label = 'add')    AS added_devices,
-                    groupUniqArrayIf(imei, label = 'remove') AS removed_devices
-                FROM {{_database}}.binding_event
-                WHERE data_date = {businessDate:Date}
+                SELECT data_date, msisdn
+                FROM (
+                    SELECT data_date, msisdn, imei,
+                           max(label = 'add')    AS added,
+                           max(label = 'remove') AS removed
+                    FROM {{_database}}.binding_event
+                    WHERE data_date = {businessDate:Date}
+                    GROUP BY data_date, msisdn, imei
+                )
                 GROUP BY data_date, msisdn
-                HAVING length(added_devices) > 0
-                   AND length(removed_devices) > 0
-                   AND length(arrayFilter(x -> NOT has(removed_devices, x), added_devices)) > 0
+                HAVING countIf(removed) > 0 AND countIf(added AND NOT removed) > 0
             )
-            GROUP BY data_date
             """,
         ];
 
@@ -755,12 +767,21 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
         await using var connection = CreateConnection();
         await using var command = connection.CreateCommand();
 
-        // agg_change_summary_daily is the last of the four day-level marts a refresh writes, so
-        // a day present here had all four succeed. Checking the cheapest one would report days
-        // as done that are only partly built.
-        command.CommandText =
-            $"SELECT DISTINCT toString(data_date) FROM {_database}.agg_change_summary_daily "
-            + "ORDER BY data_date";
+        // Built means present in all four day-level marts. This used to read the summary mart
+        // alone, on the belief that it was the last one a refresh writes - it is the second. On
+        // 2026-09-30, 54 of the 233 days had a summary and no SIM or handset figures: the first
+        // backfill lost them to memory (the array form of those two marts), and every later run
+        // skipped them as done. The churn chart drew 18 of them as zero handset changes and left
+        // the other 36 out. Every refresh writes a row to each of the four, zero changes
+        // included, so a day missing from any one of them did not finish.
+        command.CommandText = $"""
+            SELECT toString(data_date) FROM (
+                SELECT DISTINCT data_date FROM {_database}.agg_change_daily
+                INTERSECT SELECT DISTINCT data_date FROM {_database}.agg_change_summary_daily
+                INTERSECT SELECT DISTINCT data_date FROM {_database}.agg_sim_change_daily
+                INTERSECT SELECT DISTINCT data_date FROM {_database}.agg_device_change_daily)
+            ORDER BY data_date
+            """;
 
         var dates = new List<DateOnly>();
         await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -828,6 +849,52 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
 
         var scalar = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return scalar is null or DBNull ? 0 : Convert.ToInt32(scalar, CultureInfo.InvariantCulture);
+    }
+
+    /// <remarks>
+    /// <para>
+    /// A day that already has a sequence keeps it, so a corrected file replaces the day in place
+    /// rather than appearing as a new one at the end of the series. A day that does not gets the
+    /// next number - including a missing day that arrives late, whose number then does not match
+    /// its calendar position. Nothing that decides state reads the number as an order: the fold
+    /// re-derives a late day's bindings by date, and the dashboard marts follow the latest date.
+    /// </para>
+    /// <para>
+    /// <b>Unless another day shares it.</b> "Next" is the highest number plus one, read without a
+    /// lock, so two files processed at once can both read it: on 2026-09-27 two workers gave
+    /// 14 August and 26 September the same sequence, 216. Rows of both days then carried one
+    /// version, whichever write landed last won, and 7,011 bindings kept a state from before
+    /// 26 September. Only one day of a source runs at a time now, so it cannot happen again;
+    /// a day found sharing its number is given a new one when it is next imported, which is
+    /// what reprocessing it does - and the fold that follows re-derives its bindings by date.
+    /// </para>
+    /// </remarks>
+    public async Task<int> ResolveSequenceForDateAsync(DateOnly businessDate, CancellationToken ct)
+    {
+        if (await GetSequenceForDateAsync(businessDate, ct).ConfigureAwait(false) is { } own)
+        {
+            await using var connection = CreateConnection();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $$"""
+                SELECT count() FROM {{_database}}.binding_event
+                WHERE seq = {seq:UInt16} AND data_date != {businessDate:Date}
+                """;
+            AddDateParameter(command, "businessDate", businessDate);
+            var seq = command.CreateParameter();
+            seq.ParameterName = "seq";
+            seq.Value = own;
+            command.Parameters.Add(seq);
+
+            var shared = Convert.ToInt64(
+                await command.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+
+            if (shared == 0)
+            {
+                return own;
+            }
+        }
+
+        return await GetMaxSequenceAsync(ct).ConfigureAwait(false) + 1;
     }
 
     public async Task<int?> GetSequenceForDateAsync(DateOnly businessDate, CancellationToken ct)

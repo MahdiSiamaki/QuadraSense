@@ -68,7 +68,12 @@ public sealed class LateDayFoldTests : IAsyncLifetime
             }
 
             await QueryAsync($"CREATE DATABASE {_database}");
-            foreach (var table in new[] { "binding_event", "binding_current", "binding_snapshot" })
+            foreach (var table in new[]
+                     {
+                         "binding_event", "binding_current", "binding_snapshot",
+                         "agg_change_daily", "agg_change_summary_daily",
+                         "agg_sim_change_daily", "agg_device_change_daily",
+                     })
             {
                 await QueryAsync($"CREATE TABLE {_database}.{table} AS sqm.{table}");
             }
@@ -192,8 +197,7 @@ public sealed class LateDayFoldTests : IAsyncLifetime
         var ct = TestContext.Current.CancellationToken;
 
         var existing = await store.CountEventsForDateAsync(day, ct);
-        var sequence = await store.GetSequenceForDateAsync(day, ct)
-                       ?? await store.GetMaxSequenceAsync(ct) + 1;
+        var sequence = await store.ResolveSequenceForDateAsync(day, ct);
 
         if (existing > 0)
         {
@@ -271,5 +275,154 @@ public sealed class LateDayFoldTests : IAsyncLifetime
 
         // The scratch table a replaced day leaves behind is dropped once its fold lands.
         Assert.Equal("0", await QueryAsync($"EXISTS TABLE {_database}.fold_replaced_20260506"));
+    }
+
+    /// <summary>
+    /// SIM and handset changes are counted exactly, and in memory that grows with a day's rows,
+    /// not with the square of what one number carries.
+    /// </summary>
+    /// <remarks>
+    /// The array form of these marts copied each number's removed identifiers once per added one.
+    /// On 2026-08-06 one number carried 8,886 handsets in a day, the handset mart needed 1.18 GiB
+    /// against a 1.12 GiB cap, and the day failed five times and blocked every day after it. Number
+    /// 9 below carries 9,500 removed and 9,500 added - past what the array form can hold.
+    /// </remarks>
+    [Fact]
+    public async Task Sim_and_handset_changes_are_counted_exactly_even_for_a_number_with_thousands_of_devices()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var store = Store(1_000_000);
+        var day = new DateOnly(2026, 8, 6);
+
+        var csv = new StringBuilder("msisdn,imsi,imei,label\n");
+        void Row(int number, long imsi, string imei, string label) =>
+            csv.Append(CultureInfo.InvariantCulture, $"{9_120_000_000 + number},{imsi},{imei},{label}\n");
+
+        Row(1, 1, "35000000000001", "remove"); Row(1, 1, "35000000000002", "add");   // handset change
+        Row(2, 2, "35000000000003", "add");                                          // added only
+        Row(3, 3, "35000000000004", "remove");                                       // removed only
+        Row(4, 4, "35000000000005", "remove"); Row(4, 4, "35000000000005", "add");   // same handset back
+        Row(5, 5, "35000000000006", "remove"); Row(5, 5, "35000000000006", "add");
+        Row(5, 5, "35000000000007", "add");                                          // one back, one new: change
+        Row(6, 61, "35000000000008", "remove"); Row(6, 62, "35000000000008", "add"); // SIM change, same handset
+
+        for (var i = 0; i < 9_500; i++)
+        {
+            Row(9, 9, $"3510{i:0000000000}", "remove");
+            Row(9, 9, $"3520{i:0000000000}", "add");
+        }
+
+        await using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv.ToString())))
+        {
+            await store.LoadDailyEventsAsync(day, 1, stream, null, ct);
+        }
+
+        await store.RefreshChangeMartsForDayAsync(day, 1, ct);
+
+        Assert.Equal("3", await QueryAsync($"SELECT sum(msisdn_changed) FROM {_database}.agg_device_change_daily WHERE data_date = '2026-08-06'"));
+        Assert.Equal("1", await QueryAsync($"SELECT sum(msisdn_changed) FROM {_database}.agg_sim_change_daily WHERE data_date = '2026-08-06'"));
+    }
+
+    /// <summary>
+    /// A day counts as built only when all four of its day-level marts are, and a day with no
+    /// changes at all is built too.
+    /// </summary>
+    /// <remarks>
+    /// On 2026-09-30, 54 real days had a summary and no SIM or handset figures. The first backfill
+    /// lost those two marts to memory, and every later run skipped the days as done because the
+    /// check read the summary alone. Here the same partial state is made directly.
+    /// </remarks>
+    [Fact]
+    public async Task A_day_is_built_only_when_all_four_of_its_marts_are()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var store = Store(1_000_000);
+        var quiet = new DateOnly(2026, 5, 1);
+        var busy = new DateOnly(2026, 5, 2);
+
+        // Adds only: no SIM change and no handset change anywhere on the day.
+        await ImportAsync(store, quiet, [new(K(1), true), new(K(2), true)]);
+
+        // K(1)'s number moves to another handset.
+        await ImportAsync(store, busy, [new(K(1), false), new(new Binding(K(1).Msisdn, K(1).Imsi, "35000000009999"), true)]);
+
+        await store.RefreshChangeMartsForDayAsync(quiet, 1, ct);
+        await store.RefreshChangeMartsForDayAsync(busy, 2, ct);
+
+        Assert.Equal([quiet, busy], await store.GetBuiltMartDatesAsync(ct));
+        Assert.Equal("1\t0", await QueryAsync($"SELECT count(), sum(msisdn_changed) FROM {_database}.agg_device_change_daily WHERE data_date = '2026-05-01'"));
+        Assert.Equal("1", await QueryAsync($"SELECT sum(msisdn_changed) FROM {_database}.agg_device_change_daily WHERE data_date = '2026-05-02'"));
+
+        // What the lost backfill left: the refresh got past the summary and no further.
+        await QueryAsync($"ALTER TABLE {_database}.agg_device_change_daily DROP PARTITION '2026-05-02'");
+
+        Assert.Equal([quiet], await store.GetBuiltMartDatesAsync(ct));
+    }
+
+    /// <summary>
+    /// A day found sharing its sequence with another is given its own when imported again, and
+    /// the bindings the collision left wrong are re-derived by date.
+    /// </summary>
+    /// <remarks>
+    /// The state 2026-09-27 left behind: 14 August (late) and 26 September both loaded as delivery
+    /// 216 by two workers at once, and 14 August's fold - which had not seen 26 September - landed
+    /// last with the same version, so bindings kept a state from before 26 September. Built here
+    /// directly, then repaired the way it is repaired for real: by importing the late day again.
+    /// </remarks>
+    [Fact]
+    public async Task Reimporting_a_day_that_shares_its_sequence_gives_it_its_own_and_repairs_the_bindings()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var store = Store(2);
+        var late = new DateOnly(2026, 8, 14);
+        var newest = new DateOnly(2026, 9, 26);
+        var events = new[] { new Event(K(1), true), new Event(K(2), true) };
+
+        // 26 September: both bindings removed. The truth is that both are inactive.
+        await ImportAsync(store, D1, [new(K(1), true), new(K(2), true)]);
+        await ImportAsync(store, newest, [new(K(1), false), new(K(2), false)]);
+        var shared = await QueryAsync($"SELECT any(seq) FROM {_database}.binding_event WHERE data_date = '2026-09-26'");
+
+        // The collision: 14 August loaded under the SAME sequence, and a stale fold of it - one
+        // that never saw 26 September - written last, at that same version.
+        await QueryAsync($"""
+            INSERT INTO {_database}.binding_event (seq, data_date, msisdn, imsi, imei, label)
+            VALUES ({shared}, '2026-08-14', {K(1).Msisdn}, {K(1).Imsi}, '{K(1).Imei}', 'add'),
+                   ({shared}, '2026-08-14', {K(2).Msisdn}, {K(2).Imsi}, '{K(2).Imei}', 'add')
+            """);
+        await QueryAsync($"""
+            INSERT INTO {_database}.binding_current (msisdn, imsi, imei, active, last_change_seq, last_change_date)
+            VALUES ({K(1).Msisdn}, {K(1).Imsi}, '{K(1).Imei}', 1, {shared}, '2026-08-14'),
+                   ({K(2).Msisdn}, {K(2).Imsi}, '{K(2).Imei}', 1, {shared}, '2026-08-14')
+            """);
+        Assert.Equal("2", await QueryAsync($"SELECT sum(active) FROM {_database}.binding_current FINAL"));
+
+        // The repair: 14 August imported again, through the real code.
+        await ImportAsync(store, late, events);
+
+        Assert.Equal("0", await QueryAsync($"""
+            SELECT count() FROM (SELECT seq FROM (SELECT DISTINCT seq, data_date FROM {_database}.binding_event)
+                                 GROUP BY seq HAVING count() > 1)
+            """));
+        Assert.Equal(shared, await QueryAsync($"SELECT any(seq) FROM {_database}.binding_event WHERE data_date = '2026-09-26'"));
+        Assert.Equal("0", await QueryAsync($"SELECT sum(active) FROM {_database}.binding_current FINAL"));
     }
 }

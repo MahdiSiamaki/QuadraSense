@@ -32,12 +32,14 @@ public sealed class ClickHouseOptions
     /// Bindings re-derived per statement when a late or replaced day is folded from history.
     /// </summary>
     /// <remarks>
-    /// Sized from a measurement, not a guess: in one statement the 6.5 million bindings of a real
-    /// day overran the fold's 1.2 GB cap in seven seconds; at about a million per range each range
-    /// stayed under it. Smaller only adds statements - the ranges together read the event log once
-    /// whatever their number. Tests set it low so that small data still takes several ranges.
+    /// Sized from measurements, not a guess. In one statement the 6.5 million bindings of a real
+    /// day overran the fold's 1.2 GB cap in seven seconds. At a million per range, 2026-07-20
+    /// peaked at 745 MiB - but 2026-08-04, whose bindings carry longer histories, reached 1.11 GiB
+    /// in one range and failed its first attempt. Half a million halves the part that cannot
+    /// spill. Smaller only adds statements: the ranges together read the event log once whatever
+    /// their number. Tests set it low so that small data still takes several ranges.
     /// </remarks>
-    public int FoldKeysPerRange { get; set; } = 1_000_000;
+    public int FoldKeysPerRange { get; set; } = 500_000;
 }
 
 /// <summary>ClickHouse-backed implementation of the analytics queries.</summary>

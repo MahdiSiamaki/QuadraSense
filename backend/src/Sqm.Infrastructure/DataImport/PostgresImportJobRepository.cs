@@ -332,6 +332,24 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                                          AND landed.status IN ('COMPLETED', 'PARTIALLY_COMPLETED')
                                   )
                        ))
+                   -- And no other day of this source is being worked on right now, by any
+                   -- worker. The rule above only looks at EARLIER days, which is all one worker
+                   -- needs. With two workers - the API's own in development, plus a standalone
+                   -- Sqm.Ingestion someone also started - an earlier day is claimable while a
+                   -- later one runs, and that happened: on 2026-09-27, 14 and 1 August were
+                   -- folded side by side by two workers, their history folds and mart rebuilds
+                   -- overlapping for thirteen minutes. Claims are serialised by an advisory lock
+                   -- (below), so the running row another worker just claimed is visible here.
+                   AND (j.business_date IS NULL OR NOT EXISTS (
+                           SELECT 1
+                             FROM imports.import_job busy
+                            WHERE busy.source_code = j.source_code
+                              AND busy.business_date IS NOT NULL
+                              AND busy.id <> j.id
+                              AND busy.status IN ('VALIDATING', 'PARSING', 'NORMALIZING',
+                                                  'DEDUPLICATING', 'ENRICHING', 'IMPORTING',
+                                                  'AGGREGATING', 'FINALIZING')
+                       ))
                  ORDER BY j.priority DESC, j.business_date NULLS LAST, j.created_at
                    FOR UPDATE SKIP LOCKED
                  LIMIT 1
@@ -361,8 +379,19 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                       j.reprocess_of_job_id AS ReprocessOfJobId
             """;
 
+        // Claims are taken one at a time across every worker. Without it, two workers claiming at
+        // the same instant would each see the other's day as not yet running and both proceed.
+        // Held for one short statement, a few times a day - nothing waits on it in practice.
+        await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+        await connection.ExecuteAsync(Command(
+            "SELECT pg_advisory_xact_lock(hashtext('imports.claim'))", null, ct, transaction))
+            .ConfigureAwait(false);
+
         var job = await connection.QuerySingleOrDefaultAsync<ClaimedJob>(
-            Command(Sql, new { worker = workerId, lease = leaseDuration }, ct)).ConfigureAwait(false);
+            Command(Sql, new { worker = workerId, lease = leaseDuration }, ct, transaction))
+            .ConfigureAwait(false);
+
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
 
         if (job is not null)
         {

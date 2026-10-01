@@ -119,9 +119,19 @@ process list. Everyone else is created from the Users page.
 ### 5. The application
 
 ```bash
-dotnet run --project backend/src/Sqm.Api        # API on :8080
-dotnet run --project backend/src/Sqm.Ingestion  # import worker
-cd frontend && npm install && npm run dev       # UI on :5173
+dotnet run --project backend/src/Sqm.Api --launch-profile http   # API on :5202, import worker inside it
+cd frontend && npm install && npm run dev                        # UI on :5173
+```
+
+**In development the import worker runs inside the API** (`Import:RunWorkerInProcess`, on by
+default in Development). Do not also start `Sqm.Ingestion` as a worker: that makes two, and this
+README used to say to. On 2026-09-27 two did run, and two late days were folded side by side. A
+day of a source is now never claimed while another day of it is running, whichever worker holds
+it, but one worker is what the design assumes and what its timings were measured on. To run the
+worker as its own process, start the API with `Import__RunWorkerInProcess=false`:
+
+```bash
+dotnet run --project backend/src/Sqm.Ingestion  # the worker, only when the API does not host one
 ```
 
 The worker checks the analytics schema at startup and refuses to run against the wrong partition
