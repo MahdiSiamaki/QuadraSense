@@ -135,10 +135,10 @@ const tone: Record<QueueItem['status'], string> = {
       @dragleave.prevent="dragging = false"
       @drop.prevent="onDrop"
     >
-      <span class="text-[var(--text-sm)] font-medium text-[var(--c-text)]">
+      <span class="text-sm font-medium text-[var(--c-text)]">
         Drop {{ sourceCode }} files here, or choose files
       </span>
-      <span class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+      <span class="text-xs text-[var(--c-text-muted)]">
         {{ hint ?? 'Several files can be queued at once; they upload one after another.' }}
       </span>
     </button>
@@ -159,10 +159,10 @@ const tone: Record<QueueItem['status'], string> = {
         class="rounded-[var(--radius-md)] border px-3 py-2"
       >
         <div class="flex items-baseline justify-between gap-3">
-          <span class="truncate text-[var(--text-xs)] font-medium" :title="item.file.name">
+          <span class="truncate text-xs font-medium" :title="item.file.name">
             {{ item.file.name }}
           </span>
-          <span class="tabular shrink-0 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          <span class="tabular shrink-0 text-2xs text-[var(--c-text-muted)]">
             {{ formatBytes(item.file.size) }}
           </span>
         </div>
@@ -176,20 +176,20 @@ const tone: Record<QueueItem['status'], string> = {
 
         <p
           v-else-if="item.message"
-          class="mt-1 text-[var(--text-2xs)]"
+          class="mt-1 text-2xs"
           :style="{ color: tone[item.status] }"
         >
           {{ item.message }}
         </p>
 
-        <p v-else class="mt-1 text-[var(--text-2xs)] text-[var(--c-text-muted)]">Waiting…</p>
+        <p v-else class="mt-1 text-2xs text-[var(--c-text-muted)]">Waiting…</p>
       </li>
     </ul>
 
     <div v-if="queue.length && !active" class="flex justify-end">
       <button
         type="button"
-        class="text-[var(--text-xs)] font-medium text-[var(--c-text-secondary)] hover:text-[var(--c-text)] hover:underline"
+        class="text-xs font-medium text-[var(--c-text-secondary)] hover:text-[var(--c-text)] hover:underline"
         @click="clearFinished"
       >
         Clear list

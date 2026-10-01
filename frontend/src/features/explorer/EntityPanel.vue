@@ -114,7 +114,7 @@ function history() {
           aria-label="Close summary"
           @click="emit('close')"
         >
-          <span aria-hidden="true" class="text-[var(--text-lg)] leading-none">&times;</span>
+          <span aria-hidden="true" class="text-lg leading-none">&times;</span>
         </button>
       </div>
     </template>
@@ -131,17 +131,17 @@ function history() {
       <div v-if="data" class="flex flex-col gap-4">
         <dl class="grid grid-cols-2 gap-x-4 gap-y-3">
           <div v-for="row in rows" :key="row.label">
-            <dt class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">{{ row.label }}</dt>
-            <dd class="tabular text-[var(--text-lg)] font-semibold">
+            <dt class="text-2xs text-[var(--c-text-muted)]">{{ row.label }}</dt>
+            <dd class="tabular text-lg font-semibold">
               {{ formatFull(row.total) }}
-              <span class="text-[var(--text-xs)] font-normal text-[var(--c-text-secondary)]">
+              <span class="text-xs font-normal text-[var(--c-text-secondary)]">
                 {{ formatFull(row.active) }} active
               </span>
             </dd>
           </div>
           <div>
-            <dt class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">Last change</dt>
-            <dd class="tabular text-[var(--text-sm)] font-medium">
+            <dt class="text-2xs text-[var(--c-text-muted)]">Last change</dt>
+            <dd class="tabular text-sm font-medium">
               <template v-if="data.lastChange">{{ formatDate(data.lastChange) }}</template>
               <span
                 v-else
@@ -155,11 +155,11 @@ function history() {
         </dl>
 
         <div v-if="data.tac" class="rounded-[var(--radius-md)] bg-[var(--c-surface-sunken)] px-3 py-2">
-          <p class="text-[var(--text-sm)] font-medium">
+          <p class="text-sm font-medium">
             {{ data.model ?? 'Model not in the GSMA database' }}
             <span v-if="data.brand" class="font-normal text-[var(--c-text-secondary)]">· {{ data.brand }}</span>
           </p>
-          <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          <p class="text-2xs text-[var(--c-text-muted)]">
             TAC <span class="tabular font-mono">{{ data.tac }}</span>
             <template v-if="canOpenDevice">
               ·
@@ -178,12 +178,12 @@ function history() {
         </div>
 
         <!-- What the numbers above are not; said where they are read. -->
-        <ul class="flex list-disc flex-col gap-0.5 pl-4 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        <ul class="flex list-disc flex-col gap-0.5 pl-4 text-2xs text-[var(--c-text-muted)]">
           <li>Active means the feed has not yet removed the binding, not that the SIM is in the handset today.</li>
           <li>Handsets are counted by IMEI, and a dual-SIM phone has two - so this is not a count of phones.</li>
         </ul>
 
-        <details class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        <details class="text-2xs text-[var(--c-text-muted)]">
           <summary class="cursor-pointer">What this cost</summary>
           <div class="mt-2"><PlanSummary :plan="data.plan" compact /></div>
         </details>

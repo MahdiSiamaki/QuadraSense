@@ -20,8 +20,8 @@ const options: Array<{ value: ThemeMode; label: string; hint: string }> = [
 <template>
   <div class="flex flex-col gap-5">
     <header>
-      <h2 class="text-[var(--text-lg)] font-semibold tracking-tight">Appearance</h2>
-      <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+      <h2 class="text-lg font-semibold tracking-tight">Appearance</h2>
+      <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
         Kept in this browser only. It changes nothing for anyone else.
       </p>
     </header>
@@ -53,8 +53,8 @@ const options: Array<{ value: ThemeMode; label: string; hint: string }> = [
             class="mt-0.5 accent-[var(--c-accent)]"
           />
           <span>
-            <span class="block text-[var(--text-sm)] font-medium">{{ option.label }}</span>
-            <span class="block text-[var(--text-xs)] text-[var(--c-text-muted)]">{{ option.hint }}</span>
+            <span class="block text-sm font-medium">{{ option.label }}</span>
+            <span class="block text-xs text-[var(--c-text-muted)]">{{ option.hint }}</span>
           </span>
         </span>
       </label>

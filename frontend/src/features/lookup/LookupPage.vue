@@ -51,8 +51,8 @@ function correlationId(e: unknown): string | null {
 <template>
   <div class="mx-auto max-w-4xl space-y-5">
     <header>
-      <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Subscriber lookup</h1>
-      <p class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+      <h1 class="text-xl font-semibold tracking-tight">Subscriber lookup</h1>
+      <p class="mt-0.5 text-xs text-[var(--c-text-muted)]">
         Every device–SIM binding for one subscriber number, active and historical.
       </p>
     </header>
@@ -69,7 +69,7 @@ function correlationId(e: unknown): string | null {
         -->
         <div class="flex flex-wrap items-end gap-3">
           <div class="min-w-[16rem] flex-1">
-            <label for="msisdn" class="block text-[var(--text-xs)] font-medium text-[var(--c-text-secondary)]">
+            <label for="msisdn" class="block text-xs font-medium text-[var(--c-text-secondary)]">
               Subscriber number
             </label>
             <input
@@ -79,13 +79,13 @@ function correlationId(e: unknown): string | null {
               autocomplete="off"
               placeholder="0913 123 4567"
               aria-describedby="msisdn-formats"
-              class="mt-1.5 w-full rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-3 py-2 font-[var(--font-mono)] text-[var(--text-sm)] tabular placeholder:text-[var(--c-text-muted)]"
+              class="mt-1.5 w-full rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-3 py-2 font-mono text-sm tabular placeholder:text-[var(--c-text-muted)]"
             />
           </div>
           <button
             type="submit"
             :disabled="isLoading || !input.trim()"
-            class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-4 py-2 text-[var(--text-sm)] font-medium text-[var(--c-accent-text)] hover:bg-[var(--c-accent-hover)] disabled:opacity-50"
+            class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-4 py-2 text-sm font-medium text-[var(--c-accent-text)] hover:bg-[var(--c-accent-hover)] disabled:opacity-50"
           >
             {{ isLoading ? 'Searching…' : 'Search' }}
           </button>
@@ -97,17 +97,17 @@ function correlationId(e: unknown): string | null {
           thing they should not have to do is convert it by hand for a number they are about to
           investigate.
         -->
-        <p id="msisdn-formats" class="mt-1.5 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        <p id="msisdn-formats" class="mt-1.5 text-2xs text-[var(--c-text-muted)]">
           National or international, with or without separators —
-          <code class="font-[var(--font-mono)]">0913…</code>,
-          <code class="font-[var(--font-mono)]">913…</code>,
-          <code class="font-[var(--font-mono)]">+98 913…</code>,
-          <code class="font-[var(--font-mono)]">0098913…</code>
+          <code class="font-mono">0913…</code>,
+          <code class="font-mono">913…</code>,
+          <code class="font-mono">+98 913…</code>,
+          <code class="font-mono">0098913…</code>
           all find the same subscriber.
         </p>
       </form>
 
-      <p class="mt-3 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+      <p class="mt-3 text-2xs text-[var(--c-text-muted)]">
         Lookups are audited. The number is sent in the request body, never in the URL, so it does not
         reach server access logs or browser history.
       </p>
@@ -118,8 +118,8 @@ function correlationId(e: unknown): string | null {
       class="rounded-[var(--radius-md)] border border-[var(--c-danger)] bg-[var(--c-danger-subtle)] p-4"
       role="alert"
     >
-      <p class="text-[var(--text-sm)] font-semibold">{{ errorMessage(error) }}</p>
-      <p v-if="correlationId(error)" class="mt-1 font-[var(--font-mono)] text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+      <p class="text-sm font-semibold">{{ errorMessage(error) }}</p>
+      <p v-if="correlationId(error)" class="mt-1 font-mono text-2xs text-[var(--c-text-muted)]">
         Reference: {{ correlationId(error) }}
       </p>
     </div>
@@ -133,20 +133,20 @@ function correlationId(e: unknown): string | null {
       <!-- Masking is a server decision; the page reports it rather than performing it. -->
       <p
         v-if="result.identifiers === 'Masked'"
-        class="mx-4 mt-3 rounded-[var(--radius-md)] bg-[var(--c-warning-subtle)] px-3 py-2 text-[var(--text-xs)]"
+        class="mx-4 mt-3 rounded-[var(--radius-md)] bg-[var(--c-warning-subtle)] px-3 py-2 text-xs"
       >
         SIM and handset identifiers are shown masked. Your account does not hold
         <code class="font-mono">identifier.reveal</code>, so the server redacted them before sending.
       </p>
 
-      <div v-if="result.count === 0" class="px-4 py-8 text-center text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+      <div v-if="result.count === 0" class="px-4 py-8 text-center text-sm text-[var(--c-text-secondary)]">
         No bindings found for this number.
       </div>
 
       <div v-else class="overflow-x-auto">
-        <table class="w-full text-[var(--text-sm)]">
+        <table class="w-full text-sm">
           <thead>
-            <tr class="border-b text-left text-[var(--text-xs)] text-[var(--c-text-muted)]">
+            <tr class="border-b text-left text-xs text-[var(--c-text-muted)]">
               <th class="px-4 py-2 font-medium">Status</th>
               <th class="px-4 py-2 font-medium">IMEI</th>
               <th class="px-4 py-2 font-medium">Device</th>
@@ -162,7 +162,7 @@ function correlationId(e: unknown): string | null {
             >
               <td class="px-4 py-2.5">
                 <span
-                  class="inline-flex items-center rounded-full px-2 py-0.5 text-[var(--text-2xs)] font-medium"
+                  class="inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium"
                   :class="
                     b.isActive
                       ? 'bg-[var(--c-success-subtle)] text-[var(--c-success)]'
@@ -180,30 +180,30 @@ function correlationId(e: unknown): string | null {
                 -->
                 <span
                   v-if="b.isActive && !b.lastChangeDate"
-                  class="mt-0.5 block text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+                  class="mt-0.5 block text-2xs text-[var(--c-text-muted)]"
                   title="Listed in the initial dump (2025-12-27 to 2026-01-25) and never mentioned by a daily file since. Not confirmed, and not contradicted."
                 >
                   from initial dump, unconfirmed
                 </span>
                 <span
                   v-else-if="b.lastChangeDate"
-                  class="mt-0.5 block text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+                  class="mt-0.5 block text-2xs text-[var(--c-text-muted)]"
                 >
                   {{ b.isActive ? 'confirmed' : 'removed' }} {{ formatDate(b.lastChangeDate) }}
                 </span>
               </td>
-              <td class="px-4 py-2.5 font-[var(--font-mono)] text-[var(--text-xs)] tabular">
+              <td class="px-4 py-2.5 font-mono text-xs tabular">
                 {{ formatImei(b.imei) }}
               </td>
               <td class="px-4 py-2.5">
                 <span v-if="b.marketingName">{{ b.marketingName }}</span>
                 <span v-else class="text-[var(--c-text-muted)] italic">unknown device</span>
-                <span v-if="b.manufacturer" class="ml-1.5 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+                <span v-if="b.manufacturer" class="ml-1.5 text-xs text-[var(--c-text-muted)]">
                   {{ b.manufacturer }}
                 </span>
               </td>
               <td class="px-4 py-2.5 text-[var(--c-text-secondary)]">{{ b.deviceType ?? '—' }}</td>
-              <td class="px-4 py-2.5 font-[var(--font-mono)] text-[var(--text-xs)] tabular text-[var(--c-text-secondary)]">
+              <td class="px-4 py-2.5 font-mono text-xs tabular text-[var(--c-text-secondary)]">
                 {{ b.imsi }}
               </td>
             </tr>

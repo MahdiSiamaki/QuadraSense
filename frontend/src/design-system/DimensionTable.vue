@@ -30,9 +30,9 @@ function isUnknown(key: string): boolean {
 </script>
 
 <template>
-  <table class="w-full text-[var(--text-sm)]">
+  <table class="w-full text-sm">
     <thead>
-      <tr class="border-b text-left text-[var(--text-xs)] text-[var(--c-text-muted)]">
+      <tr class="border-b text-left text-xs text-[var(--c-text-muted)]">
         <th scope="col" class="px-4 py-2 font-medium">{{ header }}</th>
         <th scope="col" class="px-4 py-2 text-right font-medium capitalize">{{ unit ?? 'bindings' }}</th>
         <th scope="col" class="px-4 py-2 text-right font-medium">Share</th>

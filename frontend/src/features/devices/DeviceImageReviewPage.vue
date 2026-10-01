@@ -120,8 +120,8 @@ const total = computed(() => queue.data.value?.total ?? 0)
   <div class="space-y-5">
     <header class="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h2 class="text-[var(--text-lg)] font-semibold tracking-tight">Device images</h2>
-        <p class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+        <h2 class="text-lg font-semibold tracking-tight">Device images</h2>
+        <p class="mt-0.5 text-xs text-[var(--c-text-muted)]">
           Images the sourcing pipeline has proposed. Nothing here is live until you approve it.
         </p>
       </div>
@@ -132,7 +132,7 @@ const total = computed(() => queue.data.value?.total ?? 0)
             type="button"
             role="radio"
             :aria-checked="tab === 'candidates'"
-            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-[var(--text-xs)] font-medium transition-colors"
+            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium transition-colors"
             :class="tab === 'candidates'
               ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
               : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'"
@@ -144,7 +144,7 @@ const total = computed(() => queue.data.value?.total ?? 0)
             type="button"
             role="radio"
             :aria-checked="tab === 'current'"
-            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-[var(--text-xs)] font-medium transition-colors"
+            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium transition-colors"
             :class="tab === 'current'
               ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
               : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'"
@@ -161,7 +161,7 @@ const total = computed(() => queue.data.value?.total ?? 0)
             type="button"
             role="radio"
             :aria-checked="status === option.value"
-            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-[var(--text-xs)] font-medium transition-colors"
+            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium transition-colors"
             :class="
               status === option.value
                 ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
@@ -180,7 +180,7 @@ const total = computed(() => queue.data.value?.total ?? 0)
             type="button"
             role="radio"
             :aria-checked="liveStatus === option.value"
-            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-[var(--text-xs)] font-medium transition-colors"
+            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium transition-colors"
             :class="
               liveStatus === option.value
                 ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
@@ -209,7 +209,7 @@ const total = computed(() => queue.data.value?.total ?? 0)
           <div class="grid gap-5 lg:grid-cols-[auto_auto_1fr]">
             <!-- Current -->
             <div class="text-center">
-              <p class="mb-1.5 text-[var(--text-2xs)] font-medium tracking-wide text-[var(--c-text-muted)]">
+              <p class="mb-1.5 text-2xs font-medium tracking-wide text-[var(--c-text-muted)]">
                 CURRENT
               </p>
               <div class="size-40">
@@ -223,12 +223,12 @@ const total = computed(() => queue.data.value?.total ?? 0)
                 />
                 <div
                   v-else
-                  class="grid size-full place-items-center rounded-[var(--radius-md)] border border-dashed text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+                  class="grid size-full place-items-center rounded-[var(--radius-md)] border border-dashed text-2xs text-[var(--c-text-muted)]"
                 >
                   no image
                 </div>
               </div>
-              <p class="mt-1.5 text-[var(--text-2xs)]" :style="{
+              <p class="mt-1.5 text-2xs" :style="{
                 color: candidate.currentStatus === 'verified' ? 'var(--c-success)' : 'var(--c-text-muted)',
               }">
                 {{ candidate.currentStatus.replace('_', ' ') }}
@@ -237,7 +237,7 @@ const total = computed(() => queue.data.value?.total ?? 0)
 
             <!-- Candidate -->
             <div class="text-center">
-              <p class="mb-1.5 text-[var(--text-2xs)] font-medium tracking-wide text-[var(--c-text-muted)]">
+              <p class="mb-1.5 text-2xs font-medium tracking-wide text-[var(--c-text-muted)]">
                 CANDIDATE
               </p>
               <div class="size-40">
@@ -249,18 +249,18 @@ const total = computed(() => queue.data.value?.total ?? 0)
                   size="lg"
                 />
               </div>
-              <p class="mt-1.5 text-[var(--text-2xs)] font-semibold" :style="{ color: scoreTone(candidate.qualityScore) }">
+              <p class="mt-1.5 text-2xs font-semibold" :style="{ color: scoreTone(candidate.qualityScore) }">
                 score {{ candidate.qualityScore }}
               </p>
             </div>
 
             <!-- Evidence and actions -->
             <div class="min-w-0">
-              <h2 class="text-[var(--text-sm)] font-semibold">
+              <h2 class="text-sm font-semibold">
                 {{ candidate.brand }} {{ candidate.marketingName }}
               </h2>
 
-              <dl class="mt-2 grid gap-x-6 gap-y-1 text-[var(--text-2xs)] sm:grid-cols-2">
+              <dl class="mt-2 grid gap-x-6 gap-y-1 text-2xs sm:grid-cols-2">
                 <div class="flex gap-1.5">
                   <dt class="text-[var(--c-text-muted)]">Source</dt>
                   <dd class="truncate">{{ candidate.sourceType }} · {{ candidate.sourceDomain }}</dd>
@@ -287,7 +287,7 @@ const total = computed(() => queue.data.value?.total ?? 0)
                 see deserves the reasoning, and a bare number invites either blind trust or blind
                 distrust.
               -->
-              <ul class="mt-3 space-y-0.5 border-t pt-2 text-[var(--text-2xs)]">
+              <ul class="mt-3 space-y-0.5 border-t pt-2 text-2xs">
                 <li v-for="term in candidate.scoreBreakdown" :key="term.term" class="flex gap-2">
                   <span class="tabular w-8 shrink-0 text-right font-medium"
                         :style="{ color: term.points > 0 ? 'var(--c-success)' : 'var(--c-text-muted)' }">
@@ -298,7 +298,7 @@ const total = computed(() => queue.data.value?.total ?? 0)
                 </li>
               </ul>
 
-              <p v-if="candidate.rejectionReason" class="mt-2 text-[var(--text-2xs)] text-[var(--c-danger)]">
+              <p v-if="candidate.rejectionReason" class="mt-2 text-2xs text-[var(--c-danger)]">
                 Rejected: {{ candidate.rejectionReason }}
               </p>
 
@@ -315,7 +315,7 @@ const total = computed(() => queue.data.value?.total ?? 0)
                   Reject
                 </Button>
 
-                <span class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+                <span class="text-2xs text-[var(--c-text-muted)]">
                   Keeping the current image is simply leaving this alone.
                 </span>
               </div>
@@ -324,7 +324,7 @@ const total = computed(() => queue.data.value?.total ?? 0)
                 <input
                   v-model="reason"
                   placeholder="Why? e.g. shop shelf, wrong colourway"
-                  class="min-w-[16rem] flex-1 rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-2.5 py-1.5 text-[var(--text-xs)]"
+                  class="min-w-[16rem] flex-1 rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-2.5 py-1.5 text-xs"
                 />
                 <Button variant="danger" @click="confirmReject(candidate)">Confirm reject</Button>
               </div>
@@ -357,7 +357,7 @@ const total = computed(() => queue.data.value?.total ?? 0)
       @retry="live.refetch()"
     >
       <div class="space-y-4">
-        <p class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+        <p class="text-xs text-[var(--c-text-muted)]">
           {{ liveTotal }} image{{ liveTotal === 1 ? '' : 's' }}.
           <template v-if="liveStatus === 'needs_review'">
             These were sourced automatically before there was any review step. They are being
@@ -378,11 +378,11 @@ const total = computed(() => queue.data.value?.total ?? 0)
               />
             </div>
 
-            <p class="mt-2 truncate text-[var(--text-sm)] font-semibold" :title="image.marketingName">
+            <p class="mt-2 truncate text-sm font-semibold" :title="image.marketingName">
               {{ image.brand }} {{ image.marketingName }}
             </p>
 
-            <p class="mt-0.5 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            <p class="mt-0.5 text-2xs text-[var(--c-text-muted)]">
               {{ image.sourceType }}
               <template v-if="image.sourceDomain"> · {{ image.sourceDomain }}</template>
               · {{ formatBytes(image.byteSize) }}
@@ -390,11 +390,11 @@ const total = computed(() => queue.data.value?.total ?? 0)
 
             <p
               v-if="image.status === 'verified'"
-              class="mt-0.5 text-[var(--text-2xs)] text-[var(--c-success)]"
+              class="mt-0.5 text-2xs text-[var(--c-success)]"
             >
               verified<template v-if="image.verifiedBy"> by {{ image.verifiedBy }}</template>
             </p>
-            <p v-else class="mt-0.5 text-[var(--text-2xs)] text-[var(--c-warning)]">
+            <p v-else class="mt-0.5 text-2xs text-[var(--c-warning)]">
               nobody has checked this
             </p>
 

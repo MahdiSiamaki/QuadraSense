@@ -35,18 +35,18 @@ const share = computed(() => Math.min(100, (props.plan.estimatedRows / Math.max(
   <div class="flex flex-col gap-2" role="status">
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
       <span
-        class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[var(--text-xs)] font-semibold"
+        class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold"
         :style="{ color: tone.fg, backgroundColor: tone.bg }"
       >
         <span class="size-1.5 rounded-full" :style="{ backgroundColor: tone.fg }" aria-hidden="true" />
         {{ plan.verdict }}
       </span>
 
-      <span class="tabular text-[var(--text-xs)] text-[var(--c-text-secondary)]" :title="`${formatFull(plan.estimatedRows)} rows`">
+      <span class="tabular text-xs text-[var(--c-text-secondary)]" :title="`${formatFull(plan.estimatedRows)} rows`">
         ~{{ formatCompact(plan.estimatedRows) }} rows to read of a {{ formatCompact(plan.budgetRows) }} budget
       </span>
 
-      <span class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+      <span class="text-2xs text-[var(--c-text-muted)]">
         {{ plan.source }} · {{ ACCESS[plan.access] ?? plan.access }}
       </span>
     </div>
@@ -62,7 +62,7 @@ const share = computed(() => Math.min(100, (props.plan.estimatedRows / Math.max(
       <div class="h-full rounded-full" :style="{ width: `${Math.max(share, 1)}%`, backgroundColor: tone.fg }" />
     </div>
 
-    <ul v-if="!compact && plan.notes.length" class="flex list-disc flex-col gap-0.5 pl-4 text-[var(--text-2xs)] text-[var(--c-text-secondary)]">
+    <ul v-if="!compact && plan.notes.length" class="flex list-disc flex-col gap-0.5 pl-4 text-2xs text-[var(--c-text-secondary)]">
       <li v-for="(note, i) in plan.notes" :key="i">{{ note }}</li>
     </ul>
   </div>

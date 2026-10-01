@@ -33,15 +33,15 @@ const rows = computed(() =>
   <div class="space-y-4">
     <div v-for="row in rows" :key="row.capability" class="space-y-1.5">
       <div class="flex items-baseline justify-between gap-3">
-        <span class="text-[var(--text-sm)] font-medium">{{ row.capability }}</span>
+        <span class="text-sm font-medium">{{ row.capability }}</span>
         <span class="flex items-baseline gap-2">
           <span
-            class="tabular text-[var(--text-base)] font-semibold"
+            class="tabular text-base font-semibold"
             :class="row.lowCoverage ? 'text-[var(--c-text-muted)]' : ''"
           >
             {{ formatPercent(row.percentOfAssessable, 1) }}
           </span>
-          <span class="tabular text-[var(--text-xs)] text-[var(--c-text-muted)]">
+          <span class="tabular text-xs text-[var(--c-text-muted)]">
             {{ formatFull(row.supported) }} devices
           </span>
         </span>
@@ -60,14 +60,14 @@ const rows = computed(() =>
 
       <p
         v-if="row.lowCoverage"
-        class="text-[var(--text-2xs)] text-[var(--c-warning)]"
+        class="text-2xs text-[var(--c-warning)]"
       >
         Only {{ formatPercent(row.coveragePercent, 2) }} of the base can be assessed for this —
         treat the percentage as indicative, not representative.
       </p>
     </div>
 
-    <p class="border-t pt-3 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+    <p class="border-t pt-3 text-xs text-[var(--c-text-muted)]">
       Percentages are of devices whose capability is known. These categories overlap: one handset can
       appear in several, so they do not sum to 100%.
     </p>

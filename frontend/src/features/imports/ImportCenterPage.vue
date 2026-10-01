@@ -62,8 +62,8 @@ function resetPaging() {
   <div class="space-y-5">
     <header class="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Import Center</h1>
-        <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+        <h1 class="text-xl font-semibold tracking-tight">Import Center</h1>
+        <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
           Daily subscriber changes and GSMA TAC snapshots. Every file is kept, every import is
           repeatable, and re-importing a day replaces it rather than adding to it.
         </p>
@@ -71,7 +71,7 @@ function resetPaging() {
 
       <!-- Worker state, stated plainly. A queue that is not draining is the single most
            useful thing to notice on this page, and it should not need a click. -->
-      <div v-if="health.data.value" class="flex items-center gap-4 text-[var(--text-xs)]">
+      <div v-if="health.data.value" class="flex items-center gap-4 text-xs">
         <span class="flex items-center gap-1.5">
           <span
             class="size-1.5 rounded-full"
@@ -109,22 +109,22 @@ function resetPaging() {
       class="rounded-[var(--radius-md)] border border-[var(--c-warning)] p-4"
       role="alert"
     >
-      <p class="text-[var(--text-sm)] font-semibold">
+      <p class="text-sm font-semibold">
         {{ health.data.value.queued }} job{{ health.data.value.queued === 1 ? '' : 's' }} queued,
         and no import worker is running.
       </p>
-      <p class="mt-1 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+      <p class="mt-1 text-sm text-[var(--c-text-secondary)]">
         Nothing will be imported until one starts. In development the API hosts the worker itself,
         so this usually means the API was started with
-        <code class="text-[var(--text-xs)]">Import:RunWorkerInProcess=false</code>, or the worker
+        <code class="text-xs">Import:RunWorkerInProcess=false</code>, or the worker
         process has stopped. Start one with:
       </p>
       <pre
-        class="mt-2 overflow-x-auto rounded-[var(--radius-md)] bg-[var(--c-surface-sunken)] px-3 py-2 text-[var(--text-xs)]"
+        class="mt-2 overflow-x-auto rounded-[var(--radius-md)] bg-[var(--c-surface-sunken)] px-3 py-2 text-xs"
       ><code>dotnet run --project backend/src/Sqm.Ingestion</code></pre>
       <p
         v-if="health.data.value.oldestQueuedAt"
-        class="mt-2 text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+        class="mt-2 text-2xs text-[var(--c-text-muted)]"
       >
         The oldest has been waiting since {{ formatDateTime(health.data.value.oldestQueuedAt) }}.
       </p>
@@ -136,13 +136,13 @@ function resetPaging() {
       <Card v-for="row in freshness.data.value" :key="row.sourceCode">
         <div class="flex items-start justify-between gap-4">
           <div class="min-w-0">
-            <p class="text-[var(--text-xs)] font-medium text-[var(--c-text-muted)]">
+            <p class="text-xs font-medium text-[var(--c-text-muted)]">
               {{ row.sourceCode }}
             </p>
-            <p class="mt-0.5 text-[var(--text-lg)] font-semibold tracking-tight">
+            <p class="mt-0.5 text-lg font-semibold tracking-tight">
               {{ formatDate(row.latestBusinessDate) }}
             </p>
-            <p class="text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+            <p class="text-xs text-[var(--c-text-secondary)]">
               latest day imported<template v-if="row.latestImportedAt">
                 · loaded
                 <span :title="formatDateTime(row.latestImportedAt)">
@@ -155,7 +155,7 @@ function resetPaging() {
           <div class="shrink-0 space-y-1 text-right">
             <p
               v-if="row.daysBehind !== null"
-              class="text-[var(--text-xs)] font-medium"
+              class="text-xs font-medium"
               :style="{
                 color:
                   row.daysBehind > 45
@@ -169,12 +169,12 @@ function resetPaging() {
             </p>
             <p
               v-if="row.missingBusinessDates.length"
-              class="text-[var(--text-xs)] text-[var(--c-warning)]"
+              class="text-xs text-[var(--c-warning)]"
               :title="row.missingBusinessDates.slice(0, 20).join(', ')"
             >
               {{ row.missingBusinessDates.length }} day(s) missing
             </p>
-            <p v-if="row.failedLast7Days" class="text-[var(--text-xs)] text-[var(--c-danger)]">
+            <p v-if="row.failedLast7Days" class="text-xs text-[var(--c-danger)]">
               {{ row.failedLast7Days }} failed this week
             </p>
           </div>
@@ -191,12 +191,12 @@ function resetPaging() {
               v-model="fileName"
               type="search"
               placeholder="Filter by file name"
-              class="w-44 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+              class="w-44 rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs"
               @input="resetPaging"
             />
             <select
               v-model="source"
-              class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+              class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs"
               aria-label="Data source"
               @change="resetPaging"
             >
@@ -206,7 +206,7 @@ function resetPaging() {
             </select>
             <select
               v-model="statusFilter"
-              class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+              class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs"
               aria-label="Status"
               @change="resetPaging"
             >
@@ -230,7 +230,7 @@ function resetPaging() {
         </AsyncBoundary>
 
         <template #footer>
-          <div class="flex items-center justify-between text-[var(--text-xs)]">
+          <div class="flex items-center justify-between text-xs">
             <span class="text-[var(--c-text-muted)]">
               {{ history.data.value?.total ?? 0 }} import(s)
             </span>

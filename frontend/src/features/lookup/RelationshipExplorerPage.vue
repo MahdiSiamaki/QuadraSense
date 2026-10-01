@@ -79,11 +79,11 @@ function isWithheld(key: string): boolean {
 <template>
   <div class="space-y-5">
     <header>
-      <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Relationship explorer</h1>
-      <p class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+      <h1 class="text-xl font-semibold tracking-tight">Relationship explorer</h1>
+      <p class="mt-0.5 text-xs text-[var(--c-text-muted)]">
         Start from a phone number, a SIM or a handset and follow the links between them.
       </p>
-      <p class="mt-1 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+      <p class="mt-1 text-2xs text-[var(--c-text-muted)]">
         A <strong>binding</strong> is one number + SIM + handset together, so these connections are
         recorded facts, not inferences &mdash; with one labelled exception below.
       </p>
@@ -95,7 +95,7 @@ function isWithheld(key: string): boolean {
           <div class="min-w-[18rem] flex-1">
             <label
               for="identifier"
-              class="block text-[var(--text-xs)] font-medium text-[var(--c-text-secondary)]"
+              class="block text-xs font-medium text-[var(--c-text-secondary)]"
             >
               Phone number, SIM or handset
             </label>
@@ -107,7 +107,7 @@ function isWithheld(key: string): boolean {
               spellcheck="false"
               placeholder="0913 123 4567 · 43211… · 35004012…"
               aria-describedby="identifier-help"
-              class="tabular mt-1.5 w-full rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-3 py-2 font-[var(--font-mono)] text-[var(--text-sm)] placeholder:font-sans placeholder:text-[var(--c-text-muted)]"
+              class="tabular mt-1.5 w-full rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-3 py-2 font-mono text-sm placeholder:font-sans placeholder:text-[var(--c-text-muted)]"
             />
           </div>
           <Button type="submit" variant="primary" :disabled="!digits" :pending="explorer.isPending.value">
@@ -115,7 +115,7 @@ function isWithheld(key: string): boolean {
           </Button>
         </div>
 
-        <p id="identifier-help" class="mt-1.5 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        <p id="identifier-help" class="mt-1.5 text-2xs text-[var(--c-text-muted)]">
           <template v-if="detected">
             {{ digits.length }} digits &mdash; read as a <strong>{{ detected }}</strong>.
           </template>
@@ -136,30 +136,30 @@ function isWithheld(key: string): boolean {
       class="rounded-[var(--radius-md)] border border-[var(--c-danger)] bg-[var(--c-danger-subtle)] p-4"
       role="alert"
     >
-      <p class="text-[var(--text-sm)] font-semibold">{{ errorMessage }}</p>
+      <p class="text-sm font-semibold">{{ errorMessage }}</p>
     </div>
 
     <template v-if="graph">
       <Card>
         <div class="flex flex-wrap items-baseline justify-between gap-3">
           <div>
-            <p class="text-[var(--text-xs)] text-[var(--c-text-muted)]">{{ centreKindLabel }}</p>
-            <p class="tabular mt-1 font-[var(--font-mono)] text-[var(--text-lg)] font-semibold">
+            <p class="text-xs text-[var(--c-text-muted)]">{{ centreKindLabel }}</p>
+            <p class="tabular mt-1 font-mono text-lg font-semibold">
               {{ centreLabel }}
             </p>
           </div>
-          <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          <p class="text-2xs text-[var(--c-text-muted)]">
             {{ graph.elapsedMs }} ms · {{ graph.rowsExamined.toLocaleString() }} rows read
           </p>
         </div>
 
-        <p v-if="!graph.found" class="mt-3 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+        <p v-if="!graph.found" class="mt-3 text-sm text-[var(--c-text-secondary)]">
           Well-formed, but it appears nowhere in the data.
         </p>
 
         <p
           v-if="graph.truncated"
-          class="mt-3 rounded-[var(--radius-md)] bg-[var(--c-warning-subtle)] px-3 py-2 text-[var(--text-xs)]"
+          class="mt-3 rounded-[var(--radius-md)] bg-[var(--c-warning-subtle)] px-3 py-2 text-xs"
         >
           This identifier has more bindings than the server will return in one go, so the lists
           below are the first 500 and not the whole set.
@@ -168,7 +168,7 @@ function isWithheld(key: string): boolean {
         <!-- Masking is a server decision; the page reports it rather than performing it. -->
         <p
           v-if="masked"
-          class="mt-3 rounded-[var(--radius-md)] bg-[var(--c-warning-subtle)] px-3 py-2 text-[var(--text-xs)]"
+          class="mt-3 rounded-[var(--radius-md)] bg-[var(--c-warning-subtle)] px-3 py-2 text-xs"
         >
           Identifiers are shown masked. Your account does not hold
           <code class="font-mono">identifier.reveal</code>, so the server redacted them before
@@ -179,14 +179,14 @@ function isWithheld(key: string): boolean {
       <div class="grid gap-5 xl:grid-cols-3">
         <Card v-for="section in sections" :key="section.key" :title="section.title" flush>
           <template #actions>
-            <span class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+            <span class="text-2xs text-[var(--c-text-muted)]">
               {{ section.nodes.length }} · {{ section.unit }}
             </span>
           </template>
 
           <p
             v-if="isWithheld(section.key)"
-            class="px-4 py-3 text-[var(--text-xs)] text-[var(--c-warning)]"
+            class="px-4 py-3 text-xs text-[var(--c-warning)]"
           >
             Withheld: you do not have permission to see {{ section.title.toLowerCase() }}. This is
             not an empty result.
@@ -201,10 +201,10 @@ function isWithheld(key: string): boolean {
                 :disabled="masked"
                 @click="explore(node.value)"
               >
-                <span class="tabular block font-[var(--font-mono)] text-[var(--text-sm)]">
+                <span class="tabular block font-mono text-sm">
                   {{ labelFor(node) }}
                 </span>
-                <span class="mt-0.5 block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+                <span class="mt-0.5 block text-2xs text-[var(--c-text-muted)]">
                   <template v-if="node.marketingName">
                     {{ node.brand }} {{ node.marketingName }} ·
                   </template>
@@ -238,10 +238,10 @@ function isWithheld(key: string): boolean {
               :disabled="masked"
               @click="explore(pair.imei)"
             >
-              <span class="tabular block font-[var(--font-mono)] text-[var(--text-sm)]">
+              <span class="tabular block font-mono text-sm">
                 {{ formatImei(pair.imei) }}
               </span>
-              <span class="mt-0.5 block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+              <span class="mt-0.5 block text-2xs text-[var(--c-text-muted)]">
                 <template v-if="pair.marketingName">{{ pair.marketingName }} · </template>
                 same model at a paired IMEI position, and
                 <strong>{{ pair.sharedSubscribers }}</strong>
@@ -251,7 +251,7 @@ function isWithheld(key: string): boolean {
           </li>
         </ul>
 
-        <p v-else class="text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+        <p v-else class="text-sm text-[var(--c-text-secondary)]">
           No pair could be shown for this identifier.
         </p>
 
@@ -263,7 +263,7 @@ function isWithheld(key: string): boolean {
             handsets on this network will never appear as a pair, and a reader who does not know
             why would take "no pair" to mean "single-SIM phone".
           -->
-          <div class="space-y-2 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          <div class="space-y-2 text-2xs text-[var(--c-text-muted)]">
             <p>
               <strong>This will not show every real pair, and that is expected.</strong> The feed
               records a binding &mdash; number, SIM, handset &mdash; and has no field saying which

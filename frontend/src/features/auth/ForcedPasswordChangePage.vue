@@ -31,8 +31,8 @@ async function signOut() {
   <div class="flex min-h-screen flex-col items-center justify-center px-5 py-12">
     <div class="w-full max-w-sm">
       <div class="mb-7">
-        <h1 class="text-[var(--text-lg)] font-semibold tracking-tight">Choose a new password</h1>
-        <p class="mt-1 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+        <h1 class="text-lg font-semibold tracking-tight">Choose a new password</h1>
+        <p class="mt-1 text-sm text-[var(--c-text-secondary)]">
           <template v-if="user">Signed in as {{ user.displayName }}.</template>
           Your account was set up with a temporary password, or an administrator has reset it.
         </p>

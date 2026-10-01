@@ -71,14 +71,14 @@ const tone: Record<string, string> = {
   >
     <p
       v-if="result"
-      class="mx-4 mt-3 rounded-[var(--radius-md)] bg-[var(--c-success-subtle)] px-3 py-2 text-[var(--text-xs)] text-[var(--c-success)]"
+      class="mx-4 mt-3 rounded-[var(--radius-md)] bg-[var(--c-success-subtle)] px-3 py-2 text-xs text-[var(--c-success)]"
       role="status"
     >
       {{ result }}
     </p>
     <p
       v-if="failure"
-      class="mx-4 mt-3 rounded-[var(--radius-md)] bg-[var(--c-danger-subtle)] px-3 py-2 text-[var(--text-xs)] text-[var(--c-danger)]"
+      class="mx-4 mt-3 rounded-[var(--radius-md)] bg-[var(--c-danger-subtle)] px-3 py-2 text-xs text-[var(--c-danger)]"
       role="alert"
     >
       {{ failure }}
@@ -89,15 +89,15 @@ const tone: Record<string, string> = {
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
             <div class="flex items-center gap-2">
-              <span class="text-[var(--text-sm)] font-semibold">{{ version.versionLabel }}</span>
+              <span class="text-sm font-semibold">{{ version.versionLabel }}</span>
               <span
-                class="rounded-full px-2 py-0.5 text-[var(--text-2xs)] font-medium"
+                class="rounded-full px-2 py-0.5 text-2xs font-medium"
                 :style="{ color: tone[version.status], backgroundColor: 'var(--c-surface-sunken)' }"
               >
                 {{ version.status }}
               </span>
             </div>
-            <p class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+            <p class="mt-0.5 text-xs text-[var(--c-text-muted)]">
               {{ formatFull(version.rowCount ?? 0) }} TACs
               <template v-if="version.datasetDate"> · dated {{ formatDate(version.datasetDate) }}</template>
               <template v-if="version.activatedAt">
@@ -114,7 +114,7 @@ const tone: Record<string, string> = {
             <button
               v-if="version.status === 'Ready' || version.status === 'Superseded'"
               type="button"
-              class="rounded-[var(--radius-md)] border px-3 py-1.5 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
+              class="rounded-[var(--radius-md)] border px-3 py-1.5 text-xs font-medium hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
               :disabled="activate.isPending.value"
               @click="confirming = version.id"
             >
@@ -126,7 +126,7 @@ const tone: Record<string, string> = {
         <!-- The diff. Without it, activation is a leap of faith. -->
         <dl
           v-if="version.diffAgainstId !== null"
-          class="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-[var(--text-xs)]"
+          class="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs"
         >
           <div class="flex gap-1.5">
             <dt class="text-[var(--c-text-muted)]">added</dt>
@@ -154,7 +154,7 @@ const tone: Record<string, string> = {
           </div>
         </dl>
 
-        <p v-if="isUnusual(version)" class="mt-1.5 text-[var(--text-xs)] text-[var(--c-warning)]">
+        <p v-if="isUnusual(version)" class="mt-1.5 text-xs text-[var(--c-warning)]">
           {{ formatFull(changeTotal(version)) }} TACs changed. A month's revision has been
           1,000–1,650 — this is far outside that, so it is worth confirming this is the intended
           file before activating it.
@@ -165,7 +165,7 @@ const tone: Record<string, string> = {
           v-if="confirming === version.id"
           class="mt-3 rounded-[var(--radius-md)] border border-[var(--c-warning)] bg-[var(--c-warning-subtle)] p-3"
         >
-          <p class="text-[var(--text-xs)]">
+          <p class="text-xs">
             Activating <strong>{{ version.versionLabel }}</strong> changes the manufacturer, model
             and capability shown for every device across the whole product. The version currently
             active becomes superseded and can be rolled back to from this list.
@@ -173,7 +173,7 @@ const tone: Record<string, string> = {
           <div class="mt-2 flex gap-2">
             <button
               type="button"
-              class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-3 py-1.5 text-[var(--text-xs)] font-medium text-[var(--c-accent-text)] disabled:opacity-50"
+              class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-3 py-1.5 text-xs font-medium text-[var(--c-accent-text)] disabled:opacity-50"
               :disabled="activate.isPending.value"
               @click="confirm(version.id)"
             >
@@ -181,7 +181,7 @@ const tone: Record<string, string> = {
             </button>
             <button
               type="button"
-              class="rounded-[var(--radius-md)] border px-3 py-1.5 text-[var(--text-xs)] font-medium"
+              class="rounded-[var(--radius-md)] border px-3 py-1.5 text-xs font-medium"
               @click="confirming = null"
             >
               Cancel
@@ -193,7 +193,7 @@ const tone: Record<string, string> = {
 
     <p
       v-if="!rows.length"
-      class="px-4 py-6 text-center text-[var(--text-sm)] text-[var(--c-text-muted)]"
+      class="px-4 py-6 text-center text-sm text-[var(--c-text-muted)]"
     >
       No TAC versions recorded yet.
     </p>

@@ -27,7 +27,7 @@ const first = computed(() => (props.total === 0 ? 0 : (props.page - 1) * props.p
 const last = computed(() => Math.min(props.page * props.pageSize, props.total))
 
 const buttonClass =
-  'rounded-[var(--radius-md)] border px-2 py-1 text-[var(--text-xs)] font-medium ' +
+  'rounded-[var(--radius-md)] border px-2 py-1 text-xs font-medium ' +
   'hover:bg-[var(--c-surface-hover)] disabled:cursor-not-allowed disabled:opacity-40'
 </script>
 
@@ -36,7 +36,7 @@ const buttonClass =
     class="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-2.5"
     :class="loading ? 'opacity-60' : ''"
   >
-    <p class="tabular text-[var(--text-xs)] text-[var(--c-text-muted)]">
+    <p class="tabular text-xs text-[var(--c-text-muted)]">
       <template v-if="total === 0">No results</template>
       <template v-else>
         <span class="font-medium text-[var(--c-text-secondary)]">{{ first }}–{{ last }}</span>
@@ -53,7 +53,7 @@ const buttonClass =
       >
         Previous
       </button>
-      <span class="tabular px-1 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+      <span class="tabular px-1 text-xs text-[var(--c-text-muted)]">
         {{ page }} / {{ lastPage }}
       </span>
       <button

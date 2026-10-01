@@ -57,7 +57,7 @@ const numeric = (kind: string) => ['msisdn', 'imsi', 'imei', 'prefix', 'count'].
 <template>
   <div class="flex flex-col gap-6">
     <section v-for="category in CATEGORIES" :key="category" class="flex flex-col gap-2">
-      <h3 class="text-[var(--text-xs)] font-semibold tracking-wide text-[var(--c-text-muted)] uppercase">{{ category }}</h3>
+      <h3 class="text-xs font-semibold tracking-wide text-[var(--c-text-muted)] uppercase">{{ category }}</h3>
 
       <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <article
@@ -73,11 +73,11 @@ const numeric = (kind: string) => ['msisdn', 'imsi', 'imei', 'prefix', 'count'].
             :disabled="missing(t).length > 0"
             @click="choose(t)"
           >
-            <span class="text-[var(--text-sm)] font-semibold" :class="missing(t).length ? 'text-[var(--c-text-muted)]' : ''">
+            <span class="text-sm font-semibold" :class="missing(t).length ? 'text-[var(--c-text-muted)]' : ''">
               {{ t.title }}
             </span>
-            <span class="text-[var(--text-xs)] text-[var(--c-text-secondary)]">{{ t.description }}</span>
-            <span v-if="missing(t).length" class="text-[var(--text-2xs)] text-[var(--c-warning)]">
+            <span class="text-xs text-[var(--c-text-secondary)]">{{ t.description }}</span>
+            <span v-if="missing(t).length" class="text-2xs text-[var(--c-warning)]">
               Needs {{ missing(t).join(', ') }}
             </span>
           </button>
@@ -99,7 +99,7 @@ const numeric = (kind: string) => ['msisdn', 'imsi', 'imei', 'prefix', 'count'].
               </label>
             </div>
 
-            <p v-if="t.caution" class="text-[var(--text-2xs)] text-pretty text-[var(--c-text-muted)]">{{ t.caution }}</p>
+            <p v-if="t.caution" class="text-2xs text-pretty text-[var(--c-text-muted)]">{{ t.caution }}</p>
 
             <Button type="submit" size="sm" variant="primary" class="w-fit" :disabled="!ready(t)">Run</Button>
           </form>

@@ -4,12 +4,12 @@
 */
 
 export const control =
-  'rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)] text-[var(--c-text)] ' +
+  'rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs text-[var(--c-text)] ' +
   'disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--c-accent)]'
 
 export const mono = `${control} tabular font-mono tracking-wide`
 
-export const miniLabel = 'block text-[var(--text-2xs)] font-medium text-[var(--c-text-muted)]'
+export const miniLabel = 'block text-2xs font-medium text-[var(--c-text-muted)]'
 
 export const iconButton =
   'grid size-7 shrink-0 place-items-center rounded-[var(--radius-md)] text-[var(--c-text-muted)] ' +
@@ -18,7 +18,7 @@ export const iconButton =
 
 /** A two- or three-way choice drawn as joined buttons. */
 export const segment = (on: boolean): string =>
-  'px-2.5 py-1 text-[var(--text-xs)] font-medium transition-colors first:rounded-l-[var(--radius-md)] ' +
+  'px-2.5 py-1 text-xs font-medium transition-colors first:rounded-l-[var(--radius-md)] ' +
   'last:rounded-r-[var(--radius-md)] focus-visible:outline-2 focus-visible:outline-[var(--c-accent)] ' +
   (on
     ? 'bg-[var(--c-accent-subtle)] text-[var(--c-accent)]'

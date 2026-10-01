@@ -34,15 +34,15 @@ const id = useId()
 <template>
   <div class="flex items-start justify-between gap-4">
     <div class="min-w-0">
-      <label :id="`${id}-label`" class="text-[var(--text-sm)] font-medium">{{ label }}</label>
-      <p v-if="description" class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+      <label :id="`${id}-label`" class="text-sm font-medium">{{ label }}</label>
+      <p v-if="description" class="mt-0.5 text-xs text-[var(--c-text-muted)]">
         {{ description }}
       </p>
     </div>
 
     <div class="flex shrink-0 items-center gap-2">
       <span
-        class="tabular text-[var(--text-xs)] font-medium"
+        class="tabular text-xs font-medium"
         :style="{
           color: modelValue
             ? tone === 'success'

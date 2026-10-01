@@ -65,7 +65,7 @@ const digits = computed(() => DIGIT_TYPES.has(field.value?.type ?? ''))
   >
     <div class="flex flex-wrap items-center gap-1.5">
       <label
-        class="inline-flex items-center gap-1 text-[var(--text-2xs)] font-medium text-[var(--c-text-muted)]"
+        class="inline-flex items-center gap-1 text-2xs font-medium text-[var(--c-text-muted)]"
         :title="'Negates this condition'"
       >
         <input v-model="node.not" type="checkbox" />
@@ -110,7 +110,7 @@ const digits = computed(() => DIGIT_TYPES.has(field.value?.type ?? ''))
 
         <template v-else>
           <template v-for="(_, i) in bounds.min" :key="i">
-            <span v-if="i > 0" class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">and</span>
+            <span v-if="i > 0" class="text-2xs text-[var(--c-text-muted)]">and</span>
 
             <select
               v-if="field.type === 'Boolean'"
@@ -149,14 +149,14 @@ const digits = computed(() => DIGIT_TYPES.has(field.value?.type ?? ''))
       </template>
 
       <button type="button" :class="iconButton" class="ml-auto" aria-label="Remove condition" @click="$emit('remove')">
-        <span aria-hidden="true" class="text-[var(--text-lg)] leading-none">&times;</span>
+        <span aria-hidden="true" class="text-lg leading-none">&times;</span>
       </button>
     </div>
 
-    <p v-if="field?.description" class="text-[var(--text-2xs)] text-pretty text-[var(--c-text-muted)]">
+    <p v-if="field?.description" class="text-2xs text-pretty text-[var(--c-text-muted)]">
       {{ field.description }}
     </p>
-    <p v-for="(message, i) in problems" :key="i" class="text-[var(--text-2xs)] text-[var(--c-danger)]" role="alert">
+    <p v-for="(message, i) in problems" :key="i" class="text-2xs text-[var(--c-danger)]" role="alert">
       {{ message }}
     </p>
   </div>

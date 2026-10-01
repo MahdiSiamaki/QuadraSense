@@ -78,12 +78,12 @@ function removeChild(index: number) {
         </button>
       </div>
 
-      <label class="inline-flex items-center gap-1 text-[var(--text-2xs)] font-medium text-[var(--c-text-muted)]">
+      <label class="inline-flex items-center gap-1 text-2xs font-medium text-[var(--c-text-muted)]">
         <input v-model="node.not" type="checkbox" />
         NOT this {{ isRoot ? 'whole set' : 'group' }}
       </label>
 
-      <span v-if="node.children.length === 0" class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+      <span v-if="node.children.length === 0" class="text-2xs text-[var(--c-text-muted)]">
         {{ isRoot ? 'No conditions: every row.' : 'Empty group.' }}
       </span>
 
@@ -95,11 +95,11 @@ function removeChild(index: number) {
         aria-label="Remove group"
         @click="$emit('remove')"
       >
-        <span aria-hidden="true" class="text-[var(--text-lg)] leading-none">&times;</span>
+        <span aria-hidden="true" class="text-lg leading-none">&times;</span>
       </button>
     </div>
 
-    <p v-for="(message, i) in problems.get(node.id) ?? []" :key="i" class="text-[var(--text-2xs)] text-[var(--c-danger)]" role="alert">
+    <p v-for="(message, i) in problems.get(node.id) ?? []" :key="i" class="text-2xs text-[var(--c-danger)]" role="alert">
       {{ message }}
     </p>
 
@@ -107,7 +107,7 @@ function removeChild(index: number) {
       <li v-for="(child, i) in node.children" :key="child.id" class="flex flex-col gap-1">
         <span
           v-if="i > 0"
-          class="w-fit rounded-[var(--radius-sm)] bg-[var(--c-surface-sunken)] px-1.5 text-[var(--text-2xs)] font-semibold tracking-wide text-[var(--c-text-muted)]"
+          class="w-fit rounded-[var(--radius-sm)] bg-[var(--c-surface-sunken)] px-1.5 text-2xs font-semibold tracking-wide text-[var(--c-text-muted)]"
           aria-hidden="true"
         >
           {{ node.logic.toUpperCase() }}
