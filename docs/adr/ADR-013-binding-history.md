@@ -78,10 +78,37 @@ event date, add and remove counts, and the events themselves as `(date, seq, lab
 
 ## Consequences
 
-- ~70 GiB of disk, measured by extrapolation from the prototype; the real figure is recorded after
-  the backfill.
+- ~70 GiB of disk, measured by extrapolation from the prototype. **Measured after the backfill:
+  67.7 GiB** (23.50, 23.01 and 21.18 GiB, 797,370,901 rows in each table), before compaction.
 - A one-time backfill (`Sqm.Ingestion --backfill-history`), estimated at 2 to 2.5 hours, run while
   nothing imports. Resumable, month by month, reconciled against the log.
+
+## Measured on the real data, 2026-10-01
+
+**The backfill.** The initial dump (125,939,523 bindings) in 256 s, then the months: 176, 624,
+751, 691, 526, 624, 624 and 679 s for January to August, 51 to 258 million events each - 100
+minutes of writing in all. Windows restarted for an update during September. The ledger held
+September's 26 days as `pending` and six of its parts were detached as broken at start-up; the
+re-run skipped the dump and the eight finished months, dropped September and rebuilt it (228,815,155
+events, 1,075 s, with merges of the other months competing). Resuming worked as designed, on a
+failure nobody planned for.
+
+**Reconciled.** Every month holds exactly the log's events in all three tables (`sum(adds) +
+sum(removes)` = the log's count, nine of nine), all 233 days are `done` in the ledger, and the dump
+holds 125,939,523 bindings in all three.
+
+**Timelines checked event by event.** For eight entities - the heaviest IMEI, IMSI and number of
+September, a ~290-binding IMEI, and typical ones of each kind - the store's own query was run and
+every event it returned was compared with the event log read directly: 0 missing, 0 extra, and the
+dump flags agree with `binding_snapshot`. The heaviest IMSI has 36,231 bindings, of which the
+timeline shows the newest 10,000 by design.
+
+**Read cost depends on compaction, not only on the key.** The backfill writes in number ranges,
+so until merges catch up every part of the IMSI- and IMEI-ordered copies spans the whole key range
+and a key read touches one granule in each: 344 parts and 3.1 million rows for one IMEI straight
+after the backfill, 435,000-517,000 rows once the IMEI copy was down to 236 parts. Warm, on the
+NVMe disk, a timeline then took 0.1-0.9 s, and 3.4-5.9 s for the 36,231-binding IMSI; the first,
+cold read of an entity took up to 23-25 s, almost all of it disk wait.
 - Every daily import gains the history step. Its cost on a real day is measured after deployment;
   the import executor's one thread makes it slower than the prototype's two.
 - A corrected day costs a month's rebuild instead of a day's.
