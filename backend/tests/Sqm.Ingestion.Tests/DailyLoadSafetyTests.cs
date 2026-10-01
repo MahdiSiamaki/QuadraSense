@@ -1,7 +1,9 @@
 using System.Reflection;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Sqm.Application.DataImport;
+using Sqm.Application.Quality;
 using Sqm.Ingestion.Processing;
 
 namespace Sqm.Ingestion.Tests;
@@ -114,6 +116,9 @@ public sealed class DailyLoadSafetyTests
                     analytics, repository,
                     new MartRefresh(analytics, NullLogger<MartRefresh>.Instance),
                     NullLogger<DashboardSnapshot>.Instance),
+                new FeedQualityMonitor(
+                    analytics, Stub.Create<IFeedQualityReader>((m, _) => Stub.Default(m)),
+                    Options.Create(new FeedQualityOptions()), NullLogger<FeedQualityMonitor>.Instance),
                 NullLogger<SqmDailyProcessor>.Instance);
 
             var context = Stub.Create<IImportContext>((m, _) => m.Name switch

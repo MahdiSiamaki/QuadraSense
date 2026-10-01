@@ -94,6 +94,9 @@ public static class ImportWorkerRegistration
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
             {
                 PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+
+                // Below ClickHouse's 10 s keep_alive_timeout; see the same setting in Sqm.Api.
+                PooledConnectionIdleTimeout = TimeSpan.FromSeconds(5),
                 MaxConnectionsPerServer = 8,
                 AutomaticDecompression = System.Net.DecompressionMethods.All,
             });
@@ -104,6 +107,16 @@ public static class ImportWorkerRegistration
         services.TryAddSingleton<ITacVersionStore, ClickHouseTacVersionStore>();
 
         services.TryAddSingleton<MartRefresh>();
+
+        // Each day's file measured and judged against the ordinary days; see FeedQualityMonitor.
+        // The reader goes through the read-only query path by the API's client name. Hosted in the
+        // API, that client is the API's; in the standalone worker it is the factory's default,
+        // which is enough for a read of one row per day and is not re-registered here because a
+        // second registration of the name would change the API's own handler.
+        services.Configure<Sqm.Application.Quality.FeedQualityOptions>(
+            configuration.GetSection(Sqm.Application.Quality.FeedQualityOptions.SectionName));
+        services.TryAddSingleton<Sqm.Application.Quality.IFeedQualityReader, ClickHouseFeedQualityStore>();
+        services.TryAddSingleton<FeedQualityMonitor>();
 
         // Rebuilt once per run of files; the worker settles what a stopped run left owed.
         services.TryAddSingleton<DashboardSnapshot>();

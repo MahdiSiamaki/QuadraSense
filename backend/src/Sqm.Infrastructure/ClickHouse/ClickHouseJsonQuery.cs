@@ -61,10 +61,16 @@ internal sealed class ClickHouseJsonQuery
     /// <param name="sql">SQL using ClickHouse's <c>{name:Type}</c> parameter syntax.</param>
     /// <param name="parameters">Values for those parameters.</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="budget">
+    /// What the query may spend beyond the fixed caps, enforced by the server. None by default,
+    /// so every existing caller keeps the behaviour it was measured with.
+    /// </param>
+    /// <exception cref="QueryBudgetExceededException">The server stopped it at a limit.</exception>
     public async Task<ClickHouseJsonResult> ExecuteAsync(
         string sql,
         IReadOnlyDictionary<string, string> parameters,
-        CancellationToken ct)
+        CancellationToken ct,
+        QueryBudget? budget = null)
     {
         var query = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -82,8 +88,24 @@ internal sealed class ClickHouseJsonQuery
             // into an error the caller sees rather than pressure the whole server feels.
             ["max_memory_usage"] = "500000000",
 
+            // Everything through here reads. Saying so to the server makes it a fact rather than
+            // a convention: a write to a real table is refused (READONLY, code 164), whatever SQL
+            // reaches this line. 2 rather than 1 because 1 also forbids the settings in this
+            // request, and those are the caps. Measured on 25.8: INSERT, ALTER ... DELETE and
+            // OPTIMIZE are refused; a session temporary table and INSERT into null() are not,
+            // and neither touches stored data.
+            ["readonly"] = "2",
+
+            // When the caller goes away, so does the query. Without it a closed browser tab
+            // leaves the server reading to the end - the shape of the orphaned INSERT that doubled
+            // a delivery's device mart on 2026-09-30, on the read side.
+            ["cancel_http_readonly_queries_on_client_close"] = "1",
         };
 
+        if (budget is not null)
+        {
+            budget.WriteTo(query);
+        }
 
         foreach (var (key, value) in parameters)
         {
@@ -109,13 +131,103 @@ internal sealed class ClickHouseJsonQuery
 
         if (!response.IsSuccessStatusCode)
         {
-            // ClickHouse returns a multi-line stack; the first line is the part a caller can act on.
-            var firstLine = body.Split('\n', 2)[0];
-            throw new InvalidOperationException(
-                $"ClickHouse returned {(int)response.StatusCode}: {firstLine}");
+            var code = response.Headers.TryGetValues("X-ClickHouse-Exception-Code", out var values)
+                ? values.FirstOrDefault()
+                : null;
+
+            throw Failure((int)response.StatusCode, body, code);
         }
 
         return Parse(body);
+    }
+
+    /// <summary>
+    /// What a query would read, from the server's own plan, without running it.
+    /// </summary>
+    /// <remarks>
+    /// <c>EXPLAIN ESTIMATE</c> answers from the primary index and the skip indexes: the parts,
+    /// rows and marks each table would contribute. It tells a key read from a scan before either
+    /// happens - measured on this data at about 0.3 s, against 300-450 thousand rows for an
+    /// indexed read and 736 million or 1.8 billion for a scan.
+    /// </remarks>
+    public async Task<QueryEstimate> EstimateAsync(
+        string sql, IReadOnlyDictionary<string, string> parameters, CancellationToken ct)
+    {
+        var result = await ExecuteAsync("EXPLAIN ESTIMATE " + sql, parameters, ct).ConfigureAwait(false);
+
+        // database, table, parts, rows, marks
+        return new QueryEstimate([.. result.Rows.Select(row => new TableEstimate(
+            Table: $"{ClickHouseJsonResult.Text(row, 0)}.{ClickHouseJsonResult.Text(row, 1)}",
+            Parts: ClickHouseJsonResult.Int64(row, 2),
+            Rows: ClickHouseJsonResult.Int64(row, 3),
+            Marks: ClickHouseJsonResult.Int64(row, 4)))]);
+    }
+
+    /// <summary>ClickHouse's codes for a query stopped at one of its limits.</summary>
+    private static readonly Dictionary<int, string> BudgetCodes = new()
+    {
+        [158] = "rows read",       // TOO_MANY_ROWS
+        [159] = "execution time",  // TIMEOUT_EXCEEDED
+        [241] = "memory",          // MEMORY_LIMIT_EXCEEDED
+        [396] = "result size",     // TOO_MANY_ROWS_OR_BYTES
+    };
+
+    /// <summary>The exception for a failed response: typed when a limit stopped it.</summary>
+    /// <param name="status">The HTTP status.</param>
+    /// <param name="body">The response body.</param>
+    /// <param name="exceptionCode">The server's <c>X-ClickHouse-Exception-Code</c> header, if sent.</param>
+    internal static Exception Failure(int status, string body, string? exceptionCode = null)
+    {
+        var detail = ExceptionText(body);
+        var message = $"ClickHouse returned {status}: {detail}";
+
+        // The header when the server sent one, which it does for every error it raises itself;
+        // the text as a fallback, for anything between here and the server that answers instead.
+        int? code = int.TryParse(exceptionCode, CultureInfo.InvariantCulture, out var header)
+            ? header
+            : System.Text.RegularExpressions.Regex.Match(detail, @"Code: (\d+)\.") is { Success: true } m
+                ? int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)
+                : null;
+
+        return code is { } c && BudgetCodes.TryGetValue(c, out var limit)
+            ? new QueryBudgetExceededException(limit, c, message)
+            : new InvalidOperationException(message);
+    }
+
+    /// <summary>The part of an error body a caller can act on.</summary>
+    /// <remarks>
+    /// In a JSON output format the server writes the exception INTO the JSON document, as its
+    /// <c>exception</c> field. Taking the body's first line - which is what this class did until
+    /// 2026-09-30 - therefore reported every failure on this path as <c>ClickHouse returned 500: {</c>.
+    /// Other formats, and anything answering in the server's place, send text; there the first
+    /// line is the message and the rest is a stack.
+    /// </remarks>
+    private static string ExceptionText(string body)
+    {
+        if (body.AsSpan().TrimStart().StartsWith("{", StringComparison.Ordinal))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(body);
+                if (document.RootElement.TryGetProperty("exception", out var exception)
+                    && exception.ValueKind == JsonValueKind.String)
+                {
+                    return exception.GetString() ?? string.Empty;
+                }
+            }
+            catch (JsonException)
+            {
+                // A response cut off mid-stream; the text search below still finds the message.
+            }
+
+            var embedded = System.Text.RegularExpressions.Regex.Match(body, "Code: \\d+\\. DB::Exception:[^\"\\n]*");
+            if (embedded.Success)
+            {
+                return embedded.Value;
+            }
+        }
+
+        return body.Split('\n', 2)[0];
     }
 
     private static ClickHouseJsonResult Parse(string body)

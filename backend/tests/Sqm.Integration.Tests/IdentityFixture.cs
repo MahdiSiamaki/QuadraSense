@@ -56,6 +56,9 @@ public sealed class IdentityFixture : IAsyncLifetime
     /// <summary>Live device images, so a test can check one was or was not replaced.</summary>
     public Sqm.Infrastructure.Catalog.PostgresDeviceImageStore LiveImages { get; private set; } = null!;
 
+    /// <summary>My Queries, for the saved-query tests.</summary>
+    public PostgresExplorerSavedQueryStore SavedQueries { get; private set; } = null!;
+
     /// <summary>The options the stack was built with.</summary>
     public AuthOptions Options { get; } = new();
 
@@ -104,6 +107,7 @@ public sealed class IdentityFixture : IAsyncLifetime
                 _dataSource, postgres);
             LiveImages = new Sqm.Infrastructure.Catalog.PostgresDeviceImageStore(
                 _dataSource, postgres);
+            SavedQueries = new PostgresExplorerSavedQueryStore(_dataSource, postgres);
 
             IsAvailable = true;
         }

@@ -48,24 +48,24 @@ function clearRange() {
   <Card title="History" :subtitle="`Dated changes involving ${imsi}`">
     <template #actions>
       <div class="flex flex-wrap items-center gap-2">
-        <label for="h-from" class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">From</label>
+        <label for="h-from" class="text-2xs text-[var(--c-text-muted)]">From</label>
         <input
           id="h-from"
           v-model="from"
           type="date"
-          class="tabular rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+          class="tabular rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs"
         />
-        <label for="h-to" class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">to</label>
+        <label for="h-to" class="text-2xs text-[var(--c-text-muted)]">to</label>
         <input
           id="h-to"
           v-model="to"
           type="date"
-          class="tabular rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-[var(--text-xs)]"
+          class="tabular rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs"
         />
         <button
           v-if="from || to"
           type="button"
-          class="rounded-[var(--radius-md)] px-1.5 py-1 text-[var(--text-2xs)] text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
+          class="rounded-[var(--radius-md)] px-1.5 py-1 text-2xs text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
           @click="clearRange"
         >
           clear
@@ -84,7 +84,7 @@ function clearRange() {
     >
       <p
         v-if="history.data.value?.truncated"
-        class="mb-3 rounded-[var(--radius-md)] border px-2.5 py-1.5 text-[var(--text-xs)]"
+        class="mb-3 rounded-[var(--radius-md)] border px-2.5 py-1.5 text-xs"
         :style="{
           borderColor: 'var(--c-warning)',
           backgroundColor: 'var(--c-warning-subtle)',
@@ -96,7 +96,7 @@ function clearRange() {
 
       <ol class="flex flex-col gap-4">
         <li v-for="[date, events] in days" :key="date">
-          <p class="tabular mb-1.5 text-[var(--text-xs)] font-semibold">
+          <p class="tabular mb-1.5 text-xs font-semibold">
             {{ formatDate(date) }}
           </p>
 
@@ -104,7 +104,7 @@ function clearRange() {
             <li
               v-for="(event, index) in events"
               :key="`${event.sequence}-${event.imei}-${index}`"
-              class="relative flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[var(--text-xs)]"
+              class="relative flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs"
             >
               <!--
                 The dot sits on the rule, and its colour AND its word both carry the meaning -
@@ -144,7 +144,7 @@ function clearRange() {
 
       <p
         v-if="history.data.value"
-        class="tabular mt-4 border-t pt-2 text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+        class="tabular mt-4 border-t pt-2 text-2xs text-[var(--c-text-muted)]"
       >
         {{ history.data.value.timing.elapsedMs }} ms ·
         {{ formatFull(history.data.value.timing.rowsExamined) }} rows examined ·

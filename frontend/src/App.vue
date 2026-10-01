@@ -36,6 +36,7 @@ const nav = computed(() =>
   [
     { to: '/', label: 'Dashboard', show: can(Permission.DashboardView) },
     { to: '/devices', label: 'Devices', show: can(Permission.DeviceView) },
+    { to: '/explorer', label: 'Explorer', show: can(Permission.ExplorerQuery) },
     { to: '/imports', label: 'Imports', show: can(Permission.ImportView) },
     { to: '/lookup', label: 'Lookup', show: can(Permission.LookupSubscriber) },
     { to: '/lookup/imsi', label: 'IMSI', show: can(Permission.LookupImsi) },
@@ -86,7 +87,7 @@ async function signOut() {
       <div class="mx-auto flex h-14 max-w-[1600px] items-center gap-6 px-5">
         <RouterLink to="/" class="flex shrink-0 items-center gap-2">
           <BrandMark :size="26" />
-          <span class="hidden text-[var(--text-sm)] font-semibold tracking-tight sm:inline">
+          <span class="hidden text-sm font-semibold tracking-tight sm:inline">
             QuadraSense
           </span>
         </RouterLink>
@@ -97,7 +98,7 @@ async function signOut() {
             v-for="item in nav"
             :key="item.to"
             :to="item.to"
-            class="shrink-0 rounded-[var(--radius-md)] px-2.5 py-1.5 text-[var(--text-sm)] font-medium whitespace-nowrap transition-colors"
+            class="shrink-0 rounded-[var(--radius-md)] px-2.5 py-1.5 text-sm font-medium whitespace-nowrap transition-colors"
             :class="
               isCurrent(item.to)
                 ? 'bg-[var(--c-surface-sunken)] text-[var(--c-text)]'
@@ -112,7 +113,7 @@ async function signOut() {
           <RouterLink
             v-if="sqm?.latestBusinessDate"
             to="/imports"
-            class="hidden items-center gap-1.5 text-[var(--text-2xs)] text-[var(--c-text-muted)] hover:text-[var(--c-text-secondary)] lg:inline-flex"
+            class="hidden items-center gap-1.5 text-2xs text-[var(--c-text-muted)] hover:text-[var(--c-text-secondary)] lg:inline-flex"
             :title="`Latest successfully imported day. ${sqm.missingBusinessDates.length} expected day(s) missing.`"
           >
             <span

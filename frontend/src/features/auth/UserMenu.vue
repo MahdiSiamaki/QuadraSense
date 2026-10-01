@@ -63,12 +63,12 @@ onBeforeUnmount(() => {
       @click="emit('toggle')"
     >
       <span
-        class="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--c-surface-sunken)] text-[var(--text-2xs)] font-semibold text-[var(--c-text-secondary)]"
+        class="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--c-surface-sunken)] text-2xs font-semibold text-[var(--c-text-secondary)]"
         aria-hidden="true"
       >
         {{ initials }}
       </span>
-      <span class="hidden text-[var(--text-xs)] font-medium md:inline">
+      <span class="hidden text-xs font-medium md:inline">
         {{ user.displayName }}
       </span>
     </button>
@@ -79,11 +79,11 @@ onBeforeUnmount(() => {
       class="absolute right-0 z-20 mt-1.5 w-60 overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--c-surface)] shadow-[var(--shadow-md)]"
     >
       <div class="border-b px-3 py-2.5">
-        <p class="truncate text-[var(--text-sm)] font-medium">{{ user.displayName }}</p>
-        <p class="truncate text-[var(--text-xs)] text-[var(--c-text-muted)]">
+        <p class="truncate text-sm font-medium">{{ user.displayName }}</p>
+        <p class="truncate text-xs text-[var(--c-text-muted)]">
           {{ user.username }}
         </p>
-        <p class="mt-1 text-[var(--text-2xs)] text-[var(--c-text-secondary)]">
+        <p class="mt-1 text-2xs text-[var(--c-text-secondary)]">
           {{ user.roles.length ? user.roles.join(', ') : 'no role assigned' }}
           <span class="text-[var(--c-text-muted)]">
             · {{ user.permissions.length }} permission(s)
@@ -94,7 +94,7 @@ onBeforeUnmount(() => {
       <RouterLink
         to="/profile"
         role="menuitem"
-        class="block px-3 py-2 text-[var(--text-sm)] hover:bg-[var(--c-surface-hover)]"
+        class="block px-3 py-2 text-sm hover:bg-[var(--c-surface-hover)]"
         @click="emit('close')"
       >
         Your profile
@@ -103,7 +103,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         role="menuitem"
-        class="w-full px-3 py-2 text-left text-[var(--text-sm)] text-[var(--c-danger)] hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
+        class="w-full px-3 py-2 text-left text-sm text-[var(--c-danger)] hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
         :disabled="signingOut"
         @click="emit('signOut')"
       >

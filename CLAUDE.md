@@ -55,12 +55,18 @@ Do not re-open these without asking:
 Professional, modern, enterprise-grade, responsive and accessible. Design tokens live in
 `frontend/src/design-system/`; use them rather than literal colours.
 
-Two traps that have already cost time, both still live:
+Three traps that have already cost time, all still live:
 
 - **zrender cannot parse `oklch()`.** Passing a token straight to ECharts yields `undefined` and
   the series disappears on hover. Resolve through `frontend/src/lib/chart-colors.ts`.
 - **Tailwind Preflight resets `margin: 0` on `<dialog>`**, which breaks the browser's own
   centring. `frontend/src/design-system/Modal.vue` restores it with `m-auto`.
+- **Tailwind cannot tell a size from a colour inside `var()`.** `text-[var(--text-xs)]` compiles to
+  `color: var(--text-xs)` and `font-[var(--font-mono)]` to a font weight: no size, no face, and the
+  element's real colour class is overridden. Sizes and faces use the theme's own utilities -
+  `text-2xs` … `text-2xl`, `font-mono` - which read the tokens. Colours as `text-[var(--c-…)]` are
+  fine. Every page had this until 2026-10-01; to check a build, list what each `[var(--…)]` class
+  compiles to in `dist/assets/index-*.css`.
 
 ## Counting rules
 

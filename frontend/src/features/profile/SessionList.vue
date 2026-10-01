@@ -79,7 +79,7 @@ function describe(agent: string | null): string {
   >
     <p
       v-if="sessions.length === 0"
-      class="px-4 py-6 text-center text-[var(--text-xs)] text-[var(--c-text-muted)]"
+      class="px-4 py-6 text-center text-xs text-[var(--c-text-muted)]"
     >
       No sessions recorded.
     </p>
@@ -91,7 +91,7 @@ function describe(agent: string | null): string {
         class="flex items-start justify-between gap-3 px-4 py-2.5"
       >
         <div class="min-w-0">
-          <p class="flex items-center gap-1.5 text-[var(--text-sm)]">
+          <p class="flex items-center gap-1.5 text-sm">
             <span
               class="size-1.5 shrink-0 rounded-full"
               :style="{
@@ -104,7 +104,7 @@ function describe(agent: string | null): string {
             <span class="truncate">{{ describe(session.userAgent) }}</span>
             <span
               v-if="session.isCurrent"
-              class="shrink-0 rounded-full px-1.5 py-0.5 text-[var(--text-2xs)] font-medium"
+              class="shrink-0 rounded-full px-1.5 py-0.5 text-2xs font-medium"
               :style="{
                 backgroundColor: 'var(--c-accent-subtle)',
                 color: 'var(--c-accent)',
@@ -114,7 +114,7 @@ function describe(agent: string | null): string {
             </span>
           </p>
 
-          <p class="tabular mt-0.5 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          <p class="tabular mt-0.5 text-2xs text-[var(--c-text-muted)]">
             <span v-if="session.ip">{{ session.ip }} · </span>
             <span :title="formatDateTime(session.lastSeenAt)">
               last used {{ formatRelative(session.lastSeenAt) }}
@@ -130,7 +130,7 @@ function describe(agent: string | null): string {
         <button
           v-if="!readonly && isLive(session) && !session.isCurrent"
           type="button"
-          class="shrink-0 rounded-[var(--radius-md)] border px-2 py-1 text-[var(--text-2xs)] font-medium text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)] disabled:opacity-40"
+          class="shrink-0 rounded-[var(--radius-md)] border px-2 py-1 text-2xs font-medium text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)] disabled:opacity-40"
           :disabled="revoking"
           @click="$emit('revoke', session.id)"
         >

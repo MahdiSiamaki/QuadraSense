@@ -78,14 +78,14 @@ const widths: Record<string, string> = {
     <form method="dialog" class="flex max-h-[85vh] flex-col" @submit.prevent>
       <header class="flex items-start justify-between gap-4 border-b px-4 py-3">
         <div class="min-w-0">
-          <h2 class="text-[var(--text-sm)] font-semibold">{{ title }}</h2>
-          <p v-if="description" class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+          <h2 class="text-sm font-semibold">{{ title }}</h2>
+          <p v-if="description" class="mt-0.5 text-xs text-[var(--c-text-muted)]">
             {{ description }}
           </p>
         </div>
         <button
           type="button"
-          class="-mt-0.5 -mr-1 rounded-[var(--radius-md)] px-1.5 py-0.5 text-[var(--text-lg)] leading-none text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)] disabled:opacity-40"
+          class="-mt-0.5 -mr-1 rounded-[var(--radius-md)] px-1.5 py-0.5 text-lg leading-none text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)] disabled:opacity-40"
           :disabled="busy"
           aria-label="Close"
           @click="requestClose()"

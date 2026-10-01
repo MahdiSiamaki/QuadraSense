@@ -38,7 +38,7 @@ const colour = computed(
   <div class="space-y-1">
     <div
       v-if="label || detail || percent !== null"
-      class="flex items-baseline justify-between gap-3 text-[var(--text-xs)]"
+      class="flex items-baseline justify-between gap-3 text-xs"
     >
       <span class="truncate font-medium text-[var(--c-text-secondary)]">{{ label }}</span>
       <span class="tabular shrink-0 text-[var(--c-text-muted)]">

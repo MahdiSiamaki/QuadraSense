@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Sqm.Api.Auth;
 using Sqm.Api.Endpoints;
 using Sqm.Api.Infrastructure;
@@ -51,6 +52,12 @@ builder.Services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName, client =
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+
+        // Below ClickHouse's keep_alive_timeout (10 s on this server, measured 2026-10-01). The
+        // default here is a minute, so a connection idle between 10 and 60 seconds is one the
+        // server has already closed - and a request sent on it as the close arrives fails with
+        // "connection forcibly closed". Dropping it first costs one new connection.
+        PooledConnectionIdleTimeout = TimeSpan.FromSeconds(5),
         MaxConnectionsPerServer = 32,
 
         // Required, not optional. ClickHouse compresses its HTTP responses, and
@@ -61,6 +68,27 @@ builder.Services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName, client =
     });
 
 builder.Services.AddSingleton<IDeviceAnalyticsStore, ClickHouseAnalyticsStore>();
+
+// Each day's file judged against the ordinary days. TryAdd, because the in-process worker
+// registers the same reader and options for the import's own check - one instance, one judgement.
+builder.Services.Configure<Sqm.Application.Quality.FeedQualityOptions>(
+    builder.Configuration.GetSection(Sqm.Application.Quality.FeedQualityOptions.SectionName));
+builder.Services.TryAddSingleton<Sqm.Application.Quality.IFeedQualityReader, ClickHouseFeedQualityStore>();
+
+// The Explorer's query engine: allow-listed fields compiled to parameterised SQL, planned with
+// EXPLAIN ESTIMATE, run within a budget the server enforces. See ADR-012.
+builder.Services.Configure<Sqm.Application.Explorer.ExplorerOptions>(
+    builder.Configuration.GetSection(Sqm.Application.Explorer.ExplorerOptions.SectionName));
+builder.Services.AddSingleton<Sqm.Application.Explorer.IExplorerEngine,
+    Sqm.Infrastructure.ClickHouse.Explorer.ClickHouseExplorerEngine>();
+builder.Services.AddSingleton<Sqm.Application.Explorer.IExplorerSavedQueryStore, PostgresExplorerSavedQueryStore>();
+
+// Timelines, from the binding history (analytics migration 022). A singleton: it caches for a
+// minute whether the history is complete, which every timeline request asks.
+builder.Services.Configure<Sqm.Application.Timeline.TimelineOptions>(
+    builder.Configuration.GetSection(Sqm.Application.Timeline.TimelineOptions.SectionName));
+builder.Services.AddSingleton<Sqm.Application.Timeline.ITimelineStore,
+    Sqm.Infrastructure.ClickHouse.ClickHouseTimelineStore>();
 
 // Curated device photographs. The GSMA TAC record carries none and this deployment has no
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.
@@ -233,6 +261,9 @@ app.MapLookupEndpoints();
 app.MapImsiEndpoints();
 app.MapDeviceEndpoints();
 app.MapRelationshipEndpoints();
+app.MapQualityEndpoints();
+app.MapExplorerEndpoints();
+app.MapTimelineEndpoints();
 app.MapDeviceImageReviewEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);

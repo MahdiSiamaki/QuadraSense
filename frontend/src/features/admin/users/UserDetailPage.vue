@@ -151,7 +151,7 @@ const resetError = computed(() => message(resetPassword.error.value))
 
 <template>
   <div class="flex flex-col gap-5">
-    <nav class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+    <nav class="text-xs text-[var(--c-text-muted)]">
       <RouterLink to="/settings/users" class="hover:text-[var(--c-text)] hover:underline">
         Users
       </RouterLink>
@@ -169,24 +169,24 @@ const resetError = computed(() => message(resetPassword.error.value))
       <template v-if="user.data.value">
         <header class="flex flex-wrap items-start justify-between gap-4">
           <div class="min-w-0">
-            <h2 class="flex flex-wrap items-center gap-2 text-[var(--text-lg)] font-semibold tracking-tight">
+            <h2 class="flex flex-wrap items-center gap-2 text-lg font-semibold tracking-tight">
               {{ user.data.value.displayName }}
               <span
                 v-if="!user.data.value.isActive"
-                class="rounded-full px-2 py-0.5 text-[var(--text-xs)] font-medium"
+                class="rounded-full px-2 py-0.5 text-xs font-medium"
                 :style="{ backgroundColor: 'var(--c-surface-sunken)', color: 'var(--c-text-muted)' }"
               >
                 Deactivated
               </span>
               <span
                 v-else-if="locked"
-                class="rounded-full px-2 py-0.5 text-[var(--text-xs)] font-medium"
+                class="rounded-full px-2 py-0.5 text-xs font-medium"
                 :style="{ backgroundColor: 'var(--c-warning-subtle)', color: 'var(--c-warning)' }"
               >
                 Locked
               </span>
             </h2>
-            <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+            <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
               {{ user.data.value.username }}
               <template v-if="user.data.value.jobTitle"> · {{ user.data.value.jobTitle }}</template>
               <template v-if="user.data.value.email"> · {{ user.data.value.email }}</template>
@@ -242,7 +242,7 @@ const resetError = computed(() => message(resetPassword.error.value))
 
         <p
           v-if="activationError"
-          class="rounded-[var(--radius-md)] border px-3 py-2 text-[var(--text-sm)]"
+          class="rounded-[var(--radius-md)] border px-3 py-2 text-sm"
           :style="{
             borderColor: 'var(--c-danger)',
             backgroundColor: 'var(--c-danger-subtle)',
@@ -265,12 +265,12 @@ const resetError = computed(() => message(resetPassword.error.value))
                   v-for="role in user.data.value.roles"
                   :key="role.id"
                   :to="`/settings/roles/${role.id}`"
-                  class="rounded-full border px-2.5 py-1 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)]"
+                  class="rounded-full border px-2.5 py-1 text-xs font-medium hover:bg-[var(--c-surface-hover)]"
                 >
                   {{ role.displayName }}
                 </RouterLink>
               </div>
-              <p v-else class="text-[var(--text-sm)] text-[var(--c-warning)]">
+              <p v-else class="text-sm text-[var(--c-warning)]">
                 No role assigned. This account can sign in but will see nothing.
               </p>
             </Card>
@@ -280,7 +280,7 @@ const resetError = computed(() => message(resetPassword.error.value))
 
           <div class="flex flex-col gap-5">
             <Card title="Account">
-              <dl class="flex flex-col gap-2.5 text-[var(--text-sm)]">
+              <dl class="flex flex-col gap-2.5 text-sm">
                 <div class="flex justify-between gap-3">
                   <dt class="text-[var(--c-text-muted)]">Last sign-in</dt>
                   <dd class="tabular text-right">
@@ -323,7 +323,7 @@ const resetError = computed(() => message(resetPassword.error.value))
                   <dd class="text-right text-[var(--c-warning)]">must change password</dd>
                 </div>
 
-                <div class="mt-1 border-t pt-2.5 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+                <div class="mt-1 border-t pt-2.5 text-xs text-[var(--c-text-muted)]">
                   <p>
                     Created {{ formatDateTime(user.data.value.createdAt) }}
                     <template v-if="user.data.value.createdBy">
@@ -391,8 +391,8 @@ const resetError = computed(() => message(resetPassword.error.value))
             @change="toggleRole(role.code)"
           />
           <span class="min-w-0">
-            <span class="block text-[var(--text-sm)] font-medium">{{ role.displayName }}</span>
-            <span class="block text-[var(--text-xs)] text-[var(--c-text-muted)]">
+            <span class="block text-sm font-medium">{{ role.displayName }}</span>
+            <span class="block text-xs text-[var(--c-text-muted)]">
               {{ role.description }}
             </span>
           </span>
@@ -401,7 +401,7 @@ const resetError = computed(() => message(resetPassword.error.value))
 
       <p
         v-if="roleError"
-        class="mt-3 rounded-[var(--radius-md)] border px-2.5 py-2 text-[var(--text-xs)]"
+        class="mt-3 rounded-[var(--radius-md)] border px-2.5 py-2 text-xs"
         :style="{
           borderColor: 'var(--c-danger)',
           backgroundColor: 'var(--c-danger-subtle)',

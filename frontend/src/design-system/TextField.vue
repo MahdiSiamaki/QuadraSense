@@ -40,11 +40,11 @@ const describedBy = computed(() =>
 <template>
   <div class="flex flex-col gap-1">
     <div class="flex items-baseline justify-between gap-2">
-      <label :for="id" class="text-[var(--text-xs)] font-medium text-[var(--c-text-secondary)]">
+      <label :for="id" class="text-xs font-medium text-[var(--c-text-secondary)]">
         {{ label }}
         <span v-if="required" class="text-[var(--c-danger)]" aria-hidden="true">*</span>
       </label>
-      <span v-if="optionalNote" class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+      <span v-if="optionalNote" class="text-2xs text-[var(--c-text-muted)]">
         {{ optionalNote }}
       </span>
     </div>
@@ -59,7 +59,7 @@ const describedBy = computed(() =>
       :disabled="disabled"
       :aria-invalid="error ? 'true' : undefined"
       :aria-describedby="describedBy"
-      class="w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2.5 py-1.5 text-[var(--text-sm)] text-[var(--c-text)] transition-colors placeholder:text-[var(--c-text-muted)] disabled:opacity-60"
+      class="w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2.5 py-1.5 text-sm text-[var(--c-text)] transition-colors placeholder:text-[var(--c-text-muted)] disabled:opacity-60"
       :style="error ? { borderColor: 'var(--c-danger)' } : undefined"
       @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     />
@@ -67,7 +67,7 @@ const describedBy = computed(() =>
     <p
       v-if="error"
       :id="`${id}-error`"
-      class="text-[var(--text-xs)] text-[var(--c-danger)]"
+      class="text-xs text-[var(--c-danger)]"
       role="alert"
     >
       {{ error }}
@@ -75,7 +75,7 @@ const describedBy = computed(() =>
     <p
       v-else-if="hint"
       :id="`${id}-hint`"
-      class="text-[var(--text-xs)] text-[var(--c-text-muted)]"
+      class="text-xs text-[var(--c-text-muted)]"
     >
       {{ hint }}
     </p>

@@ -27,6 +27,7 @@ internal sealed partial class SqmDailyProcessor(
     IAnalyticsIngestionStore analytics,
     IImportJobRepository repository,
     DashboardSnapshot dashboard,
+    FeedQualityMonitor feedQuality,
     ILogger<SqmDailyProcessor> logger) : IImportProcessor
 {
     [LoggerMessage(EventId = 3300, Level = LogLevel.Information,
@@ -209,6 +210,30 @@ internal sealed partial class SqmDailyProcessor(
 
         await analytics.RefreshChangeMartsForDayAsync(businessDate, sequence, ct)
             .ConfigureAwait(false);
+
+        // The binding history - every binding's dated adds and removes, so one number, SIM or
+        // handset's whole timeline is a key read (analytics migration 022). A day it has never
+        // seen is added; one it has - this file replacing it, or a retry - rebuilds its month.
+        var history = await analytics.RefreshHistoryForDayAsync(businessDate, ct).ConfigureAwait(false);
+
+        await context.NoteAsync(
+            history.Kind == HistoryRefreshKind.NotDeployed ? "warning" : "info",
+            history.Kind switch
+            {
+                HistoryRefreshKind.NotDeployed =>
+                    "The binding history is not deployed, so timelines will not include this day. Apply "
+                    + "analytics migration 022 and run Sqm.Ingestion --backfill-history.",
+                HistoryRefreshKind.Added => $"{history.Events:N0} events added to the binding history.",
+                _ => $"The binding history for {businessDate:yyyy-MM} was rebuilt from the event log "
+                     + $"({history.Reason}): {history.Events:N0} events.",
+            },
+            new { historyPath = history.Kind.ToString(), historyEvents = history.Events },
+            ct).ConfigureAwait(false);
+
+        // What the file looks like against the ordinary days: shifted IMEIs, SIMs with several
+        // numbers, malformed IMEIs. Noted on the job when out of line; never a failure - see
+        // FeedQualityMonitor.
+        await feedQuality.AfterDayAsync(businessDate, context, ct).ConfigureAwait(false);
 
         // The dashboard's headline figures come from the seq-partitioned marts, not from the
         // day-level ones above, and they are rebuilt for the delivery holding the latest DAY -

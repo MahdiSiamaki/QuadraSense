@@ -128,6 +128,37 @@ if (args.Contains("--refresh-marts"))
         .ConfigureAwait(false);
 }
 
+// Measure feed quality for days imported before it existed, or again after a new GSMA version.
+//
+//   dotnet run --project backend/src/Sqm.Ingestion -- --refresh-quality [--from d] [--to d] [--force]
+//
+// The same per-day call the import makes; 6-12 seconds a day on the real files.
+if (args.Contains("--refresh-quality"))
+{
+    var (from, to) = DayBackfill.ParseRange(args);
+    return await FeedQualityBackfill
+        .RunAsync(
+            host.Services.GetRequiredService<IAnalyticsIngestionStore>(),
+            host.Services.GetRequiredService<Sqm.Application.Quality.IFeedQualityReader>(),
+            from, to, args.Contains("--force"), CancellationToken.None)
+        .ConfigureAwait(false);
+}
+
+// Fills the binding history (analytics migration 022) - every binding's dated events, by number,
+// SIM and IMEI - from the event log and the initial dump. Run once after the migration; the daily
+// import keeps it current. Resumable: months that already reconcile are skipped.
+//
+//   dotnet run --project backend/src/Sqm.Ingestion -- --backfill-history [--from d] [--to d] [--force]
+if (args.Contains("--backfill-history"))
+{
+    var (from, to) = DayBackfill.ParseRange(args);
+    return await HistoryBackfill
+        .RunAsync(
+            host.Services.GetRequiredService<IAnalyticsIngestionStore>(),
+            from, to, args.Contains("--force"), CancellationToken.None)
+        .ConfigureAwait(false);
+}
+
 // Populates a re-ordered copy of current state. Run once after the migration that creates the
 // table, and again after any rebuild of binding_current that bypasses the materialized view -
 // an EXCHANGE TABLES swap fires no insert and so mirrors nothing. See ADR-008 and ADR-009.

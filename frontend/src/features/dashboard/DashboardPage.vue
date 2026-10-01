@@ -22,6 +22,7 @@ import VendorMovementCard from './VendorMovementCard.vue'
 import DimensionTable from '@/design-system/DimensionTable.vue'
 import DataFreshnessCard from './DataFreshnessCard.vue'
 import { useFreshness } from '@/features/imports/useImportQueries'
+import { flaggedDays, useFeedQuality } from '@/api/quality'
 import { useTacVersions } from '@/features/imports/useTacVersions'
 import { formatFull, formatPercent } from '@/lib/format'
 import { useFilterState, FILTER_LABELS } from './useFilterState'
@@ -64,6 +65,14 @@ const dailyChurn = useDailyChurn()
 const { can } = useAuth()
 const canSeeImports = computed(() => can(Permission.ImportView))
 const freshness = useFreshness({ enabled: canSeeImports })
+
+/*
+  Days whose file looked unlike the ordinary days - shifted IMEIs, SIMs with several numbers -
+  shaded on both daily charts. Without import.view there is nothing to shade, and the charts are
+  drawn as before.
+*/
+const feedQuality = useFeedQuality({ enabled: canSeeImports })
+const flagged = computed(() => flaggedDays(feedQuality.data.value))
 
 const missingDays = computed(
   () => freshness.data.value?.find((f) => f.sourceCode === 'SQM')?.missingBusinessDates ?? [],
@@ -158,15 +167,15 @@ const activeTacRows = computed(
   <div class="space-y-5">
     <header class="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Device population</h1>
-        <p class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+        <h1 class="text-xl font-semibold tracking-tight">Device population</h1>
+        <p class="mt-0.5 text-xs text-[var(--c-text-muted)]">
           Active device–SIM bindings across the network, enriched with GSMA device data.
         </p>
-        <p class="mt-1 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        <p class="mt-1 text-2xs text-[var(--c-text-muted)]">
           A <strong>binding</strong> is one number + SIM + handset combination
-          (<code class="font-[var(--font-mono)]">MSISDN</code> +
-          <code class="font-[var(--font-mono)]">IMSI</code> +
-          <code class="font-[var(--font-mono)]">IMEI</code>). One subscriber can hold several.
+          (<code class="font-mono">MSISDN</code> +
+          <code class="font-mono">IMSI</code> +
+          <code class="font-mono">IMEI</code>). One subscriber can hold several.
         </p>
       </div>
 
@@ -185,7 +194,7 @@ const activeTacRows = computed(
             type="button"
             role="radio"
             :aria-checked="countBy === o.value"
-            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-[var(--text-xs)] font-medium transition-colors"
+            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium transition-colors"
             :class="
               countBy === o.value
                 ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
@@ -199,7 +208,7 @@ const activeTacRows = computed(
 
         <button
           type="button"
-          class="rounded-[var(--radius-md)] border px-2.5 py-1.5 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)]"
+          class="rounded-[var(--radius-md)] border px-2.5 py-1.5 text-xs font-medium hover:bg-[var(--c-surface-hover)]"
           :class="filters.includeUnknownDevice ? '' : 'bg-[var(--c-surface-sunken)]'"
           @click="toggleUnknownDevice"
         >
@@ -220,12 +229,12 @@ const activeTacRows = computed(
 
     <!-- Active filters. Shown as removable chips so the current view is always legible. -->
     <div v-if="isFiltered" class="flex flex-wrap items-center gap-2">
-      <span class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Filtered by</span>
+      <span class="text-xs text-[var(--c-text-muted)]">Filtered by</span>
       <button
         v-for="f in activeFilters"
         :key="f.key"
         type="button"
-        class="group inline-flex items-center gap-1.5 rounded-full bg-[var(--c-accent-subtle)] py-1 pr-2 pl-2.5 text-[var(--text-xs)] font-medium"
+        class="group inline-flex items-center gap-1.5 rounded-full bg-[var(--c-accent-subtle)] py-1 pr-2 pl-2.5 text-xs font-medium"
         :title="`Remove ${FILTER_LABELS[f.key]} filter`"
         @click="setFilter(f.key, undefined)"
       >
@@ -235,12 +244,12 @@ const activeTacRows = computed(
       </button>
       <button
         type="button"
-        class="rounded-[var(--radius-sm)] px-2 py-1 text-[var(--text-xs)] font-medium text-[var(--c-text-secondary)] underline-offset-2 hover:underline"
+        class="rounded-[var(--radius-sm)] px-2 py-1 text-xs font-medium text-[var(--c-text-secondary)] underline-offset-2 hover:underline"
         @click="clearAll"
       >
         Clear all
       </button>
-      <span class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+      <span class="text-2xs text-[var(--c-text-muted)]">
         · filtered views query raw data and take a few seconds
       </span>
     </div>
@@ -342,16 +351,21 @@ const activeTacRows = computed(
         min-height="20rem"
         @retry="dailyChanges.refetch()"
       >
-        <ChangeTimeSeries :data="dailyChanges.data.value ?? []" />
+        <ChangeTimeSeries :data="dailyChanges.data.value ?? []" :flagged="flagged" />
       </AsyncBoundary>
 
       <template #footer>
-        <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        <p class="text-2xs text-[var(--c-text-muted)]">
           <template v-if="missingDays.length">
             <strong>{{ missingDays.length }} days are missing</strong> from the source and appear as
             gaps rather than interpolated points: {{ [...missingDays].sort().join(', ') }}.
           </template>
           <template v-else>Every expected day in this range was delivered and imported.</template>
+        </p>
+        <p v-if="flagged.size" class="mt-1.5 text-2xs text-[var(--c-text-muted)]">
+          <strong>{{ flagged.size }} shaded days</strong> are ones whose file looked unlike the ordinary
+          days - IMEIs shifted by a digit, or SIMs carrying several numbers. Their figures may be
+          distorted; hover a day for what was found.
         </p>
       </template>
     </Card>
@@ -371,14 +385,19 @@ const activeTacRows = computed(
           min-height="18rem"
           @retry="dailyChurn.refetch()"
         >
-          <ChurnTimeSeries :data="dailyChurn.data.value ?? []" />
+          <ChurnTimeSeries :data="dailyChurn.data.value ?? []" :flagged="flagged" />
         </AsyncBoundary>
 
         <template #footer>
-          <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          <p class="text-2xs text-[var(--c-text-muted)]">
             Same-day definition: the number has a remove carrying one SIM (or handset) and an add
             carrying another on the same date. A change spanning midnight is not counted, so these
             are a floor, not a total.
+          </p>
+          <p v-if="flagged.size" class="mt-1.5 text-2xs text-[var(--c-text-muted)]">
+            Shaded days: the feed itself looked wrong. From 2026-07-27 SIMs began carrying several
+            numbers a day, and from 2026-09-15 IMEIs arrived shifted by a digit; both show here as SIM
+            and handset changes that did not happen.
           </p>
         </template>
       </Card>
@@ -418,7 +437,7 @@ const activeTacRows = computed(
       </AsyncBoundary>
 
       <template #footer>
-        <p class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+        <p class="text-2xs text-[var(--c-text-muted)]">
           <strong>VoLTE is not shown</strong> because the GSMA dataset does not contain it: the band
           list mentions VoLTE in 2 records<template v-if="activeTacRows"> of
           {{ formatFull(activeTacRows) }}</template>, and the IMS fields describe emergency calling
@@ -446,23 +465,23 @@ const activeTacRows = computed(
         </AsyncBoundary>
 
         <template #footer>
-          <p v-if="countBy === 'bindings'" class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          <p v-if="countBy === 'bindings'" class="text-2xs text-[var(--c-text-muted)]">
             <strong>Bindings</strong> are number + SIM + handset combinations. A dual-SIM phone
             serving two numbers counts twice, so this runs higher than the handset count for the
             same vendor. Switch to Handsets to compare.
           </p>
           <p
             v-else-if="countBy === 'subscribers'"
-            class="text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+            class="text-2xs text-[var(--c-text-muted)]"
           >
             <strong>Subscribers</strong> are distinct phone numbers, and these values
             <strong>overlap</strong>: someone owning a Samsung and an Apple handset is counted under
             both. The percentages therefore sum to more than 100%.
           </p>
-          <p v-else class="text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+          <p v-else class="text-2xs text-[var(--c-text-muted)]">
             <strong>Handsets</strong> are distinct IMEIs. These do not overlap &mdash; a handset
             belongs to exactly one vendor &mdash; so the values add up. Excludes the
-            <code class="font-[var(--font-mono)]">000000</code> population, which has no handset to
+            <code class="font-mono">000000</code> population, which has no handset to
             count.
           </p>
         </template>
@@ -538,50 +557,50 @@ const activeTacRows = computed(
                Presenting them separately is the point: only one of them is a defect. -->
           <dl class="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Enriched from GSMA</dt>
-              <dd class="mt-1 text-[var(--text-lg)] font-semibold tabular text-[var(--c-success)]">
+              <dt class="text-xs text-[var(--c-text-muted)]">Enriched from GSMA</dt>
+              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-success)]">
                 {{ formatFull(kpi.data.value?.tacMatchedBindings ?? 0) }}
               </dd>
-              <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+              <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">
                 {{ formatPercent(kpi.data.value?.tacCoveragePercent ?? 0, 2) }} of active bindings.
               </dd>
             </div>
 
             <div>
-              <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
-                Unknown device (<code class="font-[var(--font-mono)]">000000</code>)
+              <dt class="text-xs text-[var(--c-text-muted)]">
+                Unknown device (<code class="font-mono">000000</code>)
               </dt>
-              <dd class="mt-1 text-[var(--text-lg)] font-semibold tabular text-[var(--c-warning)]">
+              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-warning)]">
                 {{ formatFull(kpi.data.value?.unknownDeviceBindings ?? 0) }}
               </dd>
-              <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+              <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">
                 A sentinel the source uses for "device not known". Expected, not a defect.
               </dd>
             </div>
 
             <div>
-              <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Malformed IMEI</dt>
-              <dd class="mt-1 text-[var(--text-lg)] font-semibold tabular text-[var(--c-danger)]">
+              <dt class="text-xs text-[var(--c-text-muted)]">Malformed IMEI</dt>
+              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-danger)]">
                 {{ formatFull(kpi.data.value?.malformedImeiBindings ?? 0) }}
               </dd>
-              <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+              <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">
                 Numeric but not 14 digits. <strong>The only genuine defect here</strong> — worth raising
                 with the source.
               </dd>
             </div>
 
             <div>
-              <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Unregistered TAC</dt>
-              <dd class="mt-1 text-[var(--text-lg)] font-semibold tabular">
+              <dt class="text-xs text-[var(--c-text-muted)]">Unregistered TAC</dt>
+              <dd class="mt-1 text-lg font-semibold tabular">
                 {{ formatFull(unregisteredTac ?? 0) }}
               </dd>
-              <dd class="mt-0.5 text-[var(--text-xs)] text-[var(--c-text-secondary)]">
+              <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">
                 Well-formed IMEI whose TAC is absent from the GSMA database.
               </dd>
             </div>
           </dl>
 
-          <p class="border-t pt-3 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+          <p class="border-t pt-3 text-xs text-[var(--c-text-muted)]">
             The four figures sum to
             <span class="tabular font-medium text-[var(--c-text-secondary)]">
               {{ formatFull(kpi.data.value?.activeBindings ?? 0) }}

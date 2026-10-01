@@ -80,8 +80,8 @@ function submit() {
 <template>
   <div class="flex flex-col gap-5">
     <header>
-      <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">Your profile</h1>
-      <p class="mt-0.5 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+      <h1 class="text-xl font-semibold tracking-tight">Your profile</h1>
+      <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
         {{ user?.username }} · {{ user?.roles.join(', ') || 'no role assigned' }}
       </p>
     </header>
@@ -131,7 +131,7 @@ function submit() {
                 </Button>
                 <span
                   v-if="save.isSuccess.value && !dirty"
-                  class="text-[var(--text-xs)] text-[var(--c-success)]"
+                  class="text-xs text-[var(--c-success)]"
                   role="status"
                 >
                   Saved.
@@ -144,7 +144,7 @@ function submit() {
               should find out here that it is not theirs to change, not conclude the page is
               incomplete.
             -->
-            <p class="mt-4 border-t pt-3 text-[var(--text-xs)] text-[var(--c-text-muted)]">
+            <p class="mt-4 border-t pt-3 text-xs text-[var(--c-text-muted)]">
               Your username, roles and permissions can only be changed by an administrator.
             </p>
           </Card>
@@ -163,10 +163,10 @@ function submit() {
             -->
             <dl class="flex flex-col gap-3">
               <div>
-                <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+                <dt class="text-xs text-[var(--c-text-muted)]">
                   Previous sign-in
                 </dt>
-                <dd class="tabular mt-0.5 text-[var(--text-sm)]">
+                <dd class="tabular mt-0.5 text-sm">
                   <template v-if="user?.previousLoginAt">
                     <span :title="formatDateTime(user.previousLoginAt)">
                       {{ formatRelative(user.previousLoginAt) }}
@@ -179,8 +179,8 @@ function submit() {
               </div>
 
               <div>
-                <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">This sign-in</dt>
-                <dd class="tabular mt-0.5 text-[var(--text-sm)]">
+                <dt class="text-xs text-[var(--c-text-muted)]">This sign-in</dt>
+                <dd class="tabular mt-0.5 text-sm">
                   {{ user?.lastLoginAt ? formatDateTime(user.lastLoginAt) : '—' }}
                   <span v-if="user?.lastLoginIp" class="text-[var(--c-text-muted)]">
                     from {{ user.lastLoginIp }}
@@ -189,8 +189,8 @@ function submit() {
               </div>
 
               <div>
-                <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Password set</dt>
-                <dd class="tabular mt-0.5 text-[var(--text-sm)]">
+                <dt class="text-xs text-[var(--c-text-muted)]">Password set</dt>
+                <dd class="tabular mt-0.5 text-sm">
                   <span v-if="user?.passwordUpdatedAt" :title="formatDateTime(user.passwordUpdatedAt)">
                     {{ formatRelative(user.passwordUpdatedAt) }}
                   </span>
@@ -199,8 +199,8 @@ function submit() {
               </div>
 
               <div>
-                <dt class="text-[var(--text-xs)] text-[var(--c-text-muted)]">Session expires</dt>
-                <dd class="tabular mt-0.5 text-[var(--text-sm)]">
+                <dt class="text-xs text-[var(--c-text-muted)]">Session expires</dt>
+                <dd class="tabular mt-0.5 text-sm">
                   <span v-if="user" :title="formatDateTime(user.sessionIdleExpiresAt)">
                     {{ formatRelative(user.sessionIdleExpiresAt) }} if idle
                   </span>

@@ -26,30 +26,30 @@ const permission = computed(() =>
 
 <template>
   <div class="mx-auto flex max-w-md flex-col items-start gap-4 py-16">
-    <h1 class="text-[var(--text-xl)] font-semibold tracking-tight">You do not have access</h1>
+    <h1 class="text-xl font-semibold tracking-tight">You do not have access</h1>
 
-    <p class="text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+    <p class="text-sm text-[var(--c-text-secondary)]">
       Your account
       <template v-if="user">({{ user.username }})</template>
       cannot open that page.
       <template v-if="permission">
         It requires the
         <code
-          class="rounded-[var(--radius-sm)] bg-[var(--c-surface-sunken)] px-1 py-0.5 text-[var(--text-xs)]"
+          class="rounded-[var(--radius-sm)] bg-[var(--c-surface-sunken)] px-1 py-0.5 text-xs"
           >{{ permission }}</code
         >
         permission.
       </template>
     </p>
 
-    <p class="text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+    <p class="text-sm text-[var(--c-text-secondary)]">
       Ask an administrator to grant it. Quoting the permission name above will save them guessing
       which one you need.
     </p>
 
     <div v-if="user" class="mt-2 rounded-[var(--radius-md)] border p-3">
-      <p class="text-[var(--text-xs)] text-[var(--c-text-muted)]">You currently hold</p>
-      <p class="mt-1 text-[var(--text-sm)]">
+      <p class="text-xs text-[var(--c-text-muted)]">You currently hold</p>
+      <p class="mt-1 text-sm">
         {{ user.roles.length ? user.roles.join(', ') : 'no role' }}
         <span class="text-[var(--c-text-muted)]">
           · {{ user.permissions.length }} permission(s)

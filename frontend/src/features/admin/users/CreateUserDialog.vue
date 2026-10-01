@@ -147,12 +147,12 @@ async function submit() {
       />
 
       <fieldset>
-        <legend class="text-[var(--text-xs)] font-medium text-[var(--c-text-secondary)]">
+        <legend class="text-xs font-medium text-[var(--c-text-secondary)]">
           Roles
         </legend>
         <p
           v-if="fieldErrors['roleCodes']"
-          class="mt-1 text-[var(--text-xs)] text-[var(--c-danger)]"
+          class="mt-1 text-xs text-[var(--c-danger)]"
           role="alert"
         >
           {{ fieldErrors['roleCodes'] }}
@@ -176,8 +176,8 @@ async function submit() {
               @change="toggleRole(role.code)"
             />
             <span class="min-w-0">
-              <span class="block text-[var(--text-sm)] font-medium">{{ role.displayName }}</span>
-              <span class="block text-[var(--text-xs)] text-[var(--c-text-muted)]">
+              <span class="block text-sm font-medium">{{ role.displayName }}</span>
+              <span class="block text-xs text-[var(--c-text-muted)]">
                 {{ role.description }}
               </span>
             </span>
@@ -186,7 +186,7 @@ async function submit() {
 
         <p
           v-if="selectedRoles.length === 0"
-          class="mt-2 text-[var(--text-xs)] text-[var(--c-warning)]"
+          class="mt-2 text-xs text-[var(--c-warning)]"
         >
           With no role, this account can sign in but see nothing.
         </p>
@@ -194,7 +194,7 @@ async function submit() {
 
       <p
         v-if="unexpected"
-        class="rounded-[var(--radius-md)] border px-2.5 py-2 text-[var(--text-xs)]"
+        class="rounded-[var(--radius-md)] border px-2.5 py-2 text-xs"
         :style="{
           borderColor: 'var(--c-danger)',
           backgroundColor: 'var(--c-danger-subtle)',

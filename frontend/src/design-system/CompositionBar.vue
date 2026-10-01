@@ -46,7 +46,7 @@ const segments = computed(() =>
       >
         <span
           v-if="s.showInlineLabel"
-          class="px-1 text-[var(--text-2xs)] font-semibold text-white/95 drop-shadow-sm"
+          class="px-1 text-2xs font-semibold text-white/95 drop-shadow-sm"
         >
           {{ formatPercent(s.percent, 0) }}
         </span>
@@ -56,8 +56,8 @@ const segments = computed(() =>
     <ul class="flex flex-wrap gap-x-5 gap-y-1.5">
       <li v-for="s in segments" :key="s.key" class="flex items-center gap-1.5">
         <span class="size-2.5 shrink-0 rounded-[2px]" :style="{ backgroundColor: s.color }" />
-        <span class="text-[var(--text-xs)] text-[var(--c-text-secondary)]">{{ s.key }}</span>
-        <span class="tabular text-[var(--text-xs)] font-medium">{{ formatPercent(s.percent, 1) }}</span>
+        <span class="text-xs text-[var(--c-text-secondary)]">{{ s.key }}</span>
+        <span class="tabular text-xs font-medium">{{ formatPercent(s.percent, 1) }}</span>
       </li>
     </ul>
   </div>

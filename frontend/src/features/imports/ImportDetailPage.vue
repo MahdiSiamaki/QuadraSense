@@ -67,7 +67,7 @@ function toggleRule(summaryId: number) {
   <div class="space-y-5">
     <RouterLink
       to="/imports"
-      class="inline-flex items-center gap-1 text-[var(--text-xs)] font-medium text-[var(--c-text-secondary)] hover:text-[var(--c-text)]"
+      class="inline-flex items-center gap-1 text-xs font-medium text-[var(--c-text-secondary)] hover:text-[var(--c-text)]"
     >
       ← Import Center
     </RouterLink>
@@ -84,26 +84,26 @@ function toggleRule(summaryId: number) {
         <header class="flex flex-wrap items-start justify-between gap-4">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
-              <h1 class="text-[var(--text-lg)] font-semibold tracking-tight wrap-anywhere">
+              <h1 class="text-lg font-semibold tracking-tight wrap-anywhere">
                 {{ summary.originalFileName }}
               </h1>
               <StatusBadge :status="summary.status" />
               <span
                 v-if="summary.status === 'Completed' && summary.warningCount > 0"
-                class="text-[var(--text-2xs)] font-medium text-[var(--c-warning)]"
+                class="text-2xs font-medium text-[var(--c-warning)]"
                 title="Every row was imported. Validation raised warnings on some of them - open the import for the rows and the rules."
               >
                 with warnings
               </span>
               <span
                 v-if="summary.isEffective"
-                class="rounded-full bg-[var(--c-success-subtle)] px-2 py-0.5 text-[var(--text-2xs)] font-medium text-[var(--c-success)]"
+                class="rounded-full bg-[var(--c-success-subtle)] px-2 py-0.5 text-2xs font-medium text-[var(--c-success)]"
                 title="This import is the one currently in effect for its business day."
               >
                 In effect
               </span>
             </div>
-            <p class="mt-1 text-[var(--text-sm)] text-[var(--c-text-secondary)]">
+            <p class="mt-1 text-sm text-[var(--c-text-secondary)]">
               {{ summary.sourceCode }} · {{ formatDate(summary.businessDate) }} ·
               {{ formatBytes(summary.fileBytes) }} · uploaded by {{ summary.createdBy }}
             </p>
@@ -113,7 +113,7 @@ function toggleRule(summaryId: number) {
             <button
               v-if="running"
               type="button"
-              class="rounded-[var(--radius-md)] border border-[var(--c-danger)] px-3 py-1.5 text-[var(--text-xs)] font-medium text-[var(--c-danger)] hover:bg-[var(--c-danger-subtle)] disabled:opacity-50"
+              class="rounded-[var(--radius-md)] border border-[var(--c-danger)] px-3 py-1.5 text-xs font-medium text-[var(--c-danger)] hover:bg-[var(--c-danger-subtle)] disabled:opacity-50"
               :disabled="cancel.isPending.value"
               @click="cancel.mutate(jobId)"
             >
@@ -122,7 +122,7 @@ function toggleRule(summaryId: number) {
             <button
               v-if="!running && detail.data.value.isBlobPresent"
               type="button"
-              class="rounded-[var(--radius-md)] border px-3 py-1.5 text-[var(--text-xs)] font-medium hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
+              class="rounded-[var(--radius-md)] border px-3 py-1.5 text-xs font-medium hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
               :disabled="reprocess.isPending.value"
               @click="reprocess.mutate(jobId)"
             >
@@ -150,16 +150,16 @@ function toggleRule(summaryId: number) {
           class="rounded-[var(--radius-md)] border border-[var(--c-danger)] bg-[var(--c-danger-subtle)] p-4"
           role="alert"
         >
-          <p class="text-[var(--text-sm)] font-semibold">Why it failed</p>
-          <p class="mt-1 text-[var(--text-sm)] wrap-anywhere">{{ summary.errorSummary }}</p>
+          <p class="text-sm font-semibold">Why it failed</p>
+          <p class="mt-1 text-sm wrap-anywhere">{{ summary.errorSummary }}</p>
         </div>
 
         <!-- Counters -->
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <Card v-for="counter in counters" :key="counter.label">
-            <p class="text-[var(--text-xs)] text-[var(--c-text-muted)]">{{ counter.label }}</p>
+            <p class="text-xs text-[var(--c-text-muted)]">{{ counter.label }}</p>
             <p
-              class="tabular mt-0.5 text-[var(--text-lg)] font-semibold tracking-tight"
+              class="tabular mt-0.5 text-lg font-semibold tracking-tight"
               :style="counter.warn ? { color: 'var(--c-warning)' } : undefined"
             >
               {{ counter.value }}
@@ -173,7 +173,7 @@ function toggleRule(summaryId: number) {
               <template #actions>
                 <button
                   type="button"
-                  class="text-[var(--text-xs)] font-medium text-[var(--c-accent)] hover:underline"
+                  class="text-xs font-medium text-[var(--c-accent)] hover:underline"
                   :aria-expanded="showPreview"
                   @click="showPreview = !showPreview"
                 >
@@ -181,7 +181,7 @@ function toggleRule(summaryId: number) {
                 </button>
               </template>
               <FilePreview :job-id="jobId" :open="showPreview" />
-              <p v-if="!showPreview" class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+              <p v-if="!showPreview" class="text-xs text-[var(--c-text-muted)]">
                 Not loaded until asked for — these files reach a gigabyte.
               </p>
             </Card>
@@ -217,10 +217,10 @@ function toggleRule(summaryId: number) {
                       aria-hidden="true"
                     />
                     <span class="min-w-0 flex-1">
-                      <span class="block text-[var(--text-sm)] font-medium">
+                      <span class="block text-sm font-medium">
                         {{ group.message }}
                       </span>
-                      <span class="block text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+                      <span class="block text-2xs text-[var(--c-text-muted)]">
                         {{ group.ruleCode
                         }}<template v-if="group.columnName"> · column {{ group.columnName }}</template>
                         <template v-if="group.firstRowNumber">
@@ -228,21 +228,21 @@ function toggleRule(summaryId: number) {
                         >
                       </span>
                     </span>
-                    <span class="tabular shrink-0 text-[var(--text-sm)] font-semibold">
+                    <span class="tabular shrink-0 text-sm font-semibold">
                       {{ formatFull(group.occurrenceCount) }}
                     </span>
                   </button>
 
                   <div v-if="openRule === group.summaryId" class="px-4 pb-3">
-                    <p v-if="samples.isPending.value" class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+                    <p v-if="samples.isPending.value" class="text-xs text-[var(--c-text-muted)]">
                       Loading examples…
                     </p>
                     <!-- An error is not an absence: "no examples" would misreport a failed request. -->
-                    <p v-else-if="samples.isError.value" class="text-[var(--text-xs)] text-[var(--c-danger)]">
+                    <p v-else-if="samples.isError.value" class="text-xs text-[var(--c-danger)]">
                       The examples could not be loaded.
                       <button type="button" class="underline" @click="samples.refetch()">Try again</button>
                     </p>
-                    <table v-else-if="samples.data.value?.length" class="w-full text-[var(--text-2xs)]">
+                    <table v-else-if="samples.data.value?.length" class="w-full text-2xs">
                       <thead class="text-left text-[var(--c-text-muted)]">
                         <tr>
                           <th scope="col" class="py-1 pr-3 font-medium">Line</th>
@@ -250,7 +250,7 @@ function toggleRule(summaryId: number) {
                           <th scope="col" class="py-1 font-medium">Offending value</th>
                         </tr>
                       </thead>
-                      <tbody class="font-[var(--font-mono)]">
+                      <tbody class="font-mono">
                         <tr v-for="sample in samples.data.value" :key="sample.rowNumber" class="border-t">
                           <td class="tabular py-1 pr-3 align-top">{{ sample.rowNumber }}</td>
                           <td class="py-1 pr-3 align-top wrap-anywhere">{{ sample.rawLine }}</td>
@@ -258,7 +258,7 @@ function toggleRule(summaryId: number) {
                         </tr>
                       </tbody>
                     </table>
-                    <p v-else class="text-[var(--text-xs)] text-[var(--c-text-muted)]">
+                    <p v-else class="text-xs text-[var(--c-text-muted)]">
                       No examples were retained for this rule.
                     </p>
                   </div>
@@ -269,13 +269,13 @@ function toggleRule(summaryId: number) {
 
           <!-- File facts and lineage -->
           <Card title="File">
-            <dl class="space-y-3 text-[var(--text-xs)]">
+            <dl class="space-y-3 text-xs">
               <div>
                 <dt class="text-[var(--c-text-muted)]">Content hash (SHA-256)</dt>
-                <dd class="mt-0.5 font-[var(--font-mono)] wrap-anywhere">
+                <dd class="mt-0.5 font-mono wrap-anywhere">
                   {{ detail.data.value.sha256 }}
                 </dd>
-                <dd class="mt-0.5 text-[var(--text-2xs)] text-[var(--c-text-muted)]">
+                <dd class="mt-0.5 text-2xs text-[var(--c-text-muted)]">
                   A file is identified by its content, never its name. This hash is what makes a
                   re-upload detectable.
                 </dd>
@@ -283,7 +283,7 @@ function toggleRule(summaryId: number) {
 
               <div>
                 <dt class="text-[var(--c-text-muted)]">Stored at</dt>
-                <dd class="mt-0.5 font-[var(--font-mono)] wrap-anywhere">
+                <dd class="mt-0.5 font-mono wrap-anywhere">
                   {{ detail.data.value.storedPath }}
                   <span v-if="!detail.data.value.isBlobPresent" class="text-[var(--c-danger)]">
                     (deleted)

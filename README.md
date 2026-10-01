@@ -95,6 +95,25 @@ Forward-only. The runner refuses to start if an already-applied migration's chec
 an edited migration is a different migration, and the database it ran against no longer matches the
 repository.
 
+**When it refuses.** Find out whether the edit changed the schema, not only the text. Compare
+`SHOW CREATE TABLE` for every object the migration creates with the file. If they differ, the fix is
+a new migration that brings the database to the file. If they are identical, the edit was comments
+or layout, and a person with access to the database records the file's checksum as applied — a
+deliberate, reviewed act, because it is the migration history that is being changed:
+
+```sql
+INSERT INTO sqm.schema_migration (version, name, checksum, applied_at, duration_ms)
+VALUES ('<version>', '<name>', '<sha-256 of the file, CRLF normalised to LF>', now64(3), 0);
+```
+
+The table keeps the latest row per version, so the old checksum stays in its history.
+
+Done once so far, on the development database: `019_device_module` was edited after it ran on
+2026-09-15 (applied 18:25 UTC, committed 18:57 UTC). On 2026-09-30 the live `binding_by_imei`,
+`mv_binding_by_imei` and `agg_device_model` were compared with the file and are identical — columns,
+types, engine, sort key, partitioning and the view's query. Recorded checksum `f4ee6c0f…`, file
+checksum `e66cac95…`. A fresh environment runs the file as it stands and never meets this.
+
 ### 4. Grants, and the first administrator
 
 ```bash
@@ -156,7 +175,19 @@ dotnet run -- --verify-marts [--seq 133]
 
 # Populate the IMSI-ordered copy of current state. Run once after migration 018.
 dotnet run -- --backfill-imsi [--truncate]
+
+# Fill the binding history (timelines). Run once after migration 022, while nothing imports.
+# Resumable: months that already reconcile are skipped; --force rebuilds them all.
+dotnet run -- --backfill-history [--from 2026-01-26] [--to 2026-09-26] [--force]
 ```
+
+**`--backfill-history` is what timelines wait for.** The history holds every binding's dated
+events, one row per binding per month, by number, by SIM and by IMEI - so one entity's whole
+timeline is a key read, 34 ms for a handset with 218 bindings where the event log took 65 s for
+the most-shared one. Until every day of the event log is in it, the timeline API answers 503
+rather than show a history with days missing. After that the daily import keeps it current: a new
+day is added, a corrected or retried one rebuilds its month. See
+`docs/adr/ADR-013-binding-history.md`.
 
 **`--verify-marts` is the one worth knowing about.** The refresh writes fifteen INSERTs across
 six marts, so a partly-failed run leaves every mart holding rows for the delivery while several

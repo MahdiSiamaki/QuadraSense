@@ -67,7 +67,7 @@ const tone: Record<string, { dot: string; text: string }> = {
       <div class="min-w-0 flex-1">
         <div class="flex items-baseline gap-2">
           <time
-            class="tabular shrink-0 text-[var(--text-2xs)] text-[var(--c-text-muted)]"
+            class="tabular shrink-0 text-2xs text-[var(--c-text-muted)]"
             :datetime="row.occurredAt"
             :title="formatDateTime(row.occurredAt)"
           >
@@ -75,14 +75,14 @@ const tone: Record<string, { dot: string; text: string }> = {
           </time>
           <span
             v-if="row.stage"
-            class="shrink-0 rounded-[var(--radius-sm)] bg-[var(--c-surface-sunken)] px-1.5 text-[var(--text-2xs)] font-medium tracking-wide text-[var(--c-text-secondary)] uppercase"
+            class="shrink-0 rounded-[var(--radius-sm)] bg-[var(--c-surface-sunken)] px-1.5 text-2xs font-medium tracking-wide text-[var(--c-text-secondary)] uppercase"
           >
             {{ row.stage.toLowerCase() }}
           </span>
         </div>
 
         <p
-          class="mt-0.5 text-[var(--text-sm)] wrap-anywhere"
+          class="mt-0.5 text-sm wrap-anywhere"
           :style="{ color: tone[row.severity]?.text }"
         >
           {{ row.message }}
@@ -91,7 +91,7 @@ const tone: Record<string, { dot: string; text: string }> = {
         <div v-if="row.detail" class="mt-1">
           <button
             type="button"
-            class="text-[var(--text-2xs)] font-medium text-[var(--c-accent)] hover:underline"
+            class="text-2xs font-medium text-[var(--c-accent)] hover:underline"
             :aria-expanded="expanded.has(row.index)"
             @click="toggle(row.index)"
           >
@@ -99,14 +99,14 @@ const tone: Record<string, { dot: string; text: string }> = {
           </button>
           <pre
             v-if="expanded.has(row.index)"
-            class="mt-1 overflow-x-auto rounded-[var(--radius-md)] bg-[var(--c-surface-sunken)] p-2 text-[var(--text-2xs)] leading-relaxed"
+            class="mt-1 overflow-x-auto rounded-[var(--radius-md)] bg-[var(--c-surface-sunken)] p-2 text-2xs leading-relaxed"
           >{{ row.detail }}</pre>
         </div>
       </div>
     </li>
   </ol>
 
-  <p v-else class="text-[var(--text-sm)] text-[var(--c-text-muted)]">
+  <p v-else class="text-sm text-[var(--c-text-muted)]">
     No events recorded yet.
   </p>
 </template>
