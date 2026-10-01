@@ -78,6 +78,28 @@ public static class ExplorerEndpoints
             .WithName("RunExplorerQuery")
             .WithSummary("Runs a query within the budget and returns one page.");
 
+        // Both permissions: explorer.query from the group, data.export for taking the rows away.
+        builder.MapPost("/export", ExportAsync)
+            .RequireAuthorization(PermissionPolicyProvider.Prefix + Permissions.DataExport)
+            .WithName("ExportExplorerQuery")
+            .WithSummary("The query's rows as CSV, up to the rows paging can reach.");
+
+        builder.MapGet("/saved", ListSavedAsync)
+            .WithName("ListSavedExplorerQueries")
+            .WithSummary("My Queries: the caller's own saved queries.");
+
+        builder.MapPost("/saved", CreateSavedAsync)
+            .WithName("SaveExplorerQuery")
+            .WithSummary("Saves a query under a name, private to the caller.");
+
+        builder.MapPut("/saved/{id:long}", UpdateSavedAsync)
+            .WithName("UpdateSavedExplorerQuery")
+            .WithSummary("Renames or changes one of the caller's saved queries.");
+
+        builder.MapDelete("/saved/{id:long}", DeleteSavedAsync)
+            .WithName("DeleteSavedExplorerQuery")
+            .WithSummary("Deletes one of the caller's saved queries.");
+
         // A summary of one identifier is a lookup, not a query over the population, so it follows
         // the lookup permission of its kind rather than explorer.query.
         app.MapPost("/api/v1/explorer/entity", EntityAsync)
@@ -89,14 +111,208 @@ public static class ExplorerEndpoints
         return app;
     }
 
-    private static IResult Catalogue(IOptions<ExplorerOptions> options) =>
-        Results.Ok(new ExplorerCatalogueResponse(
+    private static async Task<IResult> Catalogue(IOptions<ExplorerOptions> options, IExplorerEngine engine, CancellationToken ct)
+    {
+        // What every answer is as of, shown beside the results: decisions here are made on daily
+        // data, and a reader must know which day's.
+        var through = await engine.DataThroughAsync(ct).ConfigureAwait(false);
+
+        return Results.Ok(new ExplorerCatalogueResponse(
             [.. ExplorerCatalogue.All.Select(d => new ExplorerDatasetInfo(
                 d.Dataset.ToString(), d.Label, d.Description,
                 [.. d.Fields.Values.Select(f => new ExplorerFieldInfo(
                     f.Name, f.Label, f.Type.ToString(), [.. f.Operators.Select(o => o.ToString()).Order(StringComparer.Ordinal)],
-                    f.Groupable, f.Permission, f.Description))]))],
-            options.Value.MaxPageSize, options.Value.MaxReachableRows, options.Value.BudgetRows));
+                    f.Groupable, f.Permission, f.Description, f.Labels))],
+                d.DefaultColumns))],
+            options.Value.MaxPageSize, options.Value.MaxReachableRows, options.Value.BudgetRows,
+            through?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)));
+    }
+
+    /// <summary>
+    /// The rows as CSV: every row paging can reach, in one run, masked and audited as the page would be.
+    /// </summary>
+    private static async Task<IResult> ExportAsync(
+        ExplorerQueryRequest request, HttpContext http, IExplorerEngine engine, IAuditLog audit,
+        IOptions<ExplorerOptions> options, TimeProvider clock, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // One run of up to the reachable rows, rather than twenty pages of five hundred: the same
+        // budget applies either way, and one run cannot see the data change between pages.
+        var limits = options.Value;
+        var exportLimits = new ExplorerOptions
+        {
+            MaxPageSize = limits.MaxReachableRows, MaxReachableRows = limits.MaxReachableRows,
+            MaxConditions = limits.MaxConditions, MaxDepth = limits.MaxDepth, MaxInValues = limits.MaxInValues,
+        };
+
+        var (query, refusal) = await CheckAsync(
+            request with { Page = 1, PageSize = limits.MaxReachableRows }, http, audit, exportLimits, ct).ConfigureAwait(false);
+        if (query is null)
+        {
+            return refusal!;
+        }
+
+        var user = CurrentUser.Require(http);
+        if (!UserSlots.TryEnter(user.UserId))
+        {
+            return Busy("You already have two Explorer queries running; wait for one to finish.");
+        }
+
+        try
+        {
+            var rows = await engine.RunAsync(query, ct).ConfigureAwait(false);
+            var reveal = user.Can(Permissions.IdentifierReveal);
+
+            var csv = Infrastructure.CsvExport.Write(
+                [.. query.Columns.Select(c => c.Label)],
+                reveal ? rows.Rows : rows.Rows.Select(r => Mask(r, query.Columns)));
+
+            // The export is the act the security model says is always audited: who, what shape,
+            // how many rows - and, as everywhere, not the values.
+            var entry = Entry(user, http, AuditOutcome.Success, query, new()
+            {
+                ["rows"] = rows.Rows.Count,
+                ["total"] = rows.Total,
+                ["masked"] = !reveal,
+                ["rowsRead"] = rows.RowsRead,
+            }) with { Action = Permissions.DataExport };
+            await audit.WriteAsync(entry, ct).ConfigureAwait(false);
+
+            var stamp = clock.GetUtcNow().ToString("yyyyMMdd-HHmm", System.Globalization.CultureInfo.InvariantCulture);
+            return Results.File(csv, "text/csv; charset=utf-8",
+                $"explorer-{query.Definition.Dataset.ToString().ToLowerInvariant()}-{stamp}.csv");
+        }
+        catch (ExplorerRefusedException ex)
+        {
+            await audit.WriteAsync(Entry(user, http, AuditOutcome.Failure, query, new() { ["refused"] = ex.Message })
+                with { Action = Permissions.DataExport }, ct).ConfigureAwait(false);
+
+            return Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity, title: "Over the query budget",
+                detail: ex.Message, extensions: new Dictionary<string, object?> { ["plan"] = ex.Plan });
+        }
+        catch (ExplorerBusyException ex)
+        {
+            return Busy(ex.Message);
+        }
+        finally
+        {
+            UserSlots.Exit(user.UserId);
+        }
+    }
+
+    // ------------------------------------------------------------------ My Queries
+
+    private static async Task<IResult> ListSavedAsync(HttpContext http, IExplorerSavedQueryStore store, CancellationToken ct)
+    {
+        var user = CurrentUser.Require(http);
+        var saved = await store.ListAsync(user.UserId, ct).ConfigureAwait(false);
+        return Results.Ok(saved.Select(Info).ToList());
+    }
+
+    private static async Task<IResult> CreateSavedAsync(
+        SaveExplorerQueryRequest request, HttpContext http, IExplorerSavedQueryStore store, IAuditLog audit,
+        IOptions<ExplorerOptions> options, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (await CheckSaveAsync(request, http, audit, options.Value, ct).ConfigureAwait(false) is { } refusal)
+        {
+            return refusal;
+        }
+
+        var user = CurrentUser.Require(http);
+        var (outcome, saved) = await store.CreateAsync(
+            user.UserId, request.Name, request.Description ?? string.Empty, request.Query, ct).ConfigureAwait(false);
+
+        if (outcome == SavedQueryOutcome.NameTaken)
+        {
+            return NameTaken(request.Name);
+        }
+
+        await audit.WriteAsync(SavedEntry(user, http, "save", saved!), ct).ConfigureAwait(false);
+        return Results.Created($"/api/v1/explorer/saved/{saved!.Id}", Info(saved));
+    }
+
+    private static async Task<IResult> UpdateSavedAsync(
+        long id, SaveExplorerQueryRequest request, HttpContext http, IExplorerSavedQueryStore store, IAuditLog audit,
+        IOptions<ExplorerOptions> options, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (await CheckSaveAsync(request, http, audit, options.Value, ct).ConfigureAwait(false) is { } refusal)
+        {
+            return refusal;
+        }
+
+        var user = CurrentUser.Require(http);
+        var (outcome, saved) = await store.UpdateAsync(
+            user.UserId, id, request.Name, request.Description ?? string.Empty, request.Query, ct).ConfigureAwait(false);
+
+        return outcome switch
+        {
+            // Another person's query is reported as not found, not forbidden: whether it exists is
+            // itself something only its owner is told.
+            SavedQueryOutcome.NotFound => Results.NotFound(),
+            SavedQueryOutcome.NameTaken => NameTaken(request.Name),
+            _ => await AuditedOk(saved!).ConfigureAwait(false),
+        };
+
+        async Task<IResult> AuditedOk(SavedExplorerQuery query)
+        {
+            await audit.WriteAsync(SavedEntry(user, http, "update", query), ct).ConfigureAwait(false);
+            return Results.Ok(Info(query));
+        }
+    }
+
+    private static async Task<IResult> DeleteSavedAsync(
+        long id, HttpContext http, IExplorerSavedQueryStore store, IAuditLog audit, CancellationToken ct)
+    {
+        var user = CurrentUser.Require(http);
+        var existing = await store.GetAsync(user.UserId, id, ct).ConfigureAwait(false);
+
+        if (existing is null || !await store.DeleteAsync(user.UserId, id, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        await audit.WriteAsync(SavedEntry(user, http, "delete", existing), ct).ConfigureAwait(false);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// A query is saved only if it could run for the person saving it: valid, and within what they
+    /// may see. It is checked again every time it runs, because both can change.
+    /// </summary>
+    private static async Task<IResult?> CheckSaveAsync(
+        SaveExplorerQueryRequest request, HttpContext http, IAuditLog audit, ExplorerOptions options, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 100
+            || (request.Description?.Length ?? 0) > 1000 || request.Query is null)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["name"] = ["A name of 1 to 100 characters, notes up to 1,000, and a query."],
+            });
+        }
+
+        var (_, refusal) = await CheckAsync(request.Query, http, audit, options, ct).ConfigureAwait(false);
+        return refusal;
+    }
+
+    private static SavedExplorerQueryInfo Info(SavedExplorerQuery q) =>
+        new(q.Id, q.Name, q.Description, q.Query, q.CreatedAt, q.UpdatedAt);
+
+    private static IResult NameTaken(string name) => Results.Problem(
+        statusCode: StatusCodes.Status409Conflict, title: "Name already used",
+        detail: $"You already have a saved query called \"{name.Trim()}\".");
+
+    /// <summary>Saved-query changes, audited by id and name - never the query, which can hold identifiers.</summary>
+    private static AuditEntry SavedEntry(AuthenticatedUser user, HttpContext http, string what, SavedExplorerQuery query) =>
+        new(user.Username, $"{Permissions.ExplorerQuery}.{what}", AuditCategory.Data, AuditOutcome.Success, user.UserId,
+            "explorer-saved-query", query.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), query.Name,
+            http.Connection.RemoteIpAddress?.ToString(), http.Request.Headers.UserAgent.ToString(), http.TraceIdentifier,
+            new Dictionary<string, object?> { ["dataset"] = query.Query.Dataset.ToString() });
 
     private static async Task<IResult> PlanAsync(
         ExplorerQueryRequest request, HttpContext http, IExplorerEngine engine, IAuditLog audit,

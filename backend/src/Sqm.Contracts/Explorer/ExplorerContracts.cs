@@ -179,22 +179,42 @@ public sealed record ExplorerResultResponse(
 /// <param name="Groupable">Whether it can be grouped by.</param>
 /// <param name="Permission">The lookup permission needed to filter on, show or group by it; null when none.</param>
 /// <param name="Description">What it means, including what it does not mean.</param>
+/// <param name="Values">For a Label field, the values it may hold; otherwise null.</param>
 public sealed record ExplorerFieldInfo(
     string Name, string Label, string Type, IReadOnlyList<string> Operators, bool Groupable,
-    string? Permission, string Description);
+    string? Permission, string Description, IReadOnlyList<string>? Values = null);
 
 /// <summary>A dataset the builder can offer.</summary>
 /// <param name="Dataset">Its name.</param>
 /// <param name="Label">For the builder.</param>
 /// <param name="Description">What a row is.</param>
 /// <param name="Fields">Its fields.</param>
+/// <param name="DefaultColumns">What a query that names no columns returns, of what the caller may see.</param>
 public sealed record ExplorerDatasetInfo(
-    string Dataset, string Label, string Description, IReadOnlyList<ExplorerFieldInfo> Fields);
+    string Dataset, string Label, string Description, IReadOnlyList<ExplorerFieldInfo> Fields,
+    IReadOnlyList<string> DefaultColumns);
 
 /// <summary>Everything the builder can offer, and the limits it works within.</summary>
 /// <param name="Datasets">The datasets.</param>
 /// <param name="MaxPageSize">Rows per page, at most.</param>
 /// <param name="MaxReachableRows">Rows paging can reach.</param>
 /// <param name="BudgetRows">Rows a query may read.</param>
+/// <param name="DataThrough">The latest day in the event log, yyyy-MM-dd: what every answer is as of.</param>
 public sealed record ExplorerCatalogueResponse(
-    IReadOnlyList<ExplorerDatasetInfo> Datasets, int MaxPageSize, int MaxReachableRows, long BudgetRows);
+    IReadOnlyList<ExplorerDatasetInfo> Datasets, int MaxPageSize, int MaxReachableRows, long BudgetRows, string? DataThrough);
+
+/// <summary>A query saved under a name, private to its owner.</summary>
+/// <param name="Id">Its id.</param>
+/// <param name="Name">Its name.</param>
+/// <param name="Description">Optional notes.</param>
+/// <param name="Query">The definition; results are recomputed each time it runs.</param>
+/// <param name="CreatedAt">First saved.</param>
+/// <param name="UpdatedAt">Last changed.</param>
+public sealed record SavedExplorerQueryInfo(
+    long Id, string Name, string Description, ExplorerQueryRequest Query, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+
+/// <summary>What to save.</summary>
+/// <param name="Name">1 to 100 characters, unique among the owner's queries.</param>
+/// <param name="Description">Optional notes, up to 1,000 characters.</param>
+/// <param name="Query">The query.</param>
+public sealed record SaveExplorerQueryRequest(string Name, string? Description, ExplorerQueryRequest Query);

@@ -21,6 +21,9 @@ public interface IExplorerEngine
     /// <exception cref="ExplorerRefusedException">The plan is over the budget, or the server stopped it at a limit.</exception>
     /// <exception cref="ExplorerBusyException">As many queries as the server allows are already running.</exception>
     Task<ExplorerRows> RunAsync(CheckedExplorerQuery query, CancellationToken ct);
+
+    /// <summary>The latest day in the event log: what every answer is as of. Null before any import.</summary>
+    Task<DateOnly?> DataThroughAsync(CancellationToken ct);
 }
 
 /// <summary>A query not run, or stopped, because it would cost more than the budget allows.</summary>
