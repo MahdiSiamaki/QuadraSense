@@ -15,6 +15,7 @@ export const Permission = {
   LookupImsi: 'lookup.imsi',
   IdentifierReveal: 'identifier.reveal',
   ExplorerQuery: 'explorer.query',
+  RiskView: 'risk.view',
   DeviceView: 'device.view',
   LookupImei: 'lookup.imei',
   DeviceIdentifiers: 'device.identifiers',
