@@ -39,6 +39,8 @@ public sealed class RiskSnapshotTests
 
         public List<string> Calls { get; } = [];
 
+        public ManualClock Clock { get; } = new();
+
         public RiskSnapshot Build(RiskOptions? settings = null)
         {
             var store = Stub.Create<IRiskSnapshotStore>(Store);
@@ -47,7 +49,7 @@ public sealed class RiskSnapshotTests
             var options = Stub.Create<IOptionsMonitor<RiskOptions>>((m, _) =>
                 m.Name == "get_CurrentValue" ? settings ?? new RiskOptions() : Stub.Default(m));
 
-            return new RiskSnapshot(store, repository, options, NullLogger<RiskSnapshot>.Instance);
+            return new RiskSnapshot(store, repository, options, Clock, NullLogger<RiskSnapshot>.Instance);
         }
 
         private object? Store(MethodInfo method, object?[] args)
@@ -177,6 +179,37 @@ public sealed class RiskSnapshotTests
         Assert.Equal(RiskSnapshotStep.Failed, await snapshot.StepAsync(new RiskOptions(), false, ct));
         Assert.Equal("fail: SimWindow:1 failed 3 times: memory limit", h.Calls[^1]);
         Assert.Equal(RiskSnapshot.MaxAttempts, h.Calls.Count(c => c == "build SimWindow:1"));
+    }
+
+    [Fact]
+    public async Task Nothing_to_do_is_not_asked_again_for_five_minutes_but_work_in_progress_is()
+    {
+        var current = new Harness { Published = Run(Today) };
+        var snapshot = current.Build();
+
+        await snapshot.RunAsync(CancellationToken.None);
+        await snapshot.RunAsync(CancellationToken.None);
+        Assert.Equal(["read inputs"], current.Calls);
+
+        current.Clock.Advance(RiskSnapshot.QuietFor);
+        await snapshot.RunAsync(CancellationToken.None);
+        Assert.Equal(["read inputs", "read inputs"], current.Calls);
+
+        var building = new Harness { Running = Run(Today) };
+        var builder = building.Build();
+        await builder.RunAsync(CancellationToken.None);
+        await builder.RunAsync(CancellationToken.None);
+        Assert.Equal(2, building.Calls.Count(c => c.StartsWith("build", StringComparison.Ordinal)));
+    }
+
+    /// <summary>A clock a test moves by hand.</summary>
+    private sealed class ManualClock : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 10, 2, 12, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan by) => _now += by;
     }
 
     [Fact]

@@ -53,15 +53,26 @@ internal enum RiskSnapshotStep
 /// failed with the error. The next day's data plans a fresh run; a person can retry sooner with
 /// <c>Sqm.Ingestion --refresh-risk --force</c>.
 /// </para>
+/// <para>
+/// <b>Quiet when there is nothing to do.</b> The worker is idle every five seconds; after an answer of
+/// "current", "waiting" or "failed" the inputs are not read again for <see cref="QuietFor"/>. A day
+/// that lands is noticed within that, which is nothing beside a run of an hour.
+/// </para>
 /// </remarks>
 internal sealed partial class RiskSnapshot(
     IRiskSnapshotStore store,
     IImportJobRepository repository,
     IOptionsMonitor<RiskOptions> options,
+    TimeProvider clock,
     ILogger<RiskSnapshot> logger) : IIdleTask
 {
     /// <summary>Consecutive failures of one chunk before its run is marked failed.</summary>
     internal const int MaxAttempts = 3;
+
+    /// <summary>How long nothing to do stays the answer before the inputs are read again.</summary>
+    internal static readonly TimeSpan QuietFor = TimeSpan.FromMinutes(5);
+
+    private DateTimeOffset _quietUntil = DateTimeOffset.MinValue;
 
     private const string SqmSource = "SQM";
 
@@ -96,7 +107,16 @@ internal sealed partial class RiskSnapshot(
         }
 
         _reportedProblems = null;
-        await StepAsync(settings, force: false, ct).ConfigureAwait(false);
+        if (clock.GetUtcNow() < _quietUntil)
+        {
+            return;
+        }
+
+        var step = await StepAsync(settings, force: false, ct).ConfigureAwait(false);
+        if (step is RiskSnapshotStep.Current or RiskSnapshotStep.Waiting or RiskSnapshotStep.Failed or RiskSnapshotStep.NotDeployed)
+        {
+            _quietUntil = clock.GetUtcNow() + QuietFor;
+        }
     }
 
     /// <summary>Does the next piece of work: plan a run, write one chunk, or publish.</summary>

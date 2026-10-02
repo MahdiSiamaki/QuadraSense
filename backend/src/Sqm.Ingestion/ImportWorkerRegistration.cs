@@ -133,6 +133,7 @@ public static class ImportWorkerRegistration
             configuration.GetSection(Sqm.Application.Risk.RiskOptions.SectionName));
         services.TryAddSingleton<Sqm.Application.Risk.IRiskSnapshotStore>(
             sp => (Sqm.Application.Risk.IRiskSnapshotStore)sp.GetRequiredService<IAnalyticsIngestionStore>());
+        services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<RiskSnapshot>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IIdleTask, RiskSnapshot>(
             sp => sp.GetRequiredService<RiskSnapshot>()));
