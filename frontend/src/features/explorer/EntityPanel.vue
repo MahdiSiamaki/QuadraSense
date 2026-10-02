@@ -5,6 +5,8 @@ import { useEntitySummary, type ExplorerQueryRequest } from '@/api/explorer'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import Button from '@/design-system/Button.vue'
 import Card from '@/design-system/Card.vue'
+import { Permission, useAuth } from '@/features/auth/useAuth'
+import RiskEntityCard from '@/features/risk/RiskEntityCard.vue'
 import { formatDate, formatFull, formatImei, formatMsisdn } from '@/lib/format'
 import { INITIAL_DUMP } from '@/lib/initial-dump'
 import { daysBefore } from './model'
@@ -21,13 +23,20 @@ import PlanSummary from './PlanSummary.vue'
  * Counts, not lists: what the summary shows is how many, and "List its bindings" turns it into a
  * query in the builder, where the rows can be seen, sorted and narrowed.
  */
-const props = defineProps<{
-  identifier: string
-  /** How many entries the back stack holds, this one included. */
-  depth: number
-  dataThrough: string | null
-  canOpenDevice: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    identifier: string
+    /** How many entries the back stack holds, this one included. */
+    depth: number
+    dataThrough: string | null
+    canOpenDevice: boolean
+    /** False where no query builder is beside the panel to take "List its bindings". */
+    canExplore?: boolean
+  }>(),
+  { canExplore: true },
+)
+
+const { can } = useAuth()
 
 const emit = defineEmits<{
   back: []
@@ -184,11 +193,16 @@ function history() {
         </div>
 
         <div class="flex flex-wrap gap-2">
-          <Button size="sm" variant="primary" @click="listBindings">
+          <Button v-if="canExplore" size="sm" variant="primary" @click="listBindings">
             {{ data.kind === 'tac' ? 'Its handsets, by SIM count' : 'List its bindings' }}
           </Button>
           <Button v-if="data.kind !== 'tac'" size="sm" @click="emit('timeline')">Timeline</Button>
-          <Button v-if="data.kind !== 'tac' && dataThrough" size="sm" variant="ghost" @click="history">Events, last 90 days</Button>
+          <Button v-if="canExplore && data.kind !== 'tac' && dataThrough" size="sm" variant="ghost" @click="history">Events, last 90 days</Button>
+        </div>
+
+        <!-- Risk verdicts, for those who may see them. The server judges; this only shows. -->
+        <div v-if="data.kind !== 'tac' && can(Permission.RiskView)" class="border-t pt-3">
+          <RiskEntityCard :identifier="identifier" />
         </div>
 
         <!-- What the numbers above are not; said where they are read. -->
