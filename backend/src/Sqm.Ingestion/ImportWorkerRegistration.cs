@@ -118,6 +118,9 @@ public static class ImportWorkerRegistration
         services.TryAddSingleton<Sqm.Application.Quality.IFeedQualityReader, ClickHouseFeedQualityStore>();
         services.TryAddSingleton<FeedQualityMonitor>();
 
+        // Each day's SIM changes as rows for the risk pages, after feed quality has screened them.
+        services.TryAddSingleton<RiskDayStep>();
+
         // Rebuilt once per run of files; the worker settles what a stopped run left owed.
         services.TryAddSingleton<DashboardSnapshot>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IIdleTask, DashboardSnapshot>(
