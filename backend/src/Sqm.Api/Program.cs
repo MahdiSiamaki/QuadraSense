@@ -90,6 +90,12 @@ builder.Services.Configure<Sqm.Application.Timeline.TimelineOptions>(
 builder.Services.AddSingleton<Sqm.Application.Timeline.ITimelineStore,
     Sqm.Infrastructure.ClickHouse.ClickHouseTimelineStore>();
 
+// Risk signals: the rule set (judged here, when read) and the reader of the worker's measures
+// (analytics migrations 023 and 024). The same section the worker binds, so both see one rule set.
+builder.Services.Configure<Sqm.Application.Risk.RiskOptions>(
+    builder.Configuration.GetSection(Sqm.Application.Risk.RiskOptions.SectionName));
+builder.Services.AddSingleton<Sqm.Application.Risk.IRiskReader, Sqm.Infrastructure.ClickHouse.ClickHouseRiskReader>();
+
 // Curated device photographs. The GSMA TAC record carries none and this deployment has no
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.
 builder.Services.AddSingleton<IDeviceImageStore, PostgresDeviceImageStore>();
@@ -264,6 +270,7 @@ app.MapRelationshipEndpoints();
 app.MapQualityEndpoints();
 app.MapExplorerEndpoints();
 app.MapTimelineEndpoints();
+app.MapRiskEndpoints();
 app.MapDeviceImageReviewEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);

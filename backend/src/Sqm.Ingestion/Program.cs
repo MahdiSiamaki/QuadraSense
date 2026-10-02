@@ -144,6 +144,31 @@ if (args.Contains("--refresh-quality"))
         .ConfigureAwait(false);
 }
 
+// Writes each day's SIM changes for the risk pages (analytics migration 023), for days imported
+// before it existed, or again after their feed quality was re-measured. The same per-day call the
+// import makes. Run after --refresh-quality: the screen reads its multi-number SIM lists.
+//
+//   dotnet run --project backend/src/Sqm.Ingestion -- --refresh-risk-days [--from d] [--to d] [--force]
+if (args.Contains("--refresh-risk-days"))
+{
+    var (from, to) = DayBackfill.ParseRange(args);
+    return await RiskDayBackfill
+        .RunAsync(host.Services.GetRequiredService<IAnalyticsIngestionStore>(), from, to, args.Contains("--force"), CancellationToken.None)
+        .ConfigureAwait(false);
+}
+
+// Builds the risk snapshot (analytics migration 024) now, step by step, instead of a chunk per idle
+// moment of the worker. For the first build after the migration, and to retry a failed run; stop the
+// worker first, or the two build the same run and publication refuses it.
+//
+//   dotnet run --project backend/src/Sqm.Ingestion -- --refresh-risk [--force]
+if (args.Contains("--refresh-risk"))
+{
+    return await RiskSnapshotRefresh
+        .RunAsync(host.Services, args.Contains("--force"), CancellationToken.None)
+        .ConfigureAwait(false);
+}
+
 // Fills the binding history (analytics migration 022) - every binding's dated events, by number,
 // SIM and IMEI - from the event log and the initial dump. Run once after the migration; the daily
 // import keeps it current. Resumable: months that already reconcile are skipped.

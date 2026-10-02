@@ -70,6 +70,13 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Explorer', permission: Permission.ExplorerQuery },
   },
   {
+    // No identifiers in this route either: lists are POSTed, and drill-down is a panel.
+    path: '/risk',
+    name: 'risk',
+    component: () => import('@/features/risk/RiskPage.vue'),
+    meta: { title: 'Risk signals', permission: Permission.RiskView },
+  },
+  {
     path: '/lookup',
     name: 'lookup',
     component: () => import('@/features/lookup/LookupPage.vue'),

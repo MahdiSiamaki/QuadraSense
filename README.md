@@ -190,7 +190,20 @@ dotnet run -- --backfill-imsi [--truncate]
 # Fill the binding history (timelines). Run once after migration 022, while nothing imports.
 # Resumable: months that already reconcile are skipped; --force rebuilds them all.
 dotnet run -- --backfill-history [--from 2026-01-26] [--to 2026-09-26] [--force]
+
+# Write each day's SIM changes for the risk pages. Run once after migration 023; the import keeps
+# it current. --force rewrites days already written (needed after --refresh-quality --force).
+dotnet run -- --refresh-risk-days [--from 2026-01-26] [--to 2026-09-26] [--force]
+
+# Build the risk measures now (migration 024), instead of a chunk per idle moment of the worker.
+# Stop the worker first, or the two build the same run. --force retries a failed run.
+dotnet run -- --refresh-risk [--force]
 ```
+
+**Risk signals are judged only once thresholds are set.** The worker keeps the measures current on
+its own; the `Risk` configuration section holds the thresholds, and until one is set the risk pages
+say "not calibrated" rather than judge on invented numbers. How each threshold is cut, and the curves
+it is cut from, are in `docs/adr/ADR-014-risk-signals.md`.
 
 **`--backfill-history` is what timelines wait for.** The history holds every binding's dated
 events, one row per binding per month, by number, by SIM and by IMEI - so one entity's whole

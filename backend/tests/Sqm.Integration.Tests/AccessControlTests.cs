@@ -120,6 +120,12 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
         Assert.Contains(Permissions.ExplorerQuery, analyst.PermissionCodes);
         Assert.Contains(Permissions.ExplorerQuery, operatorRole.PermissionCodes);
 
+        // Risk lists are a judgement about people: Analyst and Administrator only, not Viewer and not
+        // Data Operator - decided by the product owner, 2026-10-02.
+        Assert.DoesNotContain(Permissions.RiskView, viewer.PermissionCodes);
+        Assert.Contains(Permissions.RiskView, analyst.PermissionCodes);
+        Assert.DoesNotContain(Permissions.RiskView, operatorRole.PermissionCodes);
+
         // Operator imports, Admin activates - decision D4 of the import platform.
         Assert.Contains(Permissions.ImportUploadTac, operatorRole.PermissionCodes);
         Assert.DoesNotContain(Permissions.TacActivate, operatorRole.PermissionCodes);

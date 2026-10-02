@@ -37,6 +37,7 @@ const nav = computed(() =>
     { to: '/', label: 'Dashboard', show: can(Permission.DashboardView) },
     { to: '/devices', label: 'Devices', show: can(Permission.DeviceView) },
     { to: '/explorer', label: 'Explorer', show: can(Permission.ExplorerQuery) },
+    { to: '/risk', label: 'Risk signals', show: can(Permission.RiskView) },
     { to: '/imports', label: 'Imports', show: can(Permission.ImportView) },
     { to: '/lookup', label: 'Lookup', show: can(Permission.LookupSubscriber) },
     { to: '/lookup/imsi', label: 'IMSI', show: can(Permission.LookupImsi) },

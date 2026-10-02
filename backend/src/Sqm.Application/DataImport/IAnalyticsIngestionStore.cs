@@ -97,6 +97,22 @@ public interface IAnalyticsIngestionStore
     Task<bool> RefreshFeedQualityForDayAsync(DateOnly businessDate, CancellationToken ct);
 
     /// <summary>
+    /// Writes one day's SIM changes, one row per number, for the risk pages (analytics migration 023).
+    /// </summary>
+    /// <remarks>
+    /// The dashboard's same-day definition, so a day's rows reconcile with its SIM-change count.
+    /// Runs after the feed-quality step: a change involving a SIM the feed listed under several
+    /// numbers that day is kept but set aside. Idempotent: the day's partition is dropped and rebuilt.
+    /// </remarks>
+    /// <returns>Null, having written nothing, when migration 023 has not been applied.</returns>
+    Task<RiskDayRefresh?> RefreshRiskDayAsync(DateOnly businessDate, CancellationToken ct);
+
+    /// <summary>The days that already have risk rows, for a backfill to skip.</summary>
+    /// <remarks>Empty when migration 023 has not been applied. A day with no SIM change at all writes no
+    /// rows and so is never listed; refreshing it again costs one day's GROUP BY.</remarks>
+    Task<IReadOnlySet<DateOnly>> GetRiskDaysAsync(CancellationToken ct);
+
+    /// <summary>
     /// Brings the binding history (analytics migration 022) up to date with one loaded day.
     /// </summary>
     /// <remarks>

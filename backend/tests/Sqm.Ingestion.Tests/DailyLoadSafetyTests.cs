@@ -119,6 +119,7 @@ public sealed class DailyLoadSafetyTests
                 new FeedQualityMonitor(
                     analytics, Stub.Create<IFeedQualityReader>((m, _) => Stub.Default(m)),
                     Options.Create(new FeedQualityOptions()), NullLogger<FeedQualityMonitor>.Instance),
+                new RiskDayStep(analytics, NullLogger<RiskDayStep>.Instance),
                 NullLogger<SqmDailyProcessor>.Instance);
 
             var context = Stub.Create<IImportContext>((m, _) => m.Name switch

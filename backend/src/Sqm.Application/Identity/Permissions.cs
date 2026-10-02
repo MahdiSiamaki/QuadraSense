@@ -96,6 +96,16 @@ public static class Permissions
     /// </remarks>
     public const string ExplorerQuery = "explorer.query";
 
+    /// <summary>See the Risk signals page and the risk section of an entity.</summary>
+    /// <remarks>
+    /// A risk list is a judgement about people, so it is a permission of its own - decided by the
+    /// product owner, 2026-10-02, for Analyst and Administrator only. Lists that name numbers, SIMs
+    /// or handsets also need <see cref="LookupSubscriber"/>, <see cref="LookupImsi"/> or
+    /// <see cref="LookupImei"/>; exports need <see cref="DataExport"/>. See
+    /// db/operational/migrations/014_risk_permission.sql.
+    /// </remarks>
+    public const string RiskView = "risk.view";
+
     // ------------------------------------------------------------------ imports
     /// <summary>Open the Import Center and read job history.</summary>
     public const string ImportView = "import.view";
@@ -143,7 +153,7 @@ public static class Permissions
     /// <summary>Every permission code known to this build.</summary>
     public static readonly FrozenSet<string> All = new[]
     {
-        DashboardView, LookupSubscriber, DataExport, LookupImsi, IdentifierReveal, ExplorerQuery,
+        DashboardView, LookupSubscriber, DataExport, LookupImsi, IdentifierReveal, ExplorerQuery, RiskView,
         DeviceView, LookupImei, DeviceIdentifiers, DeviceImageManage,
         ImportView, ImportUploadSqm, ImportUploadTac, ImportReprocess, ImportCancel, ImportDelete,
         TacActivate, TacRollback,
