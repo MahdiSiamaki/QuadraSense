@@ -359,6 +359,14 @@ public sealed class RiskSnapshotTests : IAsyncLifetime
         Assert.Equal((3L, 5L), (entity?.ImeiWindow?.Numbers30, entity?.ImeiLifetime?.SimsEver));
         Assert.Null(await reader.GetEntityAsync(published, Sqm.Domain.Risk.RiskFamily.Sim, S(3), ct));
 
+        // Bound in the 30 days: SIM 1's handsets and number with stored rows - P1, and number 1 from the
+        // change rows; the shifted IMEI, P15 and P11 (before the window) have none. P1's SIMs: only SIM 1
+        // reaches the floor.
+        var linked = await reader.GetLinkedAsync(published, Sqm.Domain.Risk.RiskFamily.Sim, S(1), ct);
+        Assert.Equal([$"Imei:{P1}", $"Number:{M(1)}"], linked.Select(l => $"{l.Family}:{l.Key}").Order(StringComparer.Ordinal));
+        Assert.Equal([S(1)], (await reader.GetLinkedAsync(published, Sqm.Domain.Risk.RiskFamily.Imei, P1, ct)).Select(l => l.Key));
+        Assert.Equal([S(1)], (await reader.GetLinkedAsync(published, Sqm.Domain.Risk.RiskFamily.Number, M(1), ct)).Select(l => l.Key));
+
         // A corrected day: the worker's fingerprint moves, and the reader computes the same one.
         await ImportAsync(store, May(31), Add(8, 8, P31[..^1] + "2"));
         Assert.NotNull((await reader.GetStateAsync(settings.Floors, ct)).Stale);

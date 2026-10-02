@@ -126,7 +126,21 @@ public sealed record RiskEntityRequest(string Identifier);
 /// <param name="Columns">Labels for those measures.</param>
 /// <param name="RuleSetVersion">The rule set's version.</param>
 /// <param name="AsOf">yyyy-MM-dd the measures are as of.</param>
+/// <param name="Pattern">
+/// The level of this entity together with those bound to it in the 30 days: SuspiciousPattern when
+/// risk signals of two different families hold among them, otherwise the highest of their levels up
+/// to RiskSignal.
+/// </param>
+/// <param name="Linked">Per family, how many bound entities have stored measures, and at which levels. Names nobody.</param>
 public sealed record RiskEntityResponse(
     string Kind, string Family, bool Stored, string Level, bool Assessable,
     IReadOnlyList<RiskReasonInfo> Reasons, IReadOnlyDictionary<string, object?> Values,
-    IReadOnlyList<RiskColumnInfo> Columns, string RuleSetVersion, string AsOf);
+    IReadOnlyList<RiskColumnInfo> Columns, string RuleSetVersion, string AsOf,
+    string Pattern, IReadOnlyList<RiskLinkedInfo> Linked);
+
+/// <summary>The entities of one family bound to an entity in the 30 days, counted by level.</summary>
+/// <param name="Family">Imei, Sim or Number.</param>
+/// <param name="Stored">How many have stored measures; the rest are below every floor.</param>
+/// <param name="RiskSignals">Of those, at Risk signal.</param>
+/// <param name="Anomalies">Of those, at Anomaly.</param>
+public sealed record RiskLinkedInfo(string Family, int Stored, int RiskSignals, int Anomalies);

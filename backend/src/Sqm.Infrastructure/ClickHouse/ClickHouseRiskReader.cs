@@ -267,6 +267,91 @@ public sealed partial class ClickHouseRiskReader : IRiskReader
         }
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<RiskEntityMeasures>> GetLinkedAsync(
+        RiskPublishedRun run, RiskFamily family, string key, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentNullException.ThrowIfNull(key);
+
+        // One key read on the history copy sorted by the entity's kind: who was added beside it in the
+        // window. Under the timeline's budget - the same kind of read.
+        var (history, column, type) = family switch
+        {
+            RiskFamily.Sim => ("binding_history_by_imsi", "imsi", "UInt64"),
+            RiskFamily.Imei => ("binding_history_by_imei", "imei", "String"),
+            _ => ("binding_history", "msisdn", "UInt64"),
+        };
+
+        var from = run.AsOf.AddDays(-29);
+        var months = string.Join(", ", new[] { from, run.AsOf }
+            .Select(d => (d.Year * 100) + d.Month).Distinct().Select(m => m.ToString(CultureInfo.InvariantCulture)));
+
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["key"] = key,
+            ["from30"] = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["asOf"] = run.AsOf.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        };
+
+        var bound = await _query.ExecuteAsync($$"""
+            SELECT groupUniqArray(toString(imsi))            AS sims,
+                   groupUniqArrayIf(imei, length(imei) = 14) AS imeis,
+                   groupUniqArray(toString(msisdn))          AS numbers
+            FROM {{history}}
+            WHERE {{column}} = {key:{{type}}} AND month IN ({{months}})
+              AND arrayExists(e -> e.3 = 1 AND e.1 BETWEEN {from30:Date} AND {asOf:Date}, events)
+            """, parameters, ct, new QueryBudget(MaxRowsToRead: 50_000_000, MaxExecutionSeconds: 30)).ConfigureAwait(false);
+
+        var row = bound.Rows[0];
+        string[] Strings(int i) => [.. row[i].EnumerateArray().Select(e => e.GetString() ?? string.Empty).Take(MaxLinked)];
+
+        var sims = family == RiskFamily.Sim ? [] : Strings(0);
+        var imeis = family == RiskFamily.Sim ? Strings(1) : [];
+        var numbers = family == RiskFamily.Sim ? Strings(2) : [];
+
+        var linked = new List<RiskEntityMeasures>();
+        var keys = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["run"] = run.RunId.ToString(CultureInfo.InvariantCulture),
+            ["from7"] = run.AsOf.AddDays(-6).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["asOf"] = run.AsOf.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        };
+
+        if (sims.Length > 0)
+        {
+            keys["ids"] = "[" + string.Join(",", sims) + "]";
+            var result = await _query.ExecuteAsync(
+                $"SELECT {SimColumns} FROM risk_sim_window WHERE run_id = {{run:UInt64}} AND imsi IN {{ids:Array(UInt64)}}",
+                keys, ct, Budget).ConfigureAwait(false);
+            linked.AddRange(result.Rows.Select(Sim));
+        }
+
+        if (numbers.Length > 0)
+        {
+            keys["ids"] = "[" + string.Join(",", numbers) + "]";
+            var result = await _query.ExecuteAsync($$"""
+                SELECT {{NumberColumns}} FROM risk_sim_change_day
+                WHERE data_date BETWEEN {from7:Date} AND {asOf:Date} AND msisdn IN {ids:Array(UInt64)}
+                GROUP BY msisdn
+                """, keys, ct, Budget).ConfigureAwait(false);
+            linked.AddRange(result.Rows.Select(Number));
+        }
+
+        if (imeis.Length > 0)
+        {
+            var (complete, _) = await CompleteImeisAsync(
+                run, [.. imeis.Select(i => new RiskEntityMeasures(RiskFamily.Imei, i))], RiskList.ImeiLifetime, 0, ct, includeOwn: true)
+                .ConfigureAwait(false);
+            linked.AddRange(complete.Where(e => e.ImeiWindow is not null || e.ImeiLifetime is not null));
+        }
+
+        return linked;
+    }
+
+    /// <summary>Linked entities of one kind read for a pattern, at most. The most-shared IMEI has 8,578 bindings.</summary>
+    private const int MaxLinked = 20_000;
+
     // ------------------------------------------------------------------ list definitions
 
     private const string SimColumns =

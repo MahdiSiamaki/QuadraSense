@@ -30,6 +30,8 @@ public sealed class RiskEndpointTests : IClassFixture<WebApplicationFactory<Prog
     private readonly List<RiskListQuery> _lists = [];
     private string[] _held = [Permissions.RiskView, Permissions.LookupImsi, Permissions.LookupImei, Permissions.LookupSubscriber];
     private long? _threshold = 20;
+    private long? _imeiThreshold;
+    private List<RiskEntityMeasures> _linked = [];
     private DateOnly? _flagged;
 
     public RiskEndpointTests(WebApplicationFactory<Program> factory) =>
@@ -65,6 +67,7 @@ public sealed class RiskEndpointTests : IClassFixture<WebApplicationFactory<Prog
                 "ListAsync" => List((RiskListQuery)args[1]!),
                 "CountAsync" => Task.FromResult<IReadOnlyList<RiskRuleCount>>([new RiskRuleCount(RiskRule.HighDeviceCount30, 12, 340)]),
                 "GetEntityAsync" => Task.FromResult<RiskEntityMeasures?>(Measures()),
+                "GetLinkedAsync" => Task.FromResult<IReadOnlyList<RiskEntityMeasures>>(_linked),
                 _ => throw new NotSupportedException(method.Name),
             }));
         }));
@@ -73,6 +76,7 @@ public sealed class RiskEndpointTests : IClassFixture<WebApplicationFactory<Prog
     {
         var options = new RiskOptions();
         options.Thresholds.HighDeviceCount30 = _threshold;
+        options.Thresholds.SharedImeiSims30 = _imeiThreshold;
         return options;
     }
 
@@ -252,6 +256,32 @@ public sealed class RiskEndpointTests : IClassFixture<WebApplicationFactory<Prog
         var entry = Assert.Single(_audited);
         Assert.Equal(("risk.entity", "imsi"), (entry.Action, entry.Detail!["kind"]));
         Assert.DoesNotContain(Sim, JsonSerializer.Serialize(entry), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Risk_signals_in_two_families_among_bound_entities_are_a_suspected_pattern_counted_not_named()
+    {
+        const string Imei = "35000001000001";
+        _held = [.. _held, Permissions.IdentifierReveal];
+        _linked =
+        [
+            new RiskEntityMeasures(RiskFamily.Imei, Imei, ImeiWindow: new RiskImeiWindowMeasures(40, 40, 3, 40, 50, 0, 10, 4, AsOf)),
+            new RiskEntityMeasures(RiskFamily.Imei, "35000001000002", ImeiWindow: new RiskImeiWindowMeasures(8, 8, 1, 8, 8, 0, 3, 2, AsOf)),
+        ];
+
+        // Without a threshold for IMEIs, the handset is not judged: one family, no pattern.
+        var (_, alone, _) = await SendAsync(HttpMethod.Post, "/api/v1/risk/entity", new { identifier = Sim });
+        Assert.Equal("RiskSignal", alone.GetProperty("pattern").GetString());
+
+        _imeiThreshold = 20;
+        var (status, body, raw) = await SendAsync(HttpMethod.Post, "/api/v1/risk/entity", new { identifier = Sim });
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(("RiskSignal", "SuspiciousPattern"), (body.GetProperty("level").GetString(), body.GetProperty("pattern").GetString()));
+        var linked = Assert.Single(body.GetProperty("linked").EnumerateArray());
+        Assert.Equal(("Imei", 2, 1), (linked.GetProperty("family").GetString(), linked.GetProperty("stored").GetInt32(), linked.GetProperty("riskSignals").GetInt32()));
+        Assert.DoesNotContain(Imei, raw, StringComparison.Ordinal);
+        Assert.Equal("SuspiciousPattern", _audited[^1].Detail!["pattern"]);
     }
 
     [Fact]

@@ -231,22 +231,31 @@ public static class RiskEndpoints
         var list = RiskEvaluation.ListOf(RiskRules.Catalogue.First(s => s.Family == unit).Rule);
         var columns = Columns(list);
 
-        RiskEntityResponse response;
-        if (stored is null)
-        {
-            response = new RiskEntityResponse(Kind(unit), unit.ToString(), false, RiskLevel.Observation.ToString(), true, [],
-                new Dictionary<string, object?>(StringComparer.Ordinal), columns, context.Settings.Version, Iso(run.AsOf)!);
-        }
-        else
-        {
-            var assessment = RiskRules.Assess(
-                RiskEvaluation.Evidence(stored, run.AsOf, context.State.DaysWithData), context.Settings, context.Flagged);
-            response = new RiskEntityResponse(Kind(unit), unit.ToString(), true, assessment.Level.ToString(), assessment.Assessable,
-                [.. assessment.Reasons.Select(Reason)], Values(stored), columns, context.Settings.Version, Iso(run.AsOf)!);
-        }
+        RiskAssessment Judge(RiskEntityMeasures e) => RiskRules.Assess(
+            RiskEvaluation.Evidence(e, run.AsOf, context.State.DaysWithData), context.Settings, context.Flagged);
+
+        var assessment = stored is null ? null : Judge(stored);
+        var level = assessment?.Level ?? RiskLevel.Observation;
+
+        // The pattern: this entity with those bound to it in the window. Counted, never named.
+        var linked = (await reader.GetLinkedAsync(run, unit, parsed.Digits, ct).ConfigureAwait(false))
+            .Select(e => (e.Family, Judge(e).Level))
+            .ToList();
+        var pattern = RiskRules.Pattern([(unit, level), .. linked]);
+
+        var response = new RiskEntityResponse(
+            Kind(unit), unit.ToString(), stored is not null, level.ToString(), assessment?.Assessable ?? true,
+            [.. (assessment?.Reasons ?? []).Select(Reason)],
+            stored is null ? new Dictionary<string, object?>(StringComparer.Ordinal) : Values(stored),
+            columns, context.Settings.Version, Iso(run.AsOf)!,
+            pattern.ToString(),
+            [.. linked.GroupBy(l => l.Family).OrderBy(g => g.Key).Select(g => new RiskLinkedInfo(
+                g.Key.ToString(), g.Count(), g.Count(l => l.Level >= RiskLevel.RiskSignal), g.Count(l => l.Level == RiskLevel.Anomaly)))]);
 
         detail["stored"] = response.Stored;
         detail["level"] = response.Level;
+        detail["pattern"] = response.Pattern;
+        detail["linked"] = linked.Count;
         detail["ruleSetVersion"] = context.Settings.Version;
         detail["runId"] = run.RunId;
         await audit.WriteAsync(EntityEntry(user, http, "risk.entity", AuditOutcome.Success, detail), ct).ConfigureAwait(false);

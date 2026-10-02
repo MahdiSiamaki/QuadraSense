@@ -113,6 +113,13 @@ public interface IRiskReader
 
     /// <summary>Everything stored for one entity, or null when it has no row anywhere.</summary>
     Task<RiskEntityMeasures?> GetEntityAsync(RiskPublishedRun run, RiskFamily family, string key, CancellationToken ct);
+
+    /// <summary>
+    /// The entities bound to this one in the 30 days to the run's as-of day - a SIM's IMEIs and numbers,
+    /// an IMEI's SIMs, a number's SIMs - with whatever is stored for each. Those with no stored row are
+    /// below every floor and left out.
+    /// </summary>
+    Task<IReadOnlyList<RiskEntityMeasures>> GetLinkedAsync(RiskPublishedRun run, RiskFamily family, string key, CancellationToken ct);
 }
 
 /// <summary>
