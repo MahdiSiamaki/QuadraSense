@@ -126,6 +126,17 @@ public static class ImportWorkerRegistration
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IIdleTask, DashboardSnapshot>(
             sp => sp.GetRequiredService<DashboardSnapshot>()));
 
+        // The risk lists' measures, a chunk per idle moment. After the dashboard in the idle list:
+        // an owed dashboard is what people are already looking at. The same store instance as the
+        // import's, not a second one.
+        services.Configure<Sqm.Application.Risk.RiskOptions>(
+            configuration.GetSection(Sqm.Application.Risk.RiskOptions.SectionName));
+        services.TryAddSingleton<Sqm.Application.Risk.IRiskSnapshotStore>(
+            sp => (Sqm.Application.Risk.IRiskSnapshotStore)sp.GetRequiredService<IAnalyticsIngestionStore>());
+        services.TryAddSingleton<RiskSnapshot>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IIdleTask, RiskSnapshot>(
+            sp => sp.GetRequiredService<RiskSnapshot>()));
+
         // One processor per data source, resolved by source code at claim time. TryAddEnumerable
         // rather than TryAddSingleton: these are a collection, and TryAdd on a collection would
         // keep only the first.

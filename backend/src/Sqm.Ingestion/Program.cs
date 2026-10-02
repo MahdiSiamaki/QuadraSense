@@ -157,6 +157,18 @@ if (args.Contains("--refresh-risk-days"))
         .ConfigureAwait(false);
 }
 
+// Builds the risk snapshot (analytics migration 024) now, step by step, instead of a chunk per idle
+// moment of the worker. For the first build after the migration, and to retry a failed run; stop the
+// worker first, or the two build the same run and publication refuses it.
+//
+//   dotnet run --project backend/src/Sqm.Ingestion -- --refresh-risk [--force]
+if (args.Contains("--refresh-risk"))
+{
+    return await RiskSnapshotRefresh
+        .RunAsync(host.Services, args.Contains("--force"), CancellationToken.None)
+        .ConfigureAwait(false);
+}
+
 // Fills the binding history (analytics migration 022) - every binding's dated events, by number,
 // SIM and IMEI - from the event log and the initial dump. Run once after the migration; the daily
 // import keeps it current. Resumable: months that already reconcile are skipped.
