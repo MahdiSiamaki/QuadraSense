@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Sqm.Application.Risk;
 using Sqm.Application.Sql;
+using Sqm.Domain.Risk;
 using Sqm.Infrastructure.ClickHouse;
 using Sqm.Infrastructure.DataImport;
 
@@ -67,14 +68,14 @@ public sealed class RiskSnapshotTests : IAsyncLifetime
             }
 
             // sqm.tac is a view over the active GSMA version; the countable-IMEI test reads its tac column.
-            await QueryAsync($"CREATE TABLE {_database}.tac (tac String) ENGINE = Memory");
-            await QueryAsync($"INSERT INTO {_database}.tac VALUES ('35000001')");
+            await QueryAsync($"CREATE TABLE {_database}.tac (tac String, brandName String, manufacturer String, marketingName String) ENGINE = Memory");
+            await QueryAsync($"INSERT INTO {_database}.tac VALUES ('35000001', 'Samsung', 'Samsung Korea', 'Galaxy A32')");
             await QueryAsync($"INSERT INTO {_database}.tac_active (singleton, version_id, activated_at) VALUES (1, 1, now64(3))");
 
             await QueryAsync($"CREATE MATERIALIZED VIEW {_database}.mv_by_imsi TO {_database}.binding_by_imsi AS SELECT imsi, msisdn, imei, active, last_change_seq, last_change_date FROM {_database}.binding_current");
             await QueryAsync($"CREATE MATERIALIZED VIEW {_database}.mv_by_imei TO {_database}.binding_by_imei AS SELECT imei, msisdn, imsi, active, last_change_seq, last_change_date FROM {_database}.binding_current");
 
-            foreach (var migration in new[] { "020_feed_quality.sql", "022_binding_history.sql", "024_risk_snapshot.sql" })
+            foreach (var migration in new[] { "020_feed_quality.sql", "022_binding_history.sql", "023_risk_sim_change_day.sql", "024_risk_snapshot.sql" })
             {
                 foreach (var statement in SqlScript.Split(MigrationText(migration).Replace("sqm.", _database + ".", StringComparison.Ordinal)))
                 {
@@ -272,6 +273,95 @@ public sealed class RiskSnapshotTests : IAsyncLifetime
 
             Assert.Equal(await QueryAsync(Rows(single.RunId)), await QueryAsync(Rows(run.RunId)));
         }
+    }
+
+    private ClickHouseRiskReader Reader() => new(
+        Options.Create(new ClickHouseOptions
+        {
+            ConnectionString = $"Host=localhost;Port=18123;Database={_database};Username={User};Password={Password}",
+        }),
+        new Factory(),
+        NullLogger<ClickHouseRiskReader>.Instance);
+
+    private static RiskListQuery Query(RiskRule rule, RiskView view, long threshold, double share = 1.0) =>
+        new(rule, view, new Sqm.Domain.Risk.RiskThreshold(threshold), share, 1, 50);
+
+    private static IEnumerable<string> Keys(RiskListPage page) => page.Rows.Select(r => r.Key);
+
+    [Fact]
+    public async Task The_reader_lists_what_the_worker_published_and_knows_when_it_is_stale()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var store = Store();
+        await SeedAsync(store);
+
+        // Number 1 changed SIM on three clean days and one multi-number day in the 7 days to 31 May;
+        // number 2 once, and on 23 May, outside them.
+        await QueryAsync($"""
+            INSERT INTO {_database}.risk_sim_change_day (data_date, msisdn, new_count, old_count, set_aside, computed_at) VALUES
+                ('2026-05-26', {M(1)}, 1, 1, 'none', now64(3)), ('2026-05-27', {M(1)}, 1, 1, 'none', now64(3)),
+                ('2026-05-28', {M(1)}, 1, 1, 'none', now64(3)), ('2026-05-29', {M(1)}, 1, 1, 'multi_number', now64(3)),
+                ('2026-05-30', {M(2)}, 1, 1, 'none', now64(3)), ('2026-05-23', {M(2)}, 1, 1, 'none', now64(3))
+            """);
+
+        var settings = Settings();
+        var reader = Reader();
+        Assert.Null((await reader.GetStateAsync(settings.Floors, ct)).Run);
+
+        var run = await BuildAsync(store, settings);
+        Assert.Null(await store.TryPublishAsync(run, settings, ct));
+
+        var state = await reader.GetStateAsync(settings.Floors, ct);
+        Assert.Equal((run.RunId, May(31), (string?)null), (state.Run?.RunId, state.Run?.AsOf, state.Stale));
+        Assert.Equal(11, state.DaysWithData.Count);
+        var published = state.Run!;
+
+        // SIM 1: 3 clean IMEIs, 5 raw, 2 of 5 adds set aside.
+        Assert.Equal([S(1)], Keys(await reader.ListAsync(published, Query(RiskRule.HighDeviceCount30, RiskView.Risk, 2), ct)));
+        Assert.Empty(Keys(await reader.ListAsync(published, Query(RiskRule.HighDeviceCount30, RiskView.DataQuality, 2), ct)));
+        // Over 3 only on the raw count: data quality, not risk.
+        Assert.Empty(Keys(await reader.ListAsync(published, Query(RiskRule.HighDeviceCount30, RiskView.Risk, 3), ct)));
+        Assert.Equal([S(1)], Keys(await reader.ListAsync(published, Query(RiskRule.HighDeviceCount30, RiskView.DataQuality, 3), ct)));
+        // Two fifths set aside is more than a quarter allows: not assessable, so data quality.
+        Assert.Empty(Keys(await reader.ListAsync(published, Query(RiskRule.HighDeviceCount30, RiskView.Risk, 2, 0.25), ct)));
+        Assert.Equal([S(1)], Keys(await reader.ListAsync(published, Query(RiskRule.HighDeviceCount30, RiskView.DataQuality, 2, 0.25), ct)));
+
+        // Handsets by numbers, largest first, each completed with its other table and its model.
+        var numbers = await reader.ListAsync(published, Query(RiskRule.SharedImeiNumbers30, RiskView.Risk, 1), ct);
+        Assert.Equal([P1, P41], Keys(numbers));
+        Assert.Equal(2, numbers.Total);
+        var p1 = numbers.Rows[0];
+        Assert.Equal((5L, "35000001", "Samsung", "Galaxy A32"), (p1.ImeiLifetime?.SimsEver, p1.Tac, p1.Brand, p1.Model));
+        Assert.Null(numbers.Rows[1].ImeiLifetime);
+
+        // Numbers: three clean change days in the 7 to 31 May, one more before the screen.
+        var changes = await reader.ListAsync(published, Query(RiskRule.RepeatedSimChange7, RiskView.Risk, 2), ct);
+        Assert.Equal([M(1)], Keys(changes));
+        Assert.Equal(new RiskNumberMeasures(3, 4, May(29)), changes.Rows[0].Number);
+
+        var counts = await reader.CountAsync(published, new Dictionary<RiskRule, Sqm.Domain.Risk.RiskThreshold>
+        {
+            [RiskRule.HighDeviceCount30] = new(3),
+            [RiskRule.SharedImeiSimsEver] = new(1),
+            [RiskRule.RepeatedSimChange7] = new(0),
+        }, 1.0, ct);
+        Assert.Equal(
+            [new RiskRuleCount(RiskRule.SharedImeiSimsEver, 1, 0), new RiskRuleCount(RiskRule.HighDeviceCount30, 0, 1), new RiskRuleCount(RiskRule.RepeatedSimChange7, 2, 0)],
+            counts);
+
+        var entity = await reader.GetEntityAsync(published, Sqm.Domain.Risk.RiskFamily.Imei, P1, ct);
+        Assert.Equal((3L, 5L), (entity?.ImeiWindow?.Numbers30, entity?.ImeiLifetime?.SimsEver));
+        Assert.Null(await reader.GetEntityAsync(published, Sqm.Domain.Risk.RiskFamily.Sim, S(3), ct));
+
+        // A corrected day: the worker's fingerprint moves, and the reader computes the same one.
+        await ImportAsync(store, May(31), Add(8, 8, P31[..^1] + "2"));
+        Assert.NotNull((await reader.GetStateAsync(settings.Floors, ct)).Stale);
     }
 
     [Fact]

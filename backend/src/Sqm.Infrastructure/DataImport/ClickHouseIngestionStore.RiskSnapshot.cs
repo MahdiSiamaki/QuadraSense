@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Sqm.Application.Risk;
+using Sqm.Infrastructure.Risk;
 
 namespace Sqm.Infrastructure.DataImport;
 
@@ -77,20 +78,9 @@ public sealed partial class ClickHouseIngestionStore : IRiskSnapshotStore
             .ConfigureAwait(false) ?? 0;
         var asOf = DateOnly.FromDayNumber(DateOnly.FromDateTime(DateTime.UnixEpoch).DayNumber + (int)asOfDays);
 
-        var tacVersion = (int)(await ScalarAsync(
-            $"SELECT version_id FROM {_database}.tac_active FINAL ORDER BY activated_at DESC LIMIT 1", ct)
-            .ConfigureAwait(false) ?? 0);
-
-        var fingerprint = await ScalarUInt64Async($"""
-            SELECT cityHash64(
-                (SELECT groupArray((data_date, state, events, updated_at))
-                   FROM (SELECT data_date, state, events, updated_at FROM {_database}.binding_history_day FINAL ORDER BY data_date)),
-                (SELECT groupArray((data_date, computed_at, tac_version_id))
-                   FROM (SELECT data_date, computed_at, tac_version_id FROM {_database}.dq_daily FINAL ORDER BY data_date)),
-                {tacVersion},
-                {RiskComputeOptions.DefinitionVersion},
-                {options.Floors.SimImeis30}, {options.Floors.ImeiSims30}, {options.Floors.ImeiSimsEver}, {options.Floors.ImeiSimsNotRemoved})
-            """, ct).ConfigureAwait(false);
+        var tacVersion = (int)(await ScalarAsync(RiskSnapshotSql.TacVersion(_database + "."), ct).ConfigureAwait(false) ?? 0);
+        var fingerprint = await ScalarUInt64Async(
+            RiskSnapshotSql.Fingerprint(_database + ".", tacVersion, options.Floors), ct).ConfigureAwait(false);
 
         string? reason = null;
         if (asOfDays == 0)
