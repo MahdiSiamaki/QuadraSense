@@ -2,7 +2,7 @@ import duckdb, sys
 con = duckdb.connect()
 con.execute("SET memory_limit='6GB'; SET threads=6;")
 con.execute(r"""
-CREATE VIEW tac AS SELECT * FROM read_csv('D:/TAC/DeviceDatabase_TAC1Sep2026.csv',
+CREATE VIEW tac AS SELECT * FROM read_csv('E:/job/QuadraSense/TAC/DeviceDatabase_TAC1Sep2026.csv',
   header=true, all_varchar=true, sample_size=-1, strict_mode=false, ignore_errors=false);
 """)
 def q(label, sql):

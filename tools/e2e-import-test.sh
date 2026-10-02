@@ -24,7 +24,7 @@ API="${1:-http://localhost:5202}"
 PG="${SQM_PG_CONTAINER:-sqm-postgres}"
 CH="${SQM_CH_CONTAINER:-sqm-clickhouse}"
 DAY="2026-06-14"
-FILE="D:/SQM/New CDR/New CDR/daily_subs_device_sim_info_${DAY}.csv"
+FILE="E:/job/QuadraSense/SQM/New CDR/New CDR/daily_subs_device_sim_info_${DAY}.csv"
 
 q_ch() { docker exec "$CH" clickhouse-client --query "$1"; }
 q_pg() { docker exec "$PG" psql -U sqm -d sqm -tAc "$1"; }
