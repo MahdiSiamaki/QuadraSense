@@ -181,6 +181,12 @@ public sealed class RiskRulesTests
     }
 
     /// <summary>
+    /// Words a reason never uses: a finding of guilt, a mechanism the data cannot see, or a unit the
+    /// data does not count ("users", "phones" - it counts numbers, SIMs and IMEIs).
+    /// </summary>
+    private static readonly string[] Forbidden = ["fraud", "cloned", "sim box", "simbox", "criminal", "user", "phone ", "device"];
+
+    /// <summary>
     /// Every combination of rule, value, window coverage, defect share and flagged day: the system's
     /// highest word is Risk Signal for one entity, Suspicious Pattern for linked ones - never fraud.
     /// </summary>
@@ -206,7 +212,7 @@ public sealed class RiskRulesTests
             var result = RiskRules.Assess(new RiskEvidence(spec.Family, [measure], 1_000, setAside), Settings(), flag);
 
             Assert.True(result.Level <= RiskLevel.RiskSignal, $"{spec.Rule} {value}: {result.Level}");
-            Assert.All(result.Reasons, r => Assert.DoesNotContain("fraud", r.Text, StringComparison.OrdinalIgnoreCase));
+            Assert.All(result.Reasons, r => Assert.All(Forbidden, word => Assert.DoesNotContain(word, r.Text, StringComparison.OrdinalIgnoreCase)));
             seen.Add(RiskRules.Pattern([(spec.Family, result.Level), (RiskFamily.Number, result.Level)]));
             seen.Add(result.Level);
         }
