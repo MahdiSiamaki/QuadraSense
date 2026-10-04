@@ -285,10 +285,37 @@ The overview's counts for all eight rules: 1.1 s. One entity: 11-36 ms. Its boun
 pattern: 214 ms for the SIM added to the most IMEIs in the window (4,107 of them, none with stored
 measures - checked directly). At calibrated thresholds every list is smaller than these.
 
-## Not measured yet
+### M10 - Day profile: why there is no day-anomaly strip
 
-M10 (day profile; the day-anomaly strip is not built) and M11 (feed toggling on a clean window). Neither
-blocks the lists; each is named here so it is not mistaken for done.
+Each day's SIM changes and handset changes per 1,000 rows of the file, against the median of the
+feed-quality reference days (2026-01-26..07-26, 172 days with data):
+
+| measure | reference median | days over x3 | x5 | x10 | of those x3 days, before 2026-07-27 |
+|---|---:|---:|---:|---:|---|
+| SIM changes, raw | 0.34 | 58 | 39 | 24 | 02-28, 04-27, 04-28, 04-29, 05-03 |
+| SIM changes, clean | 0.33 | 22 | 11 | 0 | 02-28 (x3.1) |
+| handset changes | 26.26 | 0 | 0 | 0 | - |
+
+At x5 every flagged day lies inside the feed-defect period; the clean ones are 08-23 and every day from
+09-17 (x5.9-x8.0). A day-anomaly strip would repeat, day for day, what the feed-quality monitor already
+flags and the Rules tab already shows - so it is not built. Two things it would add are recorded here
+instead: SIM changes stay six to eight times ordinary from 17 September **after** the multi-number
+screen - the residual that keeps numbers capped - and handset changes never move three-fold on any
+day, defects included.
+
+### M11 - Toggling in a clean week
+
+One in 64 SIMs, 2026-06-25..07-01: 339,699 (SIM, IMEI) pairs were added by 381,723 adds. **11.0% of adds
+repeat a pair already added that week**, and 69.4% of adds are on a pair the feed also removed that
+week. Counting adds would inflate every measure by the feed's own churn; the measures count distinct
+IMEIs, SIMs and numbers, which is what this confirms. How the operator generates adds and removes - most
+added pairs are removed again within the week - is a question for the operator, not something the
+counts can settle.
+
+## Not measured
+
+Nothing planned in M0-M12 is left. What remains open is the owner's: the review capacity per list,
+`MaxDefectShare`, and whether modules are judged with phones.
 
 ## Consequences
 
