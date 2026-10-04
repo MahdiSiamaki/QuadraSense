@@ -73,6 +73,10 @@ public static class ImportEndpoints
             .WithName("GetWorkerHealth")
             .WithSummary("Queue depth, running jobs, failures and stale leases.");
 
+        group.MapGet("/blockages", GetBlockagesAsync)
+            .WithName("GetImportBlockages")
+            .WithSummary("Failed or cancelled days that hold later queued days back, with nothing queued to land them.");
+
         return app;
     }
 
@@ -371,6 +375,9 @@ public static class ImportEndpoints
         var freshness = await repository.GetFreshnessAsync(today, ct).ConfigureAwait(false);
         return Results.Ok(freshness);
     }
+
+    private static async Task<IResult> GetBlockagesAsync(IImportJobRepository repository, CancellationToken ct) =>
+        Results.Ok(await repository.GetBlockagesAsync(ct).ConfigureAwait(false));
 
     private static async Task<IResult> GetWorkerHealthAsync(
         IImportJobRepository repository, CancellationToken ct)

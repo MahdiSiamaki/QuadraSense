@@ -94,6 +94,16 @@ export function useWorkerHealth(options: { enabled?: MaybeRefOrGetter<boolean> }
   })
 }
 
+/** Days that hold later queued days back. Polled with the worker's health: it answers the same question. */
+export function useBlockages(options: { enabled?: MaybeRefOrGetter<boolean> } = {}) {
+  return useQuery({
+    queryKey: ['imports', 'blockages'],
+    queryFn: ({ signal }) => importsApi.blockages(signal),
+    refetchInterval: 15000,
+    enabled: computed(() => toValue(options.enabled ?? true)),
+  })
+}
+
 /**
  * Cancel and reprocess.
  *

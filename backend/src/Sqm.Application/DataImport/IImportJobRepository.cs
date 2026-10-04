@@ -244,6 +244,12 @@ public interface IImportJobRepository
     /// <summary>Queue depth, running jobs, stale leases.</summary>
     Task<WorkerHealth> GetWorkerHealthAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Days that did not land and hold queued later days back, with nothing queued to land them -
+    /// the waits a person has to resolve.
+    /// </summary>
+    Task<IReadOnlyList<QueueBlockage>> GetBlockagesAsync(CancellationToken ct);
+
     // -----------------------------------------------------------------------
     // Operator actions
     // -----------------------------------------------------------------------
