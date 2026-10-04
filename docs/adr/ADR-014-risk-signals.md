@@ -1,6 +1,6 @@
 # ADR-014: Risk signals - levels, measures and thresholds
 
-- **Status:** Accepted for the design; **thresholds pending** the product owner's review capacity per list
+- **Status:** Accepted. Thresholds cut on 2026-10-05 (see "The cut")
 - **Date:** 2026-10-02
 - **Decided by:** the product owner (levels, feed-defect handling, SIM-change definition, no score,
   versioned configuration with a review-capacity cut, who may see it - all on 2026-10-02)
@@ -85,6 +85,37 @@ lookup permission of the unit it names; `identifier.reveal` decides masking; exp
 never an identifier. A top-level "Risk signals" page after Explorer, and a risk section in the
 entity panel.
 
+## The cut, 2026-10-05
+
+On 2026-10-05 the product owner delegated the three open choices ("set everything you asked according
+to your own judgement"). Decided, and why:
+
+- **Review capacity: about 500 entities per list.** Each threshold is the smallest value that lists at
+  most 500 entities in the clean reference window (2026-06-02..07-01); the all-time rules, which have
+  no reference window, are cut the same way on run 1790938349551. 500 is a list one analyst can work
+  through in a week and still big enough to show a pattern; it is a configuration value, and the
+  curves above say what any other capacity would mean.
+- **`MaxDefectShare` = 0.5.** The reason shown for a not-assessable entity says "most of its evidence
+  was set aside"; 0.5 makes that sentence true. M5 found no natural break to prefer another value.
+- **Modules are judged with phones**, one threshold per rule, and the lists offer a device-type filter.
+  A separate threshold per device type would need a capacity per type and has no measured basis that
+  modules are benign; the filter lets an analyst set them apart without the rules pretending to know.
+
+| Rule | More than | Listed, reference | Listed, recent (capped at Anomaly) |
+|---|---:|---:|---:|
+| SharedImeiSims30 | 283 | 500 | 581 |
+| SharedImeiNumbers30 | 283 | 500 | 579 |
+| SharedImeiSimsEver | 1,564 | 500 (as of the run) | - |
+| SharedImeiSimsNotRemoved | 77 | 500 (as of the run) | - |
+| HighDeviceCount30 | 188 | 493 | 423 |
+| RapidDeviceChange7 | 49 | 488 | 616 |
+| Randomisation20 | 98 IMEIs and 49 TACs | 486 | 546 |
+| RepeatedSimChange7 | 2 days | 49 | 1,556 |
+
+RepeatedSimChange7 is the exception to "about 500": more than one day would list 550, over the
+capacity, so the cut is more than two. Every recent window is capped at Anomaly while the feed defects
+last, so these lists show anomalies until corrected files arrive.
+
 ## Measured on the real data, 2026-10-02
 
 ### M1 - Reference window
@@ -167,8 +198,8 @@ real, and a cut from the reference would list feed defects as behaviour.
 There is no natural break to cut at: most candidates have little set aside, and the rest spread
 evenly. `MaxDefectShare` is still unset, which means 1.0 - nothing is "not assessable" - while the
 reason that would be shown says "most of this entity's evidence was set aside". Setting it to 0.5
-would make the word true and move 1,457 SIMs and 125 IMEIs over 20 to the data-quality view. That is
-the owner's call, asked alongside the review capacity. For numbers the share is bimodal: 442,551
+would make the word true and move 1,457 SIMs and 125 IMEIs over 20 to the data-quality view; it was set
+to 0.5 on 2026-10-05 (see "The cut"). For numbers the share is bimodal: 442,551
 numbers had every change day of the last week set aside, 151,407 almost none.
 
 ### M6 - Serial structure of the top SIMs
@@ -204,9 +235,8 @@ list), clean counts:
 
 Under 50 the lists are smartphones. Above 100 they are not: for SIMs added to more than 300 IMEIs, 111
 of 172 are on modems. One threshold for every device type will fill the far end of the SIM list with
-modules, whose provisioning may share a SIM legitimately. Whether modules are judged separately - a
-device-type filter, or a threshold per type - is asked of the owner; the lists offer a device-type
-filter either way.
+modules, whose provisioning may share a SIM legitimately. Modules are judged with phones, and the lists
+offer a device-type filter (see "The cut").
 
 ### M12 - Precision of the shifted-IMEI exclusion
 
@@ -314,13 +344,12 @@ counts can settle.
 
 ## Not measured
 
-Nothing planned in M0-M12 is left. What remains open is the owner's: the review capacity per list,
-`MaxDefectShare`, and whether modules are judged with phones.
+Nothing planned in M0-M12 is left.
 
 ## Consequences
 
-- Nothing is listed as a risk until the owner gives a review capacity per list and thresholds are
-  set from the curves above, with this ADR updated to record the cut.
+- Thresholds live in the API's `Risk` configuration section with the cut above; a change goes through
+  reviewed configuration, and its version hash appears in every reason and audit entry.
 - With the current feed, every list is capped at Anomaly. Corrected files for 2026-07-27..09-26 are
   the way out; the capacity cut does not change that.
 - A late or corrected day, a GSMA activation or a floor change makes the published measures stale,
