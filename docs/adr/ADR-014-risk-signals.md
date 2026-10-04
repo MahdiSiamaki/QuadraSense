@@ -147,14 +147,81 @@ dashboard's `agg_sim_change_daily` on every day: **0 of 233 days differ, 0 dupli
 aside; from 2026-08-04 to 09-05 and from 09-16 on it is 60-80%. There is also a smaller episode
 from 2026-04-14 to 05-05 (20-59% set aside), before the documented defect - noted, not explained.
 
-### M5 - Residual inflation after the screens (partial)
+### M5 - Residual inflation after the screens
 
 The screens bring the recent tails back to the reference above about 15 (SIM side, over 20: 52,662
 recent against 63,112 reference; raw would be 152,288). Below that, recent is still higher - IMEIs
 by SIMs over 10: 291,528 against 177,312 - and numbers changing SIM on more than one day of a week
 are 36 times the reference after the screens. **The family caps stay**, as decided: the residual is
-real, and a cut from the reference would list feed defects as behaviour. `MaxDefectShare` is still
-unset (no entity is excluded by share) until the per-entity share distribution is measured.
+real, and a cut from the reference would list feed defects as behaviour.
+
+**The share of each entity's adds set aside** (measured 2026-10-05 on run 1790938349551, the 30 days to
+2026-09-26), for the entities a list could name:
+
+| share set aside | SIMs over 20 IMEIs | SIMs over 50 | IMEIs over 20 SIMs | IMEIs over 50 |
+|---|---:|---:|---:|---:|
+| 0-9% | 45,069 | 6,576 | 44,143 | 6,912 |
+| 10-49% | 6,136 | 589 | 14,319 | 1,441 |
+| 50-100% | 1,457 | 29 | 125 | 21 |
+
+There is no natural break to cut at: most candidates have little set aside, and the rest spread
+evenly. `MaxDefectShare` is still unset, which means 1.0 - nothing is "not assessable" - while the
+reason that would be shown says "most of this entity's evidence was set aside". Setting it to 0.5
+would make the word true and move 1,457 SIMs and 125 IMEIs over 20 to the data-quality view. That is
+the owner's call, asked alongside the review capacity. For numbers the share is bimodal: 442,551
+numbers had every change day of the last week set aside, 151,407 almost none.
+
+### M6 - Serial structure of the top SIMs
+
+For the SIMs added to more than 100 IMEIs, the best (SIM, TAC) "fill" - IMEIs over the span of their
+serial numbers, TACs with at least 10 IMEIs:
+
+| fill | SIMs | IMEIs between them |
+|---|---:|---:|
+| dense, 0.5 or more | 1 | 1,114 |
+| 0.1-0.5 | 4 | 688 |
+| 0.01-0.1 | 74 | 32,992 |
+| scattered, under 0.01 | 479 | 107,909 |
+
+Not a production line: the serials are scattered. The very top SIMs take two shapes. One spans a
+dozen unrelated old models - HUAWEI U8860, iPhone 4S, SGH-L288 - about 500 IMEIs each at fill 0.001: the
+randomisation shape. The others sit on one or two **cellular module** models, thousands of IMEIs each
+(Quectel EC200U-EU, M66; SIMCom SIM800C). Serial fill stays descriptive; it separates nothing that the
+TAC count does not.
+
+### M3 by device type - the top of the lists is not phones
+
+GSMA's device type of the handset (IMEI lists), and of the SIM's most frequent TAC in 20 days (SIM
+list), clean counts:
+
+| more than | IMEIs by SIMs: 20 | 100 | 300 | SIMs by IMEIs: 20 | 100 | 300 |
+|---|---:|---:|---:|---:|---:|---:|
+| Smartphone | 48,286 | 1,199 | 111 | 46,079 | 1,006 | 29 |
+| Modem | 5,994 | 405 | 58 | 3,919 | 440 | 111 |
+| Feature phone | 1,025 | 256 | 136 | 495 | 14 | 4 |
+| Handheld | 786 | 268 | 105 | 134 | 5 | 3 |
+| Dongle, IoT, router, module, other | 2,496 | 319 | 131 | 2,035 | 172 | 31 |
+
+Under 50 the lists are smartphones. Above 100 they are not: for SIMs added to more than 300 IMEIs, 111
+of 172 are on modems. One threshold for every device type will fill the far end of the SIM list with
+modules, whose provisioning may share a SIM legitimately. Whether modules are judged separately - a
+device-type filter, or a threshold per type - is asked of the owner; the lists offer a device-type
+filter either way.
+
+### M12 - Precision of the shifted-IMEI exclusion
+
+On 2026-09-20, 1,029,724 distinct shifted-shape IMEIs were added. For **99.9%** (1,028,902) the restored
+IMEI - the dropped digit put back - is an IMEI the feed already knew, 96.2% from before 15 September.
+They are the same handsets, so excluding them avoids counting a handset twice. On the clean reference
+days 0.087% of rows have the shape by chance (202,793 of 232,525,690); they are excluded on every day
+alike, so reference and recent windows stay comparable.
+
+The exclusion has a cost after 15 September, and it is stated so it is not mistaken for none: a real
+new pairing of a SIM with a handset that arrives under a shifted IMEI is not counted at all. Only 11%
+of 09-20's shifted (SIM, IMEI) pairs had the SIM already bound to the restored IMEI, so most of them
+are new pairings. Recent IMEIs-per-SIM counts are therefore **under**counted - a further reason the
+SIM family stays capped while the defect lasts. Repairing the IMEIs would fix it; the feed-quality
+decision was to repair nothing and wait for corrected files (15-feed-quality.md).
 
 ### M7, M8 - Cost and size of a snapshot run
 
@@ -220,10 +287,8 @@ measures - checked directly). At calibrated thresholds every list is smaller tha
 
 ## Not measured yet
 
-M6 (serial structure of the top SIMs), M10 (day profile; the day-anomaly strip is not built), M11
-(feed toggling on a clean window), M12 (precision of the shifted-IMEI exclusion), and the
-per-entity share set aside that `MaxDefectShare` would be cut from (part of M5). None blocks the
-lists; each is named here so it is not mistaken for done.
+M10 (day profile; the day-anomaly strip is not built) and M11 (feed toggling on a clean window). Neither
+blocks the lists; each is named here so it is not mistaken for done.
 
 ## Consequences
 
