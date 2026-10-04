@@ -19,6 +19,7 @@ namespace Sqm.Integration.Tests;
 /// over it is stopped, not served), that lists come back in order, and that the worker and the reader
 /// agree on whether the run is current.
 /// </remarks>
+[Collection("clickhouse-scratch")]
 public sealed class RiskRealDataTests
 {
     private static string Connection(string user) => $"Host=localhost;Port=18123;Database=sqm;Username={user};Password=sqm_dev";

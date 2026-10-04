@@ -43,7 +43,7 @@ public sealed class ExplorerRealDataPlanTests : IAsyncLifetime
         try
         {
             var sample = await QueryAsync(
-                "SELECT toString(msisdn), toString(imsi), imei FROM sqm.binding_current WHERE length(imei) = 14 LIMIT 1 OFFSET 1000000");
+                "SELECT toString(msisdn), toString(imsi), imei FROM sqm.binding_current WHERE length(imei) = 14 AND msisdn BETWEEN 1000000000 AND 9999999999 LIMIT 1 OFFSET 1000000");
             if (string.IsNullOrEmpty(sample))
             {
                 _unavailable = "no real data in sqm.binding_current";
