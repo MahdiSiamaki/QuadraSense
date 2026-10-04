@@ -25,7 +25,7 @@ import RiskLevelBadge from './RiskLevelBadge.vue'
  * The data-quality view lists what crossed only through feed defects, in neutral colours and under
  * a caption that says it is not behaviour.
  */
-const props = defineProps<{ rules: RiskRule[]; canExport: boolean; initial?: string | null }>()
+const props = defineProps<{ rules: RiskRule[]; canExport: boolean; initial?: string | null; deviceTypes: string[] }>()
 const emit = defineEmits<{ drill: [identifier: string] }>()
 
 const selected = ref(props.rules.find((r) => r.rule === props.initial)?.rule ?? props.rules[0]?.rule ?? '')
@@ -35,6 +35,9 @@ const threshold = ref<number | null>(null)
 const tacsThreshold = ref<number | null>(null)
 const page = ref(1)
 const pageSize = ref(50)
+/** One GSMA device type, or '' for all. Not offered for numbers, which have no handset. */
+const deviceType = ref('')
+const hasDeviceType = computed(() => rule.value !== undefined && rule.value.list !== 'Numbers')
 
 const list = useRiskList()
 const exporter = useRiskExport()
@@ -54,6 +57,7 @@ function load() {
     tacsThreshold: tacsThreshold.value !== rule.value.tacsThreshold ? tacsThreshold.value : null,
     page: page.value,
     pageSize: pageSize.value,
+    deviceTypes: hasDeviceType.value && deviceType.value ? [deviceType.value] : [],
   })
 }
 
@@ -97,6 +101,7 @@ async function exportCsv() {
     view: view.value,
     threshold: threshold.value !== rule.value.threshold ? threshold.value : null,
     tacsThreshold: tacsThreshold.value !== rule.value.tacsThreshold ? tacsThreshold.value : null,
+    deviceTypes: hasDeviceType.value && deviceType.value ? [deviceType.value] : [],
   })
   saveFile(file, `risk-${rule.value.rule}-${view.value}.csv`)
 }
@@ -197,6 +202,14 @@ const kindLabel = computed(() =>
           Back to the configured value
         </Button>
       </form>
+
+      <label v-if="hasDeviceType && deviceTypes.length">
+        <span :class="miniLabel">{{ rule?.list === 'Sims' ? 'Device type (of its most frequent TAC, 20 days)' : 'Device type' }}</span>
+        <select v-model="deviceType" :class="[control, 'mt-1']" @change="apply">
+          <option value="">All device types</option>
+          <option v-for="t in deviceTypes" :key="t" :value="t">{{ t }}</option>
+        </select>
+      </label>
 
       <div class="ml-auto flex items-end gap-2">
         <label>

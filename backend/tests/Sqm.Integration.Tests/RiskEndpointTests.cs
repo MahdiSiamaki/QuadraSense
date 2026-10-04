@@ -68,6 +68,7 @@ public sealed class RiskEndpointTests : IClassFixture<WebApplicationFactory<Prog
                 "CountAsync" => Task.FromResult<IReadOnlyList<RiskRuleCount>>([new RiskRuleCount(RiskRule.HighDeviceCount30, 12, 340)]),
                 "GetEntityAsync" => Task.FromResult<RiskEntityMeasures?>(Measures()),
                 "GetLinkedAsync" => Task.FromResult<IReadOnlyList<RiskEntityMeasures>>(_linked),
+                "DeviceTypesAsync" => Task.FromResult<IReadOnlyList<string>>(["Modem", "Smartphone"]),
                 _ => throw new NotSupportedException(method.Name),
             }));
         }));
@@ -282,6 +283,33 @@ public sealed class RiskEndpointTests : IClassFixture<WebApplicationFactory<Prog
         Assert.Equal(("Imei", 2, 1), (linked.GetProperty("family").GetString(), linked.GetProperty("stored").GetInt32(), linked.GetProperty("riskSignals").GetInt32()));
         Assert.DoesNotContain(Imei, raw, StringComparison.Ordinal);
         Assert.Equal("SuspiciousPattern", _audited[^1].Detail!["pattern"]);
+    }
+
+    [Fact]
+    public async Task A_list_is_narrowed_to_known_device_types_only_and_the_audit_says_which()
+    {
+        var (status, _, _) = await ListAsync(new { rule = "HighDeviceCount30", deviceTypes = new[] { "Modem" } });
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(["Modem"], Assert.Single(_lists).DeviceTypes!);
+        Assert.Equal("Modem", _audited[^1].Detail!["deviceTypes"]);
+
+        var (unknown, body, _) = await ListAsync(new { rule = "HighDeviceCount30", deviceTypes = new[] { "Modem'; DROP TABLE x" } });
+        Assert.Equal(HttpStatusCode.BadRequest, unknown);
+        Assert.True(body.GetProperty("errors").TryGetProperty("deviceTypes", out _));
+        Assert.Single(_lists);
+
+        var (_, state, _) = await SendAsync(HttpMethod.Get, "/api/v1/risk/status");
+        Assert.Equal(["Modem", "Smartphone"], state.GetProperty("deviceTypes").EnumerateArray().Select(e => e.GetString()));
+    }
+
+    [Fact]
+    public async Task A_list_of_numbers_has_no_device_type()
+    {
+        var (status, body, _) = await ListAsync(new { rule = "RepeatedSimChange7", threshold = 2, deviceTypes = new[] { "Modem" } });
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(body.GetProperty("errors").TryGetProperty("deviceTypes", out _));
+        Assert.Empty(_lists);
     }
 
     [Fact]

@@ -86,7 +86,8 @@ public static class RiskEndpoints
             options.MaxDefectShare,
             Iso(context.State.DataThrough),
             context.State.Run is { } run ? new RiskRunInfo(Iso(run.AsOf)!, run.PublishedAt, context.State.Stale) : null,
-            [.. RiskRules.Catalogue.Select(spec => RuleInfo(spec, context))]));
+            [.. RiskRules.Catalogue.Select(spec => RuleInfo(spec, context))],
+            context.State.Deployed ? await reader.DeviceTypesAsync(ct).ConfigureAwait(false) : []));
     }
 
     private static async Task<IResult> OverviewAsync(
@@ -396,6 +397,21 @@ public static class RiskEndpoints
             }));
         }
 
+        var types = request.DeviceTypes?.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.Ordinal).ToList() ?? [];
+        if (types.Count > 0)
+        {
+            var known = (await reader.DeviceTypesAsync(ct).ConfigureAwait(false)).ToHashSet(StringComparer.Ordinal);
+            var problem = RiskEvaluation.ListOf(rule) == RiskList.Numbers
+                ? "A list of numbers has no device type."
+                : types.FirstOrDefault(t => !known.Contains(t)) is { } unknown
+                    ? $"\"{unknown}\" is not a GSMA device type in the active version."
+                    : null;
+            if (problem is not null)
+            {
+                return (null, Results.ValidationProblem(new Dictionary<string, string[]> { ["deviceTypes"] = [problem] }));
+            }
+        }
+
         var configured = context.Settings.Thresholds.GetValueOrDefault(rule);
         var overridden = request.Threshold is not null || request.TacsThreshold is not null;
         var value = request.Threshold ?? configured?.Value;
@@ -416,7 +432,7 @@ public static class RiskEndpoints
         }
 
         var query = new RiskListQuery(
-            rule, view.Value, new RiskThreshold(threshold, tacs), context.Settings.MaxDefectShare, request.Page, request.PageSize);
+            rule, view.Value, new RiskThreshold(threshold, tacs), context.Settings.MaxDefectShare, request.Page, request.PageSize, types);
 
         return (new PreparedList(user, context, run, query, overridden, user.Can(Permissions.IdentifierReveal)), null);
     }
@@ -585,6 +601,7 @@ public static class RiskEndpoints
         {
             ["rule"] = list.Query.Rule.ToString(),
             ["view"] = ViewName(list.Query.View),
+            ["deviceTypes"] = string.Join(",", list.Query.DeviceTypes ?? []),
             ["threshold"] = list.Query.Threshold.Value,
             ["tacsThreshold"] = list.Query.Threshold.Tacs,
             ["overridden"] = list.Overridden,

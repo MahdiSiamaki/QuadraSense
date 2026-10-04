@@ -181,6 +181,7 @@ function drill(identifier: string) {
               :key="`${tab}:${focus ?? ''}`"
               :rules="rulesOf(tab)"
               :initial="focus"
+              :device-types="data.deviceTypes"
               :can-export="can(Permission.DataExport)"
               @drill="drill"
             />

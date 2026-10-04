@@ -113,6 +113,13 @@ public sealed partial class ClickHouseRiskReader : IRiskReader
         parameters["offset"] = ((long)(query.Page - 1) * query.PageSize).ToString(CultureInfo.InvariantCulture);
 
         var condition = Condition(query.Rule, query.View);
+        if (query.DeviceTypes is { Count: > 0 } types && list != RiskList.Numbers)
+        {
+            // The TAC is the handset's own for an IMEI, the most frequent one in 20 days for a SIM.
+            var tac = list == RiskList.Sims ? "top_tacs_20[1]" : "substring(imei, 1, 8)";
+            parameters["types"] = ArrayLiteral(types);
+            condition += $" AND {tac} IN (SELECT tac FROM tac WHERE deviceType IN {{types:Array(String)}})";
+        }
         var order = Order(query.Rule, query.View);
 
         var sql = list switch
@@ -182,6 +189,20 @@ public sealed partial class ClickHouseRiskReader : IRiskReader
         LogList(query.Rule, query.View, rows.Count, total, rowsRead, result.ElapsedMs);
         return new RiskListPage(rows, total, result.ElapsedMs, rowsRead);
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> DeviceTypesAsync(CancellationToken ct)
+    {
+        var result = await _query.ExecuteAsync(
+            "SELECT DISTINCT deviceType FROM tac WHERE deviceType != '' ORDER BY deviceType", NoParameters, ct, Budget)
+            .ConfigureAwait(false);
+        return [.. result.Rows.Select(r => ClickHouseJsonResult.Text(r, 0)!)];
+    }
+
+    /// <summary>A ClickHouse array of strings, for a typed Array(String) parameter.</summary>
+    private static string ArrayLiteral(IEnumerable<string> values) =>
+        "[" + string.Join(",", values.Select(v =>
+            "'" + v.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("'", "\\'", StringComparison.Ordinal) + "'")) + "]";
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<RiskRuleCount>> CountAsync(

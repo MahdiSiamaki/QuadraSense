@@ -38,9 +38,10 @@ public sealed record RiskRunInfo(string AsOf, DateTimeOffset PublishedAt, string
 /// <param name="DataThrough">yyyy-MM-dd, the latest day of data.</param>
 /// <param name="Run">The published measures, or null.</param>
 /// <param name="Rules">Every rule.</param>
+/// <param name="DeviceTypes">The GSMA device types IMEI and SIM lists can be narrowed to.</param>
 public sealed record RiskStatusResponse(
     bool Ready, string? NotReady, bool Calibrated, string RuleSetVersion, double? MaxDefectShare,
-    string? DataThrough, RiskRunInfo? Run, IReadOnlyList<RiskRuleInfo> Rules);
+    string? DataThrough, RiskRunInfo? Run, IReadOnlyList<RiskRuleInfo> Rules, IReadOnlyList<string> DeviceTypes);
 
 /// <summary>How many entities one rule lists, and at which level. Names nobody.</summary>
 /// <param name="Rule">The rule.</param>
@@ -60,8 +61,13 @@ public sealed record RiskOverviewResponse(string RuleSetVersion, string AsOf, IR
 /// <param name="TacsThreshold">Override for Randomisation20's TAC count.</param>
 /// <param name="Page">From 1.</param>
 /// <param name="PageSize">Up to 500.</param>
+/// <param name="DeviceTypes">
+/// GSMA device types to keep; empty or null for all. An IMEI list filters on the handset's own type, a SIM
+/// list on the type of the SIM's most frequent TAC in 20 days. Not for number lists.
+/// </param>
 public sealed record RiskListRequest(
-    string Rule, string? View = null, long? Threshold = null, long? TacsThreshold = null, int Page = 1, int PageSize = 50);
+    string Rule, string? View = null, long? Threshold = null, long? TacsThreshold = null, int Page = 1, int PageSize = 50,
+    IReadOnlyList<string>? DeviceTypes = null);
 
 /// <summary>One rule's verdict on one entity.</summary>
 /// <param name="Rule">The rule.</param>

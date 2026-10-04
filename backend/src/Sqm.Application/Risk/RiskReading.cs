@@ -92,8 +92,19 @@ public sealed record RiskEntityMeasures(
 public sealed record RiskListPage(IReadOnlyList<RiskEntityMeasures> Rows, long Total, long ElapsedMs, long RowsRead);
 
 /// <summary>A list read: which rule, which view, at which thresholds, which page.</summary>
+/// <param name="Rule">The rule whose list is read.</param>
+/// <param name="View">Risk, or the data-quality view.</param>
+/// <param name="Threshold">More than this is listed.</param>
+/// <param name="MaxDefectShare">Above this share of adds set aside, an entity belongs to the data-quality view.</param>
+/// <param name="Page">From 1.</param>
+/// <param name="PageSize">Rows per page.</param>
+/// <param name="DeviceTypes">
+/// GSMA device types to keep, or empty for all: the handset's own for an IMEI list, the type of the SIM's
+/// most frequent TAC in 20 days for a SIM list. Number lists have none.
+/// </param>
 public sealed record RiskListQuery(
-    RiskRule Rule, RiskView View, RiskThreshold Threshold, double MaxDefectShare, int Page, int PageSize);
+    RiskRule Rule, RiskView View, RiskThreshold Threshold, double MaxDefectShare, int Page, int PageSize,
+    IReadOnlyList<string>? DeviceTypes = null);
 
 /// <summary>How many entities a rule lists, in each view.</summary>
 public sealed record RiskRuleCount(RiskRule Rule, long Risk, long DataQuality);
@@ -106,6 +117,9 @@ public interface IRiskReader
 
     /// <summary>One page of a rule's list, largest value first.</summary>
     Task<RiskListPage> ListAsync(RiskPublishedRun run, RiskListQuery query, CancellationToken ct);
+
+    /// <summary>The GSMA device types a list can be narrowed to, as the active GSMA version names them.</summary>
+    Task<IReadOnlyList<string>> DeviceTypesAsync(CancellationToken ct);
 
     /// <summary>Per rule, how many entities each view lists at these thresholds.</summary>
     Task<IReadOnlyList<RiskRuleCount>> CountAsync(

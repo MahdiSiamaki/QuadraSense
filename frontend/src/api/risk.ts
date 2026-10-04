@@ -48,6 +48,8 @@ export interface RiskStatus {
   dataThrough: string | null
   run: { asOf: string; publishedAt: string; stale: string | null } | null
   rules: RiskRule[]
+  /** GSMA device types IMEI and SIM lists can be narrowed to. */
+  deviceTypes: string[]
 }
 
 export interface RiskOverviewRule {
@@ -96,6 +98,8 @@ export interface RiskListRequest {
   tacsThreshold?: number | null
   page?: number
   pageSize?: number
+  /** For IMEI lists the handset's own type; for SIM lists the type of the SIM's most frequent TAC. */
+  deviceTypes?: string[]
 }
 
 export interface RiskListResult {
