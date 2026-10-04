@@ -5,7 +5,8 @@ import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import UploadDropzone from './UploadDropzone.vue'
 import ImportHistoryTable from './ImportHistoryTable.vue'
 import TacVersionPanel from './TacVersionPanel.vue'
-import { useImportHistory, useWorkerHealth, useFreshness } from './useImportQueries'
+import { RouterLink } from 'vue-router'
+import { useBlockages, useImportHistory, useWorkerHealth, useFreshness } from './useImportQueries'
 import { formatDate, formatRelative, formatDateTime } from '@/lib/format'
 import type { ImportHistoryQuery } from '@/api/imports'
 
@@ -32,6 +33,7 @@ const query = computed<ImportHistoryQuery>(() => ({
 
 const history = useImportHistory(query)
 const health = useWorkerHealth()
+const blockages = useBlockages()
 const freshness = useFreshness()
 
 const totalPages = computed(() =>
@@ -128,6 +130,30 @@ function resetPaging() {
       >
         The oldest has been waiting since {{ formatDateTime(health.data.value.oldestQueuedAt) }}.
       </p>
+    </div>
+
+    <!--
+      The other silent state. Five days were uploaded and sat at "Queued" with a worker running,
+      because an earlier day had failed: days of a source import in order, so that none is folded
+      over a gap. The rule is right; a wait nobody can see the reason for looks like a broken worker.
+    -->
+    <div
+      v-for="b in blockages.data.value ?? []"
+      :key="`${b.sourceCode}:${b.businessDate}`"
+      class="rounded-[var(--radius-md)] border border-[var(--c-warning)] p-4"
+      role="alert"
+    >
+      <p class="text-sm font-semibold">
+        {{ b.waiting }} {{ b.sourceCode }} file{{ b.waiting === 1 ? ' is' : 's are' }} waiting behind
+        {{ formatDate(b.businessDate) }}, whose import {{ b.status === 'CANCELLED' ? 'was cancelled' : 'failed' }}.
+      </p>
+      <p class="mt-1 text-sm text-[var(--c-text-secondary)]">
+        Days of a source are imported in order, so that no day is applied over a gap. Open that day and
+        choose <span class="font-medium">Import again</span>; the waiting files follow on their own.
+      </p>
+      <RouterLink :to="`/imports/${b.jobId}`" class="mt-2 inline-block text-sm font-medium text-[var(--c-accent)] hover:underline">
+        Open {{ formatDate(b.businessDate) }}
+      </RouterLink>
     </div>
 
     <!-- Freshness, per source. Placed above the fold because "is the data current?" is the

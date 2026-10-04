@@ -16,6 +16,10 @@ import Pagination from '@/design-system/Pagination.vue'
 import { control, miniLabel, segment } from '@/features/explorer/ui'
 import { formatDate, formatFull } from '@/lib/format'
 import RiskLevelBadge from './RiskLevelBadge.vue'
+import RiskDistributionChart from './RiskDistributionChart.vue'
+import RiskDailyChart from './RiskDailyChart.vue'
+import DimensionTable from '@/design-system/DimensionTable.vue'
+import { useRiskDaily, useRiskDeviceTypes, useRiskDistribution } from '@/api/risk'
 
 /**
  * One family's lists: pick a rule, see who is over its threshold, open one.
@@ -25,7 +29,7 @@ import RiskLevelBadge from './RiskLevelBadge.vue'
  * The data-quality view lists what crossed only through feed defects, in neutral colours and under
  * a caption that says it is not behaviour.
  */
-const props = defineProps<{ rules: RiskRule[]; canExport: boolean; initial?: string | null }>()
+const props = defineProps<{ rules: RiskRule[]; canExport: boolean; initial?: string | null; deviceTypes: string[] }>()
 const emit = defineEmits<{ drill: [identifier: string] }>()
 
 const selected = ref(props.rules.find((r) => r.rule === props.initial)?.rule ?? props.rules[0]?.rule ?? '')
@@ -35,8 +39,29 @@ const threshold = ref<number | null>(null)
 const tacsThreshold = ref<number | null>(null)
 const page = ref(1)
 const pageSize = ref(50)
+/** One GSMA device type, or '' for all. Not offered for numbers, which have no handset. */
+const deviceType = ref('')
+const hasDeviceType = computed(() => rule.value !== undefined && rule.value.list !== 'Numbers')
 
 const list = useRiskList()
+
+// The analyses beside the list: where the threshold sits, and what the list is made of.
+const ruleName = computed(() => rule.value?.rule ?? null)
+const distribution = useRiskDistribution(ruleName)
+const typeBreakdown = useRiskDeviceTypes(computed(() => (hasDeviceType.value ? ruleName.value : null)))
+const daily = useRiskDaily(computed(() => rule.value?.list === 'Numbers'))
+const showAnalysis = ref(true)
+
+const deviceRows = computed(() => {
+  const rows = typeBreakdown.data.value?.rows ?? []
+  const total = rows.reduce((sum, r) => sum + r.entities, 0) || 1
+  return rows.map((r) => ({ key: r.deviceType, count: r.entities, percent: (100 * r.entities) / total }))
+})
+
+function filterTo(type: string) {
+  deviceType.value = deviceType.value === type ? '' : type
+  apply()
+}
 const exporter = useRiskExport()
 const result = computed(() => list.data.value ?? null)
 
@@ -54,6 +79,7 @@ function load() {
     tacsThreshold: tacsThreshold.value !== rule.value.tacsThreshold ? tacsThreshold.value : null,
     page: page.value,
     pageSize: pageSize.value,
+    deviceTypes: hasDeviceType.value && deviceType.value ? [deviceType.value] : [],
   })
 }
 
@@ -97,6 +123,7 @@ async function exportCsv() {
     view: view.value,
     threshold: threshold.value !== rule.value.threshold ? threshold.value : null,
     tacsThreshold: tacsThreshold.value !== rule.value.tacsThreshold ? tacsThreshold.value : null,
+    deviceTypes: hasDeviceType.value && deviceType.value ? [deviceType.value] : [],
   })
   saveFile(file, `risk-${rule.value.rule}-${view.value}.csv`)
 }
@@ -198,6 +225,14 @@ const kindLabel = computed(() =>
         </Button>
       </form>
 
+      <label v-if="hasDeviceType && deviceTypes.length">
+        <span :class="miniLabel">{{ rule?.list === 'Sims' ? 'Device type (of its most frequent TAC, 20 days)' : 'Device type' }}</span>
+        <select v-model="deviceType" :class="[control, 'mt-1']" @change="apply">
+          <option value="">All device types</option>
+          <option v-for="t in deviceTypes" :key="t" :value="t">{{ t }}</option>
+        </select>
+      </label>
+
       <div class="ml-auto flex items-end gap-2">
         <label>
           <span :class="miniLabel">Rows</span>
@@ -251,6 +286,58 @@ const kindLabel = computed(() =>
         evidence was set aside.
       </p>
     </div>
+
+    <section aria-label="Analysis" class="flex flex-col gap-2">
+      <button
+        type="button"
+        class="w-fit text-xs font-medium text-[var(--c-accent)] hover:underline"
+        :aria-expanded="showAnalysis"
+        @click="showAnalysis = !showAnalysis"
+      >
+        {{ showAnalysis ? 'Hide the analysis' : 'Show the analysis' }}
+      </button>
+      <div v-if="showAnalysis" class="grid gap-3" :class="hasDeviceType || rule?.list === 'Numbers' ? 'xl:grid-cols-2' : ''">
+        <div class="rounded-[var(--radius-lg)] border bg-[var(--c-surface)] p-4">
+          <h3 class="text-xs font-semibold text-[var(--c-text)]">Where the threshold sits</h3>
+          <p class="mb-2 text-2xs text-[var(--c-text-muted)]">
+            Every stored entity by its count, as of {{ distribution.data.value ? formatDate(distribution.data.value.asOf) : '…' }};
+            values under {{ rule?.floor }} are not stored. The shaded range is what the list holds.
+          </p>
+          <RiskDistributionChart v-if="distribution.data.value" :data="distribution.data.value" />
+          <p v-else class="py-10 text-center text-2xs text-[var(--c-text-muted)]">
+            {{ distribution.isError.value ? 'The distribution could not be loaded.' : 'Loading…' }}
+          </p>
+        </div>
+        <div v-if="hasDeviceType" class="rounded-[var(--radius-lg)] border bg-[var(--c-surface)]">
+          <div class="px-4 pt-4">
+            <h3 class="text-xs font-semibold text-[var(--c-text)]">What the list is made of</h3>
+            <p class="text-2xs text-[var(--c-text-muted)]">
+              Listed at the configured threshold, by GSMA device type of the
+              {{ typeBreakdown.data.value?.basis ?? 'handset' }}. Choose one to narrow the list to it.
+            </p>
+          </div>
+          <DimensionTable
+            v-if="deviceRows.length"
+            :rows="deviceRows"
+            header="Device type"
+            :unit="rule?.family === 'Sim' ? 'SIMs' : 'IMEIs'"
+            @select="filterTo"
+          />
+          <p v-else class="px-4 py-10 text-center text-2xs text-[var(--c-text-muted)]">
+            {{ typeBreakdown.isError.value ? 'Not available for this rule.' : typeBreakdown.isPending.value ? 'Loading…' : 'Nothing listed.' }}
+          </p>
+        </div>
+        <div v-if="rule?.list === 'Numbers'" class="rounded-[var(--radius-lg)] border bg-[var(--c-surface)] p-4">
+          <h3 class="text-xs font-semibold text-[var(--c-text)]">SIM changes per day</h3>
+          <p class="mb-2 text-2xs text-[var(--c-text-muted)]">
+            Numbers whose SIM changed, by day: counted, and set aside because the feed listed one of their SIMs under several
+            numbers. Shaded days were flagged by the feed-quality monitor.
+          </p>
+          <RiskDailyChart v-if="daily.data.value" :days="daily.data.value.days" />
+          <p v-else class="py-10 text-center text-2xs text-[var(--c-text-muted)]">Loading…</p>
+        </div>
+      </div>
+    </section>
 
     <p v-if="error" class="rounded-[var(--radius-md)] border px-3 py-2 text-sm text-[var(--c-text-secondary)]" role="alert">
       {{ error }}

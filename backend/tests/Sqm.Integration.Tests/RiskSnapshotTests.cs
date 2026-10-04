@@ -68,8 +68,8 @@ public sealed class RiskSnapshotTests : IAsyncLifetime
             }
 
             // sqm.tac is a view over the active GSMA version; the countable-IMEI test reads its tac column.
-            await QueryAsync($"CREATE TABLE {_database}.tac (tac String, brandName String, manufacturer String, marketingName String) ENGINE = Memory");
-            await QueryAsync($"INSERT INTO {_database}.tac VALUES ('35000001', 'Samsung', 'Samsung Korea', 'Galaxy A32')");
+            await QueryAsync($"CREATE TABLE {_database}.tac (tac String, brandName String, manufacturer String, marketingName String, deviceType String) ENGINE = Memory");
+            await QueryAsync($"INSERT INTO {_database}.tac VALUES ('35000001', 'Samsung', 'Samsung Korea', 'Galaxy A32', 'Smartphone'), ('86844006', 'Quectel', 'Quectel', 'EC200U-EU', 'Modem')");
             await QueryAsync($"INSERT INTO {_database}.tac_active (singleton, version_id, activated_at) VALUES (1, 1, now64(3))");
 
             await QueryAsync($"CREATE MATERIALIZED VIEW {_database}.mv_by_imsi TO {_database}.binding_by_imsi AS SELECT imsi, msisdn, imei, active, last_change_seq, last_change_date FROM {_database}.binding_current");
@@ -340,6 +340,14 @@ public sealed class RiskSnapshotTests : IAsyncLifetime
         Assert.Equal((5L, "35000001", "Samsung", "Galaxy A32"), (p1.ImeiLifetime?.SimsEver, p1.Tac, p1.Brand, p1.Model));
         Assert.Null(numbers.Rows[1].ImeiLifetime);
 
+        // Narrowed by GSMA device type: every handset here is a smartphone, none a modem - for a SIM, by
+        // the type of its most frequent TAC.
+        Assert.Equal(["Modem", "Smartphone"], await reader.DeviceTypesAsync(ct));
+        Assert.Equal([P1, P41], Keys(await reader.ListAsync(published, Query(RiskRule.SharedImeiNumbers30, RiskView.Risk, 1) with { DeviceTypes = ["Smartphone"] }, ct)));
+        Assert.Empty(Keys(await reader.ListAsync(published, Query(RiskRule.SharedImeiNumbers30, RiskView.Risk, 1) with { DeviceTypes = ["Modem"] }, ct)));
+        Assert.Equal([S(1)], Keys(await reader.ListAsync(published, Query(RiskRule.HighDeviceCount30, RiskView.Risk, 2) with { DeviceTypes = ["Smartphone"] }, ct)));
+        Assert.Empty(Keys(await reader.ListAsync(published, Query(RiskRule.HighDeviceCount30, RiskView.Risk, 2) with { DeviceTypes = ["Modem"] }, ct)));
+
         // Numbers: three clean change days in the 7 to 31 May, one more before the screen.
         var changes = await reader.ListAsync(published, Query(RiskRule.RepeatedSimChange7, RiskView.Risk, 2), ct);
         Assert.Equal([M(1)], Keys(changes));
@@ -366,6 +374,15 @@ public sealed class RiskSnapshotTests : IAsyncLifetime
         Assert.Equal([$"Imei:{P1}", $"Number:{M(1)}"], linked.Select(l => $"{l.Family}:{l.Key}").Order(StringComparer.Ordinal));
         Assert.Equal([S(1)], (await reader.GetLinkedAsync(published, Sqm.Domain.Risk.RiskFamily.Imei, P1, ct)).Select(l => l.Key));
         Assert.Equal([S(1)], (await reader.GetLinkedAsync(published, Sqm.Domain.Risk.RiskFamily.Number, M(1), ct)).Select(l => l.Key));
+
+        // The analyses: SIM 1 is 3 clean and 5 raw, SIM 6 is 2 and 2 - bucketed separately by each count.
+        Assert.Equal(
+            [new RiskBucket(2, 3, 1, 1), new RiskBucket(3, 5, 1, 0), new RiskBucket(5, null, 0, 1)],
+            await reader.DistributionAsync(published, RiskRule.HighDeviceCount30, [2, 3, 5], ct));
+        Assert.Equal([("Smartphone", 2L)], await reader.DeviceTypesOfListAsync(published, Query(RiskRule.SharedImeiNumbers30, RiskView.Risk, 1), ct));
+        var days = await reader.SimChangeDaysAsync(ct);
+        Assert.Equal(6, days.Count);
+        Assert.Equal(new RiskChangeDay(May(29), 1, 1, 0), days.Single(d => d.Date == May(29)));
 
         // A corrected day: the worker's fingerprint moves, and the reader computes the same one.
         await ImportAsync(store, May(31), Add(8, 8, P31[..^1] + "2"));

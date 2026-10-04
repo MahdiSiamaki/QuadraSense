@@ -53,6 +53,18 @@ public static class RiskEndpoints
             .WithName("GetRiskOverview")
             .WithSummary("Per rule, how many entities are listed and at which level. Names nobody.");
 
+        builder.MapGet("/distribution", DistributionAsync)
+            .WithName("GetRiskDistribution")
+            .WithSummary("How a rule's stored values spread, and where its threshold sits. Names nobody.");
+
+        builder.MapGet("/device-types", DeviceTypesAsync)
+            .WithName("GetRiskDeviceTypes")
+            .WithSummary("A list's entities by GSMA device type, at the configured threshold. Names nobody.");
+
+        builder.MapGet("/daily", DailyAsync)
+            .WithName("GetRiskDaily")
+            .WithSummary("Every day's SIM changes, what the screens set aside, and the flagged days. Names nobody.");
+
         builder.MapPost("/list", ListAsync)
             .WithName("ListRisk")
             .WithSummary("One page of a rule's list, judged with the rule set in force.");
@@ -86,7 +98,8 @@ public static class RiskEndpoints
             options.MaxDefectShare,
             Iso(context.State.DataThrough),
             context.State.Run is { } run ? new RiskRunInfo(Iso(run.AsOf)!, run.PublishedAt, context.State.Stale) : null,
-            [.. RiskRules.Catalogue.Select(spec => RuleInfo(spec, context))]));
+            [.. RiskRules.Catalogue.Select(spec => RuleInfo(spec, context))],
+            context.State.Deployed ? await reader.DeviceTypesAsync(ct).ConfigureAwait(false) : []));
     }
 
     private static async Task<IResult> OverviewAsync(
@@ -112,6 +125,99 @@ public static class RiskEndpoints
                 var level = !spec.Windowed || capped ? RiskLevel.Anomaly : RiskLevel.RiskSignal;
                 return new RiskOverviewRule(c.Rule.ToString(), level.ToString(), capped, c.Risk, c.DataQuality);
             })]));
+    }
+
+    private static async Task<IResult> DistributionAsync(
+        string rule, IRiskReader reader, IFeedQualityReader quality, IOptions<FeedQualityOptions> qualityOptions,
+        IOptionsMonitor<RiskOptions> riskOptions, CancellationToken ct)
+    {
+        if (!Enum.TryParse<RiskRule>(rule, ignoreCase: true, out var parsed) || !Enum.IsDefined(parsed))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["rule"] = ["Unknown rule."] });
+        }
+
+        var context = await ContextAsync(reader, quality, qualityOptions.Value, riskOptions.CurrentValue, ct).ConfigureAwait(false);
+        if (context.State.Run is not { } run || !context.State.Deployed)
+        {
+            return Unavailable(context.NotReady);
+        }
+
+        // A bucket starts exactly where the list starts, so the listed range is never half a bucket.
+        var threshold = context.Settings.Thresholds.GetValueOrDefault(parsed)?.Value;
+        var edges = RiskEvaluation.DistributionEdges(parsed, context.Options.Floors);
+        if (threshold is { } t && t + 1 > edges[0] && !edges.Contains(t + 1))
+        {
+            edges = [.. edges.Append(t + 1).Order()];
+        }
+
+        var buckets = await reader.DistributionAsync(run, parsed, edges, ct).ConfigureAwait(false);
+        var spec = RiskRules.Spec(parsed);
+
+        return Results.Ok(new RiskDistributionResponse(
+            parsed.ToString(), spec.Unit, threshold,
+            RiskEvaluation.Floor(parsed, context.Options.Floors),
+            [.. buckets.Select(b => new RiskBucketInfo(b.From, b.To, b.Clean, b.Raw))], Iso(run.AsOf)!));
+    }
+
+    private static async Task<IResult> DeviceTypesAsync(
+        string rule, IRiskReader reader, IFeedQualityReader quality, IOptions<FeedQualityOptions> qualityOptions,
+        IOptionsMonitor<RiskOptions> riskOptions, CancellationToken ct)
+    {
+        if (!Enum.TryParse<RiskRule>(rule, ignoreCase: true, out var parsed) || !Enum.IsDefined(parsed)
+            || RiskEvaluation.ListOf(parsed) == RiskList.Numbers)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["rule"] = ["A rule whose list names SIMs or IMEIs; numbers have no device type."],
+            });
+        }
+
+        var context = await ContextAsync(reader, quality, qualityOptions.Value, riskOptions.CurrentValue, ct).ConfigureAwait(false);
+        if (context.NotReady is not null || context.State.Run is not { } run)
+        {
+            return Unavailable(context.NotReady);
+        }
+
+        if (context.Settings.Thresholds.GetValueOrDefault(parsed) is not { } threshold)
+        {
+            return Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity, title: "No threshold",
+                detail: "This rule has no calibrated threshold.");
+        }
+
+        var rows = await reader.DeviceTypesOfListAsync(
+            run, new RiskListQuery(parsed, RiskView.Risk, threshold, context.Settings.MaxDefectShare, 1, 1), ct).ConfigureAwait(false);
+
+        return Results.Ok(new RiskDeviceTypesResponse(
+            parsed.ToString(),
+            RiskEvaluation.ListOf(parsed) == RiskList.Sims ? "most frequent TAC in 20 days" : "handset",
+            [.. rows.Select(r => new RiskDeviceTypeCount(r.DeviceType, r.Entities))]));
+    }
+
+    private static async Task<IResult> DailyAsync(
+        IRiskReader reader, IFeedQualityReader quality, IOptions<FeedQualityOptions> qualityOptions,
+        IOptionsMonitor<RiskOptions> riskOptions, CancellationToken ct)
+    {
+        var state = await reader.GetStateAsync(riskOptions.CurrentValue.Floors, ct).ConfigureAwait(false);
+        if (!state.Deployed)
+        {
+            return Unavailable("Risk signals are not deployed on this server (analytics migrations 023 and 024).");
+        }
+
+        var days = await reader.SimChangeDaysAsync(ct).ConfigureAwait(false);
+        if (days.Count == 0)
+        {
+            return Results.Ok(new RiskDailyResponse([]));
+        }
+
+        // Flagged days: dates and check names only, for risk.view holders who may not hold import.view.
+        var report = await FeedQualityReport.BuildAsync(quality, qualityOptions.Value, days[0].Date, days[^1].Date, ct)
+            .ConfigureAwait(false);
+        var flagged = RiskEvaluation.Flagged(report)
+            .GroupBy(f => f.Date)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<string>)[.. g.Select(f => f.Check.ToString()).Distinct()]);
+
+        return Results.Ok(new RiskDailyResponse([.. days.Select(d => new RiskChangeDayInfo(
+            Iso(d.Date)!, d.Changes, d.MultiNumber + d.Unscreened, flagged.GetValueOrDefault(d.Date) ?? []))]));
     }
 
     private static async Task<IResult> ListAsync(
@@ -396,6 +502,21 @@ public static class RiskEndpoints
             }));
         }
 
+        var types = request.DeviceTypes?.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.Ordinal).ToList() ?? [];
+        if (types.Count > 0)
+        {
+            var known = (await reader.DeviceTypesAsync(ct).ConfigureAwait(false)).ToHashSet(StringComparer.Ordinal);
+            var problem = RiskEvaluation.ListOf(rule) == RiskList.Numbers
+                ? "A list of numbers has no device type."
+                : types.FirstOrDefault(t => !known.Contains(t)) is { } unknown
+                    ? $"\"{unknown}\" is not a GSMA device type in the active version."
+                    : null;
+            if (problem is not null)
+            {
+                return (null, Results.ValidationProblem(new Dictionary<string, string[]> { ["deviceTypes"] = [problem] }));
+            }
+        }
+
         var configured = context.Settings.Thresholds.GetValueOrDefault(rule);
         var overridden = request.Threshold is not null || request.TacsThreshold is not null;
         var value = request.Threshold ?? configured?.Value;
@@ -416,7 +537,7 @@ public static class RiskEndpoints
         }
 
         var query = new RiskListQuery(
-            rule, view.Value, new RiskThreshold(threshold, tacs), context.Settings.MaxDefectShare, request.Page, request.PageSize);
+            rule, view.Value, new RiskThreshold(threshold, tacs), context.Settings.MaxDefectShare, request.Page, request.PageSize, types);
 
         return (new PreparedList(user, context, run, query, overridden, user.Can(Permissions.IdentifierReveal)), null);
     }
@@ -585,6 +706,7 @@ public static class RiskEndpoints
         {
             ["rule"] = list.Query.Rule.ToString(),
             ["view"] = ViewName(list.Query.View),
+            ["deviceTypes"] = string.Join(",", list.Query.DeviceTypes ?? []),
             ["threshold"] = list.Query.Threshold.Value,
             ["tacsThreshold"] = list.Query.Threshold.Tacs,
             ["overridden"] = list.Overridden,

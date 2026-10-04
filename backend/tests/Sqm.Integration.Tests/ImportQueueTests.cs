@@ -141,6 +141,16 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
 
             Assert.Null(await fixture.Repository.ClaimNextAsync(
                 "worker-b", TimeSpan.FromMinutes(5), ct));
+
+            // The wait is reported, with the day to import again and how many wait behind it...
+            Assert.Equal(
+                new QueueBlockage(TestSource, new DateOnly(2026, 5, 1), bad, "FAILED", 1),
+                Assert.Single(await fixture.Repository.GetBlockagesAsync(ct), b => b.SourceCode == TestSource));
+
+            // ...until that day is queued again: then it resolves itself, and nobody needs telling.
+            await fixture.Repository.EnqueueAsync(
+                TestSource, badFile.FileId, new DateOnly(2026, 5, 1), "tester", priority: 1, reprocessOfJobId: bad, ct);
+            Assert.DoesNotContain(await fixture.Repository.GetBlockagesAsync(ct), b => b.SourceCode == TestSource);
         }
         finally
         {

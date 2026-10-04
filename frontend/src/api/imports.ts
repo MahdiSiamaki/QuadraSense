@@ -181,6 +181,17 @@ export interface WorkerHealth {
   staleLeases: number
 }
 
+/** A day that did not land and holds the later days of its source back. */
+export interface QueueBlockage {
+  sourceCode: string
+  businessDate: string
+  /** The latest job for that day: the one to import again. */
+  jobId: number
+  status: 'FAILED' | 'CANCELLED'
+  /** Later days of the same source queued behind it. */
+  waiting: number
+}
+
 export interface ImportHistoryQuery {
   source?: string
   status?: string
@@ -211,6 +222,9 @@ export const importsApi = {
 
   workerHealth: (signal?: AbortSignal) =>
     api.get<WorkerHealth>('/api/v1/imports/worker-health', undefined, signal),
+
+  blockages: (signal?: AbortSignal) =>
+    api.get<QueueBlockage[]>('/api/v1/imports/blockages', undefined, signal),
 
   cancel: (jobId: number) => api.post<void>(`/api/v1/imports/${jobId}/cancel`, {}),
 

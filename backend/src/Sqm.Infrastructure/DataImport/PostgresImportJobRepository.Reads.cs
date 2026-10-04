@@ -408,6 +408,42 @@ public sealed partial class PostgresImportJobRepository
             .ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<QueueBlockage>> GetBlockagesAsync(CancellationToken ct)
+    {
+        // The claim's own rule, asked the other way round: an earlier day with no landed job holds
+        // back every later queued day of its source. Reported only when nothing for that day is
+        // queued or running - once it is being imported again, the wait ends on its own.
+        const string Sql = """
+            SELECT b.source_code AS SourceCode, b.business_date AS BusinessDate, b.id AS JobId,
+                   b.status::text AS Status,
+                   (SELECT count(*)::int FROM imports.import_job q
+                     WHERE q.source_code = b.source_code
+                       AND q.status IN ('QUEUED', 'RETRYING')
+                       AND q.business_date > b.business_date) AS Waiting
+              FROM (SELECT DISTINCT ON (source_code, business_date) id, source_code, business_date, status
+                      FROM imports.import_job
+                     WHERE business_date IS NOT NULL
+                     ORDER BY source_code, business_date, id DESC) AS b
+             WHERE b.status IN ('FAILED', 'CANCELLED')
+               AND NOT EXISTS (SELECT 1 FROM imports.import_job landed
+                                WHERE landed.source_code = b.source_code
+                                  AND landed.business_date = b.business_date
+                                  AND landed.status IN ('COMPLETED', 'PARTIALLY_COMPLETED'))
+               AND EXISTS (SELECT 1 FROM imports.import_job q
+                            WHERE q.source_code = b.source_code
+                              AND q.status IN ('QUEUED', 'RETRYING')
+                              AND q.business_date > b.business_date)
+             ORDER BY b.source_code, b.business_date
+            """;
+
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        var rows = await connection.QueryAsync<(string SourceCode, DateTime BusinessDate, long JobId, string Status, int Waiting)>(
+            Command(Sql, null, ct)).ConfigureAwait(false);
+
+        return [.. rows.Select(r => new QueueBlockage(r.SourceCode, DateOnly.FromDateTime(r.BusinessDate), r.JobId, r.Status, r.Waiting))];
+    }
+
     /// <summary>Formats a byte count for a log or event message.</summary>
     internal static string FormatBytes(long bytes) => bytes switch
     {

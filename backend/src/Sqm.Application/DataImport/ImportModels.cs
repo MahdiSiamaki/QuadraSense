@@ -324,6 +324,19 @@ public sealed record WorkerHealth(
     public bool Stalled => Queued > 0 && ActiveWorkers == 0;
 }
 
+/// <summary>A day that did not land and holds the later days of its source back.</summary>
+/// <remarks>
+/// Days of a source are imported in order, so that no day is folded over a gap; a failed or cancelled
+/// day therefore stops every later one until it is imported again or deleted. Nothing about that is
+/// wrong - but a queue that waits for a reason nobody can see looks like a broken worker.
+/// </remarks>
+/// <param name="SourceCode">The source.</param>
+/// <param name="BusinessDate">The day that did not land.</param>
+/// <param name="JobId">Its latest job, the one to import again.</param>
+/// <param name="Status">That job's status: FAILED or CANCELLED.</param>
+/// <param name="Waiting">Later days of the same source queued behind it.</param>
+public sealed record QueueBlockage(string SourceCode, DateOnly BusinessDate, long JobId, string Status, int Waiting);
+
 /// <summary>What an activation changed.</summary>
 /// <param name="TacVersionId">The operational row that is now active.</param>
 /// <param name="AnalyticsVersionId">The version number the analytics store must point at.</param>

@@ -1,6 +1,6 @@
 # ADR-014: Risk signals - levels, measures and thresholds
 
-- **Status:** Accepted for the design; **thresholds pending** the product owner's review capacity per list
+- **Status:** Accepted. Thresholds cut on 2026-10-05 (see "The cut")
 - **Date:** 2026-10-02
 - **Decided by:** the product owner (levels, feed-defect handling, SIM-change definition, no score,
   versioned configuration with a review-capacity cut, who may see it - all on 2026-10-02)
@@ -85,6 +85,37 @@ lookup permission of the unit it names; `identifier.reveal` decides masking; exp
 never an identifier. A top-level "Risk signals" page after Explorer, and a risk section in the
 entity panel.
 
+## The cut, 2026-10-05
+
+On 2026-10-05 the product owner delegated the three open choices ("set everything you asked according
+to your own judgement"). Decided, and why:
+
+- **Review capacity: about 500 entities per list.** Each threshold is the smallest value that lists at
+  most 500 entities in the clean reference window (2026-06-02..07-01); the all-time rules, which have
+  no reference window, are cut the same way on run 1790938349551. 500 is a list one analyst can work
+  through in a week and still big enough to show a pattern; it is a configuration value, and the
+  curves above say what any other capacity would mean.
+- **`MaxDefectShare` = 0.5.** The reason shown for a not-assessable entity says "most of its evidence
+  was set aside"; 0.5 makes that sentence true. M5 found no natural break to prefer another value.
+- **Modules are judged with phones**, one threshold per rule, and the lists offer a device-type filter.
+  A separate threshold per device type would need a capacity per type and has no measured basis that
+  modules are benign; the filter lets an analyst set them apart without the rules pretending to know.
+
+| Rule | More than | Listed, reference | Listed, recent (capped at Anomaly) |
+|---|---:|---:|---:|
+| SharedImeiSims30 | 283 | 500 | 581 |
+| SharedImeiNumbers30 | 283 | 500 | 579 |
+| SharedImeiSimsEver | 1,564 | 500 (as of the run) | - |
+| SharedImeiSimsNotRemoved | 77 | 500 (as of the run) | - |
+| HighDeviceCount30 | 188 | 493 | 423 |
+| RapidDeviceChange7 | 49 | 488 | 616 |
+| Randomisation20 | 98 IMEIs and 49 TACs | 486 | 546 |
+| RepeatedSimChange7 | 2 days | 49 | 1,556 |
+
+RepeatedSimChange7 is the exception to "about 500": more than one day would list 550, over the
+capacity, so the cut is more than two. Every recent window is capped at Anomaly while the feed defects
+last, so these lists show anomalies until corrected files arrive.
+
 ## Measured on the real data, 2026-10-02
 
 ### M1 - Reference window
@@ -147,14 +178,80 @@ dashboard's `agg_sim_change_daily` on every day: **0 of 233 days differ, 0 dupli
 aside; from 2026-08-04 to 09-05 and from 09-16 on it is 60-80%. There is also a smaller episode
 from 2026-04-14 to 05-05 (20-59% set aside), before the documented defect - noted, not explained.
 
-### M5 - Residual inflation after the screens (partial)
+### M5 - Residual inflation after the screens
 
 The screens bring the recent tails back to the reference above about 15 (SIM side, over 20: 52,662
 recent against 63,112 reference; raw would be 152,288). Below that, recent is still higher - IMEIs
 by SIMs over 10: 291,528 against 177,312 - and numbers changing SIM on more than one day of a week
 are 36 times the reference after the screens. **The family caps stay**, as decided: the residual is
-real, and a cut from the reference would list feed defects as behaviour. `MaxDefectShare` is still
-unset (no entity is excluded by share) until the per-entity share distribution is measured.
+real, and a cut from the reference would list feed defects as behaviour.
+
+**The share of each entity's adds set aside** (measured 2026-10-05 on run 1790938349551, the 30 days to
+2026-09-26), for the entities a list could name:
+
+| share set aside | SIMs over 20 IMEIs | SIMs over 50 | IMEIs over 20 SIMs | IMEIs over 50 |
+|---|---:|---:|---:|---:|
+| 0-9% | 45,069 | 6,576 | 44,143 | 6,912 |
+| 10-49% | 6,136 | 589 | 14,319 | 1,441 |
+| 50-100% | 1,457 | 29 | 125 | 21 |
+
+There is no natural break to cut at: most candidates have little set aside, and the rest spread
+evenly. `MaxDefectShare` is still unset, which means 1.0 - nothing is "not assessable" - while the
+reason that would be shown says "most of this entity's evidence was set aside". Setting it to 0.5
+would make the word true and move 1,457 SIMs and 125 IMEIs over 20 to the data-quality view; it was set
+to 0.5 on 2026-10-05 (see "The cut"). For numbers the share is bimodal: 442,551
+numbers had every change day of the last week set aside, 151,407 almost none.
+
+### M6 - Serial structure of the top SIMs
+
+For the SIMs added to more than 100 IMEIs, the best (SIM, TAC) "fill" - IMEIs over the span of their
+serial numbers, TACs with at least 10 IMEIs:
+
+| fill | SIMs | IMEIs between them |
+|---|---:|---:|
+| dense, 0.5 or more | 1 | 1,114 |
+| 0.1-0.5 | 4 | 688 |
+| 0.01-0.1 | 74 | 32,992 |
+| scattered, under 0.01 | 479 | 107,909 |
+
+Not a production line: the serials are scattered. The very top SIMs take two shapes. One spans a
+dozen unrelated old models - HUAWEI U8860, iPhone 4S, SGH-L288 - about 500 IMEIs each at fill 0.001: the
+randomisation shape. The others sit on one or two **cellular module** models, thousands of IMEIs each
+(Quectel EC200U-EU, M66; SIMCom SIM800C). Serial fill stays descriptive; it separates nothing that the
+TAC count does not.
+
+### M3 by device type - the top of the lists is not phones
+
+GSMA's device type of the handset (IMEI lists), and of the SIM's most frequent TAC in 20 days (SIM
+list), clean counts:
+
+| more than | IMEIs by SIMs: 20 | 100 | 300 | SIMs by IMEIs: 20 | 100 | 300 |
+|---|---:|---:|---:|---:|---:|---:|
+| Smartphone | 48,286 | 1,199 | 111 | 46,079 | 1,006 | 29 |
+| Modem | 5,994 | 405 | 58 | 3,919 | 440 | 111 |
+| Feature phone | 1,025 | 256 | 136 | 495 | 14 | 4 |
+| Handheld | 786 | 268 | 105 | 134 | 5 | 3 |
+| Dongle, IoT, router, module, other | 2,496 | 319 | 131 | 2,035 | 172 | 31 |
+
+Under 50 the lists are smartphones. Above 100 they are not: for SIMs added to more than 300 IMEIs, 111
+of 172 are on modems. One threshold for every device type will fill the far end of the SIM list with
+modules, whose provisioning may share a SIM legitimately. Modules are judged with phones, and the lists
+offer a device-type filter (see "The cut").
+
+### M12 - Precision of the shifted-IMEI exclusion
+
+On 2026-09-20, 1,029,724 distinct shifted-shape IMEIs were added. For **99.9%** (1,028,902) the restored
+IMEI - the dropped digit put back - is an IMEI the feed already knew, 96.2% from before 15 September.
+They are the same handsets, so excluding them avoids counting a handset twice. On the clean reference
+days 0.087% of rows have the shape by chance (202,793 of 232,525,690); they are excluded on every day
+alike, so reference and recent windows stay comparable.
+
+The exclusion has a cost after 15 September, and it is stated so it is not mistaken for none: a real
+new pairing of a SIM with a handset that arrives under a shifted IMEI is not counted at all. Only 11%
+of 09-20's shifted (SIM, IMEI) pairs had the SIM already bound to the restored IMEI, so most of them
+are new pairings. Recent IMEIs-per-SIM counts are therefore **under**counted - a further reason the
+SIM family stays capped while the defect lasts. Repairing the IMEIs would fix it; the feed-quality
+decision was to repair nothing and wait for corrected files (15-feed-quality.md).
 
 ### M7, M8 - Cost and size of a snapshot run
 
@@ -218,17 +315,41 @@ The overview's counts for all eight rules: 1.1 s. One entity: 11-36 ms. Its boun
 pattern: 214 ms for the SIM added to the most IMEIs in the window (4,107 of them, none with stored
 measures - checked directly). At calibrated thresholds every list is smaller than these.
 
-## Not measured yet
+### M10 - Day profile: why there is no day-anomaly strip
 
-M6 (serial structure of the top SIMs), M10 (day profile; the day-anomaly strip is not built), M11
-(feed toggling on a clean window), M12 (precision of the shifted-IMEI exclusion), and the
-per-entity share set aside that `MaxDefectShare` would be cut from (part of M5). None blocks the
-lists; each is named here so it is not mistaken for done.
+Each day's SIM changes and handset changes per 1,000 rows of the file, against the median of the
+feed-quality reference days (2026-01-26..07-26, 172 days with data):
+
+| measure | reference median | days over x3 | x5 | x10 | of those x3 days, before 2026-07-27 |
+|---|---:|---:|---:|---:|---|
+| SIM changes, raw | 0.34 | 58 | 39 | 24 | 02-28, 04-27, 04-28, 04-29, 05-03 |
+| SIM changes, clean | 0.33 | 22 | 11 | 0 | 02-28 (x3.1) |
+| handset changes | 26.26 | 0 | 0 | 0 | - |
+
+At x5 every flagged day lies inside the feed-defect period; the clean ones are 08-23 and every day from
+09-17 (x5.9-x8.0). A day-anomaly strip would repeat, day for day, what the feed-quality monitor already
+flags and the Rules tab already shows - so it is not built. Two things it would add are recorded here
+instead: SIM changes stay six to eight times ordinary from 17 September **after** the multi-number
+screen - the residual that keeps numbers capped - and handset changes never move three-fold on any
+day, defects included.
+
+### M11 - Toggling in a clean week
+
+One in 64 SIMs, 2026-06-25..07-01: 339,699 (SIM, IMEI) pairs were added by 381,723 adds. **11.0% of adds
+repeat a pair already added that week**, and 69.4% of adds are on a pair the feed also removed that
+week. Counting adds would inflate every measure by the feed's own churn; the measures count distinct
+IMEIs, SIMs and numbers, which is what this confirms. How the operator generates adds and removes - most
+added pairs are removed again within the week - is a question for the operator, not something the
+counts can settle.
+
+## Not measured
+
+Nothing planned in M0-M12 is left.
 
 ## Consequences
 
-- Nothing is listed as a risk until the owner gives a review capacity per list and thresholds are
-  set from the curves above, with this ADR updated to record the cut.
+- Thresholds live in the API's `Risk` configuration section with the cut above; a change goes through
+  reviewed configuration, and its version hash appears in every reason and audit entry.
 - With the current feed, every list is capped at Anomaly. Corrected files for 2026-07-27..09-26 are
   the way out; the capacity cut does not change that.
 - A late or corrected day, a GSMA activation or a floor change makes the published measures stale,
