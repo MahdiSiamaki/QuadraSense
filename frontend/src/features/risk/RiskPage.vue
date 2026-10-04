@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { CHECK_LABELS, RULE_TITLES, useRiskOverview, useRiskStatus, type RiskListKind, type RiskRule } from '@/api/risk'
+import { CHECK_LABELS, RULE_TITLES, useRiskDaily, useRiskOverview, useRiskStatus, type RiskListKind, type RiskRule } from '@/api/risk'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import Card from '@/design-system/Card.vue'
 import { Permission, useAuth } from '@/features/auth/useAuth'
@@ -10,6 +10,7 @@ import TimelineView from '@/features/timeline/TimelineView.vue'
 import { formatDate, formatDateTime, formatFull } from '@/lib/format'
 import RiskLevelBadge from './RiskLevelBadge.vue'
 import RiskListView from './RiskListView.vue'
+import RiskDailyChart from './RiskDailyChart.vue'
 
 /**
  * Risk signals: who is out of line, by which rule, on how much clean evidence.
@@ -23,6 +24,7 @@ const { can } = useAuth()
 const status = useRiskStatus()
 const data = computed(() => status.data.value ?? null)
 const overview = useRiskOverview(() => data.value?.ready === true)
+const daily = useRiskDaily(() => data.value?.ready === true)
 
 type Tab = 'overview' | 'imei' | 'sim' | 'number' | 'rules'
 
@@ -154,7 +156,8 @@ function drill(identifier: string) {
         <div class="grid items-start gap-5" :class="current ? 'xl:grid-cols-[minmax(0,1fr)_24rem]' : ''">
           <div class="min-w-0">
             <!-- Overview: counts only, naming nobody. -->
-            <div v-if="tab === 'overview'" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div v-if="tab === 'overview'" class="flex flex-col gap-3">
+            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Card v-for="r in data.rules" :key="r.rule" :title="RULE_TITLES[r.rule] ?? r.rule">
                 <div class="flex flex-col gap-2 text-xs">
                   <template v-if="counts.get(r.rule)">
@@ -170,10 +173,26 @@ function drill(identifier: string) {
                     </button>
                   </template>
                   <p v-else class="text-[var(--c-text-muted)]">
-                    {{ r.threshold === null ? 'Not calibrated: nothing is judged.' : 'Not available.' }}
+                    {{
+                      r.threshold === null
+                        ? 'Not calibrated: nothing is judged.'
+                        : overview.isPending.value || overview.isFetching.value
+                          ? 'Loading…'
+                          : 'Not available.'
+                    }}
                   </p>
                 </div>
               </Card>
+            </div>
+            <Card
+              title="SIM changes per day"
+              subtitle="Numbers whose SIM changed: counted, and set aside as feed defects. Shaded days were flagged by the feed-quality monitor."
+            >
+              <RiskDailyChart v-if="daily.data.value" :days="daily.data.value.days" />
+              <p v-else class="py-10 text-center text-2xs text-[var(--c-text-muted)]">
+                {{ daily.isError.value ? 'Not available.' : 'Loading…' }}
+              </p>
+            </Card>
             </div>
 
             <RiskListView

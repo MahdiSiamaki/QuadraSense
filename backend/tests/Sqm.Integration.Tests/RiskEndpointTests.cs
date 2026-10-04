@@ -69,6 +69,11 @@ public sealed class RiskEndpointTests : IClassFixture<WebApplicationFactory<Prog
                 "GetEntityAsync" => Task.FromResult<RiskEntityMeasures?>(Measures()),
                 "GetLinkedAsync" => Task.FromResult<IReadOnlyList<RiskEntityMeasures>>(_linked),
                 "DeviceTypesAsync" => Task.FromResult<IReadOnlyList<string>>(["Modem", "Smartphone"]),
+                "DistributionAsync" => Task.FromResult<IReadOnlyList<RiskBucket>>(
+                    [.. ((IReadOnlyList<long>)args[2]!).Select((e, i) => new RiskBucket(e, null, i, null))]),
+                "DeviceTypesOfListAsync" => Task.FromResult<IReadOnlyList<(string, long)>>([("Modem", 7), ("Smartphone", 5)]),
+                "SimChangeDaysAsync" => Task.FromResult<IReadOnlyList<RiskChangeDay>>(
+                    [new RiskChangeDay(AsOf.AddDays(-1), 100, 60, 0), new RiskChangeDay(AsOf, 90, 0, 0)]),
                 _ => throw new NotSupportedException(method.Name),
             }));
         }));
@@ -300,6 +305,30 @@ public sealed class RiskEndpointTests : IClassFixture<WebApplicationFactory<Prog
 
         var (_, state, _) = await SendAsync(HttpMethod.Get, "/api/v1/risk/status");
         Assert.Equal(["Modem", "Smartphone"], state.GetProperty("deviceTypes").EnumerateArray().Select(e => e.GetString()));
+    }
+
+    [Fact]
+    public async Task The_analyses_name_nobody_and_place_the_threshold()
+    {
+        _flagged = AsOf;
+
+        var (status, distribution, _) = await SendAsync(HttpMethod.Get, "/api/v1/risk/distribution?rule=HighDeviceCount30");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal((20L, 6), (distribution.GetProperty("threshold").GetInt64(), distribution.GetProperty("floor").GetInt32()));
+        Assert.Equal(6, distribution.GetProperty("buckets")[0].GetProperty("from").GetInt64());
+
+        var (_, types, _) = await SendAsync(HttpMethod.Get, "/api/v1/risk/device-types?rule=HighDeviceCount30");
+        Assert.Equal("most frequent TAC in 20 days", types.GetProperty("basis").GetString());
+        Assert.Equal("Modem", types.GetProperty("rows")[0].GetProperty("deviceType").GetString());
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync(HttpMethod.Get, "/api/v1/risk/device-types?rule=RepeatedSimChange7")).Status);
+
+        var (_, daily, _) = await SendAsync(HttpMethod.Get, "/api/v1/risk/daily");
+        var last = daily.GetProperty("days")[1];
+        Assert.Equal(("2026-09-26", 90L, "ShiftedImei"), (last.GetProperty("date").GetString(), last.GetProperty("changes").GetInt64(), last.GetProperty("flagged")[0].GetString()));
+        Assert.Equal(60, daily.GetProperty("days")[0].GetProperty("setAside").GetInt64());
+
+        _held = [Permissions.LookupImsi];
+        Assert.Equal(HttpStatusCode.Forbidden, (await SendAsync(HttpMethod.Get, "/api/v1/risk/daily")).Status);
     }
 
     [Fact]

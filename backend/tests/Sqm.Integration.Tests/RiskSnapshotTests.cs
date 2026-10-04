@@ -375,6 +375,15 @@ public sealed class RiskSnapshotTests : IAsyncLifetime
         Assert.Equal([S(1)], (await reader.GetLinkedAsync(published, Sqm.Domain.Risk.RiskFamily.Imei, P1, ct)).Select(l => l.Key));
         Assert.Equal([S(1)], (await reader.GetLinkedAsync(published, Sqm.Domain.Risk.RiskFamily.Number, M(1), ct)).Select(l => l.Key));
 
+        // The analyses: SIM 1 is 3 clean and 5 raw, SIM 6 is 2 and 2 - bucketed separately by each count.
+        Assert.Equal(
+            [new RiskBucket(2, 3, 1, 1), new RiskBucket(3, 5, 1, 0), new RiskBucket(5, null, 0, 1)],
+            await reader.DistributionAsync(published, RiskRule.HighDeviceCount30, [2, 3, 5], ct));
+        Assert.Equal([("Smartphone", 2L)], await reader.DeviceTypesOfListAsync(published, Query(RiskRule.SharedImeiNumbers30, RiskView.Risk, 1), ct));
+        var days = await reader.SimChangeDaysAsync(ct);
+        Assert.Equal(6, days.Count);
+        Assert.Equal(new RiskChangeDay(May(29), 1, 1, 0), days.Single(d => d.Date == May(29)));
+
         // A corrected day: the worker's fingerprint moves, and the reader computes the same one.
         await ImportAsync(store, May(31), Add(8, 8, P31[..^1] + "2"));
         Assert.NotNull((await reader.GetStateAsync(settings.Floors, ct)).Stale);

@@ -106,6 +106,20 @@ public sealed record RiskListQuery(
     RiskRule Rule, RiskView View, RiskThreshold Threshold, double MaxDefectShare, int Page, int PageSize,
     IReadOnlyList<string>? DeviceTypes = null);
 
+/// <summary>Entities whose value falls in [From, To).</summary>
+/// <param name="From">Lower bound, inclusive.</param>
+/// <param name="To">Upper bound, exclusive; null for the last bucket.</param>
+/// <param name="Clean">Entities by the clean count.</param>
+/// <param name="Raw">Entities by the count before the screens; null when the rule has no raw count.</param>
+public sealed record RiskBucket(long From, long? To, long Clean, long? Raw);
+
+/// <summary>One day's SIM changes, and how many the screens set aside.</summary>
+/// <param name="Date">The day.</param>
+/// <param name="Changes">Numbers whose SIM changed that day.</param>
+/// <param name="MultiNumber">Of those, set aside: the feed listed one of their SIMs under several numbers.</param>
+/// <param name="Unscreened">Of those, set aside because the day's feed quality was not measured.</param>
+public sealed record RiskChangeDay(DateOnly Date, long Changes, long MultiNumber, long Unscreened);
+
 /// <summary>How many entities a rule lists, in each view.</summary>
 public sealed record RiskRuleCount(RiskRule Rule, long Risk, long DataQuality);
 
@@ -117,6 +131,15 @@ public interface IRiskReader
 
     /// <summary>One page of a rule's list, largest value first.</summary>
     Task<RiskListPage> ListAsync(RiskPublishedRun run, RiskListQuery query, CancellationToken ct);
+
+    /// <summary>How the rule's stored values spread over the buckets that start at <paramref name="edges"/>.</summary>
+    Task<IReadOnlyList<RiskBucket>> DistributionAsync(RiskPublishedRun run, RiskRule rule, IReadOnlyList<long> edges, CancellationToken ct);
+
+    /// <summary>The entities a list holds, by GSMA device type. Empty for numbers.</summary>
+    Task<IReadOnlyList<(string DeviceType, long Entities)>> DeviceTypesOfListAsync(RiskPublishedRun run, RiskListQuery query, CancellationToken ct);
+
+    /// <summary>Every day's SIM changes and how many were set aside, oldest first.</summary>
+    Task<IReadOnlyList<RiskChangeDay>> SimChangeDaysAsync(CancellationToken ct);
 
     /// <summary>The GSMA device types a list can be narrowed to, as the active GSMA version names them.</summary>
     Task<IReadOnlyList<string>> DeviceTypesAsync(CancellationToken ct);
@@ -217,6 +240,22 @@ public static class RiskEvaluation
         }
 
         return new RiskEvidence(entity.Family, measures, adds, aside);
+    }
+
+    /// <summary>
+    /// Bucket edges for a rule's distribution: its storage floor, then steps that keep a long tail
+    /// readable. Number lists count days in a week, so every value is its own bucket.
+    /// </summary>
+    public static IReadOnlyList<long> DistributionEdges(RiskRule rule, RiskFloorOptions floors)
+    {
+        if (ListOf(rule) == RiskList.Numbers)
+        {
+            return [1, 2, 3, 4, 5, 6, 7];
+        }
+
+        long[] steps = [10, 15, 20, 30, 50, 75, 100, 150, 200, 300, 500, 1_000, 1_500, 2_000, 5_000, 10_000];
+        var floor = Floor(rule, floors);
+        return [floor, .. steps.Where(s => s > floor)];
     }
 
     /// <summary>Every check the feed-quality monitor flagged, day by day.</summary>

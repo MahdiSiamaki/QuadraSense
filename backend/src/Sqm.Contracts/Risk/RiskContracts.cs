@@ -117,6 +117,42 @@ public sealed record RiskListResponse(
     IReadOnlyList<RiskColumnInfo> Columns, IReadOnlyList<RiskListRow> Rows,
     long Total, long Reachable, int Page, int PageSize, bool Masked, string RuleSetVersion, string AsOf, long ElapsedMs);
 
+/// <summary>Entities whose value falls in [From, To). Names nobody.</summary>
+/// <param name="From">Lower bound, inclusive.</param>
+/// <param name="To">Upper bound, exclusive; null for the last bucket.</param>
+/// <param name="Clean">Entities by the clean count.</param>
+/// <param name="Raw">Entities by the count before the screens; null when the rule has none.</param>
+public sealed record RiskBucketInfo(long From, long? To, long Clean, long? Raw);
+
+/// <summary>How a rule's stored values spread, and where its threshold sits.</summary>
+/// <param name="Rule">The rule.</param>
+/// <param name="Unit">What is counted.</param>
+/// <param name="Threshold">The configured threshold.</param>
+/// <param name="Floor">Values below it are not stored, so the first bucket starts there.</param>
+/// <param name="Buckets">The buckets, lowest first.</param>
+/// <param name="AsOf">yyyy-MM-dd the measures are as of.</param>
+public sealed record RiskDistributionResponse(
+    string Rule, string Unit, long? Threshold, int Floor, IReadOnlyList<RiskBucketInfo> Buckets, string AsOf);
+
+/// <summary>A list's entities by GSMA device type, at the configured threshold. Names nobody.</summary>
+/// <param name="Rule">The rule.</param>
+/// <param name="Basis">What the type is of: "handset" for IMEI lists, "most frequent TAC in 20 days" for SIM lists.</param>
+/// <param name="Rows">Device type and entities, largest first.</param>
+public sealed record RiskDeviceTypesResponse(string Rule, string Basis, IReadOnlyList<RiskDeviceTypeCount> Rows);
+
+/// <summary>Entities of one device type.</summary>
+public sealed record RiskDeviceTypeCount(string DeviceType, long Entities);
+
+/// <summary>One day's SIM changes, and what the screens set aside.</summary>
+/// <param name="Date">yyyy-MM-dd.</param>
+/// <param name="Changes">Numbers whose SIM changed that day.</param>
+/// <param name="SetAside">Of those, set aside as feed defects or unscreened.</param>
+/// <param name="Flagged">The feed-quality checks that flagged the day, if any.</param>
+public sealed record RiskChangeDayInfo(string Date, long Changes, long SetAside, IReadOnlyList<string> Flagged);
+
+/// <summary>Every day's SIM changes. Names nobody.</summary>
+public sealed record RiskDailyResponse(IReadOnlyList<RiskChangeDayInfo> Days);
+
 /// <summary>Whose risk measures. In the body, never the URL.</summary>
 /// <param name="Identifier">A phone number (10 digits), a SIM (15) or a handset (14).</param>
 public sealed record RiskEntityRequest(string Identifier);

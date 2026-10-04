@@ -139,6 +139,57 @@ export interface RiskEntity {
   linked: { family: RiskFamily; stored: number; riskSignals: number; anomalies: number }[]
 }
 
+/** How a rule's stored values spread. Names nobody. */
+export interface RiskDistribution {
+  rule: string
+  unit: string
+  threshold: number | null
+  floor: number
+  buckets: { from: number; to: number | null; clean: number; raw: number | null }[]
+  asOf: string
+}
+
+export interface RiskDeviceTypes {
+  rule: string
+  /** "handset" for IMEI lists; "most frequent TAC in 20 days" for SIM lists. */
+  basis: string
+  rows: { deviceType: string; entities: number }[]
+}
+
+export interface RiskChangeDay {
+  date: string
+  changes: number
+  setAside: number
+  flagged: string[]
+}
+
+export function useRiskDistribution(rule: MaybeRefOrGetter<string | null>) {
+  return useQuery({
+    queryKey: computed(() => ['risk', 'distribution', toValue(rule)]),
+    queryFn: ({ signal }) => api.get<RiskDistribution>('/api/v1/risk/distribution', { rule: toValue(rule) }, signal),
+    enabled: computed(() => !!toValue(rule)),
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function useRiskDeviceTypes(rule: MaybeRefOrGetter<string | null>) {
+  return useQuery({
+    queryKey: computed(() => ['risk', 'device-types', toValue(rule)]),
+    queryFn: ({ signal }) => api.get<RiskDeviceTypes>('/api/v1/risk/device-types', { rule: toValue(rule) }, signal),
+    enabled: computed(() => !!toValue(rule)),
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function useRiskDaily(enabled: MaybeRefOrGetter<boolean> = true) {
+  return useQuery({
+    queryKey: ['risk', 'daily'],
+    queryFn: ({ signal }) => api.get<{ days: RiskChangeDay[] }>('/api/v1/risk/daily', undefined, signal),
+    enabled: computed(() => toValue(enabled)),
+    staleTime: 5 * 60_000,
+  })
+}
+
 export function useRiskStatus(enabled: MaybeRefOrGetter<boolean> = true) {
   return useQuery({
     queryKey: ['risk', 'status'],
