@@ -238,6 +238,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
       <h1 class="text-xl font-semibold tracking-tight">Devices</h1>
       <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
         Every device model on the network, by name or by any identifier.
+        <RouterLink to="/devices/new-models" class="ml-1 text-[var(--c-accent)] hover:underline">New models →</RouterLink>
       </p>
     </header>
 

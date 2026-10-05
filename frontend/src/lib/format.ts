@@ -162,6 +162,14 @@ export function formatDate(iso: string | null): string {
   }).format(new Date(`${iso}T00:00:00Z`))
 }
 
+/** "Feb 2026" — a calendar month, given its first day. */
+export function formatMonth(iso: string | null): string {
+  if (!iso) return '—'
+  return new Intl.DateTimeFormat(LOCALE, { year: 'numeric', month: 'short', timeZone: UTC }).format(
+    new Date(`${iso}T00:00:00Z`),
+  )
+}
+
 const relative = new Intl.RelativeTimeFormat(LOCALE, { numeric: 'auto' })
 
 /**
