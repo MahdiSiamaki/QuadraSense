@@ -83,6 +83,13 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Risk signals', permission: Permission.RiskView },
   },
   {
+    // Counts and rates only: behind import.view, as the feed-quality figures it sits beside.
+    path: '/quality',
+    name: 'data-quality',
+    component: () => import('@/features/quality/DataQualityPage.vue'),
+    meta: { title: 'Data quality', permission: Permission.ImportView },
+  },
+  {
     path: '/lookup',
     name: 'lookup',
     component: () => import('@/features/lookup/LookupPage.vue'),

@@ -71,3 +71,58 @@ export function flaggedDays(response: FeedQualityResponse | undefined): Map<stri
   }
   return out
 }
+
+/* Mirrors Sqm.Contracts.Quality.QualitySignalsResponse. */
+
+export type QualityGroup = 'identifiers' | 'sequences' | 'lifetimes'
+
+export interface QualityBase {
+  code: 'all' | 'active' | 'history_all'
+  label: string
+  bindings: number
+  numbers: number
+  /** Estimated (uniq). */
+  sims: number
+  /** Estimated (uniq). */
+  imeis: number
+}
+
+export interface QualitySignal {
+  code: string
+  group: QualityGroup
+  label: string
+  meaning: string
+  base: QualityBase['code']
+  bindings: number
+  numbers: number
+  /** Estimated (uniq). */
+  sims: number
+  /** Estimated (uniq). */
+  imeis: number
+  /** For a history category, how often it happened; 0 for current state. */
+  periods: number
+  /** Bindings over the base's bindings, 0 to 1. */
+  share: number | null
+}
+
+export interface QualitySignalsResponse {
+  available: boolean
+  reason: string | null
+  runId: number | null
+  asOf: string | null
+  publishedAt: string | null
+  bases: QualityBase[]
+  categories: QualitySignal[]
+}
+
+/**
+ * The data-quality categories of the newest published measures run. They change only when the
+ * worker publishes a run, at most a few times a day.
+ */
+export function useQualitySignals() {
+  return useQuery({
+    queryKey: ['quality-signals'],
+    queryFn: ({ signal }) => api.get<QualitySignalsResponse>('/api/v1/quality/signals', undefined, signal),
+    staleTime: 10 * 60_000,
+  })
+}
