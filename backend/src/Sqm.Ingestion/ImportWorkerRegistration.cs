@@ -121,6 +121,9 @@ public static class ImportWorkerRegistration
         // Each day's SIM changes as rows for the risk pages, after feed quality has screened them.
         services.TryAddSingleton<RiskDayStep>();
 
+        // Each day's per-model counts for new models and network age (analytics migration 025).
+        services.TryAddSingleton<TacDayStep>();
+
         // Rebuilt once per run of files; the worker settles what a stopped run left owed.
         services.TryAddSingleton<DashboardSnapshot>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IIdleTask, DashboardSnapshot>(

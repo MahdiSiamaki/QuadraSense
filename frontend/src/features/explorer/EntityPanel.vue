@@ -7,6 +7,7 @@ import Button from '@/design-system/Button.vue'
 import Card from '@/design-system/Card.vue'
 import { Permission, useAuth } from '@/features/auth/useAuth'
 import RiskEntityCard from '@/features/risk/RiskEntityCard.vue'
+import { networkAgeText } from '@/api/modelArrivals'
 import { formatDate, formatFull, formatImei, formatMsisdn } from '@/lib/format'
 import { INITIAL_DUMP } from '@/lib/initial-dump'
 import { daysBefore } from './model'
@@ -159,6 +160,13 @@ function history() {
                 </span>
               </template>
               <template v-else>{{ formatDate(data.firstSeen) }}</template>
+              <span
+                v-if="data.networkAgeDays !== null"
+                class="block text-2xs font-normal text-[var(--c-text-muted)]"
+                title="Days since first seen in this data. Not the age of the handset, SIM or number."
+              >
+                network age {{ networkAgeText(data.networkAgeDays, data.firstSeenIsDumpWindow) }}
+              </span>
             </dd>
           </div>
           <div>

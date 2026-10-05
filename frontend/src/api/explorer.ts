@@ -170,6 +170,8 @@ export interface EntitySummary {
   firstSeen: string | null
   /** firstSeen stands for the initial dump's window, not a known day. */
   firstSeenIsDumpWindow: boolean
+  /** Days since first seen in this data - not an age; a lower bound when first seen is the dump. */
+  networkAgeDays: number | null
 }
 
 const SAVED_KEY = ['explorer', 'saved'] as const

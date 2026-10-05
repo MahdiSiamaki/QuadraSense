@@ -37,7 +37,7 @@ public sealed partial class ClickHouseIngestionStore : IRiskSnapshotStore
         Message = "Risk snapshot run {RunId}: {Outcome}")]
     private partial void LogRiskRun(ulong runId, string outcome);
 
-    private static readonly string[] RiskSnapshotTables = ["risk_sim_window", "risk_imei_window", "risk_imei_lifetime"];
+    private static readonly string[] RiskSnapshotTables = ["risk_sim_window", "risk_imei_window", "risk_imei_lifetime", "quality_chunk"];
 
     /// <summary>A countable IMEI: 14 digits, not fourteen zeros, not the shifted shape.</summary>
     /// <remarks>
@@ -55,9 +55,20 @@ public sealed partial class ClickHouseIngestionStore : IRiskSnapshotStore
             + $"(endsWith({imei}, '0') AND substring({imei}, 1, 8) NOT IN {tac} AND ({restored})))";
     }
 
+    /// <summary>A 14-digit IMEI of the shifted shape - the other half of <see cref="Countable"/>.</summary>
+    private string Shifted(string imei)
+    {
+        var tac = $"(SELECT tac FROM {_database}.tac)";
+        var restored = string.Join(" OR ", Enumerable.Range(0, 10)
+            .Select(d => string.Create(CultureInfo.InvariantCulture, $"concat('{d}', substring({imei}, 1, 7)) IN {tac}")));
+
+        return $"(match({imei}, '^[0-9]{{14}}$') AND endsWith({imei}, '0') AND substring({imei}, 1, 8) NOT IN {tac} AND ({restored}))";
+    }
+
     /// <inheritdoc />
     public async Task<bool> DeployedAsync(CancellationToken ct) =>
-        await ScalarAsync($"EXISTS TABLE {_database}.risk_run", ct).ConfigureAwait(false) == 1;
+        await ScalarAsync($"EXISTS TABLE {_database}.risk_run", ct).ConfigureAwait(false) == 1
+        && await ScalarAsync($"EXISTS TABLE {_database}.quality_chunk", ct).ConfigureAwait(false) == 1;
 
     /// <inheritdoc />
     public async Task<RiskInputs> ReadInputsAsync(RiskOptions options, CancellationToken ct)
@@ -156,11 +167,16 @@ public sealed partial class ClickHouseIngestionStore : IRiskSnapshotStore
             FROM {_database}.binding_history_by_imei WHERE month IN ({months})
             """, ct).ConfigureAwait(false);
 
+        // Numbers for the quality chunks: current state and the history are both sorted by number first.
+        var msisdnCuts = chunks == 1 ? "[]" : await StringAsync($"""
+            SELECT toString(arrayMap(x -> toUInt64(x), quantiles({fractions})(msisdn))) FROM {_database}.binding_current
+            """, ct).ConfigureAwait(false);
+
         await ExecuteHttpAsync($"""
             INSERT INTO {_database}.risk_run
-                (run_id, as_of, fingerprint, tac_version_id, state, chunks, sim_cuts, imei_cuts, done, note, updated_at)
+                (run_id, as_of, fingerprint, tac_version_id, state, chunks, sim_cuts, imei_cuts, msisdn_cuts, done, note, updated_at)
             VALUES ({runId}, '{Iso(inputs.AsOf)}', {inputs.Fingerprint}, {inputs.TacVersionId}, 'running', {chunks},
-                    {simCuts}, {imeiCuts}, [], '', now64(3))
+                    {simCuts}, {imeiCuts}, {msisdnCuts}, [], '', now64(3))
             """, NoParameters, ct).ConfigureAwait(false);
 
         LogRiskPlanned(runId, inputs.AsOf, chunks);
@@ -177,15 +193,19 @@ public sealed partial class ClickHouseIngestionStore : IRiskSnapshotStore
         var started = System.Diagnostics.Stopwatch.StartNew();
         var target = Target(table);
 
-        var range = table == RiskTable.SimWindow
-            ? await RangeAsync(run, "sim_cuts", "imsi", chunk, numeric: true, ct).ConfigureAwait(false)
-            : await RangeAsync(run, "imei_cuts", "imei", chunk, numeric: false, ct).ConfigureAwait(false);
-
-        var sql = table switch
+        var range = table switch
         {
-            RiskTable.SimWindow => SimWindowSql(run, chunk, range, options.Floors.SimImeis30),
-            RiskTable.ImeiWindow => ImeiWindowSql(run, chunk, range, options.Floors.ImeiSims30),
-            _ => ImeiLifetimeSql(run, chunk, range, options.Floors.ImeiSimsEver, options.Floors.ImeiSimsNotRemoved),
+            RiskTable.SimWindow => await RangeAsync(run, "sim_cuts", "imsi", chunk, numeric: true, ct).ConfigureAwait(false),
+            RiskTable.Quality => await RangeAsync(run, "msisdn_cuts", "msisdn", chunk, numeric: true, ct).ConfigureAwait(false),
+            _ => await RangeAsync(run, "imei_cuts", "imei", chunk, numeric: false, ct).ConfigureAwait(false),
+        };
+
+        string[] sqls = table switch
+        {
+            RiskTable.SimWindow => [SimWindowSql(run, chunk, range, options.Floors.SimImeis30)],
+            RiskTable.ImeiWindow => [ImeiWindowSql(run, chunk, range, options.Floors.ImeiSims30)],
+            RiskTable.ImeiLifetime => [ImeiLifetimeSql(run, chunk, range, options.Floors.ImeiSimsEver, options.Floors.ImeiSimsNotRemoved)],
+            _ => [QualityCurrentSql(run, chunk, range), QualityHistorySql(run, chunk, range)],
         };
 
         var limits = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -199,7 +219,10 @@ public sealed partial class ClickHouseIngestionStore : IRiskSnapshotStore
 
         await ExecuteHttpAsync(
             $"ALTER TABLE {_database}.{target} DROP PARTITION ({run.RunId}, {chunk})", NoParameters, ct).ConfigureAwait(false);
-        await ExecuteHttpAsync(sql, limits, ct).ConfigureAwait(false);
+        foreach (var sql in sqls)
+        {
+            await ExecuteHttpAsync(sql, limits, ct).ConfigureAwait(false);
+        }
 
         var done = new HashSet<string>(run.Done, StringComparer.Ordinal) { RiskRun.Key(table, chunk) };
         await WriteRunAsync(run, "running", done, run.Note, ct).ConfigureAwait(false);
@@ -221,7 +244,12 @@ public sealed partial class ClickHouseIngestionStore : IRiskSnapshotStore
 
         // Every planned chunk present, each exactly once in the tables, and no key twice - the check
         // that caught delivery 216 doubled by an orphaned INSERT in the marts.
-        foreach (var (table, key) in new[] { ("risk_sim_window", "imsi"), ("risk_imei_window", "imei"), ("risk_imei_lifetime", "imei") })
+        // A quality chunk holds one row per category, so its key is the pair.
+        foreach (var (table, key) in new[]
+                 {
+                     ("risk_sim_window", "imsi"), ("risk_imei_window", "imei"), ("risk_imei_lifetime", "imei"),
+                     ("quality_chunk", "(chunk, category)"),
+                 })
         {
             var chunks = await ScalarAsync(
                 $"SELECT uniqExact(chunk) FROM {_database}.{table} WHERE run_id = {run.RunId}", ct).ConfigureAwait(false) ?? 0;
@@ -313,8 +341,72 @@ public sealed partial class ClickHouseIngestionStore : IRiskSnapshotStore
     {
         RiskTable.SimWindow => "risk_sim_window",
         RiskTable.ImeiWindow => "risk_imei_window",
-        _ => "risk_imei_lifetime",
+        RiskTable.ImeiLifetime => "risk_imei_lifetime",
+        _ => "quality_chunk",
     };
+
+    /// <summary>
+    /// Current state, one row per category: identifiers that are missing or malformed, shifted IMEIs,
+    /// TACs GSMA does not know, and bindings the feed has not touched since the initial dump.
+    /// </summary>
+    private string QualityCurrentSql(RiskRun run, int chunk, string range) => $$"""
+        INSERT INTO {{_database}}.quality_chunk (run_id, chunk, category, bindings, numbers, sims, imeis, periods)
+        SELECT {{run.RunId}}, {{chunk}}, category, count(), uniqExact(msisdn), uniqState(imsi), uniqState(imei), 0
+        FROM (
+            SELECT msisdn, imsi, imei, arrayJoin(arrayFilter(x -> x != '', [
+                'all',
+                if(active = 1, 'active', ''),
+                if(imei IN ('000000', ''), 'missing_imei', ''),
+                if(imei NOT IN ('000000', '') AND NOT match(imei, '^[0-9]{14}$'), 'invalid_imei', ''),
+                if(imei = '00000000000000', 'zero_imei', ''),
+                if({{Shifted("imei")}}, 'shifted_imei', ''),
+                if({{Countable("imei")}} AND substring(imei, 1, 8) NOT IN (SELECT tac FROM {{_database}}.tac), 'unknown_tac', ''),
+                if(length(toString(imsi)) != 15, 'invalid_imsi', ''),
+                if(length(toString(msisdn)) != 10, 'invalid_msisdn', ''),
+                if(active = 1 AND last_change_date IS NULL, 'untouched_since_dump', '')])) AS category
+            FROM {{_database}}.binding_current FINAL
+            WHERE {{range}}
+        )
+        GROUP BY category
+        """;
+
+    /// <summary>
+    /// The binding history, one row per category: adds of a binding already held, removes of one not
+    /// held, and how long each add-to-remove period lasted.
+    /// </summary>
+    /// <remarks>
+    /// Events in date order, then by delivery. A dump binding starts held, so its first remove is not an
+    /// orphan. A period is counted in whole days from the add to the remove.
+    /// </remarks>
+    private string QualityHistorySql(RiskRun run, int chunk, string range) => $"""
+        INSERT INTO {_database}.quality_chunk (run_id, chunk, category, bindings, numbers, sims, imeis, periods)
+        SELECT {run.RunId}, {chunk}, c.1 AS category, count(), uniqExact(msisdn), uniqState(imsi), uniqState(imei), sum(c.2)
+        FROM (
+            SELECT msisdn, imsi, imei,
+                   arrayJoin(arrayFilter(x -> x.2 > 0, [
+                       ('history_all', toUInt64(1)),
+                       ('redundant_add', toUInt64(redundant)),
+                       ('orphan_remove', toUInt64(orphan)),
+                       ('period_same_day', toUInt64(countEqual(lens, 0))),
+                       ('period_1_day', toUInt64(countEqual(lens, 1))),
+                       ('period_2_7_days', toUInt64(arrayCount(x -> x BETWEEN 2 AND 7, lens))),
+                       ('period_8_30_days', toUInt64(arrayCount(x -> x BETWEEN 8 AND 30, lens))),
+                       ('period_31_90_days', toUInt64(arrayCount(x -> x BETWEEN 31 AND 90, lens))),
+                       ('period_over_90_days', toUInt64(arrayCount(x -> x > 90, lens))),
+                       ('still_held', toUInt64(if(length(ev) = 0, dump = 1, ev[length(ev)].3 = 1)))])) AS c
+            FROM (
+                SELECT msisdn, imsi, imei, dump, arraySort(x -> (x.1, x.2), evs) AS ev,
+                       arrayCount(i -> ev[i].3 = 1 AND i > 1 AND ev[i - 1].3 = 1, arrayEnumerate(ev)) AS redundant,
+                       arrayCount(i -> ev[i].3 = 2 AND ((i = 1 AND dump = 0) OR (i > 1 AND ev[i - 1].3 = 2)), arrayEnumerate(ev)) AS orphan,
+                       arrayFilter(x -> x >= 0, arrayMap(
+                           i -> if(ev[i].3 = 2 AND i > 1 AND ev[i - 1].3 = 1, toInt32(ev[i].1 - ev[i - 1].1), -1),
+                           arrayEnumerate(ev))) AS lens
+                FROM (SELECT msisdn, imsi, imei, max(in_dump) AS dump, groupArrayArray(events) AS evs
+                      FROM {_database}.binding_history WHERE {range} GROUP BY msisdn, imsi, imei)
+            )
+        )
+        GROUP BY category
+        """;
 
     private string SimWindowSql(RiskRun run, int chunk, string range, int floor)
     {
@@ -472,8 +564,8 @@ public sealed partial class ClickHouseIngestionStore : IRiskSnapshotStore
 
         await ExecuteHttpAsync($"""
             INSERT INTO {_database}.risk_run
-                (run_id, as_of, fingerprint, tac_version_id, state, chunks, sim_cuts, imei_cuts, done, note, updated_at)
-            SELECT run_id, as_of, fingerprint, tac_version_id, '{state}', chunks, sim_cuts, imei_cuts, {doneList}, '{safeNote}', now64(3)
+                (run_id, as_of, fingerprint, tac_version_id, state, chunks, sim_cuts, imei_cuts, msisdn_cuts, done, note, updated_at)
+            SELECT run_id, as_of, fingerprint, tac_version_id, '{state}', chunks, sim_cuts, imei_cuts, msisdn_cuts, {doneList}, '{safeNote}', now64(3)
             FROM {_database}.risk_run FINAL WHERE run_id = {run.RunId}
             """, NoParameters, ct).ConfigureAwait(false);
     }

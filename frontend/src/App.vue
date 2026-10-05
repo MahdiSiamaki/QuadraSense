@@ -39,6 +39,7 @@ const nav = computed(() =>
     { to: '/explorer', label: 'Explorer', show: can(Permission.ExplorerQuery) },
     { to: '/risk', label: 'Risk signals', show: can(Permission.RiskView) },
     { to: '/imports', label: 'Imports', show: can(Permission.ImportView) },
+    { to: '/quality', label: 'Data quality', show: can(Permission.ImportView) },
     { to: '/lookup', label: 'Lookup', show: can(Permission.LookupSubscriber) },
     { to: '/lookup/imsi', label: 'IMSI', show: can(Permission.LookupImsi) },
     // Reachable by anybody who can look up any one of the three; the server decides per centre

@@ -149,6 +149,18 @@ if (args.Contains("--refresh-quality"))
 // import makes. Run after --refresh-quality: the screen reads its multi-number SIM lists.
 //
 //   dotnet run --project backend/src/Sqm.Ingestion -- --refresh-risk-days [--from d] [--to d] [--force]
+// Writes the per-model day counts (analytics migration 025) for new models and network age, and the
+// initial dump's models. Run once after the migration; the import keeps it current.
+//
+//   dotnet run --project backend/src/Sqm.Ingestion -- --refresh-tac-days [--from d] [--to d] [--force]
+if (args.Contains("--refresh-tac-days"))
+{
+    var (from, to) = DayBackfill.ParseRange(args);
+    return await TacDayBackfill
+        .RunAsync(host.Services.GetRequiredService<IAnalyticsIngestionStore>(), from, to, args.Contains("--force"), CancellationToken.None)
+        .ConfigureAwait(false);
+}
+
 if (args.Contains("--refresh-risk-days"))
 {
     var (from, to) = DayBackfill.ParseRange(args);

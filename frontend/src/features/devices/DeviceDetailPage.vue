@@ -8,6 +8,7 @@ import DeviceTimelineChart from './DeviceTimelineChart.vue'
 import DeviceIdentifiersPanel from './DeviceIdentifiersPanel.vue'
 import DeviceImageUpload from './DeviceImageUpload.vue'
 import { useDevice, useDeviceTimeline } from '@/api/devices'
+import { networkAgeText, useModelNetworkAge } from '@/api/modelArrivals'
 import { useAuth, Permission } from '@/features/auth/useAuth'
 import { formatDate, formatFull } from '@/lib/format'
 
@@ -28,6 +29,7 @@ const { can } = useAuth()
 
 const device = useDevice(tac)
 const detail = computed(() => device.data.value ?? null)
+const age = useModelNetworkAge(tac)
 
 /** The timeline's own range, defaulting to everything the change log covers. */
 const from = ref('')
@@ -422,13 +424,26 @@ const bandsOpen = ref(false)
                   </li>
                 </ul>
 
+                <!-- First seen is the first daily file that named any of its handsets (analytics
+                     migration 025): not the earliest last change among its current bindings, which
+                     makes a model whose early bindings were replaced look newer than it is. -->
+                <p v-if="age.data.value" class="mt-3 border-t pt-2 text-2xs text-[var(--c-text-muted)]">
+                  <template v-if="age.data.value.inDump">
+                    Seen in the initial dump, before the first daily file: network age
+                    {{ networkAgeText(age.data.value.networkAgeDays, true) }}.
+                  </template>
+                  <template v-else>
+                    First seen in the daily file of {{ formatDate(age.data.value.firstSeen) }}: network age
+                    {{ networkAgeText(age.data.value.networkAgeDays, false) }}.
+                  </template>
+                  Network age is time in this data, not the age of any handset.
+                  <template v-if="detail.population.lastSeen"> Last named {{ formatDate(detail.population.lastSeen) }}.</template>
+                </p>
                 <p
-                  v-if="detail.population.firstSeen || detail.population.lastSeen"
+                  v-else-if="detail.population.firstSeen || detail.population.lastSeen"
                   class="mt-3 border-t pt-2 text-2xs text-[var(--c-text-muted)]"
                 >
-                  Daily files named this model between
-                  {{ formatDate(detail.population.firstSeen) }} and
-                  {{ formatDate(detail.population.lastSeen) }}.
+                  Daily files last named this model on {{ formatDate(detail.population.lastSeen) }}.
                 </p>
                 <p v-else class="mt-3 border-t pt-2 text-2xs text-[var(--c-text-muted)]">
                   No daily file has ever named a binding of this model. It is present because the
