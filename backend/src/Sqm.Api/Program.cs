@@ -96,6 +96,9 @@ builder.Services.Configure<Sqm.Application.Risk.RiskOptions>(
     builder.Configuration.GetSection(Sqm.Application.Risk.RiskOptions.SectionName));
 builder.Services.AddSingleton<Sqm.Application.Risk.IRiskReader, Sqm.Infrastructure.ClickHouse.ClickHouseRiskReader>();
 
+// New models and network age (analytics migration 025).
+builder.Services.AddSingleton<Sqm.Application.Devices.IModelArrivalReader, Sqm.Infrastructure.ClickHouse.ClickHouseModelArrivalReader>();
+
 // Curated device photographs. The GSMA TAC record carries none and this deployment has no
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.
 builder.Services.AddSingleton<IDeviceImageStore, PostgresDeviceImageStore>();
@@ -271,6 +274,7 @@ app.MapQualityEndpoints();
 app.MapExplorerEndpoints();
 app.MapTimelineEndpoints();
 app.MapRiskEndpoints();
+app.MapModelArrivalEndpoints();
 app.MapDeviceImageReviewEndpoints();
 
 await app.RunAsync().ConfigureAwait(false);

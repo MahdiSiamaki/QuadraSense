@@ -29,6 +29,7 @@ internal sealed partial class SqmDailyProcessor(
     DashboardSnapshot dashboard,
     FeedQualityMonitor feedQuality,
     RiskDayStep riskDay,
+    TacDayStep tacDay,
     ILogger<SqmDailyProcessor> logger) : IImportProcessor
 {
     [LoggerMessage(EventId = 3300, Level = LogLevel.Information,
@@ -239,6 +240,10 @@ internal sealed partial class SqmDailyProcessor(
         // The day's SIM changes for the risk pages, screened against the feed-quality rows just
         // written - so this must come after that step. Never a failure; see RiskDayStep.
         await riskDay.AfterDayAsync(businessDate, context, ct).ConfigureAwait(false);
+
+        // The day's per-model counts, from which new models and network age are read. Countable
+        // IMEIs only, by the same test as above. Never a failure; see TacDayStep.
+        await tacDay.AfterDayAsync(businessDate, context, ct).ConfigureAwait(false);
 
         // The dashboard's headline figures come from the seq-partitioned marts, not from the
         // day-level ones above, and they are rebuilt for the delivery holding the latest DAY -

@@ -113,6 +113,21 @@ public interface IAnalyticsIngestionStore
     Task<IReadOnlySet<DateOnly>> GetRiskDaysAsync(CancellationToken ct);
 
     /// <summary>
+    /// Writes one day's per-model counts - countable IMEIs, their SIMs and the add events - for new
+    /// models and network age (analytics migration 025). Idempotent: the day's partition is dropped
+    /// and rebuilt.
+    /// </summary>
+    /// <returns>Null, having written nothing, when migration 025 has not been applied.</returns>
+    Task<TacDayRefresh?> RefreshTacDayAsync(DateOnly businessDate, CancellationToken ct);
+
+    /// <summary>Writes the initial dump's models, as day 1970-01-01: "seen before the first file".</summary>
+    /// <returns>Null, having written nothing, when migration 025 has not been applied.</returns>
+    Task<TacDayRefresh?> RefreshTacDumpAsync(CancellationToken ct);
+
+    /// <summary>The days already written, 1970-01-01 standing for the dump. Empty before migration 025.</summary>
+    Task<IReadOnlySet<DateOnly>> GetTacDaysAsync(CancellationToken ct);
+
+    /// <summary>
     /// Brings the binding history (analytics migration 022) up to date with one loaded day.
     /// </summary>
     /// <remarks>

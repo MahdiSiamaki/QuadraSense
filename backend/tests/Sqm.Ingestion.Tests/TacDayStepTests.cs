@@ -8,11 +8,11 @@ using Sqm.Ingestion.Processing;
 namespace Sqm.Ingestion.Tests;
 
 /// <summary>
-/// Each import writes its day's SIM changes for the risk pages after feed quality has screened them,
-/// says on the job what it wrote - and never fails the import over them.
+/// Each import writes its day's per-model counts after the risk day step, says on the job what it
+/// wrote - and never fails the import over them.
 /// </summary>
-/// <remarks>What the rows hold is proven against ClickHouse in RiskDayTests.</remarks>
-public sealed class RiskDayStepTests
+/// <remarks>What the rows hold is proven against ClickHouse in ModelArrivalTests.</remarks>
+public sealed class TacDayStepTests
 {
     private const string File = "msisdn,imsi,imei,label\n9121234567,432110123456789,35085748000001,add\n";
 
@@ -37,48 +37,20 @@ public sealed class RiskDayStepTests
         return (context, notes);
     }
 
-    private static RiskDayStep Step(Func<object?> refresh) => new(
-        Stub.Create<IAnalyticsIngestionStore>((m, _) => m.Name == "RefreshRiskDayAsync" ? refresh() : Stub.Default(m)),
-        NullLogger<RiskDayStep>.Instance);
+    private static TacDayStep Step(Func<object?> refresh) => new(
+        Stub.Create<IAnalyticsIngestionStore>((m, _) => m.Name == "RefreshTacDayAsync" ? refresh() : Stub.Default(m)),
+        NullLogger<TacDayStep>.Instance);
 
     [Fact]
-    public async Task A_written_day_is_noted_with_its_changes_and_what_was_set_aside()
+    public async Task A_written_day_is_noted_with_its_models_and_handsets()
     {
         var (context, notes) = Context();
 
-        await Step(() => Task.FromResult<RiskDayRefresh?>(new RiskDayRefresh(102_345, 14_007, true)))
-            .AfterDayAsync(new DateOnly(2026, 9, 20), context, CancellationToken.None);
+        await Step(() => Task.FromResult<TacDayRefresh?>(new TacDayRefresh(41_177, 6_583_644)))
+            .AfterDayAsync(new DateOnly(2026, 6, 15), context, CancellationToken.None);
 
         var note = Assert.Single(notes);
-        Assert.Equal("info", note.Level);
-        Assert.Equal("Risk signals: 102,345 SIM changes recorded; 14,007 of them set aside because the feed listed "
-            + "one of their SIMs under several numbers that day.", note.Message);
-    }
-
-    [Fact]
-    public async Task An_unscreened_day_warns_that_nothing_will_be_listed()
-    {
-        var (context, notes) = Context();
-
-        await Step(() => Task.FromResult<RiskDayRefresh?>(new RiskDayRefresh(9, 9, false)))
-            .AfterDayAsync(new DateOnly(2026, 9, 20), context, CancellationToken.None);
-
-        var note = Assert.Single(notes);
-        Assert.Equal("warning", note.Level);
-        Assert.Contains("not screened", note.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task A_worker_ahead_of_the_migration_warns_rather_than_fails()
-    {
-        var (context, notes) = Context();
-
-        await Step(() => Task.FromResult<RiskDayRefresh?>(null))
-            .AfterDayAsync(new DateOnly(2026, 9, 20), context, CancellationToken.None);
-
-        var note = Assert.Single(notes);
-        Assert.Equal("warning", note.Level);
-        Assert.Contains("migration 023", note.Message, StringComparison.Ordinal);
+        Assert.Equal(("info", "New models: 41,177 models seen, 6,583,644 handsets (IMEIs)."), note);
     }
 
     [Fact]
@@ -86,31 +58,30 @@ public sealed class RiskDayStepTests
     {
         var (context, notes) = Context();
 
-        await Step(() => Task.FromException<RiskDayRefresh?>(new InvalidOperationException("memory limit exceeded")))
+        await Step(() => Task.FromException<TacDayRefresh?>(new InvalidOperationException("memory limit exceeded")))
             .AfterDayAsync(new DateOnly(2026, 9, 20), context, CancellationToken.None);
 
         var note = Assert.Single(notes);
         Assert.Equal("warning", note.Level);
-        Assert.Contains("(memory limit exceeded)", note.Message, StringComparison.Ordinal);
-        Assert.Contains("--refresh-risk-days --from 2026-09-20 --to 2026-09-20", note.Message, StringComparison.Ordinal);
+        Assert.Contains("--refresh-tac-days --from 2026-09-20 --to 2026-09-20", note.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Cancellation_is_not_swallowed()
+    public async Task A_worker_ahead_of_the_migration_warns_rather_than_fails()
     {
-        var (context, _) = Context();
+        var (context, notes) = Context();
 
-        await Assert.ThrowsAsync<OperationCanceledException>(() =>
-            Step(() => Task.FromException<RiskDayRefresh?>(new OperationCanceledException()))
-                .AfterDayAsync(new DateOnly(2026, 9, 20), context, CancellationToken.None));
+        await Step(() => Task.FromResult<TacDayRefresh?>(null)).AfterDayAsync(new DateOnly(2026, 9, 20), context, CancellationToken.None);
+
+        Assert.Contains("migration 025", Assert.Single(notes).Message, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// The screen reads the day's multi-number SIM list, which the feed-quality step writes: run
-    /// first, every change on a defective day would pass as clean.
+    /// Last of the day-level steps: after history, feed quality and the risk day, so a failure of the
+    /// model counts can never hold back the steps the risk pages depend on.
     /// </summary>
     [Fact]
-    public async Task The_risk_step_runs_after_feed_quality_and_before_the_dashboard()
+    public async Task The_model_step_runs_after_the_risk_step()
     {
         var calls = new List<string>();
         var analytics = Stub.Create<IAnalyticsIngestionStore>((m, _) =>
@@ -123,7 +94,7 @@ public sealed class RiskDayStepTests
                 "FoldDayAsync" => Task.FromResult(1L),
                 "RefreshHistoryForDayAsync" => Task.FromResult(HistoryRefresh.NotDeployed),
                 "RefreshFeedQualityForDayAsync" => Task.FromResult(false),
-                "RefreshRiskDayAsync" => Task.FromException<RiskDayRefresh?>(new OperationCanceledException("stop after the risk step")),
+                "RefreshTacDayAsync" => Task.FromException<TacDayRefresh?>(new OperationCanceledException("stop after the model step")),
                 _ => Stub.Default(m),
             };
         });
@@ -153,7 +124,7 @@ public sealed class RiskDayStepTests
 
         await Assert.ThrowsAsync<OperationCanceledException>(() => processor.ProcessAsync(job, context, CancellationToken.None));
 
-        var order = calls.Where(c => c is "RefreshHistoryForDayAsync" or "RefreshFeedQualityForDayAsync" or "RefreshRiskDayAsync").ToList();
-        Assert.Equal(["RefreshHistoryForDayAsync", "RefreshFeedQualityForDayAsync", "RefreshRiskDayAsync"], order);
+        var order = calls.Where(c => c is "RefreshHistoryForDayAsync" or "RefreshFeedQualityForDayAsync" or "RefreshRiskDayAsync" or "RefreshTacDayAsync").ToList();
+        Assert.Equal(["RefreshHistoryForDayAsync", "RefreshFeedQualityForDayAsync", "RefreshRiskDayAsync", "RefreshTacDayAsync"], order);
     }
 }

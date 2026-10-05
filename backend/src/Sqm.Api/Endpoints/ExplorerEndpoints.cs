@@ -32,12 +32,16 @@ public sealed record ExplorerEntityRequest(string Identifier);
 /// <param name="Plan">What the summary cost.</param>
 /// <param name="FirstSeen">From the binding history, once complete: its first binding, yyyy-MM-dd. Null for a TAC.</param>
 /// <param name="FirstSeenIsDumpWindow">FirstSeen stands for the initial dump's window, not a known day.</param>
+/// <param name="NetworkAgeDays">
+/// Days from first seen to the data-through day: time in this data, not the age of anything. A lower
+/// bound when first seen is the dump window.
+/// </param>
 public sealed record ExplorerEntitySummary(
     string Kind, string Identifier, bool Found,
     long Bindings, long ActiveBindings, long Numbers, long ActiveNumbers,
     long Sims, long ActiveSims, long Handsets, long ActiveHandsets,
     string? LastChange, string? Tac, string? Brand, string? Model, ExplorerPlanInfo Plan,
-    string? FirstSeen = null, bool FirstSeenIsDumpWindow = false);
+    string? FirstSeen = null, bool FirstSeenIsDumpWindow = false, int? NetworkAgeDays = null);
 
 /// <summary>The Explorer: a query builder over current state and the event log, and entity summaries.</summary>
 /// <remarks>
@@ -497,7 +501,10 @@ public static class ExplorerEndpoints
             Count(0), Count(1), Count(2), Count(3), Count(4), Count(5), Count(6), Count(7),
             values?[8] as string, tac, identity?.Brand, identity?.MarketingName, rows.Plan,
             seen?.FirstSeen.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-            seen?.FirstSeenIsDumpWindow ?? false));
+            seen?.FirstSeenIsDumpWindow ?? false,
+            seen is null ? null : Sqm.Application.Devices.NetworkAge.Days(
+                seen.FirstSeenIsDumpWindow ? null : seen.FirstSeen, seen.FirstSeenIsDumpWindow,
+                await timelines.DataThroughAsync(ct).ConfigureAwait(false))));
     }
 
     /// <summary>
