@@ -81,6 +81,7 @@ public sealed class ExplorerEndpointTests : IClassFixture<WebApplicationFactory<
                 "GetReadinessAsync" => Task.FromResult(_history),
                 "GetSeenAsync" => Task.FromResult<Sqm.Application.Timeline.EntitySeen?>(
                     new(new DateOnly(2025, 12, 27), true, new DateOnly(2026, 9, 26))),
+                "DataThroughAsync" => Task.FromResult<DateOnly?>(new DateOnly(2026, 9, 26)),
                 _ => throw new NotSupportedException(method.Name),
             }));
         }));
@@ -324,7 +325,10 @@ public sealed class ExplorerEndpointTests : IClassFixture<WebApplicationFactory<
             body.GetProperty("lastChange").GetString()));
     }
 
-    /// <summary>First seen comes from the binding history, and only once it is complete.</summary>
+    /// <summary>
+    /// First seen comes from the binding history, and only once it is complete; network age with it,
+    /// a lower bound for the dump - 2026-01-26 to 2026-09-26 and at least the day before.
+    /// </summary>
     [Fact]
     public async Task An_entity_summary_says_when_it_was_first_seen_once_the_history_is_complete()
     {
@@ -335,7 +339,9 @@ public sealed class ExplorerEndpointTests : IClassFixture<WebApplicationFactory<
         var (_, after) = await PostAsync("/api/v1/explorer/entity", new { identifier = Msisdn });
 
         Assert.Equal(JsonValueKind.Null, before.GetProperty("firstSeen").ValueKind);
+        Assert.Equal(JsonValueKind.Null, before.GetProperty("networkAgeDays").ValueKind);
         Assert.Equal(("2025-12-27", true), (after.GetProperty("firstSeen").GetString(), after.GetProperty("firstSeenIsDumpWindow").GetBoolean()));
+        Assert.Equal(244, after.GetProperty("networkAgeDays").GetInt32());
     }
 
     [Fact]
