@@ -75,7 +75,7 @@ public sealed class RiskSnapshotTests : IAsyncLifetime
             await QueryAsync($"CREATE MATERIALIZED VIEW {_database}.mv_by_imsi TO {_database}.binding_by_imsi AS SELECT imsi, msisdn, imei, active, last_change_seq, last_change_date FROM {_database}.binding_current");
             await QueryAsync($"CREATE MATERIALIZED VIEW {_database}.mv_by_imei TO {_database}.binding_by_imei AS SELECT imei, msisdn, imsi, active, last_change_seq, last_change_date FROM {_database}.binding_current");
 
-            foreach (var migration in new[] { "020_feed_quality.sql", "022_binding_history.sql", "023_risk_sim_change_day.sql", "024_risk_snapshot.sql" })
+            foreach (var migration in new[] { "020_feed_quality.sql", "022_binding_history.sql", "023_risk_sim_change_day.sql", "024_risk_snapshot.sql", "026_quality_snapshot.sql" })
             {
                 foreach (var statement in SqlScript.Split(MigrationText(migration).Replace("sqm.", _database + ".", StringComparison.Ordinal)))
                 {

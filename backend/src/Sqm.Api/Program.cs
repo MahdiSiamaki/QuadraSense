@@ -98,6 +98,7 @@ builder.Services.AddSingleton<Sqm.Application.Risk.IRiskReader, Sqm.Infrastructu
 
 // New models and network age (analytics migration 025).
 builder.Services.AddSingleton<Sqm.Application.Devices.IModelArrivalReader, Sqm.Infrastructure.ClickHouse.ClickHouseModelArrivalReader>();
+builder.Services.AddSingleton<Sqm.Application.Quality.IQualityReader, Sqm.Infrastructure.ClickHouse.ClickHouseQualityReader>();
 
 // Curated device photographs. The GSMA TAC record carries none and this deployment has no
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.

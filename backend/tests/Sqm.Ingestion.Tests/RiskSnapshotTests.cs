@@ -103,7 +103,7 @@ public sealed class RiskSnapshotTests
         new(1, new DateOnly(2026, 9, 26), fingerprint, 1, "running", 2, done.ToHashSet(StringComparer.Ordinal), "", DateTimeOffset.UnixEpoch);
 
     private static readonly string[] AllChunks =
-        ["SimWindow:0", "SimWindow:1", "ImeiWindow:0", "ImeiWindow:1", "ImeiLifetime:0", "ImeiLifetime:1"];
+        ["SimWindow:0", "SimWindow:1", "ImeiWindow:0", "ImeiWindow:1", "ImeiLifetime:0", "ImeiLifetime:1", "Quality:0", "Quality:1"];
 
     private static Task<RiskSnapshotStep> Step(Harness h, bool force = false) =>
         h.Build().StepAsync(new RiskOptions(), force, CancellationToken.None);

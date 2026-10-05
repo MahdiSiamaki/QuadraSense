@@ -195,7 +195,8 @@ public sealed class RiskComputeOptions
     /// Bumped whenever what a stored measure means changes, so every run built under the old
     /// meaning becomes stale.
     /// </summary>
-    public const int DefinitionVersion = 1;
+    /// <remarks>2: runs also carry the data-quality categories (analytics migration 026).</remarks>
+    public const int DefinitionVersion = 2;
 
     /// <summary>Key-range chunks per table. One chunk is built per idle moment of the worker.</summary>
     public int Chunks { get; set; } = 24;

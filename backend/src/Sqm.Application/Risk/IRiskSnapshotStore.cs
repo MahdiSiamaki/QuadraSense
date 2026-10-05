@@ -11,6 +11,12 @@ public enum RiskTable
 
     /// <summary>Per IMEI, all time: SIMs and numbers ever, and SIMs not removed.</summary>
     ImeiLifetime,
+
+    /// <summary>
+    /// Per range of numbers: the data-quality categories of current state and of the binding history
+    /// (analytics migration 026). Last, so the risk measures are not held up by the longest pass.
+    /// </summary>
+    Quality,
 }
 
 /// <summary>What a snapshot is built from, and whether it can be built at all.</summary>
