@@ -6,7 +6,8 @@ namespace Sqm.Application.Quality;
 /// <param name="Numbers">Distinct numbers among them, exact.</param>
 /// <param name="Sims">Distinct SIMs, estimated (uniq).</param>
 /// <param name="Imeis">Distinct IMEIs, estimated (uniq).</param>
-/// <param name="Periods">For a lifetime category, the add-to-remove periods; otherwise 0.</param>
+/// <param name="Periods">For a history category, how often it happened - the add-to-remove periods of a length, the
+/// redundant adds, the orphan removes - against the bindings it happened to; for current state, 0.</param>
 public sealed record QualityCategoryCount(string Category, long Bindings, long Numbers, long Sims, long Imeis, long Periods);
 
 /// <summary>The data-quality categories of one published run of the measures snapshot.</summary>

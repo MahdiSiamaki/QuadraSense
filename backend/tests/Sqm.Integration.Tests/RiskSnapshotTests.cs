@@ -16,7 +16,7 @@ namespace Sqm.Integration.Tests;
 /// </summary>
 /// <remarks>
 /// Against the real ClickHouse, through the real <see cref="ClickHouseIngestionStore"/>, in a scratch
-/// database that migrations 020, 022 and 024 are applied to as they ship. Days are imported the way the
+/// database that migrations 020, 022, 023, 024 and 026 are applied to as they ship. Days are imported the way the
 /// import does it - load, fold, history - so the snapshot reads what production would. The windows end
 /// on 31 May: 30 days from 2 May, 20 from 12 May, 7 from 25 May.
 /// </remarks>
@@ -273,6 +273,84 @@ public sealed class RiskSnapshotTests : IAsyncLifetime
 
             Assert.Equal(await QueryAsync(Rows(single.RunId)), await QueryAsync(Rows(run.RunId)));
         }
+    }
+
+    /// <summary>
+    /// Twelve bindings, each placed for a category. Held since the dump and never touched: P1 on number
+    /// 5, the '000000' handset on number 20, P11 on the four-digit number 4321. Written directly with a
+    /// date: a ten-digit IMEI, fourteen zeros, an unknown TAC, a five-digit IMSI and the shifted shape.
+    /// From daily files: P11 added twice with no remove between, P1 held two days, P13 one day, and P31
+    /// removed by number 30 that never held it.
+    /// </summary>
+    private async Task SeedQualityAsync(ClickHouseIngestionStore store)
+    {
+        await QueryAsync($"""
+            INSERT INTO {_database}.binding_current (msisdn, imsi, imei, active, last_change_seq, last_change_date) VALUES
+                ({M(5)}, {S(5)}, '{P1}', 1, 0, NULL),
+                ({M(20)}, {S(20)}, '000000', 1, 0, NULL),
+                (4321, {S(24)}, '{P11}', 1, 0, NULL),
+                ({M(21)}, {S(21)}, '3500000100', 1, 0, '2026-05-01'),
+                ({M(22)}, {S(22)}, '00000000000000', 1, 0, '2026-05-01'),
+                ({M(23)}, {S(23)}, '99999999000001', 1, 0, '2026-05-01'),
+                ({M(25)}, 12345, '{P12}', 1, 0, '2026-05-01'),
+                ({M(26)}, {S(26)}, '{Shifted}', 1, 0, '2026-05-01')
+            """);
+
+        await ImportAsync(store, May(1), Add(1, 1, P11), Add(4, 4, P1));
+        await ImportAsync(store, May(3), Remove(4, 4, P1), Remove(30, 30, P31));
+        await ImportAsync(store, May(5), Add(1, 1, P11));
+        await ImportAsync(store, May(10), Add(3, 3, P13));
+        await ImportAsync(store, May(11), Remove(3, 3, P13));
+    }
+
+    [Fact]
+    public async Task The_quality_categories_count_each_binding_where_it_belongs()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var store = Store();
+        await SeedQualityAsync(store);
+
+        var quality = new ClickHouseQualityReader(
+            Options.Create(new ClickHouseOptions
+            {
+                ConnectionString = $"Host=localhost;Port=18123;Database={_database};Username={User};Password={Password}",
+            }),
+            new Factory());
+        Assert.Null(await quality.GetLatestAsync(ct));
+
+        var run = await BuildAsync(store, Settings());
+        Assert.Null(await store.TryPublishAsync(run, Settings(), ct));
+
+        var snapshot = await quality.GetLatestAsync(ct);
+        Assert.NotNull(snapshot);
+        Assert.Equal((run.RunId, May(11)), (snapshot.RunId, snapshot.AsOf));
+
+        // category, bindings, numbers, periods. Current state: twelve bindings, nine held (P1 on 4, P31 on
+        // 30 and P13 on 3 removed), one of each identifier fault, three untouched since the dump. The
+        // history holds the four from daily files: one redundant add, one orphan remove, a two-day and a
+        // one-day period, and P11 still held.
+        Assert.Equal(
+            [
+                ("active", 9L, 9L, 0L), ("all", 12L, 12L, 0L), ("history_all", 4L, 4L, 4L),
+                ("invalid_imei", 1L, 1L, 0L), ("invalid_imsi", 1L, 1L, 0L), ("invalid_msisdn", 1L, 1L, 0L),
+                ("missing_imei", 1L, 1L, 0L), ("orphan_remove", 1L, 1L, 1L), ("period_1_day", 1L, 1L, 1L),
+                ("period_2_7_days", 1L, 1L, 1L), ("redundant_add", 1L, 1L, 1L), ("shifted_imei", 1L, 1L, 0L),
+                ("still_held", 1L, 1L, 1L), ("unknown_tac", 1L, 1L, 0L), ("untouched_since_dump", 3L, 3L, 0L),
+                ("zero_imei", 1L, 1L, 0L),
+            ],
+            snapshot.Categories.Select(c => (c.Category, c.Bindings, c.Numbers, c.Periods)));
+
+        // One chunk or three, the same counts.
+        var single = await BuildAsync(store, Settings(chunks: 1));
+        Assert.Equal(
+            await QueryAsync($"SELECT category, sum(bindings), sum(numbers), uniqMerge(imeis), sum(periods) FROM {_database}.quality_chunk WHERE run_id = {run.RunId} GROUP BY category ORDER BY category FORMAT TSV"),
+            await QueryAsync($"SELECT category, sum(bindings), sum(numbers), uniqMerge(imeis), sum(periods) FROM {_database}.quality_chunk WHERE run_id = {single.RunId} GROUP BY category ORDER BY category FORMAT TSV"));
     }
 
     private ClickHouseRiskReader Reader() => new(
