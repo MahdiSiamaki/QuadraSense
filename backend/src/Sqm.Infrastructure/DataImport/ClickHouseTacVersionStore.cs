@@ -180,7 +180,7 @@ public sealed partial class ClickHouseTacVersionStore : ITacVersionStore
                 uniqExact(tac)                                             AS distinct_tacs,
                 countIf(NOT match(tac, '^[0-9]{8}$'))                      AS malformed,
                 countIf(manufacturer = '' OR manufacturer = 'Not Known')   AS blank_manufacturer,
-                max(lastUpdatedDate)                                       AS latest_update
+                formatDateTime(max(parseDateTimeOrNull(lastUpdatedDate, '%d-%b-%Y')), '%d-%b-%Y') AS latest_update
             FROM {{_database}}.tac_all
             WHERE version_id = {{versionId}}
             """;
@@ -262,11 +262,19 @@ public sealed partial class ClickHouseTacVersionStore : ITacVersionStore
     }
 
     /// <summary>
-    /// How many active bindings sit on a TAC this version changes.
+    /// How many active bindings sit on a TAC this version adds, removes or changes.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// This is the number that decides whether a diff is worth a human's attention. The counts
-    /// above describe the file; this one describes the effect on what people will see.
+    /// above describe the file; this one describes the effect on what people will see. An added TAC
+    /// counts too: its handsets stop being an unknown device.
+    /// </para>
+    /// <para>
+    /// A TAC is untouched when it is in both versions with one fingerprint, and only then. This
+    /// once kept the TACs with one fingerprint instead - the untouched ones - and reported
+    /// 113,038,260 bindings for the 4 October 2026 file's 153 changes.
+    /// </para>
     /// </remarks>
     private async Task<long> CountAffectedBindingsAsync(
         int versionId, int againstVersionId, CancellationToken ct)
@@ -275,13 +283,10 @@ public sealed partial class ClickHouseTacVersionStore : ITacVersionStore
 
         var sql = $"""
             WITH changed AS (
-                SELECT tac FROM (
-                    SELECT tac, {fingerprint} AS fp FROM {_database}.tac_all
-                    WHERE version_id IN ({versionId}, {againstVersionId})
-                    GROUP BY tac, fp
-                )
+                SELECT tac FROM {_database}.tac_all
+                WHERE version_id IN ({versionId}, {againstVersionId})
                 GROUP BY tac
-                HAVING count() = 1
+                HAVING count() = 1 OR min({fingerprint}) != max({fingerprint})
             )
             SELECT count()
             FROM {_database}.binding_current FINAL
