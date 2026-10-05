@@ -437,11 +437,14 @@ public sealed partial class PostgresImportJobRepository
              ORDER BY b.source_code, b.business_date
             """;
 
+        // Straight into the record, as every other read here: the date arrives as a DateOnly, which
+        // a tuple's DateTime field cannot take (Dapper falls back to Convert.ChangeType and throws).
+        // That went unseen while the endpoint had nothing to report and its test skipped on a busy
+        // queue.
         await using var connection = await OpenAsync(ct).ConfigureAwait(false);
-        var rows = await connection.QueryAsync<(string SourceCode, DateTime BusinessDate, long JobId, string Status, int Waiting)>(
-            Command(Sql, null, ct)).ConfigureAwait(false);
+        var rows = await connection.QueryAsync<QueueBlockage>(Command(Sql, null, ct)).ConfigureAwait(false);
 
-        return [.. rows.Select(r => new QueueBlockage(r.SourceCode, DateOnly.FromDateTime(r.BusinessDate), r.JobId, r.Status, r.Waiting))];
+        return [.. rows];
     }
 
     /// <summary>Formats a byte count for a log or event message.</summary>
