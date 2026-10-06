@@ -9,3 +9,10 @@ export const tooltipBounds = {
   confine: true,
   extraCssText: 'white-space: normal; max-width: 20rem;',
 } as const
+
+/*
+ * No chart sets grid.containLabel. Under ECharts 6, without `use(LegacyGridContainLabel)`, it keeps
+ * only the axis LABELS inside the canvas: axis names were laid out at a fixed gap, clipped off the
+ * canvas or drawn over rotated labels (the Risk distribution chart's unit name). The default
+ * outerBounds layout contains labels and names both, and moves names clear of labels.
+ */

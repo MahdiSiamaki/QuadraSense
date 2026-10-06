@@ -67,7 +67,7 @@ function render() {
   chart.value.setOption(
     {
       animation: false,
-      grid: { left: 8, right: 56, top: 8, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 56, top: 8, bottom: 8 },
       tooltip: {
         ...tooltipBounds,
         trigger: 'item',

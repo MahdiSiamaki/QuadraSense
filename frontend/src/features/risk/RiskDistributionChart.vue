@@ -54,7 +54,7 @@ function render() {
       legend: hasRaw
         ? { top: 0, right: 0, textStyle: { color: chartColor('--c-text-secondary'), fontSize: 11 }, itemWidth: 10, itemHeight: 10 }
         : undefined,
-      grid: { left: 8, right: 8, top: hasRaw ? 28 : 12, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 8, top: hasRaw ? 28 : 12, bottom: 8 },
       tooltip: {
         ...tooltipBounds,
         trigger: 'axis',
