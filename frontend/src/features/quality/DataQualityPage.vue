@@ -216,6 +216,7 @@ function share(c: QualitySignal): string {
         :is-error="days.isError.value"
         :error="days.error.value"
         min-height="6rem"
+        gap="md"
         @retry="days.refetch()"
       >
         <p class="text-xs text-[var(--c-text-secondary)]">
@@ -223,7 +224,7 @@ function share(c: QualitySignal): string {
           rate is above {{ days.data.value?.reference.multiplier }}× the median of the reference days
           ({{ formatDate(days.data.value?.reference.from ?? null) }} – {{ formatDate(days.data.value?.reference.to ?? null) }}).
         </p>
-        <div v-if="flagged.length" class="mt-3 max-h-96 overflow-auto">
+        <div v-if="flagged.length" class="max-h-96 overflow-auto">
           <table class="w-full text-xs">
             <thead class="sticky top-0 bg-[var(--c-surface)] text-left text-2xs text-[var(--c-text-muted)]">
               <tr>
@@ -249,7 +250,7 @@ function share(c: QualitySignal): string {
             </tbody>
           </table>
         </div>
-        <p class="mt-2 text-2xs text-[var(--c-text-muted)]">
+        <p class="text-2xs text-[var(--c-text-muted)]">
           The files themselves are in the <RouterLink to="/imports" class="text-[var(--c-accent)] hover:underline">Import Center</RouterLink>.
         </p>
       </AsyncBoundary>

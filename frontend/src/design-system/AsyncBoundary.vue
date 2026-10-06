@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { ApiError } from '@/api/client'
 
 /**
@@ -23,13 +24,33 @@ const props = withDefaults(
     emptyMessage?: string
     /** Height reserved for the skeleton, matching the loaded content. */
     minHeight?: string
+    /**
+     * Space between the blocks of the loaded content.
+     *
+     * The loaded slot is laid out here, not by the page: content rendered through one
+     * `<template v-if>` arrives as several sibling blocks, and the page's own `gap` stops at this
+     * component. That is how the Risk page's warning banner, tab bar and card grid came to touch -
+     * and the user and role pages, and every other page with more than one block inside.
+     */
+    gap?: 'none' | 'sm' | 'md' | 'lg'
   }>(),
   {
     isEmpty: false,
     emptyMessage: 'No data for the current filters.',
     minHeight: '8rem',
+    gap: 'lg',
   },
 )
+
+/** Literal class names, so Tailwind finds them. lg is the pages' 20px rhythm. */
+const GAPS = { none: '', sm: 'gap-2', md: 'gap-3', lg: 'gap-5' } as const
+
+/**
+ * The skeleton's height is reserved only while there is no content: once loaded, the content
+ * decides. Reserving it always left a blank band under short content - under a card's pagination
+ * bar, for one.
+ */
+const loaded = computed(() => !props.isLoading && !props.isError && !props.isEmpty)
 
 defineEmits<{ retry: [] }>()
 
@@ -54,7 +75,10 @@ function correlationId(error: unknown): string | null {
 </script>
 
 <template>
-  <div :style="{ minHeight: props.minHeight }" class="relative">
+  <div
+    :style="{ minHeight: loaded ? undefined : props.minHeight }"
+    :class="['relative flex flex-col', GAPS[props.gap]]"
+  >
     <!-- Loading -->
     <div v-if="isLoading" class="animate-pulse space-y-2 p-1" aria-busy="true" aria-live="polite">
       <slot name="skeleton">

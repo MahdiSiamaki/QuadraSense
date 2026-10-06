@@ -120,6 +120,7 @@ const selectClass =
         :is-empty="(users.data.value?.items.length ?? 0) === 0"
         empty-message="No users match these filters."
         min-height="20rem"
+        gap="none"
         @retry="users.refetch()"
       >
         <div class="overflow-x-auto">
