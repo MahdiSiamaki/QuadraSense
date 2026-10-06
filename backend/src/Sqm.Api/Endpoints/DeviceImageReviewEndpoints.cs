@@ -1,3 +1,4 @@
+using System.Globalization;
 using Sqm.Api.Auth;
 using Sqm.Application.Abstractions;
 using Sqm.Application.Identity;
@@ -24,8 +25,23 @@ namespace Sqm.Api.Endpoints;
 /// </remarks>
 public static class DeviceImageReviewEndpoints
 {
-    /// <summary>Largest page of candidates the server will return.</summary>
+    /// <summary>Largest page of live images the server will return.</summary>
     private const int MaxPageSize = 60;
+
+    /// <summary>
+    /// Largest page of candidates. Larger than the live list because a reviewer selects and
+    /// approves a page at a time, and a package brings a couple of thousand candidates at once.
+    /// </summary>
+    private const int MaxCandidatePageSize = 96;
+
+    /// <summary>The candidate page when the client does not ask for a size.</summary>
+    private const int DefaultCandidatePageSize = 48;
+
+    /// <summary>
+    /// Most candidates one batch approval will take. Each is its own transaction, so the bound is
+    /// on how long one request holds a reviewer's browser waiting, not on correctness.
+    /// </summary>
+    private const int MaxBatch = 100;
 
     /// <summary>Registers the review routes.</summary>
     public static IEndpointRouteBuilder MapDeviceImageReviewEndpoints(this IEndpointRouteBuilder app)
@@ -38,7 +54,11 @@ public static class DeviceImageReviewEndpoints
 
         group.MapGet("/", ListAsync)
             .WithName("ListDeviceImageCandidates")
-            .WithSummary("Proposed device images awaiting review, highest score first.");
+            .WithSummary("Proposed device images, filtered, most-carried models first.");
+
+        group.MapGet("/facets", FacetsAsync)
+            .WithName("GetDeviceImageCandidateFacets")
+            .WithSummary("How many candidates in a status each review filter would show.");
 
         // The LIVE image for a model, so the review screen can put current and candidate side by
         // side. The ordinary device image route is keyed by TAC, which a reviewer looking at a
@@ -55,6 +75,12 @@ public static class DeviceImageReviewEndpoints
         group.MapPost("/{id:long}/approve", ApproveAsync)
             .WithName("ApproveDeviceImageCandidate")
             .WithSummary("Promote a candidate to the live image for its model, marked verified.");
+
+        // A literal segment, so it cannot be mistaken for /{id:long}/approve: that route has two
+        // segments and this one has one.
+        group.MapPost("/approve", ApproveManyAsync)
+            .WithName("ApproveDeviceImageCandidates")
+            .WithSummary("Promote several candidates, each in its own transaction, one per model.");
 
         group.MapPost("/{id:long}/reject", RejectAsync)
             .WithName("RejectDeviceImageCandidate")
@@ -89,26 +115,64 @@ public static class DeviceImageReviewEndpoints
         IDeviceImageCandidateStore store,
         CancellationToken ct,
         string? status = null,
+        string? brand = null,
+        string? sourceType = null,
+        string? onNetwork = null,
+        string? warnings = null,
+        string? sort = null,
         int page = 1,
-        int pageSize = 24)
+        int pageSize = DefaultCandidatePageSize)
     {
         ArgumentNullException.ThrowIfNull(store);
 
-        var wanted = status?.ToLowerInvariant() switch
-        {
-            "approved" => "approved",
-            "rejected" => "rejected",
-            "failed" => "failed",
-            "all" => "all",
-            _ => "needs_review",
-        };
+        var size = Math.Clamp(pageSize, 1, MaxCandidatePageSize);
+        var offset = (Math.Max(1, page) - 1) * size;
 
-        var size = Math.Clamp(pageSize, 1, MaxPageSize);
-        var offset = Math.Max(0, page - 1) * size;
+        var query = new DeviceImageCandidateQuery(
+            Status: CandidateStatus(status),
+            Brand: string.IsNullOrWhiteSpace(brand) ? null : brand.Trim(),
+            SourceType: string.IsNullOrWhiteSpace(sourceType) ? null : sourceType.Trim(),
+            OnNetwork: onNetwork?.Trim().ToLowerInvariant() switch
+            {
+                "true" => true,
+                "false" => false,
+                _ => null,
+            },
+            Warnings: warnings?.Trim().ToLowerInvariant() switch
+            {
+                "with" => "with",
+                "without" => "without",
+                "high" => "high",
+                _ => "any",
+            },
+            Sort: string.Equals(sort?.Trim(), "score", StringComparison.OrdinalIgnoreCase)
+                ? "score"
+                : "bindings",
+            Limit: size,
+            Offset: offset);
 
-        var result = await store.ListAsync(wanted, size, offset, ct).ConfigureAwait(false);
+        var result = await store.ListAsync(query, ct).ConfigureAwait(false);
         return Results.Ok(result);
     }
+
+    private static async Task<IResult> FacetsAsync(
+        IDeviceImageCandidateStore store, CancellationToken ct, string? status = null)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+
+        var facets = await store.GetFacetsAsync(CandidateStatus(status), ct).ConfigureAwait(false);
+        return Results.Ok(facets);
+    }
+
+    /// <summary>A status from the query string, reduced to its closed set; anything else is the queue.</summary>
+    private static string CandidateStatus(string? status) => status?.Trim().ToLowerInvariant() switch
+    {
+        "approved" => "approved",
+        "rejected" => "rejected",
+        "failed" => "failed",
+        "all" => "all",
+        _ => "needs_review",
+    };
 
     /// <remarks>
     /// Served from our own origin like every other image here, and never as a link to the source.
@@ -203,6 +267,94 @@ public static class DeviceImageReviewEndpoints
                 message = "That candidate is no longer awaiting review - somebody has already "
                           + "decided it.",
             });
+    }
+
+    /// <remarks>
+    /// <para>
+    /// Each candidate goes through the same single-candidate transaction as the one-at-a-time
+    /// route, in the order given. A batch is a convenience for the reviewer, not a new kind of
+    /// decision: a candidate somebody else decided in the meantime is reported and skipped, the
+    /// rest are approved, exactly as separate clicks would have done, and the answer says which
+    /// were which. One audit entry per candidate, so the trail reads the same either way.
+    /// </para>
+    /// <para>
+    /// Two candidates for one model are refused before anything is approved. Both would promote,
+    /// and the live image would be whichever ran second - a choice made by the order of a list,
+    /// not by the reviewer.
+    /// </para>
+    /// </remarks>
+    private static async Task<IResult> ApproveManyAsync(
+        ApproveCandidatesRequest? request, HttpContext http, IDeviceImageCandidateStore store,
+        IAuditLog audit, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(audit);
+
+        var ids = request?.Ids ?? [];
+
+        if (BatchProblem(ids) is { } problem)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["ids"] = [problem] });
+        }
+
+        var models = await store.GetModelsAsync(ids, ct).ConfigureAwait(false);
+        var clashes = models
+            .GroupBy(m => m.ModelKey, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        if (clashes.Count > 0)
+        {
+            var named = string.Join("; ", clashes.Select(g =>
+                g.First().Brand + " " + g.First().MarketingName + " (candidates "
+                + string.Join(", ", g.Select(m => m.Id.ToString(CultureInfo.InvariantCulture)))
+                + ")"));
+
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Two images for one model",
+                detail: "Only one image can be approved for a model, and some of these candidates "
+                        + "are for the same model: " + named + ". Nothing was approved.");
+        }
+
+        var user = CurrentUser.Require(http);
+        var approved = new List<long>(ids.Count);
+        var notAwaitingReview = new List<long>();
+
+        foreach (var id in ids)
+        {
+            var promoted = await store.ApproveAsync(id, user.UserId, ct).ConfigureAwait(false);
+            (promoted ? approved : notAwaitingReview).Add(id);
+
+            await audit.WriteAsync(Entry(user, http, AuditOutcome.Success, new Dictionary<string, object?>
+            {
+                ["candidate"] = id,
+                ["action"] = "approve",
+                ["result"] = promoted ? "promoted" : "not awaiting review",
+                ["batch"] = ids.Count,
+            }), ct).ConfigureAwait(false);
+        }
+
+        return Results.Ok(new ApproveCandidatesResult(approved, notAwaitingReview));
+    }
+
+    /// <summary>Why a batch cannot be taken as it is, or null when it can.</summary>
+    private static string? BatchProblem(IReadOnlyList<long> ids)
+    {
+        if (ids.Count == 0)
+        {
+            return "Name at least one candidate to approve.";
+        }
+
+        if (ids.Count > MaxBatch)
+        {
+            return string.Create(CultureInfo.InvariantCulture,
+                $"At most {MaxBatch} candidates can be approved at once; {ids.Count} were sent.");
+        }
+
+        return ids.Distinct().Count() != ids.Count
+            ? "A candidate is named more than once."
+            : null;
     }
 
     private static async Task<IResult> RejectAsync(

@@ -20,8 +20,20 @@ namespace Sqm.Application.Abstractions;
 /// </remarks>
 public interface IDeviceImageCandidateStore
 {
-    /// <summary>A page of the queue, highest score first. Status <c>all</c> returns every state.</summary>
-    Task<DeviceImageCandidatePage> ListAsync(string status, int limit, int offset, CancellationToken ct);
+    /// <summary>A page of the queue, filtered and ordered as the query says.</summary>
+    Task<DeviceImageCandidatePage> ListAsync(DeviceImageCandidateQuery query, CancellationToken ct);
+
+    /// <summary>
+    /// How many candidates in a status each filter value would show. Status <c>all</c> counts
+    /// every state.
+    /// </summary>
+    Task<DeviceImageCandidateFacets> GetFacetsAsync(string status, CancellationToken ct);
+
+    /// <summary>
+    /// The model each of these candidates is proposed for, whatever its status. An id that does
+    /// not exist is simply absent from the answer.
+    /// </summary>
+    Task<IReadOnlyList<CandidateModel>> GetModelsAsync(IReadOnlyCollection<long> ids, CancellationToken ct);
 
     /// <summary>The candidate's own bytes, so a reviewer can look at it before deciding.</summary>
     Task<DeviceImage?> GetImageAsync(long id, CancellationToken ct);
@@ -36,3 +48,42 @@ public interface IDeviceImageCandidateStore
     /// <returns>False when it was not awaiting review.</returns>
     Task<bool> RejectAsync(long id, long userId, string? reason, CancellationToken ct);
 }
+
+/// <summary>
+/// Which candidates a reviewer wants to see, and in what order.
+/// </summary>
+/// <remarks>
+/// Every value has already been validated against its closed set by the endpoint, so the store
+/// can treat an unknown value as a programming error rather than as user input.
+/// </remarks>
+/// <param name="Status"><c>needs_review</c>, <c>approved</c>, <c>rejected</c>, <c>failed</c> or <c>all</c>.</param>
+/// <param name="Brand">Exact brand, compared without regard to case; null for every brand.</param>
+/// <param name="SourceType">Exact source type; null for every source.</param>
+/// <param name="OnNetwork">
+/// True for models with active bindings, false for models without, null for both.
+/// </param>
+/// <param name="Warnings">
+/// <c>any</c>; <c>with</c> at least one warning; <c>without</c> any; or at least one <c>high</c>.
+/// </param>
+/// <param name="Sort">
+/// <c>bindings</c> (most-carried models first, then score) or <c>score</c> (highest score first,
+/// oldest first among equals).
+/// </param>
+/// <param name="Limit">Page size.</param>
+/// <param name="Offset">Rows to skip.</param>
+public sealed record DeviceImageCandidateQuery(
+    string Status,
+    string? Brand,
+    string? SourceType,
+    bool? OnNetwork,
+    string Warnings,
+    string Sort,
+    int Limit,
+    int Offset);
+
+/// <summary>The model one candidate is proposed for.</summary>
+/// <param name="Id">The candidate.</param>
+/// <param name="ModelKey">The model's key.</param>
+/// <param name="Brand">Display brand.</param>
+/// <param name="MarketingName">Display model name.</param>
+public sealed record CandidateModel(long Id, string ModelKey, string Brand, string MarketingName);

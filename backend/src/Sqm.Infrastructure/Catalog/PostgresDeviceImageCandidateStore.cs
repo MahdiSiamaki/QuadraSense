@@ -34,6 +34,32 @@ public sealed class PostgresDeviceImageCandidateStore : IDeviceImageCandidateSto
     /// <summary>Shared, because constructing options per row is a per-row allocation.</summary>
     private static readonly JsonSerializerOptions BreakdownJson = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// The review-queue filter, shared by the page and by its fallback count so they cannot
+    /// disagree about which candidates match.
+    /// </summary>
+    /// <remarks>
+    /// A null parameter means "no filter". <c>@&gt;</c> rather than a JSON path query because
+    /// containment reads as what it means - some warning has severity high - and needs no
+    /// knowledge of jsonpath to check.
+    /// </remarks>
+    private const string Filter = """
+        (@status = 'all' OR c.status = @status)
+          AND (CAST(@brand AS text) IS NULL OR lower(c.brand) = lower(CAST(@brand AS text)))
+          AND (CAST(@sourceType AS text) IS NULL OR c.source_type = CAST(@sourceType AS text))
+          AND (CAST(@onNetwork AS boolean) IS NULL OR (c.bindings > 0) = CAST(@onNetwork AS boolean))
+          AND (@warnings = 'any'
+               OR (@warnings = 'with'    AND c.warnings <> '[]'::jsonb)
+               OR (@warnings = 'without' AND c.warnings =  '[]'::jsonb)
+               OR (@warnings = 'high'    AND c.warnings @> '[{"severity":"high"}]'::jsonb))
+        """;
+
+    /// <summary>Most-carried models first; the id makes the order total, so pages cannot overlap.</summary>
+    private const string OrderByBindings = "c.bindings DESC, c.quality_score DESC, c.id";
+
+    /// <summary>Highest score first, oldest first among equals, then the id for a total order.</summary>
+    private const string OrderByScore = "c.quality_score DESC, c.created_at, c.id";
+
     private readonly IdentityDataSource _db;
     private readonly int _commandTimeout;
 
@@ -49,12 +75,19 @@ public sealed class PostgresDeviceImageCandidateStore : IDeviceImageCandidateSto
 
     /// <inheritdoc />
     public async Task<DeviceImageCandidatePage> ListAsync(
-        string status, int limit, int offset, CancellationToken ct)
+        DeviceImageCandidateQuery query, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(query);
+
         // The live image's status is joined in because a reviewer's first question is whether
         // they are filling a gap or overruling somebody. count() OVER () so the total and the
         // page come from one pass and cannot disagree.
-        const string Sql = """
+        //
+        // The ORDER BY is one of two constants, never text from the request: the endpoint has
+        // already reduced the sort to its closed set, and a parameter cannot name a column.
+        var order = query.Sort == "score" ? OrderByScore : OrderByBindings;
+
+        var sql = $"""
             SELECT c.id                              AS Id,
                    c.model_key                       AS ModelKey,
                    c.brand                           AS Brand,
@@ -72,24 +105,119 @@ public sealed class PostgresDeviceImageCandidateStore : IDeviceImageCandidateSto
                    c.rejection_reason                AS RejectionReason,
                    c.created_at                      AS CreatedAt,
                    coalesce(i.status, 'missing')     AS CurrentStatus,
+                   c.bindings                        AS Bindings,
+                   c.warnings::text                  AS WarningsJson,
+                   c.evidence::text                  AS EvidenceJson,
+                   c.package                         AS Package,
                    count(*) OVER ()                  AS Total
             FROM catalog.device_image_candidate AS c
             LEFT JOIN catalog.device_model_image AS i ON i.model_key = c.model_key
-            WHERE (@status = 'all' OR c.status = @status)
-            ORDER BY c.quality_score DESC, c.created_at
+            WHERE {Filter}
+            ORDER BY {order}
             LIMIT @limit OFFSET @offset
             """;
+
+        var args = new
+        {
+            status = query.Status,
+            brand = string.IsNullOrWhiteSpace(query.Brand) ? null : query.Brand.Trim(),
+            sourceType = string.IsNullOrWhiteSpace(query.SourceType) ? null : query.SourceType.Trim(),
+            onNetwork = query.OnNetwork,
+            warnings = query.Warnings,
+            limit = query.Limit,
+            offset = query.Offset,
+        };
 
         await using var connection = await _db.OpenAsync(ct).ConfigureAwait(false);
 
         var rows = await connection.QueryAsync<CandidateRow>(
-            new CommandDefinition(Sql, new { status, limit, offset },
-                commandTimeout: _commandTimeout, cancellationToken: ct)).ConfigureAwait(false);
+            new CommandDefinition(sql, args, commandTimeout: _commandTimeout,
+                cancellationToken: ct)).ConfigureAwait(false);
 
         var list = rows.ToList();
         var total = list.Count > 0 ? list[0].Total : 0;
 
+        // A page past the end carries no row to read the total from. That is the ordinary state
+        // after a reviewer approves the whole of the last page, and answering "0" there would tell
+        // them the queue is empty when it is not.
+        if (list.Count == 0 && query.Offset > 0)
+        {
+            total = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                $"SELECT count(*) FROM catalog.device_image_candidate AS c WHERE {Filter}", args,
+                commandTimeout: _commandTimeout, cancellationToken: ct)).ConfigureAwait(false);
+        }
+
         return new DeviceImageCandidatePage(total, [.. list.Select(Materialise)]);
+    }
+
+    /// <inheritdoc />
+    public async Task<DeviceImageCandidateFacets> GetFacetsAsync(string status, CancellationToken ct)
+    {
+        // Brands are grouped without regard to case because the filter compares without regard
+        // to case: a facet that listed "Samsung" and "SAMSUNG" separately would promise two
+        // different answers and then give the same one for both.
+        const string Sql = """
+            SELECT count(*)                                                        AS Total,
+                   count(*) FILTER (WHERE c.bindings > 0)                          AS OnNetwork,
+                   count(*) FILTER (WHERE c.warnings <> '[]'::jsonb)               AS WithWarnings,
+                   count(*) FILTER (WHERE c.warnings @> '[{"severity":"high"}]'::jsonb) AS HighWarnings
+            FROM catalog.device_image_candidate AS c
+            WHERE (@status = 'all' OR c.status = @status);
+
+            SELECT min(c.brand) AS Value, count(*) AS Count
+            FROM catalog.device_image_candidate AS c
+            WHERE (@status = 'all' OR c.status = @status)
+            GROUP BY lower(c.brand)
+            ORDER BY count(*) DESC, min(c.brand);
+
+            SELECT c.source_type AS Value, count(*) AS Count
+            FROM catalog.device_image_candidate AS c
+            WHERE (@status = 'all' OR c.status = @status)
+            GROUP BY c.source_type
+            ORDER BY count(*) DESC, c.source_type;
+            """;
+
+        await using var connection = await _db.OpenAsync(ct).ConfigureAwait(false);
+
+        await using var reader = await connection.QueryMultipleAsync(new CommandDefinition(
+            Sql, new { status }, commandTimeout: _commandTimeout, cancellationToken: ct))
+            .ConfigureAwait(false);
+
+        var counts = await reader.ReadSingleAsync<FacetTotalsRow>().ConfigureAwait(false);
+        var brands = await reader.ReadAsync<FacetValueRow>().ConfigureAwait(false);
+        var sources = await reader.ReadAsync<FacetValueRow>().ConfigureAwait(false);
+
+        return new DeviceImageCandidateFacets(
+            counts.Total, counts.OnNetwork, counts.WithWarnings, counts.HighWarnings,
+            [.. brands.Select(b => new CandidateFacetValue(b.Value, b.Count))],
+            [.. sources.Select(s => new CandidateFacetValue(s.Value, s.Count))]);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CandidateModel>> GetModelsAsync(
+        IReadOnlyCollection<long> ids, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        const string Sql = """
+            SELECT id AS Id, model_key AS ModelKey, brand AS Brand, marketing_name AS MarketingName
+            FROM catalog.device_image_candidate
+            WHERE id = ANY(@ids)
+            ORDER BY id
+            """;
+
+        await using var connection = await _db.OpenAsync(ct).ConfigureAwait(false);
+
+        var rows = await connection.QueryAsync<ModelRow>(new CommandDefinition(
+            Sql, new { ids = ids.Distinct().ToArray() }, commandTimeout: _commandTimeout,
+            cancellationToken: ct)).ConfigureAwait(false);
+
+        return [.. rows.Select(r => new CandidateModel(r.Id, r.ModelKey, r.Brand, r.MarketingName))];
     }
 
     /// <inheritdoc />
@@ -237,8 +365,184 @@ public sealed class PostgresDeviceImageCandidateStore : IDeviceImageCandidateSto
             row.Id, row.ModelKey, row.Brand, row.MarketingName, row.Status, row.ContentType,
             row.ByteSize, row.SourceType, row.SourceDomain, row.SourceUrl,
             row.OriginalWidth, row.OriginalHeight, row.QualityScore, breakdown,
-            row.RejectionReason, row.CreatedAt, row.CurrentStatus);
+            row.RejectionReason, row.CreatedAt, row.CurrentStatus,
+            row.Bindings, ReadWarnings(row.WarningsJson), ReadEvidence(row.EvidenceJson),
+            row.Package);
     }
+
+    /// <summary>
+    /// The candidate's warnings, element by element.
+    /// </summary>
+    /// <remarks>
+    /// Read by hand rather than deserialised, so that one malformed element costs that element and
+    /// not the list - or, worse, the candidate. A warning without a code says nothing a reviewer
+    /// can act on and is dropped; a severity other than <c>high</c> is shown as <c>info</c>, so
+    /// an unknown value can never make a warning look more alarming than the importer meant.
+    /// </remarks>
+    private static List<CandidateWarning> ReadWarnings(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            var warnings = new List<CandidateWarning>();
+
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                if (element.ValueKind != JsonValueKind.Object
+                    || Text(element, "code") is not { Length: > 0 } code)
+                {
+                    continue;
+                }
+
+                var severity = string.Equals(Text(element, "severity"), "high", StringComparison.Ordinal)
+                    ? "high"
+                    : "info";
+
+                warnings.Add(new CandidateWarning(code, severity, Text(element, "detail") ?? string.Empty));
+            }
+
+            return warnings;
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// The package evidence, member by member, or null when there is none to show.
+    /// </summary>
+    /// <remarks>
+    /// Each member is read on its own, and one of the wrong type is null rather than an exception:
+    /// a reviewer missing the product name because the TAC count was written as a string would be
+    /// worse off than one seeing everything but the count.
+    /// </remarks>
+    private static CandidateEvidence? ReadEvidence(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var o = document.RootElement;
+
+            if (o.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var evidence = new CandidateEvidence(
+                Package: Text(o, "package"),
+                ProductName: Text(o, "productName"),
+                ProductId: Text(o, "productId"),
+                MatchMethods: Texts(o, "matchMethods"),
+                MappedTacs: Whole(o, "mappedTacs"),
+                ModelTacs: Whole(o, "modelTacs"),
+                MappedBindings: Whole(o, "mappedBindings"),
+                ModelBindings: Whole(o, "modelBindings"),
+                SourceKind: Text(o, "sourceKind"),
+                SourcePage: Text(o, "sourcePage"),
+                ImageUrl: Text(o, "imageUrl"),
+                IdentitySource: Text(o, "identitySource"),
+                MatchScope: Text(o, "matchScope"),
+                QaStatus: Text(o, "qaStatus"),
+                PackageFile: Text(o, "packageFile"),
+                Upscale: Number(o, "upscale"),
+                OriginalSha256Ok: Flag(o, "originalSha256Ok"));
+
+            // An object with nothing readable in it is no evidence, and the contract says so with
+            // null rather than with a record of nulls the client would have to inspect.
+            return IsEmpty(evidence) ? null : evidence;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool IsEmpty(CandidateEvidence e) =>
+        e is
+        {
+            Package: null, ProductName: null, ProductId: null, MatchMethods: null,
+            MappedTacs: null, ModelTacs: null, MappedBindings: null, ModelBindings: null,
+            SourceKind: null, SourcePage: null, ImageUrl: null, IdentitySource: null,
+            MatchScope: null, QaStatus: null, PackageFile: null, Upscale: null,
+            OriginalSha256Ok: null,
+        };
+
+    /// <summary>A string member; a number is given as written, anything else is null.</summary>
+    private static string? Text(JsonElement o, string name) =>
+        !o.TryGetProperty(name, out var v) ? null : v.ValueKind switch
+        {
+            JsonValueKind.String => v.GetString(),
+            JsonValueKind.Number => v.GetRawText(),
+            _ => null,
+        };
+
+    /// <summary>A list of strings; a lone string is a list of one, other elements are skipped.</summary>
+    private static List<string>? Texts(JsonElement o, string name)
+    {
+        if (!o.TryGetProperty(name, out var v))
+        {
+            return null;
+        }
+
+        return v.ValueKind switch
+        {
+            JsonValueKind.String => [v.GetString()!],
+            JsonValueKind.Array =>
+            [
+                .. v.EnumerateArray()
+                    .Where(e => e.ValueKind == JsonValueKind.String)
+                    .Select(e => e.GetString()!),
+            ],
+            _ => null,
+        };
+    }
+
+    /// <summary>A whole number; 12.0 counts, 12.5 and "12" do not.</summary>
+    private static long? Whole(JsonElement o, string name)
+    {
+        if (!o.TryGetProperty(name, out var v) || v.ValueKind != JsonValueKind.Number)
+        {
+            return null;
+        }
+
+        if (v.TryGetInt64(out var n))
+        {
+            return n;
+        }
+
+        return v.TryGetDouble(out var d) && d == Math.Floor(d) && Math.Abs(d) < 9e15 ? (long)d : null;
+    }
+
+    private static double? Number(JsonElement o, string name) =>
+        o.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number
+            && v.TryGetDouble(out var d)
+            ? d
+            : null;
+
+    private static bool? Flag(JsonElement o, string name) =>
+        !o.TryGetProperty(name, out var v) ? null : v.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null,
+        };
 
     /// <summary>
     /// Settable properties, not a positional record.
@@ -285,7 +589,44 @@ public sealed class PostgresDeviceImageCandidateStore : IDeviceImageCandidateSto
 
         public string CurrentStatus { get; set; } = string.Empty;
 
+        public long Bindings { get; set; }
+
+        public string? WarningsJson { get; set; }
+
+        public string? EvidenceJson { get; set; }
+
+        public string? Package { get; set; }
+
         public int Total { get; set; }
+    }
+
+    private sealed class FacetTotalsRow
+    {
+        public int Total { get; set; }
+
+        public int OnNetwork { get; set; }
+
+        public int WithWarnings { get; set; }
+
+        public int HighWarnings { get; set; }
+    }
+
+    private sealed class FacetValueRow
+    {
+        public string Value { get; set; } = string.Empty;
+
+        public int Count { get; set; }
+    }
+
+    private sealed class ModelRow
+    {
+        public long Id { get; set; }
+
+        public string ModelKey { get; set; } = string.Empty;
+
+        public string Brand { get; set; } = string.Empty;
+
+        public string MarketingName { get; set; } = string.Empty;
     }
 
     private sealed class ImageBytes
