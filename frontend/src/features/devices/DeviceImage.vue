@@ -138,7 +138,13 @@ const box = computed(() => ({
       unverified
     </span>
 
-    <template v-else>
+    <!--
+      Its own condition, not v-else: a v-else binds to the element just above it - the "unverified"
+      badge - so every photo that was not unverified also drew the silhouette and initials. The
+      silhouette took a grid row and squashed the photo to a strip (110x25 in a 110px tile on the
+      Galaxy A32 page), with the initials printed across it.
+    -->
+    <template v-if="!showPhoto">
       <!--
         The silhouette. Stroke-only and low-contrast: it is a stand-in, and a placeholder that
         draws the eye harder than the real photographs beside it has the emphasis backwards.
