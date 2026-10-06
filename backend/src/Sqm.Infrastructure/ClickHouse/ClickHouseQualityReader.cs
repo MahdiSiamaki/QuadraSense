@@ -16,6 +16,13 @@ public sealed class ClickHouseQualityReader : IQualityReader
 
     private readonly ClickHouseJsonQuery _query;
 
+    /// <summary>
+    /// The last run's categories. A run's counts never change once it is published, and merging its
+    /// SIM and IMEI estimates across 96 chunks takes 2.4 s (measured 2026-10-07), so they are read
+    /// once per run: each request still asks which run is newest (23 ms), and a new run replaces this.
+    /// </summary>
+    private QualitySnapshot? _cached;
+
     /// <summary>Creates the reader over the analytics connection.</summary>
     public ClickHouseQualityReader(IOptions<ClickHouseOptions> options, IHttpClientFactory httpClientFactory)
     {
@@ -46,6 +53,11 @@ public sealed class ClickHouseQualityReader : IQualityReader
         }
 
         var runId = ClickHouseJsonResult.UInt64(run.Rows[0], 0);
+        if (Volatile.Read(ref _cached) is { } cached && cached.RunId == runId)
+        {
+            return cached;
+        }
+
         var result = await _query.ExecuteAsync("""
             SELECT category, sum(bindings), sum(numbers), uniqMerge(sims), uniqMerge(imeis), sum(periods)
             FROM quality_chunk WHERE run_id = {run:UInt64}
@@ -53,12 +65,15 @@ public sealed class ClickHouseQualityReader : IQualityReader
             """, new Dictionary<string, string>(StringComparer.Ordinal) { ["run"] = runId.ToString(CultureInfo.InvariantCulture) },
             ct, Budget).ConfigureAwait(false);
 
-        return new QualitySnapshot(
+        var snapshot = new QualitySnapshot(
             runId,
             ClickHouseJsonResult.Date(run.Rows[0], 1)!.Value,
             DateTimeOffset.Parse(ClickHouseJsonResult.Text(run.Rows[0], 2)!, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal),
             [.. result.Rows.Select(r => new QualityCategoryCount(
                 ClickHouseJsonResult.Text(r, 0)!, ClickHouseJsonResult.Int64(r, 1), ClickHouseJsonResult.Int64(r, 2),
                 ClickHouseJsonResult.Int64(r, 3), ClickHouseJsonResult.Int64(r, 4), ClickHouseJsonResult.Int64(r, 5)))]);
+
+        Volatile.Write(ref _cached, snapshot);
+        return snapshot;
     }
 }

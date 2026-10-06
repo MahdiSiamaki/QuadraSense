@@ -331,6 +331,9 @@ public sealed class RiskSnapshotTests : IAsyncLifetime
         Assert.NotNull(snapshot);
         Assert.Equal((run.RunId, May(11)), (snapshot.RunId, snapshot.AsOf));
 
+        // Read once per run: the same run answers from the reader's copy.
+        Assert.Same(snapshot, await quality.GetLatestAsync(ct));
+
         // category, bindings, numbers, periods. Current state: twelve bindings, nine held (P1 on 4, P31 on
         // 30 and P13 on 3 removed), one of each identifier fault, three untouched since the dump. The
         // history holds the four from daily files: one redundant add, one orphan remove, a two-day and a
@@ -351,6 +354,10 @@ public sealed class RiskSnapshotTests : IAsyncLifetime
         Assert.Equal(
             await QueryAsync($"SELECT category, sum(bindings), sum(numbers), uniqMerge(imeis), sum(periods) FROM {_database}.quality_chunk WHERE run_id = {run.RunId} GROUP BY category ORDER BY category FORMAT TSV"),
             await QueryAsync($"SELECT category, sum(bindings), sum(numbers), uniqMerge(imeis), sum(periods) FROM {_database}.quality_chunk WHERE run_id = {single.RunId} GROUP BY category ORDER BY category FORMAT TSV"));
+
+        // A newer published run replaces the reader's copy.
+        Assert.Null(await store.TryPublishAsync(single, Settings(chunks: 1), ct));
+        Assert.Equal(single.RunId, (await quality.GetLatestAsync(ct))!.RunId);
     }
 
     private ClickHouseRiskReader Reader() => new(
