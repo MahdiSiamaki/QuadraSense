@@ -161,7 +161,8 @@ function share(c: QualitySignal): string {
           </p>
         </Card>
 
-        <div class="grid gap-5 lg:grid-cols-2">
+        <!-- Stacked: two short rows of sequences beside the period chart left a 127px blank card (1920px). -->
+        <div class="flex flex-col gap-5">
           <Card title="Sequences" subtitle="Events the feed's own history contradicts">
             <table class="w-full text-xs">
               <thead class="text-left text-2xs text-[var(--c-text-muted)]">
