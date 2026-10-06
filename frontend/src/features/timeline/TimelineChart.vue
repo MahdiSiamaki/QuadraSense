@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { TimelineEvent, TimelinePeriod } from '@/api/timeline'
 import { formatDate } from '@/lib/format'
 
@@ -48,21 +48,75 @@ const xEnd = (iso: string) => Math.min(100, Math.max(0, ((day(iso) + 1 - start.v
 
 const dumpWidth = computed(() => xEnd(props.dumpEnd))
 
-/** Month boundaries inside the axis, for the scale. */
+/** Month boundaries inside the axis, for the scale. Every one gets a tick; labels are chosen below. */
 const months = computed(() => {
-  const out: Array<{ left: number; label: string }> = []
+  const out: Array<{ left: number; label: string; january: boolean }> = []
   const d = new Date(`${props.from}T00:00:00Z`)
   d.setUTCDate(1)
   d.setUTCMonth(d.getUTCMonth() + 1)
   while (d.toISOString().slice(0, 10) <= props.to) {
     const iso = d.toISOString().slice(0, 10)
+    const january = d.getUTCMonth() === 0
     out.push({
       left: x(iso),
-      label: d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }) + (d.getUTCMonth() === 0 ? ` ${d.getUTCFullYear()}` : ''),
+      label: d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }) + (january ? ` ${d.getUTCFullYear()}` : ''),
+      january,
     })
     d.setUTCMonth(d.getUTCMonth() + 1)
   }
   return out
+})
+
+/**
+ * The axis's width in pixels, so labels are placed by what fits rather than by percentages.
+ *
+ * Percentages alone put "Dec 27, 2025" (the dump's first day) on top of "Jan 2026", five days
+ * later, at every width - and as the history grows by a day a day, every month label would
+ * eventually collide with its neighbours and the last one would hang past the axis's end.
+ */
+const scale = ref<HTMLElement | null>(null)
+const axisWidth = ref(0)
+let observer: ResizeObserver | null = null
+let context: CanvasRenderingContext2D | null = null
+
+onMounted(() => {
+  if (!scale.value) return
+  axisWidth.value = scale.value.clientWidth
+  observer = new ResizeObserver(([entry]) => {
+    if (entry) axisWidth.value = entry.contentRect.width
+  })
+  observer.observe(scale.value)
+})
+onBeforeUnmount(() => observer?.disconnect())
+
+/** A label's width in the scale's own font, plus its left padding. */
+function labelWidth(text: string): number {
+  context ??= document.createElement('canvas').getContext('2d')
+  if (context && scale.value) {
+    context.font = getComputedStyle(scale.value).font
+    return context.measureText(text).width + 4
+  }
+  return text.length * 7 + 4
+}
+
+/** Labels drawn after the axis's end date, which always shows: Januaries first, then in order. */
+const LABEL_GAP = 8
+const endLabel = computed(() => formatDate(props.to))
+const labels = computed(() => {
+  const width = axisWidth.value
+  if (width <= 0) return []
+  const taken: Array<{ left: number; right: number }> = [{ left: width - labelWidth(endLabel.value), right: width }]
+  const ordered = [...months.value].sort((a, b) => Number(b.january) - Number(a.january) || a.left - b.left)
+  const kept: typeof ordered = []
+  for (const m of ordered) {
+    const left = (m.left / 100) * width
+    const right = left + labelWidth(m.label)
+    if (right > width) continue
+    if (taken.some((t) => left < t.right + LABEL_GAP && right + LABEL_GAP > t.left)) continue
+    taken.push({ left, right })
+    kept.push(m)
+  }
+  return kept
 })
 
 interface Segment {
@@ -108,19 +162,28 @@ function describe(row: ChartRow): string {
 
 <template>
   <div class="flex flex-col text-xs">
-    <!-- The scale. -->
+    <!--
+      The scale. The axis's first day sits in the label column, against the axis's origin; its
+      last day at the right end; month labels between, on one baseline, only where they fit.
+    -->
     <div class="flex">
-      <div class="w-52 shrink-0" />
-      <div class="relative h-5 flex-1 border-b text-2xs text-[var(--c-text-muted)]" aria-hidden="true">
-        <span class="absolute bottom-0.5 left-0 pl-1">{{ formatDate(from) }}</span>
+      <div class="w-52 shrink-0 self-end pr-2 text-right text-2xs leading-5 whitespace-nowrap text-[var(--c-text-muted)]">
+        {{ formatDate(from) }}
+      </div>
+      <div ref="scale" class="relative h-5 flex-1 border-b text-2xs text-[var(--c-text-muted)]" aria-hidden="true">
         <span
           v-for="m in months"
-          :key="m.left"
-          class="absolute bottom-0 h-2 border-l border-[var(--c-border-strong)] pl-1 leading-none whitespace-nowrap"
+          :key="`tick-${m.left}`"
+          class="absolute bottom-0 h-1.5 border-l border-[var(--c-border-strong)]"
           :style="{ left: `${m.left}%` }"
-        >
-          <span class="relative -top-3">{{ m.label }}</span>
-        </span>
+        />
+        <span
+          v-for="m in labels"
+          :key="`label-${m.left}`"
+          class="absolute top-0 pl-1 leading-4 whitespace-nowrap"
+          :style="{ left: `${m.left}%` }"
+        >{{ m.label }}</span>
+        <span class="absolute top-0 right-0 leading-4 whitespace-nowrap">{{ endLabel }}</span>
       </div>
     </div>
 
