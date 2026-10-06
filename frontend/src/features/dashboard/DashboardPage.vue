@@ -48,7 +48,9 @@ const countByLabel = computed(() => countBy.value)
 const kpi = useKpiSummary(filters)
 const vendors = useTopDimension('vendorCanonical', filters, 10, countBy)
 const deviceTypes = useDistribution('deviceType', filters, countBy)
-const operatingSystems = useTopDimension('operatingSystem', filters, 8, countBy)
+// Ten rows, as Device types beside it shows: with eight, the pair could not line up and the OS card
+// carried a 64px blank band under its table at xl (measured 2026-10-07).
+const operatingSystems = useTopDimension('operatingSystem', filters, 10, countBy)
 const classMix = useDeviceClassMix(countBy)
 const capabilities = useCapabilities(countBy)
 const dailyChanges = useDailyChanges()
