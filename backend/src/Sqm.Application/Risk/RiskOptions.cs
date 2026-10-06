@@ -199,7 +199,21 @@ public sealed class RiskComputeOptions
     public const int DefinitionVersion = 2;
 
     /// <summary>Key-range chunks per table. One chunk is built per idle moment of the worker.</summary>
-    public int Chunks { get; set; } = 24;
+    /// <remarks>
+    /// <para>
+    /// 96, sized by the data-quality history statement, the heaviest one a run makes. It groups each
+    /// binding's events from every month partition, under the import limits (one thread, 1.2 GB,
+    /// spilling at 300 MB). At 24 chunks it failed three times a run with MEMORY_LIMIT_EXCEEDED -
+    /// a chunk's 40.8 million history rows spilled 297 times, and merging the spills needed more
+    /// than 1.12 GiB - so no run published from 2026-10-05.
+    /// </para>
+    /// <para>
+    /// Measured 2026-10-06 on the densest 1/96 range by history rows (11.1 million rows): 392 MiB
+    /// peak, 44 s, 15 spills. A third of the limit leaves room for the history to grow; raise this
+    /// again, against a measurement, when that range nears 800 MiB.
+    /// </para>
+    /// </remarks>
+    public int Chunks { get; set; } = 96;
 
     /// <summary>The server-side time limit of one chunk's statement, below the ingestion client's 30 minutes.</summary>
     public int MaxStatementSeconds { get; set; } = 1500;
