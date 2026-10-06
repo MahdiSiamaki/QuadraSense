@@ -10,6 +10,7 @@ import { chartColor, withAlpha } from '@/lib/chart-colors'
 import { feedQualityMarkArea, feedQualityTooltip } from '@/lib/feed-quality-bands'
 import { formatCompact, formatFull } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
+import { tooltipBounds } from '@/lib/chart-tooltip'
 
 echarts.use([BarChart, DataZoomComponent, GridComponent, LegendComponent, MarkAreaComponent, TooltipComponent, CanvasRenderer])
 
@@ -45,6 +46,7 @@ function render() {
       legend: { top: 0, right: 0, textStyle: { color: chartColor('--c-text-secondary'), fontSize: 11 }, itemWidth: 10, itemHeight: 10 },
       grid: { left: 8, right: 8, top: 32, bottom: 46, containLabel: true },
       tooltip: {
+        ...tooltipBounds,
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
         backgroundColor: chartColor('--c-surface-raised'),
