@@ -49,15 +49,20 @@ function correlationId(e: unknown): string | null {
 </script>
 
 <template>
-  <div class="mx-auto max-w-4xl space-y-5">
+  <!--
+    The common page frame: left-aligned and full width like every other page. Centred and capped,
+    this page's heading started 332px right of every other page's at 1900px, and moved sideways
+    when switching to the IMSI tab.
+  -->
+  <div class="flex flex-col gap-5">
     <header>
       <h1 class="text-xl font-semibold tracking-tight">Subscriber lookup</h1>
-      <p class="mt-0.5 text-xs text-[var(--c-text-muted)]">
+      <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
         Every device–SIM binding for one subscriber number, active and historical.
       </p>
     </header>
 
-    <Card>
+    <Card class="max-w-4xl">
       <form @submit.prevent="search">
         <!--
           The help text is a sibling of this row, not a child of the field.
@@ -133,7 +138,7 @@ function correlationId(e: unknown): string | null {
       <!-- Masking is a server decision; the page reports it rather than performing it. -->
       <p
         v-if="result.identifiers === 'Masked'"
-        class="mx-4 mt-3 rounded-[var(--radius-md)] bg-[var(--c-warning-subtle)] px-3 py-2 text-xs"
+        class="mx-4 my-3 rounded-[var(--radius-md)] bg-[var(--c-warning-subtle)] px-3 py-2 text-xs"
       >
         SIM and handset identifiers are shown masked. Your account does not hold
         <code class="font-mono">identifier.reveal</code>, so the server redacted them before sending.

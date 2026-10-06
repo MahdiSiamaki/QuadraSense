@@ -33,7 +33,8 @@ function isCurrent(to: string): boolean {
 
 <template>
   <div class="flex flex-col gap-6 lg:flex-row lg:gap-8">
-    <aside class="shrink-0 lg:w-56">
+    <!-- Sticky beside long pages (user and role detail, the matrix), instead of a blank column after the first screen. -->
+    <aside class="shrink-0 lg:sticky lg:top-20 lg:w-56 lg:self-start">
       <h1 class="mb-3 text-xl font-semibold tracking-tight lg:mb-5">Settings</h1>
 
       <nav aria-label="Settings">

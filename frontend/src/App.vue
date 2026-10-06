@@ -85,7 +85,8 @@ async function signOut() {
       would spend 240px of horizontal space to hold five links, and horizontal space is exactly
       what dense tables and wide charts need.
     -->
-    <header class="sticky top-0 z-10 border-b bg-[var(--c-surface)]/85 backdrop-blur-sm">
+    <!-- z-40: above any in-page sticky layer (z-10 table cells slid over it on the permission matrix). -->
+    <header class="sticky top-0 z-40 border-b bg-[var(--c-surface)]/85 backdrop-blur-sm">
       <div class="mx-auto flex h-14 max-w-[1600px] items-center gap-6 px-5">
         <RouterLink to="/" class="flex shrink-0 items-center gap-2">
           <BrandMark :size="26" />

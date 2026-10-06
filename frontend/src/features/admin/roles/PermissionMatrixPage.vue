@@ -92,7 +92,8 @@ const orphaned = computed(() =>
           permission name stays readable while the roles scroll, which is the only way a wide
           grid works on a laptop.
         -->
-        <div class="overflow-x-auto">
+        <!-- isolate: the sticky first column ranks only within the table, never against the top bar. -->
+        <div class="isolate overflow-x-auto">
           <table class="w-full border-collapse text-left text-sm">
             <thead>
               <tr class="border-b">
