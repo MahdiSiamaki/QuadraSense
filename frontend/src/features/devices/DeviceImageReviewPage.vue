@@ -556,7 +556,6 @@ const emptyMessage = computed(() => {
 
         <Pagination
           v-if="total > CANDIDATE_PAGE_SIZE"
-          class="mt-4"
           :page="page"
           :page-size="CANDIDATE_PAGE_SIZE"
           :total="total"

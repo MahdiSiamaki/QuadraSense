@@ -209,7 +209,12 @@ function execute(request: ExplorerQueryRequest, paths = new Map<string, string>(
       shownPlan.value = data.plan
       shownResult.value = data
     },
-    onError: (error) => explain(error, paths),
+    onError: (error) => {
+      // A refused run leaves nothing to show: keeping the previous rows would present them as the
+      // answer to the query that was just refused.
+      shownResult.value = null
+      explain(error, paths)
+    },
   })
 }
 
@@ -227,13 +232,16 @@ function checkCost() {
   })
 }
 
+// While a run is pending the grid on screen is the previous one: paging or sorting it would start
+// a run of the OLD query, and only the latest run's result is ever shown - the pending one's would
+// be lost though it ran and was audited.
 function goToPage(page: number) {
-  if (ranRequest.value) execute({ ...ranRequest.value, page })
+  if (ranRequest.value && !run.isPending.value) execute({ ...ranRequest.value, page })
 }
 
 /** A header click: re-runs what is on screen in the new order, and the builder follows. */
 function resort(sort: SortDraft[]) {
-  if (!ranRequest.value) return
+  if (!ranRequest.value || run.isPending.value) return
   draft.value.sort = sort.map((s) => ({ ...s }))
   execute({ ...ranRequest.value, sort, page: 1 })
 }

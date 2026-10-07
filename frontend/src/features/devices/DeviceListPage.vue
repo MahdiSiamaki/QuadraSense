@@ -347,6 +347,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
         :is-error="search.isError.value"
         :error="search.error.value"
         min-height="20rem"
+        gap="none"
         @retry="search.refetch()"
       >
         <template v-if="data">
