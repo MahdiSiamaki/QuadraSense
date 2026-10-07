@@ -419,7 +419,7 @@ def test_process_image_and_checksum() -> None:
         expected_keys = {"package", "productName", "productId", "matchMethods", "mappedTacs",
                          "modelTacs", "mappedBindings", "modelBindings", "sourceKind", "sourcePage",
                          "imageUrl", "identitySource", "matchScope", "qaStatus", "packageFile",
-                         "upscale", "originalSha256Ok"}
+                         "upscale", "originalSha256", "originalSha256Ok"}
         check("evidence carries the agreed camelCase keys", set(row.evidence) == expected_keys,
               str(sorted(set(row.evidence) ^ expected_keys)))
         check("evidence records the scale applied and the checksum verdict",
@@ -467,9 +467,76 @@ def test_model_key_and_tsv() -> None:
           == pipeline.DeviceIdentity("x", "Samsung", "Galaxy A32", (), "", 0).model_key)
     check("a blank brand falls back to the manufacturer",
           pkg.model_key_of("   ", "Nokia", "6300") == "nokia|6300")
+    check("and the sourcing tool falls back the same way",
+          pipeline.DeviceIdentity("Nokia", "   ", "6300", (), "", 0).model_key == "nokia|6300",
+          pipeline.DeviceIdentity("Nokia", "   ", "6300", (), "", 0).model_key)
     check("no marketing name, no model", pkg.model_key_of("Nokia", "Nokia", "  ") is None)
     check("ClickHouse TSV escapes are undone",
           pkg.tsv_field(r"a\tb\\c\nd") == "a\tb\\c\nd", repr(pkg.tsv_field(r"a\tb\\c\nd")))
+
+
+def test_variant_both_directions() -> None:
+    """The reviewer's cases: a plainer image on a richer model passed with no warning at all."""
+    def variant(model_name: str, product_name: str):
+        return codes(pkg.mapping_warnings(planned(name=model_name, product_name=product_name), None)).get(
+            "different_variant")
+
+    for model_name, product_name in [("Galaxy S23 Ultra", "Galaxy S23"), ("Galaxy A14 5G", "Galaxy A14"),
+                                     ("Galaxy A05s", "Galaxy A05"), ("Redmi Note 12S", "Redmi Note 12"),
+                                     ("iPhone 14 Pro Max", "iPhone 14 Pro"), ("Galaxy A14", "Galaxy A14 5G"),
+                                     ("Galaxy S23+", "Galaxy S23"), ("Galaxy S10", "Galaxy S10+"),
+                                     ("Galaxy Note20 Ultra 5G", "Galaxy Note20")]:
+        check(f"different_variant fires for '{product_name}' on model '{model_name}'",
+              variant(model_name, product_name) == "high", str(variant(model_name, product_name)))
+
+    for model_name, product_name in [("Galaxy A32", "Samsung Galaxy A32"), ("CPH2185", "Oppo A15"),
+                                     ("Galaxy A12", "Galaxy A13"), ("Galaxy S23 Ultra", "Samsung Galaxy S23 Ultra"),
+                                     ("Galaxy S23FE", "Galaxy S23 FE"), ("Galaxy S23+", "Galaxy S23 Plus"),
+                                     ("Galaxy S23 ULTRA", "Galaxy S23 Ultra"), ("PLG110", "Oppo Find X9 Pro"),
+                                     ("CPH2639", "OPPO A3 Pro 5G (CPH2639)"), ("EG800AK-GL", "LTE Cat 1 bis EG800AK series")]:
+        check(f"different_variant stays quiet for '{product_name}' on model '{model_name}'",
+              variant(model_name, product_name) is None, str(variant(model_name, product_name)))
+
+
+def test_white_card_with_transparent_corners() -> None:
+    """A white card whose corners are transparent: the alpha box is the card, white margin and all."""
+    card = Image.new("RGBA", (1000, 1000), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(card)
+    draw.rounded_rectangle((0, 0, 999, 999), radius=40, fill=(255, 255, 255, 255))
+    draw.rounded_rectangle((380, 150, 619, 849), radius=24, fill=(30, 30, 34, 255))
+    stored, _, scale = pkg.normalise_to_standard(encode(card, "PNG"))
+    box = device_box(output(stored))
+    check("a white card with transparent corners is trimmed to the device: 752 px tall",
+          box is not None and box[3] - box[1] == pkg.SUBJECT_EDGE, f"{box}, scale {scale:.3f}")
+
+    # A white device on transparency must not lose its own white: its alpha box's ring is the device.
+    phone = Image.new("RGBA", (600, 900), (0, 0, 0, 0))
+    ImageDraw.Draw(phone).rounded_rectangle((100, 100, 499, 799), radius=30, fill=(250, 250, 250, 255),
+                                            outline=(200, 200, 205, 255), width=3)
+    stored, _, _ = pkg.normalise_to_standard(encode(phone, "PNG"))
+    alpha_box = output(stored).getchannel("A").getbbox()
+    check("a white device on transparency keeps its full size",
+          alpha_box is not None and alpha_box[3] - alpha_box[1] == pkg.SUBJECT_EDGE, str(alpha_box))
+
+
+def test_colour_profiles() -> None:
+    plain = Image.new("RGB", (40, 40), (10, 200, 30))
+    check("an image without a profile is untouched", pkg.to_srgb(plain) is plain)
+    broken = Image.new("RGB", (40, 40), (10, 200, 30))
+    broken.info["icc_profile"] = b"not a profile"
+    check("a broken profile costs the conversion, not the image",
+          pkg.to_srgb(broken).getpixel((0, 0)) == (10, 200, 30))
+
+
+def test_tsv_rows_split_only_on_newlines() -> None:
+    original = pkg.clickhouse
+    try:
+        pkg.clickhouse = lambda sql: "35000001\tNokia\t6300\u2028 4G\n35000002\tNokia\t6300\x1c x\n"
+        rows = pkg.tsv_rows("SELECT", 3)
+    finally:
+        pkg.clickhouse = original
+    check("a model name holding U+2028 or \\x1c stays one row", len(rows) == 2 and rows[0][2] == "6300\u2028 4G",
+          repr(rows))
 
 
 def main() -> int:
@@ -478,7 +545,9 @@ def main() -> int:
                  test_mapping_warning_boundaries, test_grouping_by_model_key,
                  test_two_images_two_candidates, test_score_is_advice,
                  test_process_image_and_checksum, test_returned_ids,
-                 test_no_path_to_the_live_table, test_model_key_and_tsv):
+                 test_no_path_to_the_live_table, test_model_key_and_tsv,
+                 test_variant_both_directions, test_white_card_with_transparent_corners,
+                 test_colour_profiles, test_tsv_rows_split_only_on_newlines):
         try:
             test()
         except Exception as exc:                         # noqa: BLE001

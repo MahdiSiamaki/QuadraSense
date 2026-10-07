@@ -72,6 +72,7 @@ from source_device_images import (  # noqa: E402 - the shared helpers sit next t
     PREFERRED_SOURCE_EDGE,
     STORED_FORMAT,
     STORED_MIME,
+    VARIANTS,
     WHITE_TOLERANCE,
     Candidate,
     DeviceIdentity,
@@ -86,6 +87,7 @@ from source_device_images import (  # noqa: E402 - the shared helpers sit next t
     psql,
     say,
     sniff,
+    tokens,
 )
 
 # --------------------------------------------------------------------------- the standard
@@ -355,16 +357,47 @@ def plan(package_tacs: list[PackageTac], products: dict[str, Product],
 def subject_bbox(image):
     """
     Where the device is: opaque pixels when the source has transparency, otherwise what is not
-    near-white. Exactly the trim of source_device_images.normalise(), and for the reason given
-    there - an opaque image's alpha box is the whole image, so a JPEG needs the white test.
+    near-white. The trim of source_device_images.normalise(), and for the reason given there - an
+    opaque image's alpha box is the whole image, so a JPEG needs the white test.
+
+    One case more: a white card with transparent corners (or one stray pixel below alpha 255) has
+    transparency, but its alpha box is the card, white margin and all - the device came out at 526
+    px instead of 752 in the reviewer's test. When the alpha box's own border is mostly opaque
+    near-white, the white is trimmed too. A white device on transparency is not affected: its
+    alpha box's border is the device's edge, not a white margin around it.
     """
     from PIL import Image, ImageChops
 
-    if image.getchannel("A").getextrema()[0] < 255:
-        return image.getchannel("A").getbbox()
     white = Image.new("RGB", image.size, (255, 255, 255))
-    distance = ImageChops.difference(image.convert("RGB"), white).convert("L")
-    return distance.point(lambda v: 255 if v > WHITE_TOLERANCE else 0).getbbox()
+    not_white = ImageChops.difference(image.convert("RGB"), white).convert("L") \
+        .point(lambda v: 255 if v > WHITE_TOLERANCE else 0)
+
+    alpha = image.getchannel("A")
+    if alpha.getextrema()[0] >= 255:
+        return not_white.getbbox()
+
+    box = alpha.getbbox()
+    if not box:
+        return None
+    if white_margin_share(image.crop(box)) > 0.5:
+        opaque = alpha.point(lambda a: 255 if a > 0 else 0)
+        return ImageChops.multiply(not_white, opaque).getbbox() or box
+    return box
+
+
+def white_margin_share(image) -> float:
+    """Of the pixels on this crop's outermost ring, the share that are opaque and near-white."""
+    width, height = image.size
+    if width < 3 or height < 3:
+        return 0.0
+    pixels = image.load()
+    ring = [(x, 0) for x in range(width)] + [(x, height - 1) for x in range(width)] \
+        + [(0, y) for y in range(1, height - 1)] + [(width - 1, y) for y in range(1, height - 1)]
+    step = max(1, len(ring) // 2000)
+    sample = ring[::step]
+    white = sum(1 for x, y in sample
+                if pixels[x, y][3] == 255 and min(pixels[x, y][:3]) >= 255 - WHITE_TOLERANCE)
+    return white / len(sample)
 
 
 def normalise_to_standard(data: bytes) -> tuple[bytes, str, float]:
@@ -388,7 +421,7 @@ def normalise_to_standard(data: bytes) -> tuple[bytes, str, float]:
 
     with Image.open(io.BytesIO(data)) as raw:
         raw.load()
-        image = ImageOps.exif_transpose(raw.convert("RGBA"))
+        image = ImageOps.exif_transpose(to_srgb(raw).convert("RGBA"))
 
     bbox = subject_bbox(image)
     if bbox:
@@ -411,6 +444,27 @@ def normalise_to_standard(data: bytes) -> tuple[bytes, str, float]:
             return buffer.getvalue(), STORED_MIME, scale
 
     raise ValueError("cannot fit the normalised image under 512 KB")
+
+
+def to_srgb(image):
+    """
+    The pixels in sRGB. The tile is saved without a colour profile, so a source tagged Display P3,
+    Adobe RGB or CMYK has to be converted first, or its colours are read as sRGB and shift.
+    """
+    profile = image.info.get("icc_profile")
+    if not profile:
+        return image
+    from PIL import ImageCms
+
+    try:
+        source = ImageCms.ImageCmsProfile(io.BytesIO(profile))
+        mode = "RGBA" if "A" in image.getbands() else "RGB"
+        if image.mode not in ("RGB", "RGBA"):
+            image = image.convert(mode)
+        return ImageCms.profileToProfile(image, source, ImageCms.createProfile("sRGB"), outputMode=mode)
+    except (ImageCms.PyCMSError, OSError, ValueError):
+        # A broken profile is no reason to lose the image; its pixels are taken as they are.
+        return image
 
 
 @dataclasses.dataclass
@@ -527,16 +581,68 @@ def identity_of(planned: PlannedCandidate) -> tuple[bool, str]:
                                       title=planned.product.product_name))
 
 
+def variant_difference(model: Model, product_name: str) -> list[str]:
+    """
+    The variant words one name has and the other lacks, in either direction.
+
+    identity_verdict() stops at the first missing token, so it only ever saw the image naming a
+    RICHER variant than the model ('Galaxy A14 5G' for 'Galaxy A14'). The other direction - a plain
+    'Galaxy S23' image for the 'Galaxy S23 Ultra' - passed silently. Two kinds of difference count:
+    a variant word (pro, ultra, 5g, plus, ...) on one side only, and a model number that differs by
+    one trailing letter ('a05' / 'a05s', '12' / '12s'), which is how manufacturers name a new device.
+
+    Only names that can be compared are: they must share a model number (a token with a digit), or
+    differ by such a letter. GSMA's marketing name is often a code ('CPH2863', 'SM-J3119') that the
+    package matched by code to a commercial name ('Oppo Reno16 Pro'); "Pro" on one side only is not
+    a variant there, and comparing them flagged 575 of 2,619 pairs, almost all wrongly (measured
+    2026-10-07). Nor is 'LTE' in a module's series description, and a product name that carries the
+    model's own code ('OPPO A3 Pro 5G (CPH2639)') confirms it.
+    """
+    brand = set(tokens(model.brand)) | set(tokens(model.manufacturer))
+
+    def words(name: str) -> list[str]:
+        # '+' is a variant ("Galaxy S23+" is the Plus), not punctuation to drop.
+        return [t for t in tokens(name.replace("+", " plus ")) if t not in brand]
+
+    ours_list, theirs_list = words(model.marketing_name), words(product_name)
+    # The same name spaced differently is the same device: "Galaxy S23FE" is "Galaxy S23 FE".
+    if "".join(ours_list) == "".join(theirs_list):
+        return []
+    ours, theirs = set(ours_list), set(theirs_list)
+    has_digit = lambda t: any(ch.isdigit() for ch in t)          # noqa: E731
+
+    # A code-named model whose code the product name carries is confirmed by it.
+    if len(ours) == 1 and has_digit(next(iter(ours))) and ours <= theirs:
+        return []
+
+    found: list[str] = []
+    for a in sorted(ours - theirs):
+        for b in sorted(theirs - ours):
+            longer, shorter = (a, b) if len(a) > len(b) else (b, a)
+            if (len(longer) == len(shorter) + 1 and longer.startswith(shorter)
+                    and longer[-1].isalpha() and has_digit(shorter)):
+                found.append(f"{shorter}/{longer}")
+
+    if found or any(has_digit(t) for t in ours & theirs):
+        found = sorted((ours ^ theirs) & (VARIANTS - {"lte"})) + found
+    return found
+
+
 def mapping_warnings(planned: PlannedCandidate, live_status: str | None) -> list[dict]:
-    """What the package's mapping, and the image already live, say."""
+    """
+    What the package's mapping, and the image already live, say.
+
+    replaces_verified and replaces_unreviewed are a snapshot of the live table at staging, kept for
+    the dry-run report; the review API recomputes them from the live image on every read.
+    """
     out: list[dict] = []
 
-    ok, note = identity_of(planned)
-    if not ok and note.startswith("names a different variant"):
+    differs = variant_difference(planned.model, planned.product.product_name)
+    if differs:
         out.append(warning(
             "different_variant", HIGH,
-            f"the package calls this image '{planned.product.product_name}', which {note} "
-            f"from '{planned.model.marketing_name}'"))
+            f"the package calls this image '{planned.product.product_name}' but the model is "
+            f"'{planned.model.marketing_name}' - they differ by {', '.join(differs)}"))
 
     if planned.mapped_tacs < planned.model_tacs:
         severe = (planned.model_bindings > 0
@@ -633,6 +739,7 @@ def evidence_of(planned: PlannedCandidate, image: ImageResult, package: str) -> 
         "qaStatus": p.qa_status,
         "packageFile": planned.image_file,
         "upscale": round(image.upscale, 4),
+        "originalSha256": image.actual_sha,
         "originalSha256Ok": image.sha_ok,
     }
 
@@ -733,6 +840,72 @@ def insert_rows(rows: list[Row]) -> tuple[list[int], int, list[str]]:
     return inserted, failed_rows, errors
 
 
+def update_sql(batch: list[tuple[int, Row]]) -> str:
+    """
+    Recompute candidates already staged from this package, in place: one statement per batch.
+
+    Only rows still awaiting review are touched - a decision a person has made is never rewritten -
+    and the id is kept, so nothing a reviewer has open goes missing. Like the insert, it writes the
+    candidate table and nothing else.
+    """
+    values = []
+    for candidate_id, row in batch:
+        img = row.image
+        values.append(
+            "({id}, '{mime}', '{payload}', '{digest}', {w}, {h}, {obytes}, {score}, '{breakdown}', "
+            "{bindings}, '{warnings}', '{evidence}')".format(
+                id=int(candidate_id), mime=esc(img.mime),
+                payload=base64.b64encode(img.stored).decode("ascii"), digest=img.digest,
+                w=int(img.width), h=int(img.height), obytes=int(img.original_bytes),
+                score=int(row.quality_score), breakdown=esc(json.dumps(row.breakdown)),
+                bindings=max(0, int(row.planned.model_bindings)),
+                warnings=esc(json.dumps(row.warnings)), evidence=esc(json.dumps(row.evidence))))
+
+    return ("UPDATE catalog.device_image_candidate AS c SET\n"
+            "    content_type = v.mime, bytes = decode(v.payload, 'base64'),\n"
+            "    sha256 = decode(v.digest, 'hex'), original_width = v.w, original_height = v.h,\n"
+            "    original_bytes = v.obytes, quality_score = v.score,\n"
+            "    score_breakdown = v.breakdown::jsonb, bindings = v.bindings,\n"
+            "    warnings = v.warnings::jsonb, evidence = v.evidence::jsonb, last_checked_at = now()\n"
+            "FROM (VALUES\n    " + ",\n    ".join(values) + "\n"
+            ") AS v(id, mime, payload, digest, w, h, obytes, score, breakdown, bindings, warnings, evidence)\n"
+            "WHERE c.id = v.id AND c.status = 'needs_review'\n"
+            "RETURNING c.id;\n")
+
+
+def update_rows(batch_rows: list[tuple[int, Row]]) -> tuple[list[int], list[str]]:
+    """(ids updated, one error per failed batch)."""
+    updated: list[int] = []
+    errors: list[str] = []
+    for start in range(0, len(batch_rows), INSERT_BATCH):
+        batch = batch_rows[start:start + INSERT_BATCH]
+        try:
+            output = psql(update_sql(batch))
+            updated.extend(int(line) for line in output.splitlines() if line.strip().isdigit())
+        except Exception as exc:                        # noqa: BLE001 - report, carry on
+            errors.append(f"rows {start + 1}-{start + len(batch)}: {exc}"[:400])
+        say(f"  updated {len(updated):,} so far "
+            f"({min(start + INSERT_BATCH, len(batch_rows)):,} of {len(batch_rows):,} sent)")
+    return updated, errors
+
+
+def staged_from(package: str) -> dict[tuple[str, str], tuple[int, str]]:
+    """
+    (model key, package file) -> (id, status) for every candidate this package has staged, in any
+    status. Keyed on the SOURCE file, not the normalised bytes: a change to the normalisation must
+    update what is staged, not stage it all a second time beside the first.
+    """
+    out: dict[tuple[str, str], tuple[int, str]] = {}
+    sql = ("SELECT id || E'\\t' || model_key || E'\\t' || coalesce(evidence->>'packageFile', '') "
+           "|| E'\\t' || status FROM catalog.device_image_candidate "
+           f"WHERE package = '{esc(package)}'")
+    for line in psql(sql).split("\n"):
+        parts = line.rstrip("\r").split("\t")
+        if len(parts) == 4 and parts[0].isdigit():
+            out[(parts[1], parts[2])] = (int(parts[0]), parts[3])
+    return out
+
+
 # --------------------------------------------------------------------------- reading the stack
 
 _TSV_ESCAPES = {"\\": "\\", "t": "\t", "n": "\n", "r": "\r", "0": "\0", "b": "\b", "f": "\f",
@@ -746,7 +919,10 @@ def tsv_field(text: str) -> str:
 
 def tsv_rows(sql: str, columns: int) -> list[list[str]]:
     out: list[list[str]] = []
-    for line in clickhouse(sql).splitlines():
+    # '\n' only. ClickHouse escapes a real newline inside a field, so a raw one is always a row
+    # boundary; splitlines() would also split on U+0085, U+2028 or \x1c inside a model name.
+    for line in clickhouse(sql).split("\n"):
+        line = line.rstrip("\r")
         if not line:
             continue
         parts = line.split("\t")
@@ -955,8 +1131,28 @@ def run(args: argparse.Namespace) -> int:
 
     exit_code = 1 if failed else 0
 
-    if args.apply:
-        pending = [r for r in rows if (r.model_key, r.image.digest) not in already]
+    if args.apply or args.refresh:
+        staged = staged_from(package)
+        key = lambda r: (r.model_key, r.planned.image_file)          # noqa: E731
+        pending = [r for r in rows
+                   if key(r) not in staged and (r.model_key, r.image.digest) not in already]
+
+        if args.refresh:
+            to_update = [(staged[key(r)][0], r) for r in rows
+                         if key(r) in staged and staged[key(r)][1] == "needs_review"]
+            decided = sum(1 for r in rows if key(r) in staged and staged[key(r)][1] != "needs_review")
+            say("")
+            say(f"refreshing {len(to_update):,} candidates still awaiting review "
+                f"({decided:,} already decided are left as they are)")
+            updated, update_errors = update_rows(to_update)
+            summary["refreshed"] = len(updated)
+            summary["refreshErrors"] = update_errors
+            say(f"refreshed:           {len(updated):,}")
+            for error in update_errors:
+                say(f"FAILED batch {error}")
+            if update_errors:
+                exit_code = 1
+
         say("")
         say(f"staging {len(pending):,} candidates ({len(rows) - len(pending):,} already staged)")
         inserted, failed_rows, errors = insert_rows(pending)
@@ -989,6 +1185,10 @@ def main() -> int:
         description="Stage a curated device image package for review. Never replaces a live image.")
     parser.add_argument("--package", required=True, help="the package folder (holds images/, "
                         "image_sources.csv and TAC_to_image.csv)")
+    parser.add_argument("--refresh", action="store_true",
+                        help="recompute candidates this package already staged and that still "
+                             "await review (images, warnings, evidence, score), in place; also "
+                             "stages any that are new. Decided candidates are never touched.")
     parser.add_argument("--apply", action="store_true",
                         help="stage CANDIDATES. The default is a dry run that writes nothing; "
                              "approval is a separate, human step in the review page.")

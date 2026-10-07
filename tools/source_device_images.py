@@ -180,7 +180,10 @@ class DeviceIdentity:
 
     @property
     def model_key(self) -> str:
-        return f"{norm(self.brand)}|{norm(self.marketing_name)}"
+        # A brand of only spaces falls back to the manufacturer, as the backend's DeviceModelKey and
+        # the package importer do: GSMA's brandName '  ' got past coalesce(nullIf(.., ''), ..) and
+        # keyed the candidate '|6300', which no device page ever asks for.
+        return f"{norm(self.brand) or norm(self.manufacturer)}|{norm(self.marketing_name)}"
 
     @property
     def search_title(self) -> str:
@@ -808,13 +811,14 @@ def insert_candidate(device: DeviceIdentity, candidate: Candidate, score: Score,
             (model_key, brand, marketing_name, status, content_type, bytes, sha256,
              source_type, source_domain, source_url,
              original_width, original_height, original_bytes,
-             quality_score, score_breakdown)
+             quality_score, score_breakdown, bindings)
         VALUES (
             '{esc(device.model_key)}', '{esc(device.brand)}', '{esc(device.marketing_name)}',
             'needs_review', '{mime}', decode('{payload}', 'base64'), decode('{digest}', 'hex'),
             '{esc(candidate.source_type)}', '{esc(candidate.domain)}', '{esc(candidate.url)}',
             {candidate.width}, {candidate.height}, {len(data)},
-            {score.total}, '{esc(json.dumps(score.breakdown))}'::jsonb)
+            {score.total}, '{esc(json.dumps(score.breakdown))}'::jsonb,
+            {int(device.bindings)})
         ON CONFLICT (model_key, sha256) DO NOTHING
     """)
 
