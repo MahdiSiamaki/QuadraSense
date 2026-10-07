@@ -225,6 +225,9 @@ function invalidateAfterDecision(queryClient: ReturnType<typeof useQueryClient>)
   void queryClient.invalidateQueries({ queryKey: ['image-candidates'] })
   void queryClient.invalidateQueries({ queryKey: ['image-candidate-facets'] })
   void queryClient.invalidateQueries({ queryKey: ['devices'] })
+  // The device page is ['device', tac], five minutes fresh: without this it kept the placeholder
+  // for a model whose image had just been approved.
+  void queryClient.invalidateQueries({ queryKey: ['device'] })
   void queryClient.invalidateQueries({ queryKey: ['live-images'] })
 }
 
@@ -294,8 +297,9 @@ export function useLiveImageDecision() {
       }
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['live-images'] })
-      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+      // Keeping or removing a live image changes what the proposals replace, so the Proposed tab
+      // and its counts are refreshed with it.
+      invalidateAfterDecision(queryClient)
     },
   })
 }

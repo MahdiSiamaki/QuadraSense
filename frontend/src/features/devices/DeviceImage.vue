@@ -45,6 +45,9 @@ const props = withDefaults(
  * the img request, and a torn icon is a worse answer than the placeholder.
  */
 const failed = ref(false)
+
+/** For the review card: an image that never loaded must not be approvable unseen. */
+const emit = defineEmits<{ failed: [] }>()
 const loaded = ref(false)
 
 watch(
@@ -116,7 +119,7 @@ const box = computed(() => ({
       loading="lazy"
       decoding="async"
       @load="loaded = true"
-      @error="failed = true"
+      @error="failed = true; emit('failed')"
     />
 
     <!--

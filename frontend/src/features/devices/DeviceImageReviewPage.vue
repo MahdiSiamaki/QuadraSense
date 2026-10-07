@@ -165,7 +165,13 @@ const selectClass =
  */
 const selected = ref(new Set<number>())
 
-const reviewable = computed(() => items.value.filter((c) => c.status === 'needs_review'))
+/** Per card, so one card's spinner does not run on all 48 Approve buttons. */
+const pendingDecisions = ref(new Map<number, 'approve' | 'reject'>())
+
+// A card whose own approve or reject is in flight is not selectable: "Approve selected" could
+// otherwise send a candidate the reviewer is rejecting at that moment.
+const reviewable = computed(() =>
+  items.value.filter((c) => c.status === 'needs_review' && !pendingDecisions.value.has(c.id)))
 const selectedItems = computed(() => reviewable.value.filter((c) => selected.value.has(c.id)))
 const allSelected = computed(() =>
   reviewable.value.length > 0 && selectedItems.value.length === reviewable.value.length)
@@ -207,9 +213,6 @@ function clearSelection() {
 const decision = useCandidateDecision()
 const bulk = useBulkApprove()
 
-/** Per card, so one card's spinner does not run on all 48 Approve buttons. */
-const pendingDecisions = ref(new Map<number, 'approve' | 'reject'>())
-
 type Notice = { tone: 'success' | 'danger'; text: string }
 const notice = ref<Notice | null>(null)
 
@@ -236,30 +239,31 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : 'Something went wrong.'
 }
 
-function decide(candidate: DeviceImageCandidate, kind: 'approve' | 'reject', reason?: string) {
+/**
+ * One card's decision, awaited on its own.
+ *
+ * Not mutate() with per-call callbacks: the 48 cards share one mutation observer, and a second
+ * mutate() detaches it from the first - a reviewer clicking card B while A's request was in flight
+ * never heard that A failed, and A's spinner never stopped. Each call's own promise settles.
+ */
+async function decide(candidate: DeviceImageCandidate, kind: 'approve' | 'reject', reason?: string) {
   notice.value = null
   pendingDecisions.value.set(candidate.id, kind)
-  decision.mutate(
-    { id: candidate.id, decision: kind, reason },
-    {
-      onSuccess: () => {
-        selected.value.delete(candidate.id)
-        notice.value = {
-          tone: 'success',
-          text: `${kind === 'approve' ? 'Approved' : 'Rejected'} ${title(candidate)}.`,
-        }
-      },
-      onError: (error) => {
-        notice.value = {
-          tone: 'danger',
-          text: `Could not ${kind} ${title(candidate)}: ${describe(error)}`,
-        }
-      },
-      onSettled: () => {
-        pendingDecisions.value.delete(candidate.id)
-      },
-    },
-  )
+  try {
+    await decision.mutateAsync({ id: candidate.id, decision: kind, reason })
+    selected.value.delete(candidate.id)
+    notice.value = {
+      tone: 'success',
+      text: `${kind === 'approve' ? 'Approved' : 'Rejected'} ${title(candidate)}.`,
+    }
+  } catch (error) {
+    notice.value = {
+      tone: 'danger',
+      text: `Could not ${kind} ${title(candidate)}: ${describe(error)}`,
+    }
+  } finally {
+    pendingDecisions.value.delete(candidate.id)
+  }
 }
 
 function approveSelected() {
@@ -290,8 +294,10 @@ const queueTop = ref<HTMLElement | null>(null)
 
 function goToPage(next: number) {
   page.value = next
-  // Next is at the bottom of 48 cards; the next page starts at the top.
+  // Next is at the bottom of 48 cards; the next page starts at the top - for the eye and for the
+  // keyboard, whose focus otherwise stayed on Next below 48 cards it would have to tab back through.
   queueTop.value?.scrollIntoView({ block: 'start' })
+  queueTop.value?.focus({ preventScroll: true })
 }
 
 watch(filters, () => {
@@ -389,7 +395,7 @@ const emptyMessage = computed(() => {
     <!-- ============================================================== Proposed -->
     <section v-if="tab === 'candidates'" class="space-y-3" aria-label="Proposed images">
       <!-- One filter row. Every change goes back to page 1 and clears the selection. -->
-      <div ref="queueTop" class="flex scroll-mt-20 flex-wrap items-center gap-2">
+      <div ref="queueTop" tabindex="-1" class="flex scroll-mt-20 flex-wrap items-center gap-2 focus:outline-none">
         <div class="flex rounded-[var(--radius-md)] border p-0.5" role="radiogroup" aria-label="Review status">
           <button
             v-for="option in STATUSES"
@@ -500,13 +506,19 @@ const emptyMessage = computed(() => {
         </div>
       </div>
 
+      <!--
+        Announced from one live region that is always there: a role="status" element inserted
+        together with its text is often not read out at all. The visible notice is separate.
+      -->
+      <p class="sr-only" role="status" aria-live="polite">{{ notice?.tone === 'success' ? notice.text : '' }}</p>
+      <p class="sr-only" role="alert">{{ notice?.tone === 'danger' ? notice.text : '' }}</p>
       <p
         v-if="notice"
         class="rounded-[var(--radius-md)] border px-3 py-2 text-xs"
         :class="notice.tone === 'danger'
           ? 'border-[var(--c-danger)] bg-[var(--c-danger-subtle)] text-[var(--c-text)]'
           : 'border-[var(--c-success)] bg-[var(--c-success-subtle)] text-[var(--c-text)]'"
-        :role="notice.tone === 'danger' ? 'alert' : 'status'"
+        aria-hidden="true"
       >
         {{ notice.text }}
       </p>

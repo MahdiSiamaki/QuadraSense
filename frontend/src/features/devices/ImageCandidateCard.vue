@@ -38,6 +38,12 @@ const emit = defineEmits<{
 
 const id = useId()
 
+/**
+ * The proposed image failed to load. Its placeholder looks like content, so the card says so and
+ * neither the checkbox nor Approve accepts it: a person approves bytes they have seen.
+ */
+const imageFailed = ref(false)
+
 const title = computed(() => `${props.candidate.brand} ${props.candidate.marketingName}`)
 const reviewable = computed(() => props.candidate.status === 'needs_review')
 
@@ -169,7 +175,7 @@ function onToggle(event: Event) {
           type="checkbox"
           class="size-4 cursor-pointer align-middle accent-[var(--c-accent)] disabled:cursor-not-allowed"
           :checked="selected"
-          :disabled="locked"
+          :disabled="locked || pending !== null || imageFailed"
           :aria-label="`Select ${title}`"
           @change="onToggle"
         />
@@ -207,9 +213,13 @@ function onToggle(event: Event) {
             :src="candidateSrc"
             :name="candidate.brand"
             size="lg"
+            @failed="imageFailed = true"
           />
         </div>
-        <figcaption class="mt-1 text-2xs text-[var(--c-text-muted)]">Proposed</figcaption>
+        <figcaption v-if="imageFailed" class="mt-1 text-2xs font-medium text-[var(--c-danger)]" role="alert">
+          The proposed image did not load - reload before deciding
+        </figcaption>
+        <figcaption v-else class="mt-1 text-2xs text-[var(--c-text-muted)]">Proposed</figcaption>
       </figure>
 
       <figure v-if="candidate.currentStatus !== 'missing'">
@@ -373,7 +383,7 @@ function onToggle(event: Event) {
           variant="primary"
           size="sm"
           :pending="pending === 'approve'"
-          :disabled="locked || pending === 'reject'"
+          :disabled="locked || pending === 'reject' || imageFailed"
           @click="emit('approve')"
         >
           {{ candidate.currentStatus === 'missing' ? 'Approve' : 'Replace current' }}
