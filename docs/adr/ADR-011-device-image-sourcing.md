@@ -195,3 +195,23 @@ went stale once a sibling was approved - it is now derived from the live image o
 stored; a white card with transparent corners kept its margin; ICC profiles were dropped unconverted.
 All 2,619 candidates were recomputed in place (`--refresh`, same ids, decided ones never touched):
 1,565 carry a warning, 229 a high one.
+
+**Running a package import.** Like `source_device_images.py`, whose helpers it shares, the
+importer reaches PostgreSQL and ClickHouse with `docker exec` into the running stack's containers,
+so it runs on the machine that hosts the stack. It writes candidates only:
+
+```bash
+# Dry run: measures and maps every image, writes nothing
+python tools/import_device_image_package.py --package <folder> --report <out.json>
+# Stage the candidates for review
+python tools/import_device_image_package.py --package <folder> --apply
+# After a change to the importer: recompute this package's undecided candidates in place
+python tools/import_device_image_package.py --package <folder> --apply --refresh
+```
+
+`<folder>` holds `images/`, `image_sources.csv` and `TAC_to_image.csv`. `--model` and `--limit`
+narrow a trial run. The review happens in Settings → Device images → Proposed. The importer is tested
+by `tools/test_device_image_package.py` (111 checks, no network, no database). The files the
+amendment added are `tools/import_device_image_package.py`,
+`db/operational/migrations/015_device_image_package.sql` and
+`frontend/src/features/devices/ImageCandidateCard.vue`.

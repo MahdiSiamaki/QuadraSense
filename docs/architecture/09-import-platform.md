@@ -632,6 +632,17 @@ If the switch fails, the operational record is reverted and the caller is told p
 nothing changed. The opposite order would change the manufacturer shown on every screen before
 anything recorded that it had happened.
 
+**Activation owes the dashboard a rebuild** (product owner's decision, 2026-10-06). Lookups and
+the Explorer read `sqm.tac` live and switch at once, but the dashboard marts resolved TACs when
+they were built, so until they are rebuilt they keep the previous version's manufacturers and
+models. Once both stores have switched, `TacEndpoints` records the `SQM` snapshot as owed — the
+same debt a deferred daily file leaves (§6, "One snapshot per run of files") — rather than starting a rebuild
+inside the request: the rebuild is about 30 minutes of scans, and the worker settles any owed
+snapshot as soon as it has nothing else it can claim. A rollback goes through the same route and
+owes the same rebuild. The administrator is told the dashboard follows "as soon as the import
+worker is idle - about half an hour". Covered by `TacActivationEndpointTests`; removing the call
+fails them.
+
 ### D9 — A delivery is served only once its marts are complete
 
 Every dashboard query used to select its delivery with
