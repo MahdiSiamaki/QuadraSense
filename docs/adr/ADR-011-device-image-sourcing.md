@@ -185,3 +185,13 @@ bindings, to a "Galaxy A14 5G" image, which is shown as two high warnings.
 Staged on 2026-10-07: 2,619 candidates for 2,598 models (1,987 on the network, covering 57.4M
 of 113.2M bindings); 1,515 carry a warning, 136 a high one; no live image changed. Migration
 015 adds the candidate's bindings, warnings, evidence and package.
+
+**After review (2026-10-07).** An adversarial review of the import found, and the fixes proved:
+the variant check only fired one way (a plain "Galaxy S23" image on the "Galaxy S23 Ultra" passed)
+- it now compares both ways, but only between comparable names: GSMA codes against commercial
+names flagged 575 pairs, almost all wrongly, and the comparable-names rule flags 147, among them an
+S10+ image for the S10 and a Z Flip 5G image for the Note20 Ultra 5G; "replaces a verified image"
+went stale once a sibling was approved - it is now derived from the live image on every read, not
+stored; a white card with transparent corners kept its margin; ICC profiles were dropped unconverted.
+All 2,619 candidates were recomputed in place (`--refresh`, same ids, decided ones never touched):
+1,565 carry a warning, 229 a high one.
