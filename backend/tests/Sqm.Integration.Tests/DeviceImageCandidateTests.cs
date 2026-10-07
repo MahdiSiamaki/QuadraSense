@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Npgsql;
 using Sqm.Application.Abstractions;
+using Sqm.Contracts.Devices;
 
 namespace Sqm.Integration.Tests;
 
@@ -250,7 +251,7 @@ public sealed class DeviceImageCandidateTests : IClassFixture<IdentityFixture>, 
         var brand = Brand();
         const string Info = """[{"code":"touches_edges","severity":"info","detail":"x"}]""";
         const string High = """[{"code":"partial_coverage","severity":"high","detail":"x"}]""";
-        const string Both = """[{"code":"touches_edges","severity":"info","detail":"x"},{"code":"replaces_verified","severity":"high","detail":"y"}]""";
+        const string Both = """[{"code":"touches_edges","severity":"info","detail":"x"},{"code":"different_variant","severity":"high","detail":"y"}]""";
 
         // bindings, score, warnings, source: a is the most carried model, b is not on the network.
         var a = await StageAsync(Key(), [1, 0, 1], brand, 50, 500, "[]", "{}", "manufacturer");
@@ -327,6 +328,82 @@ public sealed class DeviceImageCandidateTests : IClassFixture<IdentityFixture>, 
 
         Assert.Equal([first, second, other], models.Select(m => m.Id));
         Assert.Equal(2, models.Count(m => m.ModelKey == shared));
+    }
+
+    [Fact]
+    public async Task Replacing_warnings_follow_the_live_image_not_what_was_stored()
+    {
+        if (Skip(out var reason))
+        {
+            Assert.Skip(reason);
+        }
+
+        var brand = Brand();
+        var key = Key();
+
+        // Staged when the model had a verified image - a snapshot that is now wrong: there is none.
+        var stale = await StageAsync(key, [5, 0, 1], brand, 80, 10,
+            """[{"code":"replaces_verified","severity":"high","detail":"old"},{"code":"touches_edges","severity":"info","detail":"x"}]""",
+            "{}", "manufacturer");
+        var sibling = await StageAsync(key, [5, 0, 2], brand, 70, 10, "[]", "{}", "manufacturer");
+
+        async Task<DeviceImageCandidate> Row(long id) =>
+            (await _fixture.ImageCandidates.ListAsync(Query(brand), TestContext.Current.CancellationToken)).Items.Single(i => i.Id == id);
+
+        Assert.Equal(["touches_edges"], (await Row(stale)).Warnings.Select(w => w.Code));
+        Assert.Empty(await HighIds(brand));
+
+        // A reviewer approves the sibling: the first candidate now replaces a verified image.
+        Assert.True(await _fixture.ImageCandidates.ApproveAsync(sibling, 1, TestContext.Current.CancellationToken));
+
+        var now = await Row(stale);
+        Assert.Equal(("replaces_verified", "high"), (now.Warnings[0].Code, now.Warnings[0].Severity));
+        Assert.Equal([stale], await HighIds(brand));
+    }
+
+    private async Task<long[]> HighIds(string brand) =>
+        [.. (await _fixture.ImageCandidates.ListAsync(Query(brand, warnings: "high"), TestContext.Current.CancellationToken)).Items.Select(i => i.Id)];
+
+    [Fact]
+    public async Task A_brand_stored_with_spaces_is_listed_and_found_trimmed()
+    {
+        if (Skip(out var reason))
+        {
+            Assert.Skip(reason);
+        }
+
+        var brand = Brand();
+        await StageAsync(Key(), [6, 0, 1], brand + "  ", 80, 0, "[]", "{}", "manufacturer");
+        await StageAsync(Key(), [6, 0, 2], brand.ToUpperInvariant(), 80, 0, "[]", "{}", "manufacturer");
+
+        var facets = await _fixture.ImageCandidates.GetFacetsAsync("needs_review", TestContext.Current.CancellationToken);
+        var entry = Assert.Single(facets.Brands, f => string.Equals(f.Value, brand, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(2, entry.Count);
+        Assert.Equal(entry.Value, entry.Value.Trim());
+
+        // What the facet offers, sent back, finds both.
+        Assert.Equal(2, (await _fixture.ImageCandidates.ListAsync(Query(entry.Value), TestContext.Current.CancellationToken)).Total);
+    }
+
+    [Fact]
+    public async Task A_page_past_the_end_still_reports_how_many_match()
+    {
+        if (Skip(out var reason))
+        {
+            Assert.Skip(reason);
+        }
+
+        var brand = Brand();
+        await StageAsync(Key(), [7, 0, 1], brand, 80, 0, "[]", "{}", "manufacturer");
+        await StageAsync(Key(), [7, 0, 2], brand, 80, 0, "[]", "{}", "manufacturer");
+
+        // After a reviewer approves the whole last page: nothing on it, but the queue is not empty.
+        var past = await _fixture.ImageCandidates.ListAsync(
+            new DeviceImageCandidateQuery("needs_review", brand, null, null, "any", "bindings", 1, 5),
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(past.Items);
+        Assert.Equal(2, past.Total);
     }
 
     [Fact]

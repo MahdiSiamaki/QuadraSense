@@ -123,6 +123,15 @@ public sealed class DeviceImageBulkApproveEndpointTests : IClassFixture<WebAppli
     }
 
     [Fact]
+    public async Task A_batch_of_exactly_one_hundred_is_taken()
+    {
+        var (status, body) = await PostAsync(new { ids = Enumerable.Range(1, 100).Select(i => (long)i).Where(i => i != 5).Append(200).ToArray() });
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(100, body.GetProperty("approved").GetArrayLength() + body.GetProperty("notAwaitingReview").GetArrayLength());
+    }
+
+    [Fact]
     public async Task A_candidate_named_twice_is_refused()
     {
         var (status, _) = await PostAsync(new { ids = new long[] { 2, 2 } });

@@ -45,13 +45,46 @@ public sealed class PostgresDeviceImageCandidateStore : IDeviceImageCandidateSto
     /// </remarks>
     private const string Filter = """
         (@status = 'all' OR c.status = @status)
-          AND (CAST(@brand AS text) IS NULL OR lower(c.brand) = lower(CAST(@brand AS text)))
+          AND (CAST(@brand AS text) IS NULL OR lower(btrim(c.brand)) = lower(CAST(@brand AS text)))
           AND (CAST(@sourceType AS text) IS NULL OR c.source_type = CAST(@sourceType AS text))
           AND (CAST(@onNetwork AS boolean) IS NULL OR (c.bindings > 0) = CAST(@onNetwork AS boolean))
           AND (@warnings = 'any'
-               OR (@warnings = 'with'    AND c.warnings <> '[]'::jsonb)
-               OR (@warnings = 'without' AND c.warnings =  '[]'::jsonb)
-               OR (@warnings = 'high'    AND c.warnings @> '[{"severity":"high"}]'::jsonb))
+               OR (@warnings = 'with'    AND c.effective_warnings <> '[]'::jsonb)
+               OR (@warnings = 'without' AND c.effective_warnings =  '[]'::jsonb)
+               OR (@warnings = 'high'    AND c.effective_warnings @> '[{"severity":"high"}]'::jsonb))
+        """;
+
+    /// <summary>
+    /// The candidates with the warnings a reviewer should see NOW, as a CTE named <c>c</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Whether approving replaces an image depends on the live table at the moment of reading, not
+    /// at staging: once a reviewer approves one of a model's two package images, the other
+    /// replaces a verified image. Stored, that warning went stale in both directions - a candidate
+    /// over a now-verified image could sit under "without warnings" and be approved in a batch
+    /// with nothing said. So replaces_verified (high) and replaces_unreviewed (info) are dropped
+    /// from what was stored and derived here from the live image, for candidates still awaiting
+    /// review; a decided candidate replaces nothing and carries neither.
+    /// </para>
+    /// <para>The list, its fallback count and the facets all read this, so they cannot disagree.</para>
+    /// </remarks>
+    private const string Candidates = """
+        c AS (
+            SELECT d.*,
+                   coalesce(i.status, 'missing') AS live_status,
+                   CASE WHEN d.status = 'needs_review' AND i.status = 'verified'
+                        THEN '[{"code":"replaces_verified","severity":"high","detail":"a reviewer verified the image shown for this model now - approving this replaces it"}]'::jsonb
+                        ELSE '[]'::jsonb END
+                   || (SELECT coalesce(jsonb_agg(w), '[]'::jsonb)
+                         FROM jsonb_array_elements(d.warnings) AS w
+                        WHERE w->>'code' NOT IN ('replaces_verified', 'replaces_unreviewed'))
+                   || CASE WHEN d.status = 'needs_review' AND i.status = 'needs_review'
+                           THEN '[{"code":"replaces_unreviewed","severity":"info","detail":"replaces the unreviewed image shown for this model now"}]'::jsonb
+                           ELSE '[]'::jsonb END AS effective_warnings
+            FROM catalog.device_image_candidate AS d
+            LEFT JOIN catalog.device_model_image AS i ON i.model_key = d.model_key
+        )
         """;
 
     /// <summary>Most-carried models first; the id makes the order total, so pages cannot overlap.</summary>
@@ -88,6 +121,7 @@ public sealed class PostgresDeviceImageCandidateStore : IDeviceImageCandidateSto
         var order = query.Sort == "score" ? OrderByScore : OrderByBindings;
 
         var sql = $"""
+            WITH {Candidates}
             SELECT c.id                              AS Id,
                    c.model_key                       AS ModelKey,
                    c.brand                           AS Brand,
@@ -104,14 +138,13 @@ public sealed class PostgresDeviceImageCandidateStore : IDeviceImageCandidateSto
                    c.score_breakdown::text           AS ScoreBreakdownJson,
                    c.rejection_reason                AS RejectionReason,
                    c.created_at                      AS CreatedAt,
-                   coalesce(i.status, 'missing')     AS CurrentStatus,
+                   c.live_status                     AS CurrentStatus,
                    c.bindings                        AS Bindings,
-                   c.warnings::text                  AS WarningsJson,
+                   c.effective_warnings::text        AS WarningsJson,
                    c.evidence::text                  AS EvidenceJson,
                    c.package                         AS Package,
                    count(*) OVER ()                  AS Total
-            FROM catalog.device_image_candidate AS c
-            LEFT JOIN catalog.device_model_image AS i ON i.model_key = c.model_key
+            FROM c
             WHERE {Filter}
             ORDER BY {order}
             LIMIT @limit OFFSET @offset
@@ -143,7 +176,7 @@ public sealed class PostgresDeviceImageCandidateStore : IDeviceImageCandidateSto
         if (list.Count == 0 && query.Offset > 0)
         {
             total = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
-                $"SELECT count(*) FROM catalog.device_image_candidate AS c WHERE {Filter}", args,
+                $"WITH {Candidates} SELECT count(*) FROM c WHERE {Filter}", args,
                 commandTimeout: _commandTimeout, cancellationToken: ct)).ConfigureAwait(false);
         }
 
@@ -156,19 +189,23 @@ public sealed class PostgresDeviceImageCandidateStore : IDeviceImageCandidateSto
         // Brands are grouped without regard to case because the filter compares without regard
         // to case: a facet that listed "Samsung" and "SAMSUNG" separately would promise two
         // different answers and then give the same one for both.
-        const string Sql = """
-            SELECT count(*)                                                        AS Total,
-                   count(*) FILTER (WHERE c.bindings > 0)                          AS OnNetwork,
-                   count(*) FILTER (WHERE c.warnings <> '[]'::jsonb)               AS WithWarnings,
-                   count(*) FILTER (WHERE c.warnings @> '[{"severity":"high"}]'::jsonb) AS HighWarnings
-            FROM catalog.device_image_candidate AS c
+        //
+        // Brands are trimmed too, as the filter trims what the page sends back: a stored
+        // 'Nokia ' listed as 'Nokia ' would be sent back as 'Nokia' and match nothing.
+        const string Sql = $$"""
+            WITH {{Candidates}}
+            SELECT count(*)                                                                  AS Total,
+                   count(*) FILTER (WHERE c.bindings > 0)                                    AS OnNetwork,
+                   count(*) FILTER (WHERE c.effective_warnings <> '[]'::jsonb)               AS WithWarnings,
+                   count(*) FILTER (WHERE c.effective_warnings @> '[{"severity":"high"}]'::jsonb) AS HighWarnings
+            FROM c
             WHERE (@status = 'all' OR c.status = @status);
 
-            SELECT min(c.brand) AS Value, count(*) AS Count
+            SELECT min(btrim(c.brand)) AS Value, count(*) AS Count
             FROM catalog.device_image_candidate AS c
-            WHERE (@status = 'all' OR c.status = @status)
-            GROUP BY lower(c.brand)
-            ORDER BY count(*) DESC, min(c.brand);
+            WHERE (@status = 'all' OR c.status = @status) AND btrim(c.brand) <> ''
+            GROUP BY lower(btrim(c.brand))
+            ORDER BY count(*) DESC, min(btrim(c.brand));
 
             SELECT c.source_type AS Value, count(*) AS Count
             FROM catalog.device_image_candidate AS c

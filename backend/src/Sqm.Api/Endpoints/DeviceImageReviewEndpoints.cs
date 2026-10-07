@@ -126,7 +126,8 @@ public static class DeviceImageReviewEndpoints
         ArgumentNullException.ThrowIfNull(store);
 
         var size = Math.Clamp(pageSize, 1, MaxCandidatePageSize);
-        var offset = (Math.Max(1, page) - 1) * size;
+        // In long arithmetic and clamped: page=44739245 overflowed int to a negative OFFSET and a 500.
+        var offset = (int)Math.Min((Math.Max(1L, page) - 1) * size, int.MaxValue);
 
         var query = new DeviceImageCandidateQuery(
             Status: CandidateStatus(status),
@@ -252,12 +253,16 @@ public static class DeviceImageReviewEndpoints
         var user = CurrentUser.Require(http);
         var promoted = await store.ApproveAsync(id, user.UserId, ct).ConfigureAwait(false);
 
+        // Every audit entry after a change is written with no cancellation: the change has already
+        // committed, and a reviewer closing the tab at that moment must not leave a live image (or a
+        // removal, or a rejection) that the audit log never heard of. The request token still stops
+        // the work that has not started - the next candidate of a batch.
         await audit.WriteAsync(Entry(user, http, AuditOutcome.Success, new Dictionary<string, object?>
         {
             ["candidate"] = id,
             ["action"] = "approve",
             ["result"] = promoted ? "promoted" : "not awaiting review",
-        }), ct).ConfigureAwait(false);
+        }), CancellationToken.None).ConfigureAwait(false);
 
         return promoted
             ? Results.Ok(new { id, status = "approved" })
@@ -332,7 +337,7 @@ public static class DeviceImageReviewEndpoints
                 ["action"] = "approve",
                 ["result"] = promoted ? "promoted" : "not awaiting review",
                 ["batch"] = ids.Count,
-            }), ct).ConfigureAwait(false);
+            }), CancellationToken.None).ConfigureAwait(false);
         }
 
         return Results.Ok(new ApproveCandidatesResult(approved, notAwaitingReview));
@@ -374,7 +379,7 @@ public static class DeviceImageReviewEndpoints
             ["action"] = "reject",
             ["reason"] = reason,
             ["result"] = rejected ? "rejected" : "not awaiting review",
-        }), ct).ConfigureAwait(false);
+        }), CancellationToken.None).ConfigureAwait(false);
 
         return rejected
             ? Results.Ok(new { id, status = "rejected" })
@@ -399,7 +404,7 @@ public static class DeviceImageReviewEndpoints
 
         var size = Math.Clamp(pageSize, 1, MaxPageSize);
         var result = await images
-            .ListAsync(wanted, size, Math.Max(0, page - 1) * size, ct).ConfigureAwait(false);
+            .ListAsync(wanted, size, (int)Math.Min(Math.Max(0L, page - 1L) * size, int.MaxValue), ct).ConfigureAwait(false);
 
         return Results.Ok(result);
     }
@@ -420,7 +425,7 @@ public static class DeviceImageReviewEndpoints
             ["model"] = modelKey,
             ["action"] = "verify",
             ["result"] = verified ? "verified" : "no image for that model",
-        }), ct).ConfigureAwait(false);
+        }), CancellationToken.None).ConfigureAwait(false);
 
         return verified
             ? Results.Ok(new { modelKey, status = "verified" })
@@ -443,7 +448,7 @@ public static class DeviceImageReviewEndpoints
             ["model"] = modelKey,
             ["action"] = "remove",
             ["result"] = removed ? "removed" : "no image for that model",
-        }), ct).ConfigureAwait(false);
+        }), CancellationToken.None).ConfigureAwait(false);
 
         return removed ? Results.NoContent() : Results.NotFound();
     }
