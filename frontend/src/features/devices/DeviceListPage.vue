@@ -274,7 +274,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
         <div class="flex flex-wrap items-center gap-2 border-t pt-3">
           <select
             v-model="manufacturer"
-            class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-xs"
+            class="max-w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-xs"
             aria-label="Manufacturer"
           >
             <option value="">All manufacturers</option>
@@ -285,7 +285,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
 
           <select
             v-model="deviceType"
-            class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-xs"
+            class="max-w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-xs"
             aria-label="Device type"
           >
             <option value="">All device types</option>
@@ -296,7 +296,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
 
           <select
             v-model="operatingSystem"
-            class="rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-xs"
+            class="max-w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1.5 text-xs"
             aria-label="Operating system"
           >
             <option value="">All operating systems</option>

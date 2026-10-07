@@ -92,7 +92,7 @@ function isWithheld(key: string): boolean {
     <Card>
       <form @submit.prevent="explore()">
         <div class="flex flex-wrap items-end gap-3">
-          <div class="min-w-[18rem] flex-1">
+          <div class="min-w-[min(18rem,100%)] flex-1">
             <label
               for="identifier"
               class="block text-xs font-medium text-[var(--c-text-secondary)]"

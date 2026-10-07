@@ -149,9 +149,10 @@ const result = computed(() => list.data.value ?? null)
             <span :class="miniLabel">Brand</span>
             <input v-model="brand" type="search" placeholder="Any brand" :class="[control, 'mt-1 w-40']" maxlength="100" />
           </label>
-          <label>
+          <!-- Capped at the row: the longest device type would otherwise widen a phone's page. -->
+          <label class="max-w-full min-w-0">
             <span :class="miniLabel">Device type</span>
-            <select v-model="deviceType" :class="[control, 'mt-1']">
+            <select v-model="deviceType" :class="[control, 'mt-1 w-full']">
               <option value="">All device types</option>
               <option v-for="t in facets.data.value?.deviceTypes ?? []" :key="t.value" :value="t.value">{{ t.value }}</option>
             </select>

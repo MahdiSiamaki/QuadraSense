@@ -73,7 +73,7 @@ function correlationId(e: unknown): string | null {
           contains only the things that should line up is what keeps them lined up.
         -->
         <div class="flex flex-wrap items-end gap-3">
-          <div class="min-w-[16rem] flex-1">
+          <div class="min-w-[min(16rem,100%)] flex-1">
             <label for="msisdn" class="block text-xs font-medium text-[var(--c-text-secondary)]">
               Subscriber number
             </label>
