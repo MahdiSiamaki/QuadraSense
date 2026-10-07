@@ -27,6 +27,9 @@ const CATEGORIES: TemplateCategory[] = ['Look up', 'History', 'Observations', 'D
 const ctx = computed(() => ({ dataThrough: props.dataThrough ?? new Date().toISOString().slice(0, 10) }))
 
 const open = ref<string | null>(null)
+
+/** The template whose parameters are showing, if any. */
+const openTemplate = computed(() => TEMPLATES.find((x) => x.id === open.value) ?? null)
 const values = reactive<Record<string, Record<string, string>>>({})
 
 function missing(t: ExplorerTemplate): string[] {
@@ -82,29 +85,39 @@ const numeric = (kind: string) => ['msisdn', 'imsi', 'imei', 'prefix', 'count'].
             </span>
           </button>
 
-          <form v-if="open === t.id && values[t.id]" class="flex flex-col gap-2 border-t pt-2" @submit.prevent="run(t)">
-            <div class="flex flex-wrap gap-2">
-              <label v-for="p in t.params" :key="p.key" class="flex min-w-32 flex-1 flex-col gap-0.5">
-                <span :class="miniLabel">{{ p.label }}</span>
-                <input
-                  v-model="values[t.id]![p.key]"
-                  :type="inputType(p.kind)"
-                  :inputmode="numeric(p.kind) ? 'numeric' : undefined"
-                  :min="p.kind === 'count' ? 0 : undefined"
-                  :placeholder="p.placeholder"
-                  autocomplete="off"
-                  spellcheck="false"
-                  :class="numeric(p.kind) && p.kind !== 'count' ? mono : control"
-                />
-              </label>
-            </div>
-
-            <p v-if="t.caution" class="text-2xs text-pretty text-[var(--c-text-muted)]">{{ t.caution }}</p>
-
-            <Button type="submit" size="sm" variant="primary" class="w-fit" :disabled="!ready(t)">Run</Button>
-          </form>
         </article>
       </div>
+
+      <!--
+        The parameters, once, under the category's cards. Inside the chosen card they made it
+        tall, and the grid stretched its row neighbours into tall, mostly empty boxes.
+      -->
+      <form
+        v-if="openTemplate?.category === category && values[openTemplate.id]"
+        class="flex flex-col gap-2 rounded-[var(--radius-lg)] border border-[var(--c-accent)] bg-[var(--c-surface)] p-3"
+        @submit.prevent="run(openTemplate)"
+      >
+        <p class="text-sm font-semibold">{{ openTemplate.title }}</p>
+        <div class="flex flex-wrap gap-2">
+          <label v-for="p in openTemplate.params" :key="p.key" class="flex min-w-32 flex-1 flex-col gap-0.5 sm:max-w-xs">
+            <span :class="miniLabel">{{ p.label }}</span>
+            <input
+              v-model="values[openTemplate.id]![p.key]"
+              :type="inputType(p.kind)"
+              :inputmode="numeric(p.kind) ? 'numeric' : undefined"
+              :min="p.kind === 'count' ? 0 : undefined"
+              :placeholder="p.placeholder"
+              autocomplete="off"
+              spellcheck="false"
+              :class="numeric(p.kind) && p.kind !== 'count' ? mono : control"
+            />
+          </label>
+        </div>
+
+        <p v-if="openTemplate.caution" class="text-2xs text-pretty text-[var(--c-text-muted)]">{{ openTemplate.caution }}</p>
+
+        <Button type="submit" size="sm" variant="primary" class="w-fit" :disabled="!ready(openTemplate)">Run</Button>
+      </form>
     </section>
   </div>
 </template>

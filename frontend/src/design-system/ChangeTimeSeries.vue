@@ -17,6 +17,7 @@ import { chartColor, withAlpha } from '@/lib/chart-colors'
 import { fillCalendar, isMissing } from '@/lib/calendar'
 import { feedQualityMarkArea, feedQualityTooltip } from '@/lib/feed-quality-bands'
 import type { DailyChange } from '@/api/dashboard'
+import { tooltipBounds } from '@/lib/chart-tooltip'
 
 echarts.use([
   BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent,
@@ -91,8 +92,9 @@ function render() {
       },
       // The axis titles are drawn above the plot, in the same corners as the legend. At top 30 the
       // right-hand title sat on top of the legend's last entry; 52 gives each its own row.
-      grid: { left: 8, right: 8, top: 52, bottom: 46, containLabel: true },
+      grid: { left: 8, right: 8, top: 52, bottom: 46 },
       tooltip: {
+        ...tooltipBounds,
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
         backgroundColor: cssVar('--c-surface-raised'),
@@ -114,7 +116,8 @@ function render() {
       xAxis: {
         type: 'category',
         data: dates,
-        axisLabel: { color: muted, fontSize: 10, hideOverlap: true },
+        // The first and last dates align to the plot's edges: centred on the end ticks they ran off the canvas.
+        axisLabel: { color: muted, fontSize: 10, hideOverlap: true, alignMinLabel: 'left', alignMaxLabel: 'right' },
         axisLine: { lineStyle: { color: border } },
       },
       yAxis: [

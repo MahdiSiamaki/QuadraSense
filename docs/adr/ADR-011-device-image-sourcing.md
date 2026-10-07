@@ -150,3 +150,48 @@ with `object-position: center` everywhere it is used, so a device is never clipp
 `frontend/src/api/deviceImageCandidates.ts`,
 `frontend/src/features/devices/DeviceImageReviewPage.vue`,
 `frontend/src/features/devices/DeviceImage.vue`.
+
+---
+
+## Amendment, 2026-10-06 — curated image packages
+
+The product owner supplied a curated package (`TAC_Catalog_Images_20260916`: 1,279 images mapped
+to 39,889 TACs, with each image's source page, kind and SHA-256). Three decisions, all the owner's:
+
+1. **Nothing from a package is discarded; every measurement is a warning.** This decision's pixel
+   rules were tuned for Commons photographs. On the package they rejected 310 of 1,279 images,
+   and a contact sheet showed almost all of them wrong: renders trimmed tight to the device read
+   as "cropped" (240), small modules on white as "scenes" (16). `tools/import_device_image_package.py`
+   stages every image and stores what the pixels and the mapping say as warnings
+   (`touches_edges`, `low_resolution`, `partial_coverage`, `different_variant`, ...), each `high`
+   or `info`, for the reviewer. Web-sourced candidates keep the hard rules.
+2. **The size standard is the verified images.** The three verified images fill 93–99% of a
+   square frame along their long side. Package images are trimmed and scaled — up as well as
+   down — so the device's long side is 752 of 800 px (3% margin), centred on transparency. The
+   enlargement factor is stored; above 1.5× it is a `low_resolution` warning, above 2× a high one.
+   This replaces Decision 6's 8% padding and no-upscaling for packages only.
+3. **Select-and-approve.** The review page approves a selection of what the reviewer has on
+   screen (at most 100, refused whole if two are for one model), each through the same
+   single-candidate transaction and audited one by one. Filters by brand, source, warnings and
+   "on the network", sorted by the model's bindings.
+
+Identity is the package's evidence, not the file name: GSMA's marketing name is often a model
+code (`CPH2185` is the Oppo A15) that the package matched by code, so the name-token check of
+Decision 2 would have failed 1,431 of 2,619 pairs for no reason. The card shows the package's
+product name beside the model's, how it matched, and how many of the model's TACs and active
+bindings the image covers - "Galaxy A14" has 200 TACs and the package maps one, with no
+bindings, to a "Galaxy A14 5G" image, which is shown as two high warnings.
+
+Staged on 2026-10-07: 2,619 candidates for 2,598 models (1,987 on the network, covering 57.4M
+of 113.2M bindings); 1,515 carry a warning, 136 a high one; no live image changed. Migration
+015 adds the candidate's bindings, warnings, evidence and package.
+
+**After review (2026-10-07).** An adversarial review of the import found, and the fixes proved:
+the variant check only fired one way (a plain "Galaxy S23" image on the "Galaxy S23 Ultra" passed)
+- it now compares both ways, but only between comparable names: GSMA codes against commercial
+names flagged 575 pairs, almost all wrongly, and the comparable-names rule flags 147, among them an
+S10+ image for the S10 and a Z Flip 5G image for the Note20 Ultra 5G; "replaces a verified image"
+went stale once a sibling was approved - it is now derived from the live image on every read, not
+stored; a white card with transparent corners kept its margin; ICC profiles were dropped unconverted.
+All 2,619 candidates were recomputed in place (`--refresh`, same ids, decided ones never touched):
+1,565 carry a warning, 229 a high one.

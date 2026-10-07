@@ -45,6 +45,9 @@ const props = withDefaults(
  * the img request, and a torn icon is a worse answer than the placeholder.
  */
 const failed = ref(false)
+
+/** For the review card: an image that never loaded must not be approvable unseen. */
+const emit = defineEmits<{ failed: [] }>()
 const loaded = ref(false)
 
 watch(
@@ -116,7 +119,7 @@ const box = computed(() => ({
       loading="lazy"
       decoding="async"
       @load="loaded = true"
-      @error="failed = true"
+      @error="failed = true; emit('failed')"
     />
 
     <!--
@@ -138,7 +141,13 @@ const box = computed(() => ({
       unverified
     </span>
 
-    <template v-else>
+    <!--
+      Its own condition, not v-else: a v-else binds to the element just above it - the "unverified"
+      badge - so every photo that was not unverified also drew the silhouette and initials. The
+      silhouette took a grid row and squashed the photo to a strip (110x25 in a 110px tile on the
+      Galaxy A32 page), with the initials printed across it.
+    -->
+    <template v-if="!showPhoto">
       <!--
         The silhouette. Stroke-only and low-contrast: it is a stand-in, and a placeholder that
         draws the eye harder than the real photographs beside it has the emphasis backwards.

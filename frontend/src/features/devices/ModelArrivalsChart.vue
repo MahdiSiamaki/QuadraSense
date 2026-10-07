@@ -8,6 +8,7 @@ import type { ModelArrivals } from '@/api/modelArrivals'
 import { chartColor } from '@/lib/chart-colors'
 import { formatCompact, formatDate, formatFull, formatMonth } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
+import { tooltipBounds } from '@/lib/chart-tooltip'
 
 echarts.use([BarChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
@@ -36,8 +37,9 @@ function render() {
     {
       animation: false,
       legend: { top: 0, right: 0, textStyle: { color: chartColor('--c-text-secondary'), fontSize: 11 }, itemWidth: 10, itemHeight: 10 },
-      grid: { left: 8, right: 8, top: 28, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 8, top: 28, bottom: 8 },
       tooltip: {
+        ...tooltipBounds,
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
         backgroundColor: chartColor('--c-surface-raised'),

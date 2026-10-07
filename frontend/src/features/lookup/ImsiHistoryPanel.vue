@@ -80,6 +80,7 @@ function clearRange() {
       :is-empty="(history.data.value?.events.length ?? 0) === 0"
       empty-message="No dated events for this SIM in the selected range."
       min-height="8rem"
+      gap="none"
       @retry="history.refetch()"
     >
       <p

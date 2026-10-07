@@ -18,6 +18,7 @@ import {
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import Button from '@/design-system/Button.vue'
 import Card from '@/design-system/Card.vue'
+import SplitView from '@/design-system/SplitView.vue'
 import Modal from '@/design-system/Modal.vue'
 import { Permission, useAuth } from '@/features/auth/useAuth'
 import { formatDate } from '@/lib/format'
@@ -150,7 +151,15 @@ const shownPlan = ref<ExplorerPlan | null>(null)
 
 /** What the grid shows was produced by this request; paging, sorting and export reuse it. */
 const ranRequest = ref<ExplorerQueryRequest | null>(null)
-const result = computed(() => run.data.value ?? null)
+/**
+ * The last result that came back, kept while the next page, sort or query runs.
+ *
+ * Read straight from the mutation it was undefined from the moment a request started, so the grid
+ * unmounted on every page click: the column beside the entity panel went empty, the page jumped,
+ * and the grid's own dimmed loading state could never be seen.
+ */
+const shownResult = ref<typeof run.data.value | null>(null)
+const result = computed(() => shownResult.value ?? null)
 const ranSort = computed<SortDraft[]>(() =>
   (ranRequest.value?.sort ?? []).map((s) => ({ field: s.field, descending: s.descending ?? false })),
 )
@@ -198,8 +207,14 @@ function execute(request: ExplorerQueryRequest, paths = new Map<string, string>(
     onSuccess: (data) => {
       ranRequest.value = request
       shownPlan.value = data.plan
+      shownResult.value = data
     },
-    onError: (error) => explain(error, paths),
+    onError: (error) => {
+      // A refused run leaves nothing to show: keeping the previous rows would present them as the
+      // answer to the query that was just refused.
+      shownResult.value = null
+      explain(error, paths)
+    },
   })
 }
 
@@ -217,13 +232,16 @@ function checkCost() {
   })
 }
 
+// While a run is pending the grid on screen is the previous one: paging or sorting it would start
+// a run of the OLD query, and only the latest run's result is ever shown - the pending one's would
+// be lost though it ran and was audited.
 function goToPage(page: number) {
-  if (ranRequest.value) execute({ ...ranRequest.value, page })
+  if (ranRequest.value && !run.isPending.value) execute({ ...ranRequest.value, page })
 }
 
 /** A header click: re-runs what is on screen in the new order, and the builder follows. */
 function resort(sort: SortDraft[]) {
-  if (!ranRequest.value) return
+  if (!ranRequest.value || run.isPending.value) return
   draft.value.sort = sort.map((s) => ({ ...s }))
   execute({ ...ranRequest.value, sort, page: 1 })
 }
@@ -521,57 +539,52 @@ const eventsNote = computed(() =>
       </Card>
     </AsyncBoundary>
 
-    <!-- Results and the summary panel beside them. -->
-    <div
-      v-if="result || current"
-      class="grid items-start gap-4"
-      :class="current ? 'xl:grid-cols-[minmax(0,1fr)_24rem]' : ''"
-    >
-      <div class="flex min-w-0 flex-col gap-3">
-        <p
-          v-if="template?.caution && result"
-          class="rounded-[var(--radius-md)] border px-3 py-2 text-xs text-[var(--c-text-secondary)]"
-        >
-          <span class="font-semibold">{{ template.title }}.</span> {{ template.caution }}
-        </p>
+    <!-- Results, and the summary panel beside them; the timeline under the results. -->
+    <SplitView v-if="result || current" :aside="!!current">
+      <p
+        v-if="template?.caution && result"
+        class="rounded-[var(--radius-md)] border px-3 py-2 text-xs text-[var(--c-text-secondary)]"
+      >
+        <span class="font-semibold">{{ template.title }}.</span> {{ template.caution }}
+      </p>
 
-        <Card v-if="result" flush>
-          <ResultGrid
-            :result="result"
-            :grouped="resultGrouped"
-            :sort="ranSort"
-            :loading="run.isPending.value"
-            :can-export="can(Permission.DataExport)"
-            :exporting="exporter.isPending.value"
-            @sort="resort"
-            @page="goToPage"
-            @drill="drill"
-            @export="exportCsv"
-          />
-        </Card>
-      </div>
+      <Card v-if="result" flush>
+        <ResultGrid
+          :result="result"
+          :grouped="resultGrouped"
+          :sort="ranSort"
+          :loading="run.isPending.value"
+          :can-export="can(Permission.DataExport)"
+          :exporting="exporter.isPending.value"
+          @sort="resort"
+          @page="goToPage"
+          @drill="drill"
+          @export="exportCsv"
+        />
+      </Card>
 
-      <EntityPanel
-        v-if="current"
-        :key="current"
+      <TimelineView
+        v-if="timelineOpen && current"
         :identifier="current"
-        :depth="stack.length"
-        :data-through="dataThrough"
-        :can-open-device="can(Permission.DeviceView)"
-        class="xl:sticky xl:top-20"
-        @back="stack.pop()"
-        @close="closePanel"
-        @explore="explore"
-        @timeline="timelineOpen = true"
+        @drill="drill"
+        @close="timelineOpen = false"
       />
-    </div>
 
-    <TimelineView
-      v-if="timelineOpen && current"
-      :identifier="current"
-      @drill="drill"
-      @close="timelineOpen = false"
-    />
+      <template #aside>
+        <EntityPanel
+          v-if="current"
+          :key="current"
+          :identifier="current"
+          :depth="stack.length"
+          :data-through="dataThrough"
+          :can-open-device="can(Permission.DeviceView)"
+          @back="stack.pop()"
+          @close="closePanel"
+          @explore="explore"
+          @timeline="timelineOpen = true"
+        />
+      </template>
+    </SplitView>
 
     <SaveQueryDialog
       :open="dialog !== null"

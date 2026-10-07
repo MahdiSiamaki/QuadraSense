@@ -19,13 +19,20 @@ withDefaults(
 
 <template>
   <section
-    class="flex flex-col rounded-[var(--radius-lg)] border bg-[var(--c-surface)] shadow-[var(--shadow-xs)]"
+    class="flex min-w-0 flex-col rounded-[var(--radius-lg)] border bg-[var(--c-surface)] shadow-[var(--shadow-xs)]"
   >
+    <!--
+      The header wraps. Its actions used to be shrink-0 in a row that could not wrap, so on a
+      narrow card they kept their full width, overflowed the card, and squeezed the title to
+      nothing - the subtitle then broke one word per line. The title keeps at least 10rem; when the
+      actions do not fit beside that, they move to their own line, still at the right. (16rem made
+      the Explorer panel's Back and close buttons wrap in its 24rem aside.)
+    -->
     <header
       v-if="title || $slots.actions"
-      class="flex items-start justify-between gap-4 border-b px-4 py-3"
+      class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b px-4 py-3"
     >
-      <div class="min-w-0">
+      <div class="min-w-0 flex-[1_1_10rem]">
         <h2 v-if="title" class="truncate text-sm font-semibold text-[var(--c-text)]">
           {{ title }}
         </h2>
@@ -33,7 +40,7 @@ withDefaults(
           {{ subtitle }}
         </p>
       </div>
-      <div v-if="$slots.actions" class="shrink-0"><slot name="actions" /></div>
+      <div v-if="$slots.actions" class="ml-auto max-w-full min-w-0"><slot name="actions" /></div>
     </header>
 
     <div :class="['min-h-0 flex-1', flush ? '' : 'p-4']">

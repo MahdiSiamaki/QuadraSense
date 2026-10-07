@@ -126,6 +126,7 @@ const selectClass =
         :is-empty="(log.data.value?.items.length ?? 0) === 0"
         empty-message="Nothing matches these filters."
         min-height="24rem"
+        gap="none"
         @retry="log.refetch()"
       >
         <div class="overflow-x-auto">

@@ -16,6 +16,7 @@ import { chartColor } from '@/lib/chart-colors'
 import { fillCalendar, isMissing } from '@/lib/calendar'
 import { feedQualityMarkArea, feedQualityTooltip } from '@/lib/feed-quality-bands'
 import type { DailyChurn } from '@/api/dashboard'
+import { tooltipBounds } from '@/lib/chart-tooltip'
 
 echarts.use([
   LineChart,
@@ -74,8 +75,9 @@ function render() {
     {
       animation: false,
       legend: { top: 0, right: 0, textStyle: { color: text, fontSize: 11 }, itemWidth: 10, itemHeight: 10 },
-      grid: { left: 8, right: 8, top: 30, bottom: 40, containLabel: true },
+      grid: { left: 8, right: 8, top: 30, bottom: 40 },
       tooltip: {
+        ...tooltipBounds,
         trigger: 'axis',
         backgroundColor: cssVar('--c-surface-raised'),
         borderColor: border,
@@ -94,7 +96,8 @@ function render() {
       xAxis: {
         type: 'category',
         data: days.map((d) => d.date),
-        axisLabel: { color: muted, fontSize: 10, hideOverlap: true },
+        // The first and last dates align to the plot's edges: centred on the end ticks they ran off the canvas.
+        axisLabel: { color: muted, fontSize: 10, hideOverlap: true, alignMinLabel: 'left', alignMaxLabel: 'right' },
         axisLine: { lineStyle: { color: border } },
       },
       yAxis: {

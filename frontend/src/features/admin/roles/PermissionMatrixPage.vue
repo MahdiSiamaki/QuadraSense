@@ -92,7 +92,12 @@ const orphaned = computed(() =>
           permission name stays readable while the roles scroll, which is the only way a wide
           grid works on a laptop.
         -->
-        <div class="overflow-x-auto">
+        <!--
+          isolate: the sticky first column ranks only within the table, never against the top bar.
+          contain-paint: at 390px the role headers widened the whole page by 80px although this
+          wrapper scrolls; overflow-x alone did not bound them, paint containment does.
+        -->
+        <div class="isolate overflow-x-auto contain-paint">
           <table class="w-full border-collapse text-left text-sm">
             <thead>
               <tr class="border-b">

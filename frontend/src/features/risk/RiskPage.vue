@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { CHECK_LABELS, RULE_TITLES, useRiskDaily, useRiskOverview, useRiskStatus, type RiskListKind, type RiskRule } from '@/api/risk'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
+import SplitView from '@/design-system/SplitView.vue'
 import Card from '@/design-system/Card.vue'
 import { Permission, useAuth } from '@/features/auth/useAuth'
 import EntityPanel from '@/features/explorer/EntityPanel.vue'
@@ -153,11 +154,11 @@ function drill(identifier: string) {
           </button>
         </div>
 
-        <div class="grid items-start gap-5" :class="current ? 'xl:grid-cols-[minmax(0,1fr)_24rem]' : ''">
+        <SplitView :aside="!!current">
           <div class="min-w-0">
             <!-- Overview: counts only, naming nobody. -->
             <div v-if="tab === 'overview'" class="flex flex-col gap-3">
-            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="grid gap-3 sm:grid-cols-2" :class="current ? '2xl:grid-cols-3' : 'xl:grid-cols-4'">
               <Card v-for="r in data.rules" :key="r.rule" :title="RULE_TITLES[r.rule] ?? r.rule">
                 <div class="flex flex-col gap-2 text-xs">
                   <template v-if="counts.get(r.rule)">
@@ -262,8 +263,11 @@ function drill(identifier: string) {
             </Card>
           </div>
 
-          <div v-if="current" class="flex flex-col gap-4 xl:sticky xl:top-20">
+          <TimelineView v-if="timelineOpen && current" :identifier="current" @drill="drill" @close="timelineOpen = false" />
+
+          <template #aside>
             <EntityPanel
+              v-if="current"
               :key="current"
               :identifier="current"
               :depth="stack.length"
@@ -274,8 +278,8 @@ function drill(identifier: string) {
               @close="stack = []"
               @timeline="timelineOpen = true"
             />
-          </div>
-        </div>
+          </template>
+        </SplitView>
 
         <p class="text-2xs text-[var(--c-text-muted)]">
           Observed, not proven. This data has no calls, traffic, location or time of day. “Not removed” means not yet removed
@@ -283,7 +287,5 @@ function drill(identifier: string) {
         </p>
       </template>
     </AsyncBoundary>
-
-    <TimelineView v-if="timelineOpen && current" :identifier="current" @drill="drill" @close="timelineOpen = false" />
   </div>
 </template>

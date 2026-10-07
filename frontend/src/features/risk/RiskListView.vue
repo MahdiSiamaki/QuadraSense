@@ -316,13 +316,15 @@ const kindLabel = computed(() =>
               {{ typeBreakdown.data.value?.basis ?? 'handset' }}. Choose one to narrow the list to it.
             </p>
           </div>
-          <DimensionTable
-            v-if="deviceRows.length"
-            :rows="deviceRows"
-            header="Device type"
-            :unit="rule?.family === 'Sim' ? 'SIMs' : 'IMEIs'"
-            @select="filterTo"
-          />
+          <!-- Capped: with a dozen device types this card stretched the chart card beside it into a blank block. -->
+          <div v-if="deviceRows.length" class="max-h-[20rem] overflow-y-auto">
+            <DimensionTable
+              :rows="deviceRows"
+              header="Device type"
+              :unit="rule?.family === 'Sim' ? 'SIMs' : 'IMEIs'"
+              @select="filterTo"
+            />
+          </div>
           <p v-else class="px-4 py-10 text-center text-2xs text-[var(--c-text-muted)]">
             {{ typeBreakdown.isError.value ? 'Not available for this rule.' : typeBreakdown.isPending.value ? 'Loading…' : 'Nothing listed.' }}
           </p>

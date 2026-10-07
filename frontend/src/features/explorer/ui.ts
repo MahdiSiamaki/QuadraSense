@@ -3,8 +3,10 @@
   measure look like one family. Tokens only - no literal colours.
 */
 
+// max-w-full: a select is as wide as its longest option - 'Device for the Automatic Processing of
+// Data (APD)' - and pushed a 320px page sideways.
 export const control =
-  'rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs text-[var(--c-text)] ' +
+  'max-w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2 py-1 text-xs text-[var(--c-text)] ' +
   'disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--c-accent)]'
 
 export const mono = `${control} tabular font-mono tracking-wide`

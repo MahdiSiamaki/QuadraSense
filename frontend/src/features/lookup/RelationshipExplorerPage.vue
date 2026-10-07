@@ -92,7 +92,7 @@ function isWithheld(key: string): boolean {
     <Card>
       <form @submit.prevent="explore()">
         <div class="flex flex-wrap items-end gap-3">
-          <div class="min-w-[18rem] flex-1">
+          <div class="min-w-[min(18rem,100%)] flex-1">
             <label
               for="identifier"
               class="block text-xs font-medium text-[var(--c-text-secondary)]"
@@ -176,7 +176,8 @@ function isWithheld(key: string): boolean {
         </p>
       </Card>
 
-      <div class="grid gap-5 xl:grid-cols-3">
+      <!-- At most two sections can show (the centre is not its own neighbour): two columns, not three. -->
+      <div v-if="sections.length" class="grid gap-5" :class="sections.length > 1 ? 'lg:grid-cols-2' : ''">
         <Card v-for="section in sections" :key="section.key" :title="section.title" flush>
           <template #actions>
             <span class="text-2xs text-[var(--c-text-muted)]">
@@ -192,7 +193,7 @@ function isWithheld(key: string): boolean {
             not an empty result.
           </p>
 
-          <ul v-else class="divide-y">
+          <ul v-else class="max-h-[28rem] divide-y overflow-y-auto">
             <!-- Indexed: two different identifiers can mask to the same string. -->
             <li v-for="(node, i) in section.nodes" :key="`${i}:${node.value}`">
               <button

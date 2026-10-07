@@ -7,6 +7,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { formatCompact, formatFull } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
 import { chartColor } from '@/lib/chart-colors'
+import { tooltipBounds } from '@/lib/chart-tooltip'
 
 /*
   Only the pieces this chart needs are registered. Importing all of ECharts would
@@ -66,8 +67,9 @@ function render() {
   chart.value.setOption(
     {
       animation: false,
-      grid: { left: 8, right: 56, top: 8, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 56, top: 8, bottom: 8 },
       tooltip: {
+        ...tooltipBounds,
         trigger: 'item',
         backgroundColor: cssVar('--c-surface-raised'),
         borderColor: border,

@@ -13,6 +13,9 @@ namespace Sqm.Api.Endpoints;
 /// </remarks>
 public static partial class TacEndpoints
 {
+    /// <summary>The source whose dashboard snapshot the marts are: the daily subscriber files.</summary>
+    public const string DashboardSource = "SQM";
+
     [LoggerMessage(EventId = 1200, Level = LogLevel.Error,
         Message = "TAC version {VersionLabel} was activated in the operational store but the "
                   + "analytics switch failed; reverting the operational record")]
@@ -116,6 +119,13 @@ public static partial class TacEndpoints
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
+        // The dashboard marts resolve TACs when they are built, so until they are rebuilt they show
+        // the previous version's manufacturers and models. Owed rather than rebuilt here: the
+        // rebuild is ~30 minutes of scans, and the worker settles a debt as soon as it is idle -
+        // the same path a deferred daily file uses. A rollback is an activation too.
+        await repository.MarkDashboardOwedAsync(
+            DashboardSource, null, $"TAC version {activation.VersionLabel} activated", ct).ConfigureAwait(false);
+
         await repository.WriteAuditAsync(
             actor, "tac.activate.completed", null, null, activation.TacVersionId,
             http.TraceIdentifier,
@@ -133,8 +143,8 @@ public static partial class TacEndpoints
             activation.PreviousVersionLabel is null
                 ? $"{activation.VersionLabel} is now the active TAC version."
                 : $"{activation.VersionLabel} is now active, replacing "
-                  + $"{activation.PreviousVersionLabel}. Dashboard figures will reflect the new "
-                  + "mapping once the marts are next refreshed."));
+                  + $"{activation.PreviousVersionLabel}. The dashboard is rebuilt with the new "
+                  + "mapping as soon as the import worker is idle - about half an hour."));
     }
 }
 

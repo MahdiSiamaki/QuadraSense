@@ -203,15 +203,24 @@ watch(ranking, (value) => {
       :is-error="query.isError.value"
       :error="query.error.value"
       min-height="14rem"
+      gap="none"
       @retry="query.refetch()"
     >
       <template v-if="data">
-        <VendorMovementChart
-          :rows="data.rows"
-          :ranking="ranking"
-          :normalised="normalised"
-          :network-change-percent="data.networkChangePercent"
-        />
+        <!--
+          Capped, scrolling inside the card. This card shares a row with the churn chart, and at 20
+          vendors the list made it 1,386px tall: the row stretched the chart card to match and left
+          930px of blank between its chart and its notes (measured at 1920px, 2026-10-07). 14rem keeps
+          the longest card level with the chart beside it (472px).
+        -->
+        <div class="max-h-[14rem] overflow-y-auto overscroll-contain">
+          <VendorMovementChart
+            :rows="data.rows"
+            :ranking="ranking"
+            :normalised="normalised"
+            :network-change-percent="data.networkChangePercent"
+          />
+        </div>
 
         <!--
           The caveat that makes growth readable. Stated under the chart rather than in a tooltip,

@@ -10,6 +10,7 @@ import { chartColor, withAlpha } from '@/lib/chart-colors'
 import { feedQualityMarkArea, feedQualityTooltip } from '@/lib/feed-quality-bands'
 import { formatCompact, formatFull } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
+import { tooltipBounds } from '@/lib/chart-tooltip'
 
 echarts.use([BarChart, DataZoomComponent, GridComponent, LegendComponent, MarkAreaComponent, TooltipComponent, CanvasRenderer])
 
@@ -43,8 +44,9 @@ function render() {
     {
       animation: false,
       legend: { top: 0, right: 0, textStyle: { color: chartColor('--c-text-secondary'), fontSize: 11 }, itemWidth: 10, itemHeight: 10 },
-      grid: { left: 8, right: 8, top: 32, bottom: 46, containLabel: true },
+      grid: { left: 8, right: 8, top: 32, bottom: 46 },
       tooltip: {
+        ...tooltipBounds,
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
         backgroundColor: chartColor('--c-surface-raised'),
@@ -65,7 +67,8 @@ function render() {
       xAxis: {
         type: 'category',
         data: dates,
-        axisLabel: { color: muted, fontSize: 10, hideOverlap: true },
+        // The first and last dates align to the plot's edges: centred on the end ticks they ran off the canvas.
+        axisLabel: { color: muted, fontSize: 10, hideOverlap: true, alignMinLabel: 'left', alignMaxLabel: 'right' },
         axisLine: { lineStyle: { color: border } },
       },
       yAxis: {

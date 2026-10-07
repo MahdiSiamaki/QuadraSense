@@ -8,6 +8,7 @@ import type { RiskDistribution } from '@/api/risk'
 import { chartColor } from '@/lib/chart-colors'
 import { formatCompact, formatFull } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
+import { tooltipBounds } from '@/lib/chart-tooltip'
 
 echarts.use([BarChart, GridComponent, LegendComponent, MarkAreaComponent, TooltipComponent, CanvasRenderer])
 
@@ -53,8 +54,9 @@ function render() {
       legend: hasRaw
         ? { top: 0, right: 0, textStyle: { color: chartColor('--c-text-secondary'), fontSize: 11 }, itemWidth: 10, itemHeight: 10 }
         : undefined,
-      grid: { left: 8, right: 8, top: hasRaw ? 28 : 12, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 8, top: hasRaw ? 28 : 12, bottom: 8 },
       tooltip: {
+        ...tooltipBounds,
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
         backgroundColor: chartColor('--c-surface-raised'),
