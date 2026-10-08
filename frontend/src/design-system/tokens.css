@@ -192,8 +192,21 @@
 }
 
 /* ------------------------------------------------------------------ base */
-* {
-  border-color: var(--c-border);
+/*
+  A default that a utility may override goes in @layer base, after Preflight, never at top level.
+  An unlayered rule outranks every Tailwind utility whatever its specificity, because utilities
+  live in @layer utilities: at top level this one painted every border-[var(--c-danger)],
+  -warning, -accent and -success in the neutral grey - 74 elements on four pages, among them the
+  danger button, the warning banners and the selected image card. The rules below that are still
+  unlayered (html, body, .tabular, scrollbars) set things no utility in the app sets.
+*/
+@layer base {
+  *,
+  ::before,
+  ::after,
+  ::backdrop {
+    border-color: var(--c-border);
+  }
 }
 
 html {
@@ -225,11 +238,19 @@ table,
   font-feature-settings: 'tnum' 1;
 }
 
-/* Visible focus, always. Removing outlines makes the app unusable by keyboard. */
-:focus-visible {
-  outline: 2px solid var(--c-accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
+/*
+  Visible focus, always. Removing outlines makes the app unusable by keyboard.
+
+  In @layer base for the reason above: unlayered, its border-radius squared every rounded-full
+  control to 4px while it had focus, and no focus-visible:outline-* utility could adjust the ring.
+  The radius stays for elements that set none of their own, so a focused link's ring is rounded.
+*/
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
 }
 
 /*
