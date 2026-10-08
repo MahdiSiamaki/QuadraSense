@@ -165,7 +165,6 @@ function onToggle(event: Event) {
 
 <template>
   <Card
-    class="transition-shadow"
     :class="selected ? 'border-[var(--c-accent)] ring-1 ring-[color:var(--c-accent)]' : ''"
   >
     <!-- Who, and how much of the network it is. -->

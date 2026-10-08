@@ -51,7 +51,7 @@ function isCurrent(to: string): boolean {
                 <RouterLink
                   :to="item.to"
                   :aria-current="isCurrent(item.to) ? 'page' : undefined"
-                  class="block rounded-[var(--radius-md)] px-2.5 py-1.5 text-sm font-medium transition-colors"
+                  class="block rounded-[var(--radius-md)] px-2.5 py-1.5 text-sm font-medium"
                   :class="
                     isCurrent(item.to)
                       ? 'bg-[var(--c-surface-sunken)] text-[var(--c-text)]'

@@ -101,7 +101,7 @@ async function signOut() {
             v-for="item in nav"
             :key="item.to"
             :to="item.to"
-            class="shrink-0 rounded-[var(--radius-md)] px-2.5 py-1.5 text-sm font-medium whitespace-nowrap transition-colors"
+            class="shrink-0 rounded-[var(--radius-md)] px-2.5 py-1.5 text-sm font-medium whitespace-nowrap"
             :class="
               isCurrent(item.to)
                 ? 'bg-[var(--c-surface-sunken)] text-[var(--c-text)]'

@@ -40,7 +40,7 @@ const segments = computed(() =>
       <div
         v-for="s in segments"
         :key="s.key"
-        class="group relative flex items-center justify-center transition-opacity hover:opacity-85"
+        class="group relative flex items-center justify-center hover:opacity-85"
         :style="{ width: `${s.percent}%`, backgroundColor: s.color }"
         :title="`${s.key}: ${formatFull(s.count)} (${formatPercent(s.percent, 2)})`"
       >
