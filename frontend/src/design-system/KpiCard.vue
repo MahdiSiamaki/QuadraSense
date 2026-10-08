@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { formatCompact, formatFull } from '@/lib/format'
 
 /**
@@ -16,6 +16,10 @@ import { formatCompact, formatFull } from '@/lib/format'
  * The value is shown compactly (125.9M) with the exact figure in the title attribute:
  * on a dashboard you want the magnitude at a glance and the precise number when you go
  * looking for it.
+ *
+ * A title is reachable only by a mouse, so the same two lines also sit behind a small "i"
+ * button beside the label: a keyboard or a phone opens them there. They open over the card
+ * rather than inside it - a card that grew would stretch every card in its row.
  */
 const props = withDefaults(
   defineProps<{
@@ -49,6 +53,34 @@ const tooltip = computed(() =>
   [props.definition, exact.value ? `Exact: ${exact.value}` : null].filter(Boolean).join('\n'),
 )
 
+const infoOpen = ref(false)
+const infoId = useId()
+const root = ref<HTMLElement | null>(null)
+const infoButton = ref<HTMLButtonElement | null>(null)
+
+function onDocumentPointerDown(event: PointerEvent) {
+  if (root.value && !root.value.contains(event.target as Node)) infoOpen.value = false
+}
+
+function onInfoKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  infoOpen.value = false
+  infoButton.value?.focus()
+}
+
+/** Tabbing on past the card closes it, as clicking elsewhere does: no popovers left behind. */
+function onFocusOut(event: FocusEvent) {
+  const next = event.relatedTarget as Node | null
+  if (infoOpen.value && next && root.value && !root.value.contains(next)) infoOpen.value = false
+}
+
+// Listening only while open: the dashboard has six of these cards, data quality three.
+watch(infoOpen, (open) => {
+  if (open) document.addEventListener('pointerdown', onDocumentPointerDown)
+  else document.removeEventListener('pointerdown', onDocumentPointerDown)
+})
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPointerDown))
+
 const toneClass = computed(
   () =>
     ({
@@ -61,12 +93,38 @@ const toneClass = computed(
 
 <template>
   <div
-    class="rounded-[var(--radius-lg)] border bg-[var(--c-surface)] px-4 py-3.5 shadow-[var(--shadow-xs)]"
+    ref="root"
+    class="relative rounded-[var(--radius-lg)] border bg-[var(--c-surface)] px-4 py-3.5 shadow-[var(--shadow-xs)]"
     :title="tooltip || undefined"
+    @keydown="onInfoKeydown"
+    @focusout="onFocusOut"
   >
-    <p class="text-xs font-medium tracking-wide text-[var(--c-text-muted)]">
-      {{ label }}
-    </p>
+    <div class="flex items-start justify-between gap-2">
+      <p class="text-xs font-medium tracking-wide text-[var(--c-text-muted)]">
+        {{ label }}
+      </p>
+      <button
+        v-if="tooltip"
+        ref="infoButton"
+        type="button"
+        class="-mt-0.5 -mr-1.5 grid size-5 shrink-0 place-items-center rounded-full text-2xs font-semibold text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
+        :aria-expanded="infoOpen"
+        :aria-controls="infoId"
+        :aria-label="`About ${label}`"
+        @click="infoOpen = !infoOpen"
+      >
+        i
+      </button>
+    </div>
+
+    <div
+      v-if="infoOpen"
+      :id="infoId"
+      title=""
+      class="absolute inset-x-2 top-9 z-30 rounded-[var(--radius-md)] border bg-[var(--c-surface-raised)] px-3 py-2 text-xs whitespace-pre-line text-[var(--c-text-secondary)] shadow-[var(--shadow-md)]"
+    >
+      {{ tooltip }}
+    </div>
 
     <p class="kpi-value mt-1.5 text-2xl leading-none font-semibold" :class="toneClass">
       {{ display }}
