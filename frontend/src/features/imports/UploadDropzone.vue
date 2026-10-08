@@ -118,13 +118,16 @@ const tone: Record<QueueItem['status'], string> = {
 <template>
   <div class="space-y-3">
     <!--
+      Its text takes no pointer events: crossing a line of it fired dragleave on the panel, the
+      highlight went off and came back on, and the drop zone flickered under the file.
+
       The whole panel is the drop target, and it is also a button. Drag and drop alone would be
       unusable by keyboard; a file input alone would ignore the gesture most people reach for
       when they already have the file in a folder.
     -->
     <button
       type="button"
-      class="flex w-full flex-col items-center justify-center gap-1 rounded-[var(--radius-lg)] border-2 border-dashed px-4 py-8 transition-colors"
+      class="flex w-full flex-col items-center justify-center gap-1 rounded-[var(--radius-lg)] border-2 border-dashed px-4 py-8 transition-colors [&_*]:pointer-events-none"
       :class="
         dragging
           ? 'border-[var(--c-accent)] bg-[var(--c-accent-subtle)]'
