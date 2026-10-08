@@ -128,11 +128,29 @@ const tabs = computed<Array<{ id: Tab; label: string }>>(() => [
   { id: 'saved', label: `My queries${saved.data.value ? ` (${saved.data.value.length})` : ''}` },
 ])
 
+/**
+ * Each dataset keeps its own query while the other is shown.
+ *
+ * Switching used to build a fresh starter and drop the query on screen, with the saved query it
+ * was editing. That was one deliberate click; once the choice became a radio group, where an arrow
+ * key selects, it was one stray key press, and a screen-reader user listening to the other option
+ * lost their work. Now the query is parked and comes back when its dataset is chosen again.
+ */
+const parked: Partial<
+  Record<
+    ExplorerDataset,
+    { draft: QueryDraft; editing: typeof editing.value; template: ExplorerTemplate | null }
+  >
+> = {}
+
 function chooseDataset(which: ExplorerDataset) {
   if (which === draft.value.dataset) return
-  draft.value = starter(which)
-  editing.value = null
-  template.value = null
+  parked[draft.value.dataset] = { draft: draft.value, editing: editing.value, template: template.value }
+  const back = parked[which]
+  draft.value = back?.draft ?? starter(which)
+  editing.value = back?.editing ?? null
+  template.value = back?.template ?? null
+  delete parked[which]
   clearFeedback()
 }
 
