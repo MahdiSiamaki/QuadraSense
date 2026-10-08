@@ -41,14 +41,14 @@ export function formatFull(value: number): string {
   return full.format(value)
 }
 
+/**
+ * "12.3%". A share above zero that would round to zero reads "<0.1%" instead: "0.00%" beside a
+ * count of 1 says the row is empty when it is not.
+ */
 export function formatPercent(value: number, digits = 1): string {
+  const smallest = 10 ** -digits
+  if (value > 0 && value < smallest / 2) return `<${smallest.toFixed(digits)}%`
   return `${value.toFixed(digits)}%`
-}
-
-/** Signed, for net-change figures where direction carries the meaning. */
-export function formatSigned(value: number): string {
-  const sign = value > 0 ? '+' : ''
-  return `${sign}${full.format(value)}`
 }
 
 /**
@@ -61,6 +61,12 @@ export function formatSignedDecimal(value: number, digits: number): string {
     maximumFractionDigits: digits,
     signDisplay: 'exceptZero',
   }).format(value)
+}
+
+/** Signed, for net-change figures where direction carries the meaning. */
+export function formatSigned(value: number): string {
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${full.format(value)}`
 }
 
 /**

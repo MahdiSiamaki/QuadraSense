@@ -48,10 +48,10 @@ const preview = useQuery({
 
     <template v-else-if="preview.data.value">
       <p class="text-2xs text-[var(--c-text-muted)]">
-        {{ preview.data.value.columns.length }} columns ·
+        {{ preview.data.value.columns.length }} {{ preview.data.value.columns.length === 1 ? 'column' : 'columns' }} ·
         {{ formatBytes(preview.data.value.fileBytes) }}
         <template v-if="preview.data.value.totalRows > 0">
-          · {{ formatFull(preview.data.value.totalRows) }} rows in total
+          · {{ formatFull(preview.data.value.totalRows) }} {{ preview.data.value.totalRows === 1 ? 'row' : 'rows' }} in total
         </template>
         · showing the first {{ preview.data.value.rows.length }}
       </p>

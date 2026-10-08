@@ -265,7 +265,7 @@ const kindLabel = computed(() =>
         <span class="font-medium text-[var(--c-text)]">{{ RULE_TITLES[rule.rule] ?? rule.rule }}.</span>
         <template v-if="rule.windowFrom">
           Window {{ formatDate(rule.windowFrom) }} – {{ formatDate(rule.windowTo) }}, {{ rule.daysWithData }} of
-          {{ rule.windowDays }} days have data.
+          {{ rule.windowDays }} days {{ rule.daysWithData === 1 ? 'has' : 'have' }} data.
         </template>
         <template v-else> All time, from current state. At most an anomaly: it accumulates ordinary churn.</template>
         Configured threshold: {{ rule.threshold === null ? 'not calibrated' : `more than ${formatFull(rule.threshold)}` }};
@@ -276,7 +276,7 @@ const kindLabel = computed(() =>
         class="rounded-[var(--radius-md)] border border-[var(--c-warning)] bg-[var(--c-warning-subtle)] px-3 py-2 text-[var(--c-text)]"
         role="note"
       >
-        {{ rule.flaggedDays.length }} of this window's days are flagged by the feed-quality monitor for
+        {{ rule.flaggedDays.length }} of this window's days {{ rule.flaggedDays.length === 1 ? 'is' : 'are' }} flagged by the feed-quality monitor for
         {{ rule.cappingChecks.map((c) => CHECK_LABELS[c] ?? c).join(' or ') }}
         ({{ formatDate(rule.flaggedDays[0] ?? null) }} – {{ formatDate(rule.flaggedDays[rule.flaggedDays.length - 1] ?? null) }}).
         Rows matching those defects are set aside, and what remains is shown as an anomaly at most, never a risk signal.

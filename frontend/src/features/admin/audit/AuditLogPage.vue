@@ -5,7 +5,7 @@ import Card from '@/design-system/Card.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import Pagination from '@/design-system/Pagination.vue'
 import { useAuditActions, useAuditLog, type AuditRecord, type AuditFilters } from '@/api/admin'
-import { formatDateTime, formatRelative } from '@/lib/format'
+import { formatDateTime, formatFull, formatRelative } from '@/lib/format'
 
 /**
  * The audit log.
@@ -75,8 +75,9 @@ const selectClass =
           Append-only. Sign-ins, administrative changes, imports and every refused request.
         </p>
       </div>
-      <p class="tabular text-xs text-[var(--c-text-muted)]">
-        {{ (log.data.value?.total ?? 0).toLocaleString() }} entries
+      <!-- Only once loaded: "0 entries" while the first page was still on its way read as an empty log. -->
+      <p v-if="log.data.value" class="tabular text-xs text-[var(--c-text-muted)]">
+        {{ formatFull(log.data.value.total) }} {{ log.data.value.total === 1 ? 'entry' : 'entries' }}
       </p>
     </header>
 

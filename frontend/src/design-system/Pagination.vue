@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { formatFull } from '@/lib/format'
 
 /**
  * Paging for a table.
@@ -39,8 +40,9 @@ const buttonClass =
     <p class="tabular text-xs text-[var(--c-text-muted)]">
       <template v-if="total === 0">No results</template>
       <template v-else>
-        <span class="font-medium text-[var(--c-text-secondary)]">{{ first }}–{{ last }}</span>
-        of {{ total.toLocaleString() }}
+        <!-- formatFull, not toLocaleString(): en-US grouping on every browser, not the reader's locale. -->
+        <span class="font-medium text-[var(--c-text-secondary)]">{{ formatFull(first) }}–{{ formatFull(last) }}</span>
+        of {{ formatFull(total) }}
       </template>
     </p>
 
@@ -54,7 +56,7 @@ const buttonClass =
         Previous
       </button>
       <span class="tabular px-1 text-xs text-[var(--c-text-muted)]">
-        {{ page }} / {{ lastPage }}
+        {{ formatFull(page) }} / {{ formatFull(lastPage) }}
       </span>
       <button
         type="button"

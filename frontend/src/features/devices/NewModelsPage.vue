@@ -211,7 +211,7 @@ const result = computed(() => list.data.value ?? null)
             @update:page="(p: number) => (page = p)"
           />
           <p v-if="result" class="border-t px-4 py-2 text-2xs text-[var(--c-text-muted)]">
-            {{ formatFull(result.total) }} models first seen between {{ formatDate(result.from) }} and {{ formatDate(result.to) }}.
+            {{ formatFull(result.total) }} {{ result.total === 1 ? 'model' : 'models' }} first seen between {{ formatDate(result.from) }} and {{ formatDate(result.to) }}.
             Handsets and SIMs now come from the latest delivery's device figures and are estimates; a model with none yet has
             not reached a delivery's figures.
           </p>

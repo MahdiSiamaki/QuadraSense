@@ -259,7 +259,7 @@ const bandsOpen = ref(false)
                   contributes one add and one remove and changes the population by nothing. The
                   population figures are above.
                   <span v-if="timeline.data.value">
-                    Query cost {{ timeline.data.value.timing.elapsedMs }} ms.
+                    Query cost {{ formatFull(timeline.data.value.timing.elapsedMs) }} ms.
                   </span>
                 </p>
               </Card>

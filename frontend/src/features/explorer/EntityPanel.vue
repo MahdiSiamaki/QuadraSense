@@ -59,6 +59,13 @@ const data = computed(() => summary.data.value ?? null)
 const KIND: Record<string, string> = { msisdn: 'Number', imsi: 'SIM', imei: 'Handset (IMEI)', tac: 'Model (TAC)' }
 
 const title = computed(() => KIND[data.value?.kind ?? ''] ?? 'Identifier')
+
+/**
+ * The same thing in a sentence. Not title.toLowerCase(): that printed "this handset (imei)" and
+ * "this sim" - the acronyms are names and keep their case.
+ */
+const NOUN: Record<string, string> = { msisdn: 'number', imsi: 'SIM', imei: 'handset (IMEI)', tac: 'model (TAC)' }
+const noun = computed(() => NOUN[data.value?.kind ?? ''] ?? 'identifier')
 const shown = computed(() => {
   const d = data.value
   if (!d) return props.identifier
@@ -136,7 +143,7 @@ function history() {
       :is-error="summary.isError.value"
       :error="summary.error.value"
       :is-empty="data !== null && !data.found"
-      :empty-message="`No binding holds this ${title.toLowerCase()}.`"
+      :empty-message="`No binding holds this ${noun}.`"
       min-height="10rem"
       @retry="summary.mutate(identifier)"
     >

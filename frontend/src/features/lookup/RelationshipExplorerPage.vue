@@ -4,7 +4,7 @@ import Card from '@/design-system/Card.vue'
 import Button from '@/design-system/Button.vue'
 import { useRelationshipExplorer, type RelatedNode } from '@/api/relationships'
 import { ApiError } from '@/api/client'
-import { formatDate, formatImei, formatMsisdn } from '@/lib/format'
+import { formatDate, formatFull, formatImei, formatMsisdn } from '@/lib/format'
 
 /**
  * Explore what one identifier is connected to, and step from any of them to the next.
@@ -149,7 +149,7 @@ function isWithheld(key: string): boolean {
             </p>
           </div>
           <p class="text-2xs text-[var(--c-text-muted)]">
-            {{ graph.elapsedMs }} ms · {{ graph.rowsExamined.toLocaleString() }} rows read
+            {{ formatFull(graph.elapsedMs) }} ms · {{ formatFull(graph.rowsExamined) }} rows read
           </p>
         </div>
 

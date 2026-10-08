@@ -29,7 +29,13 @@ const unavailable = computed(() => {
 })
 
 const KIND: Record<string, string> = { msisdn: 'number', imsi: 'SIM', imei: 'IMEI' }
-const FAMILY: Record<string, string> = { Imei: 'IMEI(s)', Sim: 'SIM(s)', Number: 'number(s)' }
+// Singular and plural, so a count of one reads "1 IMEI" and not "1 IMEI(s)".
+const FAMILY: Record<string, [string, string]> = {
+  Imei: ['IMEI', 'IMEIs'],
+  Sim: ['SIM', 'SIMs'],
+  Number: ['number', 'numbers'],
+}
+const family = (name: string, count: number): string => FAMILY[name]?.[count === 1 ? 0 : 1] ?? name
 
 function value(name: string, type: string): string {
   const v = data.value?.values[name]
@@ -82,7 +88,7 @@ function value(name: string, type: string): string {
       <p v-if="data.linked.length" class="text-2xs text-[var(--c-text-secondary)]">
         Bound in the 30 days, with stored measures:
         <template v-for="(l, i) in data.linked" :key="l.family">
-          {{ i > 0 ? '; ' : '' }}{{ formatFull(l.stored) }} {{ FAMILY[l.family] }}
+          {{ i > 0 ? '; ' : '' }}{{ formatFull(l.stored) }} {{ family(l.family, l.stored) }}
           <template v-if="l.riskSignals || l.anomalies">
             ({{ [l.riskSignals ? `${formatFull(l.riskSignals)} at risk signal` : '', l.anomalies ? `${formatFull(l.anomalies)} at anomaly` : ''].filter(Boolean).join(', ') }})
           </template>

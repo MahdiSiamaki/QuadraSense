@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { formatCompact, formatFull, formatSigned } from '@/lib/format'
+import { formatCompact, formatFull, formatSigned, formatSignedDecimal } from '@/lib/format'
 import type { VendorMovementRow, VendorRanking } from '@/api/dashboard'
 
 /**
@@ -42,7 +42,7 @@ const measure = computed(() => {
       label: (r: VendorMovementRow) =>
         r.vsNetworkPoints === null
           ? 'new'
-          : `${r.vsNetworkPoints >= 0 ? '+' : ''}${r.vsNetworkPoints.toFixed(1)} pts`,
+          : `${formatSignedDecimal(r.vsNetworkPoints, 1)} pts`,
       detail: (r: VendorMovementRow) =>
         `${formatFull(r.populationAtStart)} → ${formatFull(r.population)} ` +
         (r.populationChangePercent === null
@@ -59,7 +59,7 @@ const measure = computed(() => {
         label: (r: VendorMovementRow) =>
           r.netPercentOfPopulation === null
             ? '—'
-            : `${r.netPercentOfPopulation >= 0 ? '+' : ''}${r.netPercentOfPopulation.toFixed(2)}%`,
+            : `${formatSignedDecimal(r.netPercentOfPopulation, 2)}%`,
         detail: (r: VendorMovementRow) =>
           `net ${formatSigned(r.net)} events against ${formatFull(r.population)} bindings ` +
           `(added ${formatCompact(r.added)}, removed ${formatCompact(r.removed)})`,
@@ -101,12 +101,10 @@ const diverging = computed(() => measure.value.diverging)
       v-for="bar in bars"
       :key="bar.row.vendor"
       class="flex items-center gap-2 py-0.5"
-      :title="bar.detail"
+      :title="`${bar.row.vendor}: ${bar.detail}`"
     >
-      <span
-        class="w-28 shrink-0 truncate text-right text-xs"
-        :title="bar.row.vendor"
-      >
+      <!-- No title of its own: a nested title replaced the row's, and with it the detail. -->
+      <span class="w-28 shrink-0 truncate text-right text-xs">
         {{ bar.row.vendor }}
       </span>
 

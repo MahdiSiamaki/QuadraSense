@@ -319,7 +319,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
             class="tabular ml-auto text-2xs text-[var(--c-text-muted)]"
           >
             {{ formatFull(data.total) }} model{{ data.total === 1 ? '' : 's' }}
-            · {{ data.timing.elapsedMs }} ms
+            · {{ formatFull(data.timing.elapsedMs) }} ms
           </p>
         </div>
       </form>
