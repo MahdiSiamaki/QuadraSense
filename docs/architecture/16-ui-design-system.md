@@ -1,8 +1,8 @@
 # UI design system — layout, charts, responsiveness, and how a UI fix is proven
 
 **Status:** Written 2026-10-07, after the product-wide layout review (PR #28). Extended 2026-10-08 with
-Phase 1 of the design audit (below). Motion conventions beyond the two settled here wait for the
-owner's Phase 3 decisions.
+Phases 1 and 2 of the design audit (below). Motion conventions beyond the two settled here wait for
+the owner's Phase 3 decisions.
 **Read after:** `06-repository-structure.md`.
 
 ---
@@ -143,10 +143,50 @@ see ADR-011's amendment.
   transparent 1px border, as secondary and danger carry a visible one (30.56px against 32.16px
   before). A hand-rolled button is a smell; `AsyncBoundary`'s "Try again" was one.
 - **A disabled control does not answer the pointer.** Hover backgrounds are `enabled:hover:`
-  (Button, the pager, `segment()`). Controls disabled only through `aria-disabled` (the Risk
-  page's tabs) are not covered yet.
+  (Button, the pager), or `not-aria-disabled:hover:` where a control is disabled through
+  `aria-disabled` so that its reason still shows on hover (`SegmentedControl`).
 - **A label that names a control operates it.** `Toggle`'s label is `for` the switch, so the
   words toggle it, not only the 36×20px track.
+- **A two-to-five-way choice is `SegmentedControl`**, never hand-written. One look (joined,
+  26px, the chosen option on the accent-subtle ground) and the WAI-ARIA keyboard contract: one
+  Tab stop on the chosen option; arrows, Home and End move between enabled options and wrap; in
+  a radio group the arrows also choose, in a tab row (`tabs`) they only move focus and Enter or
+  Space opens the tab, because several panels behind tabs run a query. A tab row's panel carries
+  `role="tabpanel"`, the `panel-id` it was given and `aria-labelledby` from `tabId()`. Modifier
+  keys are left to the browser. A choice the arrows can reach must be cheap to undo: the Explorer
+  parks each dataset's query rather than discarding it when the other is chosen.
+- **A menu of two links and a button is a disclosure**, not `role="menu"` (the user menu):
+  `aria-expanded` and `aria-controls`; Escape closes it and returns focus to its button; tabbing
+  past the last item closes it. A menu role promises arrow keys and roving focus.
+- **Dialogs.** A form dialog's primary button is `type="submit"` and the dialog listens for
+  `submit`, so Enter submits; a destructive confirmation does not listen, so it needs its button.
+  Focus starts on the first field (`autofocus`, which the browser's dialog focusing steps
+  honour), never on the close button, which is 32×32.
+- **What exists only in a `title` is out of reach of a phone and a keyboard.** A KPI card's
+  definition and exact figure are also behind a small "i" button, in a popover over the card -
+  over, not inside, because a card that grows stretches its whole row.
+- **A focus ring inside a clipping frame is drawn inside** (`focus-visible:-outline-offset-2`):
+  segmented controls, the user menu's items.
+
+## Colour for words
+
+Status colours are light enough for a dot, a bar or a border, not for a word at 11-12px: warning
+text measured 2.42:1 on its own subtle ground, success 3.57:1, danger 4.40:1, under WCAG AA's
+4.5:1. So each has a text token at a reading weight, the same hue:
+
+| Token | Light | Dark |
+|---|---|---|
+| `--c-warning-text` | 52% — 5.00:1 on warning-subtle | = `--c-warning` — 7.22:1 |
+| `--c-success-text` | 50% — 4.98:1 on success-subtle | = `--c-success` — 6.09:1 |
+| `--c-danger-text` | 52% — 5.23:1 on danger-subtle | 70% — 5.37:1 |
+| `--c-text-muted` | 53% — 5.27:1 on white, ≥4.53:1 on every subtle ground | 65% — 5.48:1, ≥4.53:1 |
+
+**Words use the `-text` tokens; marks - dots, bars, tracks, borders - keep the plain ones**, so a
+status dot is the same colour in every component. A tone map that colours both keeps two keys,
+`fg` and `dot` (StatusBadge, PlanSummary, RiskLevelBadge). An icon that identifies a control needs
+3:1 (the light-theme sun uses `--c-warning-text`). Contrast is computed, not judged: OKLCH →
+linear sRGB → WCAG luminance, against every ground the text is placed on. Never dim a row with
+`opacity` to de-emphasise it - it takes the row's status text below AA; quieten its name instead.
 
 ## Figures and words
 
@@ -225,7 +265,7 @@ The owner chose to take the work in phases, asked before each:
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Defects with no taste decision: the cascade, the frozen sweep, wrong device figures, tooltip glide, import pages, figures and words, controls | **Done** on `feature/design-audit-fixes`; the cascade change approved from before/after screenshots |
-| 2 | Accessibility and keyboard: user menu name and keyboard model, Enter in dialogs and initial focus, segmented-control focus ring and arrow keys, light-theme status-text contrast (warning text 2.42:1) | Waiting |
+| 2 | Accessibility and keyboard: user menu name and keyboard model, Enter in dialogs and initial focus, segmented-control focus ring and arrow keys, light-theme status-text contrast (warning text 2.42:1) | **Done** on `feature/design-audit-phase2`; the owner chose a disclosure for the user menu, one `SegmentedControl`, the text tokens with darker muted text, an "i" button on KPI cards, and one parked query per Explorer dataset |
 | 3 | Motion system: tokens, press feedback, menu and dialog entry, theme switching, gear and theme-icon timings, reduced motion | Waiting; every item is the owner's decision |
 | 4 | Phones: 16px fields on touch screens (iOS zooms on focus), charts that trap vertical scrolling, `dvh`, `theme-color`, ungated scoped hovers, `select-none` on control chrome | Waiting; half need a real device |
 | 5 | Data decisions: GSMA's "Not Known" brand sentinel (moves approved image keys), length limits on user names | Waiting; the owner's call |
@@ -259,3 +299,15 @@ Design audit, Phase 1 (`feature/design-audit-fixes`):
 | 2026-10-08 | Controls: no hover while disabled, switch label, Try again is a Button | 21ef991 |
 | 2026-10-08 | Base defaults in `@layer base`: coloured borders and round focus rings show | a7541c2 |
 | 2026-10-08 | Every button variant the same height | 9da4ae6 |
+
+Design audit, Phase 2 (`feature/design-audit-phase2`):
+
+| Date | Change | Commit |
+|---|---|---|
+| 2026-10-08 | Status and muted text pass WCAG AA in both themes | fe6a7fd |
+| 2026-10-08 | `SegmentedControl`: one component, the radio and tabs keyboard contracts | c2115bd |
+| 2026-10-08 | Explorer parks each dataset's query | cea2ff1 |
+| 2026-10-08 | User menu as a disclosure, named on phones | 93e5b31 |
+| 2026-10-08 | Dialogs: Enter submits, focus starts on the first field | 3ff2755 |
+| 2026-10-08 | KPI definition behind a focusable "i" button | 17431bf |
+| 2026-10-08 | Focus after a failed sign-in, theme cards, upload input | 00f4c49 |
