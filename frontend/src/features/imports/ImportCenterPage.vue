@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import Card from '@/design-system/Card.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
+import Pagination from '@/design-system/Pagination.vue'
 import UploadDropzone from './UploadDropzone.vue'
 import ImportHistoryTable from './ImportHistoryTable.vue'
 import TacVersionPanel from './TacVersionPanel.vue'
@@ -36,9 +37,6 @@ const health = useWorkerHealth()
 const blockages = useBlockages()
 const freshness = useFreshness()
 
-const totalPages = computed(() =>
-  history.data.value ? Math.max(1, Math.ceil(history.data.value.total / history.data.value.pageSize)) : 1,
-)
 
 /** Status groupings an operator actually filters by, not the seventeen raw statuses. */
 const STATUS_PRESETS = [
@@ -245,6 +243,7 @@ function resetPaging() {
         </template>
 
         <AsyncBoundary
+          gap="none"
           :is-loading="history.isPending.value"
           :is-error="history.isError.value"
           :error="history.error.value"
@@ -254,34 +253,17 @@ function resetPaging() {
           @retry="history.refetch()"
         >
           <ImportHistoryTable :rows="history.data.value?.items ?? []" />
+          <!-- The shared pager: the same range, keys and press as every other list. -->
+          <Pagination
+            v-if="history.data.value"
+            :page="page"
+            :page-size="history.data.value.pageSize"
+            :total="history.data.value.total"
+            :loading="history.isFetching.value"
+            @update:page="page = $event"
+          />
         </AsyncBoundary>
 
-        <template #footer>
-          <div class="flex items-center justify-between text-xs">
-            <span class="text-[var(--c-text-muted)]">
-              {{ history.data.value?.total ?? 0 }} import(s)
-            </span>
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                class="rounded-[var(--radius-sm)] border px-2 py-1 font-medium disabled:opacity-40"
-                :disabled="page <= 1"
-                @click="page -= 1"
-              >
-                Previous
-              </button>
-              <span class="tabular text-[var(--c-text-muted)]">{{ page }} / {{ totalPages }}</span>
-              <button
-                type="button"
-                class="rounded-[var(--radius-sm)] border px-2 py-1 font-medium disabled:opacity-40"
-                :disabled="page >= totalPages"
-                @click="page += 1"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </template>
       </Card>
 
       <!-- Upload -->

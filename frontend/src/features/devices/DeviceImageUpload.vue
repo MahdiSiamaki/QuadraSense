@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import Button from '@/design-system/Button.vue'
 import { api } from '@/api/client'
 import { ApiError } from '@/api/client'
 import { formatBytes, formatDateTime } from '@/lib/format'
@@ -97,13 +98,7 @@ async function remove() {
 
 <template>
   <div class="shrink-0">
-    <button
-      type="button"
-      class="rounded-[var(--radius-md)] border px-2.5 py-1.5 text-xs font-medium hover:bg-[var(--c-surface-hover)]"
-      @click="open = !open"
-    >
-      {{ hasImage ? 'Replace image' : 'Add image' }}
-    </button>
+    <Button size="sm" @click="open = !open">{{ hasImage ? 'Replace image' : 'Add image' }}</Button>
 
     <div
       v-if="open"
@@ -141,30 +136,12 @@ async function remove() {
       </p>
 
       <div class="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-3 py-1.5 text-xs font-medium text-[var(--c-accent-text)] disabled:opacity-50"
-          :disabled="!chosen || busy"
-          @click="upload"
-        >
+        <Button variant="primary" size="sm" :disabled="!chosen" :pending="busy" @click="upload">
           {{ busy ? 'Saving…' : 'Save' }}
-        </button>
-        <button
-          v-if="hasImage"
-          type="button"
-          class="rounded-[var(--radius-md)] px-2 py-1.5 text-xs text-[var(--c-danger-text)] hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
-          :disabled="busy"
-          @click="remove"
-        >
-          Remove
-        </button>
-        <button
-          type="button"
-          class="ml-auto rounded-[var(--radius-md)] px-2 py-1.5 text-xs text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)]"
-          @click="open = false"
-        >
-          Cancel
-        </button>
+        </Button>
+        <!-- danger: removing the live image is the destructive action the variant exists for. -->
+        <Button v-if="hasImage" variant="danger" size="sm" :disabled="busy" @click="remove">Remove</Button>
+        <Button variant="ghost" size="sm" class="ml-auto" @click="open = false">Cancel</Button>
       </div>
 
       <p

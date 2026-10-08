@@ -8,6 +8,10 @@ import { computed } from 'vue'
  * primary buttons has no primary action at all. `danger` exists because destructive actions
  * genuinely need a different signal, and it is used only where the action cannot be undone.
  *
+ * A press gives a little under the pointer (a 3% scale, 120ms): feedback that the click registered
+ * before the result can arrive. Not with reduced motion, and not while disabled. With reduced
+ * motion the pending spinner pulses instead of turning: a still ring with a gap reads as stalled.
+ *
  * A pending button keeps its label and its width. Swapping the text for a spinner makes the
  * layout jump and hides what the user just asked for, which is exactly the moment they most
  * want to see it.
@@ -15,7 +19,8 @@ import { computed } from 'vue'
 const props = withDefaults(
   defineProps<{
     variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
-    size?: 'sm' | 'md'
+    /** sm in dense rows, md by default, lg beside a full-size field (38px, the field's height). */
+    size?: 'sm' | 'md' | 'lg'
     type?: 'button' | 'submit'
     disabled?: boolean
     pending?: boolean
@@ -28,13 +33,16 @@ const props = withDefaults(
 const classes = computed(() => {
   const base =
     'relative inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] ' +
-    'font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed ' +
+    'font-medium whitespace-nowrap transition-[color,background-color,border-color,scale] ' +
+    'duration-(--duration-press) ease-out motion-safe:enabled:active:scale-[0.97] disabled:cursor-not-allowed ' +
     'disabled:opacity-50'
 
   const size =
     props.size === 'sm'
       ? 'px-2 py-1 text-xs'
-      : 'px-3 py-1.5 text-sm'
+      : props.size === 'lg'
+        ? 'px-4 py-2 text-sm'
+        : 'px-3 py-1.5 text-sm'
 
   // Every variant has a 1px border - transparent where none is drawn - so a primary button and a
   // secondary one beside it in a dialog footer are the same height, not 1px inset top and bottom.
@@ -61,7 +69,7 @@ const classes = computed(() => {
   <button :type="type" :class="classes" :disabled="disabled || pending" :aria-busy="pending">
     <span
       v-if="pending"
-      class="size-3 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent"
+      class="size-3 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-pulse"
       aria-hidden="true"
     />
     <slot />

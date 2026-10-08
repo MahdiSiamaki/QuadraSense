@@ -15,6 +15,7 @@ export const miniLabel = 'block text-2xs font-medium text-[var(--c-text-muted)]'
 
 export const iconButton =
   'grid size-7 shrink-0 place-items-center rounded-[var(--radius-md)] text-[var(--c-text-muted)] ' +
+  'transition-[color,background-color,scale] duration-(--duration-press) ease-out motion-safe:enabled:active:scale-[0.97] ' +
   'hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-danger-text)] ' +
   'focus-visible:outline-2 focus-visible:outline-[var(--c-accent)]'
 

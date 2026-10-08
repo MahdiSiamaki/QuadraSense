@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import Button from '@/design-system/Button.vue'
 import Card from '@/design-system/Card.vue'
 import Pagination from '@/design-system/Pagination.vue'
 import { useDeviceIdentifiers } from '@/api/devices'
@@ -107,13 +108,7 @@ const problem = computed(() => {
 
     <!-- Closed until asked. -->
     <div v-if="!opened" class="py-6 text-center">
-      <button
-        type="button"
-        class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-4 py-2 text-sm font-medium text-[var(--c-accent-text)]"
-        @click="load(1)"
-      >
-        Load identifiers
-      </button>
+      <Button variant="primary" size="lg" @click="load(1)">Load identifiers</Button>
       <p class="mx-auto mt-2 max-w-md text-2xs text-[var(--c-text-muted)]">
         This is bulk personal data and every request is recorded in the audit log with your name
         and the number of rows returned. It loads only when you ask for it.

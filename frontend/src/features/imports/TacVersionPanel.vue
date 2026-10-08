@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import Button from '@/design-system/Button.vue'
 import Card from '@/design-system/Card.vue'
 import { useTacVersions, useActivateTacVersion, type TacVersion } from './useTacVersions'
 import { formatDate, formatDateTime, formatFull, formatRelative } from '@/lib/format'
@@ -171,21 +172,10 @@ const tone: Record<string, string> = {
             active becomes superseded and can be rolled back to from this list.
           </p>
           <div class="mt-2 flex gap-2">
-            <button
-              type="button"
-              class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-3 py-1.5 text-xs font-medium text-[var(--c-accent-text)] disabled:opacity-50"
-              :disabled="activate.isPending.value"
-              @click="confirm(version.id)"
-            >
+            <Button variant="primary" size="sm" :pending="activate.isPending.value" @click="confirm(version.id)">
               {{ activate.isPending.value ? 'Activating…' : 'Yes, activate it' }}
-            </button>
-            <button
-              type="button"
-              class="rounded-[var(--radius-md)] border px-3 py-1.5 text-xs font-medium"
-              @click="confirming = null"
-            >
-              Cancel
-            </button>
+            </Button>
+            <Button size="sm" :disabled="activate.isPending.value" @click="confirming = null">Cancel</Button>
           </div>
         </div>
       </li>

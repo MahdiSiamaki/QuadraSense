@@ -29,12 +29,13 @@ const last = computed(() => Math.min(props.page * props.pageSize, props.total))
 
 const buttonClass =
   'rounded-[var(--radius-md)] border px-2 py-1 text-xs font-medium ' +
+  'transition-[background-color,scale] duration-(--duration-press) ease-out motion-safe:enabled:active:scale-[0.97] ' +
   'enabled:hover:bg-[var(--c-surface-hover)] disabled:cursor-not-allowed disabled:opacity-40'
 </script>
 
 <template>
   <div
-    class="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-2.5"
+    class="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-2.5 transition-opacity"
     :class="loading ? 'opacity-60' : ''"
   >
     <p class="tabular text-xs text-[var(--c-text-muted)]">
