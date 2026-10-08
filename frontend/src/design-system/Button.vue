@@ -36,9 +36,12 @@ const classes = computed(() => {
       ? 'px-2 py-1 text-xs'
       : 'px-3 py-1.5 text-sm'
 
+  // Every variant has a 1px border - transparent where none is drawn - so a primary button and a
+  // secondary one beside it in a dialog footer are the same height, not 1px inset top and bottom.
   const variants: Record<string, string> = {
     primary:
-      'bg-[var(--c-accent)] text-[var(--c-accent-text)] enabled:hover:bg-[var(--c-accent-hover)] ' +
+      'border border-transparent bg-[var(--c-accent)] text-[var(--c-accent-text)] ' +
+      'enabled:hover:bg-[var(--c-accent-hover)] ' +
       'shadow-[var(--shadow-xs)]',
     secondary:
       'border bg-[var(--c-surface)] text-[var(--c-text)] enabled:hover:bg-[var(--c-surface-hover)]',
@@ -46,7 +49,8 @@ const classes = computed(() => {
       'border border-[var(--c-danger)] bg-[var(--c-surface)] text-[var(--c-danger)] ' +
       'enabled:hover:bg-[var(--c-danger-subtle)]',
     ghost:
-      'text-[var(--c-text-secondary)] enabled:hover:bg-[var(--c-surface-hover)] enabled:hover:text-[var(--c-text)]',
+      'border border-transparent text-[var(--c-text-secondary)] ' +
+      'enabled:hover:bg-[var(--c-surface-hover)] enabled:hover:text-[var(--c-text)]',
   }
 
   return [base, size, variants[props.variant], props.block ? 'w-full' : ''].join(' ')
