@@ -50,7 +50,7 @@ const options: Array<{ value: ThemeMode; label: string; hint: string }> = [
             type="radio"
             name="theme"
             :value="option.value"
-            class="mt-0.5 accent-[var(--c-accent)]"
+            class="mt-0.5 accent-[var(--c-accent)] focus-visible:outline-none"
           />
           <span>
             <span class="block text-sm font-medium">{{ option.label }}</span>

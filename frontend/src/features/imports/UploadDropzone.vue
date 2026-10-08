@@ -143,10 +143,13 @@ const tone: Record<QueueItem['status'], string> = {
       </span>
     </button>
 
+    <!-- Out of the Tab order: the drop zone above opens the same picker, and a stop on an input
+         whose focus ring the sr-only clip hides was a stop nobody could see. -->
     <input
       ref="input"
       type="file"
       multiple
+      tabindex="-1"
       class="sr-only"
       :accept="accept ?? '.csv,text/csv'"
       @change="onPick"
