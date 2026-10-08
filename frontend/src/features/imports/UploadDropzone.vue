@@ -109,9 +109,9 @@ function clearFinished() {
 const tone: Record<QueueItem['status'], string> = {
   waiting: 'var(--c-text-muted)',
   uploading: 'var(--c-accent)',
-  queued: 'var(--c-success)',
-  duplicate: 'var(--c-warning)',
-  failed: 'var(--c-danger)',
+  queued: 'var(--c-success-text)',
+  duplicate: 'var(--c-warning-text)',
+  failed: 'var(--c-danger-text)',
 }
 </script>
 

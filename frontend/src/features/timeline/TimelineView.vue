@@ -166,7 +166,7 @@ const centreText = computed(() => {
       class="rounded-[var(--radius-md)] border border-[var(--c-warning)] bg-[var(--c-warning-subtle)] px-3 py-2 text-xs"
       role="status"
     >
-      <p class="font-semibold text-[var(--c-warning)]">{{ problem.title }}</p>
+      <p class="font-semibold text-[var(--c-warning-text)]">{{ problem.title }}</p>
       <p class="mt-0.5 text-[var(--c-text-secondary)]">{{ problem.detail }}</p>
     </div>
 
@@ -220,14 +220,14 @@ const centreText = computed(() => {
 
         <!-- What the reader may not see, and what the feed did that does not fit. -->
         <ul class="flex flex-col gap-1 text-2xs">
-          <li v-if="data.withheld.length" class="text-[var(--c-warning)]">
+          <li v-if="data.withheld.length" class="text-[var(--c-warning-text)]">
             {{ data.withheld.map((k) => KIND_LABEL[k].many).join(' and ') }} withheld: your account may not look them up.
           </li>
-          <li v-if="data.masked" class="text-[var(--c-warning)]">
+          <li v-if="data.masked" class="text-[var(--c-warning-text)]">
             Identifiers are masked: your account does not hold <code class="font-mono">identifier.reveal</code>. A masked
             identifier cannot be opened.
           </li>
-          <li v-if="data.truncated" class="text-[var(--c-warning)]">
+          <li v-if="data.truncated" class="text-[var(--c-warning-text)]">
             Showing the {{ formatFull(data.maxBindings) }} most recently changed bindings of more.
           </li>
           <li v-if="data.summary.redundantAdds || data.summary.orphanRemoves" class="text-[var(--c-text-muted)]">
@@ -235,7 +235,7 @@ const centreText = computed(() => {
             being a month rather than a moment - and {{ formatFull(data.summary.orphanRemoves) }} remove(s) of one not held. Marked
             amber on the bindings view; neither changes a binding's state.
           </li>
-          <li v-if="data.summary.stateDisagreements" class="text-[var(--c-warning)]">
+          <li v-if="data.summary.stateDisagreements" class="text-[var(--c-warning-text)]">
             {{ data.summary.stateDisagreements }} binding(s) end differently by their events than in current state - usually a day
             part way through being imported. "Active" shows current state.
           </li>

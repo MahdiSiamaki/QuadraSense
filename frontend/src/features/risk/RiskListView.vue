@@ -255,7 +255,7 @@ const kindLabel = computed(() =>
       </div>
     </div>
 
-    <p v-if="belowFloor && rule" class="text-xs text-[var(--c-danger)]" role="alert">
+    <p v-if="belowFloor && rule" class="text-xs text-[var(--c-danger-text)]" role="alert">
       Values below {{ rule.floor }} are not stored, so a threshold under {{ rule.floor - 1 }} cannot be listed here. The
       Explorer can count smaller values from the history.
     </p>

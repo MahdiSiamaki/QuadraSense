@@ -127,7 +127,6 @@ async function submit() {
           v-for="permission in permissions"
           :key="permission.code"
           class="flex items-start gap-3 px-4 py-2.5"
-          :class="permission.isGranted ? '' : 'opacity-55'"
         >
           <span
             class="mt-1 size-1.5 shrink-0 rounded-full"
@@ -143,7 +142,14 @@ async function submit() {
 
           <div class="min-w-0 flex-1">
             <p class="flex flex-wrap items-center gap-1.5 text-sm">
-              <span class="font-medium">{{ permission.displayName }}</span>
+              <!-- Not granted reads quieter in its name only. The whole row used to be at 55%
+                   opacity, which put its "Denied directly." far under readable contrast. -->
+              <span
+                class="font-medium"
+                :class="permission.isGranted ? '' : 'text-[var(--c-text-secondary)]'"
+              >
+                {{ permission.displayName }}
+              </span>
               <code class="text-2xs text-[var(--c-text-muted)]">
                 {{ permission.code }}
               </code>
@@ -152,7 +158,7 @@ async function submit() {
                 class="rounded-full px-1.5 py-0.5 text-2xs font-medium"
                 :style="{
                   backgroundColor: 'var(--c-warning-subtle)',
-                  color: 'var(--c-warning)',
+                  color: 'var(--c-warning-text)',
                 }"
                 title="Sensitive: grants access to raw identifiers, irreversible actions, or administration."
               >
@@ -171,7 +177,7 @@ async function submit() {
             -->
             <p class="mt-1 text-xs">
               <template v-if="permission.deniedDirectly">
-                <span class="font-medium text-[var(--c-danger)]">Denied directly.</span>
+                <span class="font-medium text-[var(--c-danger-text)]">Denied directly.</span>
                 <template v-if="permission.grantedByRoles.length">
                   Overrides {{ permission.grantedByRoles.join(', ') }}.
                 </template>
@@ -245,7 +251,7 @@ async function submit() {
                   :style="{
                     color:
                       draft.get(permission.code) === 'deny'
-                        ? 'var(--c-danger)'
+                        ? 'var(--c-danger-text)'
                         : draft.get(permission.code) === 'grant'
                           ? 'var(--c-accent)'
                           : 'var(--c-text-muted)',
@@ -271,7 +277,7 @@ async function submit() {
                 <span
                   class="shrink-0 text-2xs font-medium"
                   :style="{
-                    color: draftOutcome(permission) ? 'var(--c-success)' : 'var(--c-text-muted)',
+                    color: draftOutcome(permission) ? 'var(--c-success-text)' : 'var(--c-text-muted)',
                   }"
                 >
                   {{ draftOutcome(permission) ? 'allowed' : 'blocked' }}
@@ -299,7 +305,7 @@ async function submit() {
         :style="{
           borderColor: 'var(--c-danger)',
           backgroundColor: 'var(--c-danger-subtle)',
-          color: 'var(--c-danger)',
+          color: 'var(--c-danger-text)',
         }"
         role="alert"
       >

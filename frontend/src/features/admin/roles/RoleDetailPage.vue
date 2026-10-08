@@ -236,7 +236,7 @@ const deleteError = computed(() => message(remove.error.value))
             <p
               v-if="dirty"
               class="border-b px-4 py-2 text-xs"
-              :style="{ backgroundColor: 'var(--c-warning-subtle)', color: 'var(--c-warning)' }"
+              :style="{ backgroundColor: 'var(--c-warning-subtle)', color: 'var(--c-warning-text)' }"
             >
               <template v-if="added.length">+{{ added.length }} added</template>
               <template v-if="added.length && removed.length"> · </template>
@@ -252,7 +252,7 @@ const deleteError = computed(() => message(remove.error.value))
             <p
               v-if="permissionError"
               class="border-b px-4 py-2 text-xs"
-              :style="{ backgroundColor: 'var(--c-danger-subtle)', color: 'var(--c-danger)' }"
+              :style="{ backgroundColor: 'var(--c-danger-subtle)', color: 'var(--c-danger-text)' }"
               role="alert"
             >
               {{ permissionError }}
@@ -293,7 +293,7 @@ const deleteError = computed(() => message(remove.error.value))
                           class="rounded-full px-1.5 py-0.5 text-2xs font-medium"
                           :style="{
                             backgroundColor: 'var(--c-warning-subtle)',
-                            color: 'var(--c-warning)',
+                            color: 'var(--c-warning-text)',
                           }"
                         >
                           sensitive
@@ -426,7 +426,7 @@ const deleteError = computed(() => message(remove.error.value))
         :style="{
           borderColor: 'var(--c-danger)',
           backgroundColor: 'var(--c-danger-subtle)',
-          color: 'var(--c-danger)',
+          color: 'var(--c-danger-text)',
         }"
         role="alert"
       >

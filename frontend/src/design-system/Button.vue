@@ -46,7 +46,7 @@ const classes = computed(() => {
     secondary:
       'border bg-[var(--c-surface)] text-[var(--c-text)] enabled:hover:bg-[var(--c-surface-hover)]',
     danger:
-      'border border-[var(--c-danger)] bg-[var(--c-surface)] text-[var(--c-danger)] ' +
+      'border border-[var(--c-danger)] bg-[var(--c-surface)] text-[var(--c-danger-text)] ' +
       'enabled:hover:bg-[var(--c-danger-subtle)]',
     ghost:
       'border border-transparent text-[var(--c-text-secondary)] ' +

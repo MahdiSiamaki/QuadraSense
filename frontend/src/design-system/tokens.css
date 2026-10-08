@@ -84,7 +84,10 @@
 
   --c-text: oklch(21% 0.012 250);
   --c-text-secondary: oklch(45% 0.012 250);
-  --c-text-muted: oklch(58% 0.011 250);
+  /* 53%, not 58%: at 58% the 11-12px secondary text measured 4.28:1 on white and 3.68:1 on the
+     tinted status grounds, under WCAG AA's 4.5. Now 5.27:1 on white and at least 4.53:1 on every
+     ground it is placed on, the subtle ones included. */
+  --c-text-muted: oklch(53% 0.011 250);
 
   /* A single accent. Used for interactive affordances and the primary series
      only - never for decoration, or it stops meaning anything. */
@@ -108,6 +111,16 @@
   --c-danger: oklch(56% 0.19 25);
   --c-danger-subtle: oklch(95.5% 0.03 25);
 
+  /*
+    Status colours for words. A dot, a bar or a border can be light; a word at 11-12px cannot:
+    warning text measured 2.42:1 on its own subtle ground, success 3.57:1, danger 4.40:1. These
+    carry the same hue at a reading weight - 5.00, 4.98 and 5.23:1 on their subtle grounds, more
+    on the surface. The plain tokens stay for dots, fills and borders.
+  */
+  --c-warning-text: oklch(52% 0.12 70);
+  --c-success-text: oklch(50% 0.13 155);
+  --c-danger-text: oklch(52% 0.19 25);
+
   /* Shadows stay very soft. Heavy elevation reads as dated. */
   --shadow-xs: 0 1px 2px oklch(0% 0 0 / 0.04);
   --shadow-sm: 0 1px 3px oklch(0% 0 0 / 0.06), 0 1px 2px oklch(0% 0 0 / 0.04);
@@ -130,7 +143,9 @@
 
   --c-text: oklch(95% 0.004 260);
   --c-text-secondary: oklch(73% 0.009 260);
-  --c-text-muted: oklch(60% 0.011 260);
+  /* 65%: at 60% muted text was 4.49:1 on the surface, just under AA. Now 5.48:1, and at least
+     4.53:1 on every ground, the subtle ones included. */
+  --c-text-muted: oklch(65% 0.011 260);
 
   /*
     The deep navy is nearly invisible on this surface, so it lifts to a tint of the same hue.
@@ -151,6 +166,12 @@
   --c-warning-subtle: oklch(28% 0.05 80);
   --c-danger: oklch(66% 0.17 25);
   --c-danger-subtle: oklch(27% 0.06 25);
+
+  /* Light enough already on dark grounds (7.22 and 6.09:1 on their subtle grounds), except danger,
+     4.58:1 on its own - lifted to 5.37:1. */
+  --c-warning-text: var(--c-warning);
+  --c-success-text: var(--c-success);
+  --c-danger-text: oklch(70% 0.16 25);
 
   --shadow-xs: 0 1px 2px oklch(0% 0 0 / 0.3);
   --shadow-sm: 0 1px 3px oklch(0% 0 0 / 0.4), 0 1px 2px oklch(0% 0 0 / 0.3);

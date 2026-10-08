@@ -54,7 +54,7 @@ const id = useId()
         :style="{
           color: modelValue
             ? tone === 'success'
-              ? 'var(--c-success)'
+              ? 'var(--c-success-text)'
               : 'var(--c-accent)'
             : 'var(--c-text-muted)',
         }"

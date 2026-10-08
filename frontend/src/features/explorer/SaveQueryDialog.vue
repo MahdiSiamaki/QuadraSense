@@ -94,7 +94,7 @@ function save(asNew: boolean) {
         />
       </div>
 
-      <p v-if="serverProblem" class="text-xs text-[var(--c-danger)]" role="alert">{{ serverProblem }}</p>
+      <p v-if="serverProblem" class="text-xs text-[var(--c-danger-text)]" role="alert">{{ serverProblem }}</p>
     </div>
 
     <template #actions>

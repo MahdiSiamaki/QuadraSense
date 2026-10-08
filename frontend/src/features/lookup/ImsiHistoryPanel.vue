@@ -89,7 +89,7 @@ function clearRange() {
         :style="{
           borderColor: 'var(--c-warning)',
           backgroundColor: 'var(--c-warning-subtle)',
-          color: 'var(--c-warning)',
+          color: 'var(--c-warning-text)',
         }"
       >
         Showing the most recent 500 events. Narrow the date range to see the rest.
@@ -122,7 +122,7 @@ function clearRange() {
 
               <span
                 class="w-16 shrink-0 font-medium"
-                :style="{ color: event.added ? 'var(--c-success)' : 'var(--c-danger)' }"
+                :style="{ color: event.added ? 'var(--c-success-text)' : 'var(--c-danger-text)' }"
               >
                 {{ event.added ? 'added' : 'removed' }}
               </span>

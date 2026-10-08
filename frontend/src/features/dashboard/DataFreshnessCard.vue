@@ -70,9 +70,9 @@ const martBehind = computed(() => {
 const lagTone = computed(() => {
   const days = sqm.value?.daysBehind
   if (days === null || days === undefined) return 'var(--c-text-muted)'
-  if (days > 45) return 'var(--c-danger)'
-  if (days > 35) return 'var(--c-warning)'
-  return 'var(--c-success)'
+  if (days > 45) return 'var(--c-danger-text)'
+  if (days > 35) return 'var(--c-warning-text)'
+  return 'var(--c-success-text)'
 })
 
 /*
@@ -150,7 +150,7 @@ function formatRun(run: DayRun, withYear: boolean): string {
           </dd>
           <dd
             v-if="martBehind"
-            class="mt-1 text-xs text-[var(--c-warning)]"
+            class="mt-1 text-xs text-[var(--c-warning-text)]"
             :title="`The marts are being rebuilt. Figures below are from the last complete delivery.`"
           >
             figures below are from
@@ -162,7 +162,7 @@ function formatRun(run: DayRun, withYear: boolean): string {
             without this the page would show figures that leave out the new days, under a date
             that says nothing is missing.
           -->
-          <dd v-if="sqm?.dashboardPendingSince" class="mt-1 text-xs text-[var(--c-warning)]">
+          <dd v-if="sqm?.dashboardPendingSince" class="mt-1 text-xs text-[var(--c-warning-text)]">
             figures below update once the queued files have landed
             <span class="text-[var(--c-text-muted)]">
               (pending since {{ formatDateTime(sqm.dashboardPendingSince) }})
@@ -175,7 +175,7 @@ function formatRun(run: DayRun, withYear: boolean): string {
           <dt class="text-xs text-[var(--c-text-muted)]">Days not delivered</dt>
           <dd
             class="tabular mt-1 text-lg font-semibold tracking-tight"
-            :style="{ color: missingSummary ? 'var(--c-warning)' : 'var(--c-success)' }"
+            :style="{ color: missingSummary ? 'var(--c-warning-text)' : 'var(--c-success-text)' }"
           >
             {{ missingSummary?.count ?? 0 }}
           </dd>
@@ -204,7 +204,7 @@ function formatRun(run: DayRun, withYear: boolean): string {
           </dd>
           <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">
             <template v-if="pendingTac.length">
-              <RouterLink to="/imports" class="font-medium text-[var(--c-warning)] hover:underline">
+              <RouterLink to="/imports" class="font-medium text-[var(--c-warning-text)] hover:underline">
                 {{ pendingTac.length }} version(s) waiting for activation
               </RouterLink>
             </template>
@@ -225,7 +225,7 @@ function formatRun(run: DayRun, withYear: boolean): string {
             class="mt-1 text-lg font-semibold tracking-tight"
             :style="{
               color:
-                (sqm?.failedLast7Days ?? 0) > 0 ? 'var(--c-danger)' : 'var(--c-text)',
+                (sqm?.failedLast7Days ?? 0) > 0 ? 'var(--c-danger-text)' : 'var(--c-text)',
             }"
           >
             <template v-if="(health.data.value?.running ?? 0) > 0">

@@ -80,7 +80,7 @@ const numeric = (kind: string) => ['msisdn', 'imsi', 'imei', 'prefix', 'count'].
               {{ t.title }}
             </span>
             <span class="text-xs text-[var(--c-text-secondary)]">{{ t.description }}</span>
-            <span v-if="missing(t).length" class="text-2xs text-[var(--c-warning)]">
+            <span v-if="missing(t).length" class="text-2xs text-[var(--c-warning-text)]">
               Needs {{ missing(t).join(', ') }}
             </span>
           </button>

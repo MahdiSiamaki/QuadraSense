@@ -131,7 +131,7 @@ function submit() {
                 </Button>
                 <span
                   v-if="save.isSuccess.value && !dirty"
-                  class="text-xs text-[var(--c-success)]"
+                  class="text-xs text-[var(--c-success-text)]"
                   role="status"
                 >
                   Saved.

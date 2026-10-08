@@ -187,7 +187,7 @@ function isWithheld(key: string): boolean {
 
           <p
             v-if="isWithheld(section.key)"
-            class="px-4 py-3 text-xs text-[var(--c-warning)]"
+            class="px-4 py-3 text-xs text-[var(--c-warning-text)]"
           >
             Withheld: you do not have permission to see {{ section.title.toLowerCase() }}. This is
             not an empty result.
@@ -209,7 +209,7 @@ function isWithheld(key: string): boolean {
                   <template v-if="node.marketingName">
                     {{ node.brand }} {{ node.marketingName }} ·
                   </template>
-                  <span :class="node.activeBindings > 0 ? 'text-[var(--c-success)]' : ''">
+                  <span :class="node.activeBindings > 0 ? 'text-[var(--c-success-text)]' : ''">
                     {{ node.activeBindings > 0 ? 'active' : 'ended' }}
                   </span>
                   ·

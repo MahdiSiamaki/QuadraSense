@@ -15,9 +15,9 @@ const tone = computed(() => statusTone(props.status))
 const label = computed(() => statusLabel(props.status))
 
 const styles: Record<string, { bg: string; fg: string; dot: string }> = {
-  success: { bg: 'var(--c-success-subtle)', fg: 'var(--c-success)', dot: 'var(--c-success)' },
-  warning: { bg: 'var(--c-warning-subtle)', fg: 'var(--c-warning)', dot: 'var(--c-warning)' },
-  danger: { bg: 'var(--c-danger-subtle)', fg: 'var(--c-danger)', dot: 'var(--c-danger)' },
+  success: { bg: 'var(--c-success-subtle)', fg: 'var(--c-success-text)', dot: 'var(--c-success)' },
+  warning: { bg: 'var(--c-warning-subtle)', fg: 'var(--c-warning-text)', dot: 'var(--c-warning)' },
+  danger: { bg: 'var(--c-danger-subtle)', fg: 'var(--c-danger-text)', dot: 'var(--c-danger)' },
   running: { bg: 'var(--c-accent-subtle)', fg: 'var(--c-accent)', dot: 'var(--c-accent)' },
   neutral: {
     bg: 'var(--c-surface-sunken)',

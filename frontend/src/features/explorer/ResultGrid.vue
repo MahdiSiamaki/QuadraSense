@@ -109,7 +109,7 @@ function toggleSort(column: ExplorerColumn) {
 
     <p
       v-if="truncated"
-      class="border-b bg-[var(--c-warning-subtle)] px-4 py-1.5 text-2xs text-[var(--c-warning)]"
+      class="border-b bg-[var(--c-warning-subtle)] px-4 py-1.5 text-2xs text-[var(--c-warning-text)]"
     >
       Paging reaches the first {{ formatFull(result.reachable) }} of {{ formatFull(result.total) }}. Narrow the
       query to see the rest - a shorter date range, a model, a number prefix.
@@ -117,7 +117,7 @@ function toggleSort(column: ExplorerColumn) {
 
     <p
       v-if="masked"
-      class="border-b bg-[var(--c-warning-subtle)] px-4 py-1.5 text-2xs text-[var(--c-warning)]"
+      class="border-b bg-[var(--c-warning-subtle)] px-4 py-1.5 text-2xs text-[var(--c-warning-text)]"
     >
       Identifiers are masked: your account does not hold <code class="font-mono">identifier.reveal</code>, so the
       server redacted them before sending. A masked value cannot be opened.

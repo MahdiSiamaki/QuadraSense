@@ -152,7 +152,7 @@ async function submit() {
         </legend>
         <p
           v-if="fieldErrors['roleCodes']"
-          class="mt-1 text-xs text-[var(--c-danger)]"
+          class="mt-1 text-xs text-[var(--c-danger-text)]"
           role="alert"
         >
           {{ fieldErrors['roleCodes'] }}
@@ -186,7 +186,7 @@ async function submit() {
 
         <p
           v-if="selectedRoles.length === 0"
-          class="mt-2 text-xs text-[var(--c-warning)]"
+          class="mt-2 text-xs text-[var(--c-warning-text)]"
         >
           With no role, this account can sign in but see nothing.
         </p>
@@ -198,7 +198,7 @@ async function submit() {
         :style="{
           borderColor: 'var(--c-danger)',
           backgroundColor: 'var(--c-danger-subtle)',
-          color: 'var(--c-danger)',
+          color: 'var(--c-danger-text)',
         }"
         role="alert"
       >

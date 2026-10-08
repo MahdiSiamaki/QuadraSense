@@ -42,7 +42,7 @@ const describedBy = computed(() =>
     <div class="flex items-baseline justify-between gap-2">
       <label :for="id" class="text-xs font-medium text-[var(--c-text-secondary)]">
         {{ label }}
-        <span v-if="required" class="text-[var(--c-danger)]" aria-hidden="true">*</span>
+        <span v-if="required" class="text-[var(--c-danger-text)]" aria-hidden="true">*</span>
       </label>
       <span v-if="optionalNote" class="text-2xs text-[var(--c-text-muted)]">
         {{ optionalNote }}
@@ -67,7 +67,7 @@ const describedBy = computed(() =>
     <p
       v-if="error"
       :id="`${id}-error`"
-      class="text-xs text-[var(--c-danger)]"
+      class="text-xs text-[var(--c-danger-text)]"
       role="alert"
     >
       {{ error }}

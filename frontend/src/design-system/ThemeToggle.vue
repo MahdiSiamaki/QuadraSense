@@ -63,7 +63,9 @@ const rays = Array.from({ length: 8 }, (_, i) => i * 45)
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 9999px;
-  color: var(--c-warning);
+  /* The words colour, not the dot colour: the light sun was 2.73:1, under the 3:1 a control's icon
+     needs. Now 5.65:1. */
+  color: var(--c-warning-text);
   background: transparent;
   cursor: pointer;
   transition:

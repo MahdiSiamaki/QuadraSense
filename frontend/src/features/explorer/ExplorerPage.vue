@@ -478,7 +478,7 @@ const eventsNote = computed(() =>
 
           <ul
             v-if="problems.general.length"
-            class="flex flex-col gap-0.5 rounded-[var(--radius-md)] border border-[var(--c-danger)] bg-[var(--c-danger-subtle)] px-3 py-2 text-xs text-[var(--c-danger)]"
+            class="flex flex-col gap-0.5 rounded-[var(--radius-md)] border border-[var(--c-danger)] bg-[var(--c-danger-subtle)] px-3 py-2 text-xs text-[var(--c-danger-text)]"
             role="alert"
           >
             <li v-for="(p, i) in problems.general" :key="i">{{ p }}</li>
@@ -604,7 +604,7 @@ const eventsNote = computed(() =>
       :busy="deleteQuery.isPending.value"
       @close="confirmDelete = null"
     >
-      <p v-if="deleteQuery.isError.value" class="text-xs text-[var(--c-danger)]" role="alert">
+      <p v-if="deleteQuery.isError.value" class="text-xs text-[var(--c-danger-text)]" role="alert">
         Could not delete it. Try again.
       </p>
       <p v-else class="text-xs text-[var(--c-text-secondary)]">

@@ -99,14 +99,14 @@ function toggleRule(summaryId: number) {
               <StatusBadge :status="summary.status" />
               <span
                 v-if="summary.status === 'Completed' && summary.warningCount > 0"
-                class="text-2xs font-medium text-[var(--c-warning)]"
+                class="text-2xs font-medium text-[var(--c-warning-text)]"
                 title="Every row was imported. Validation raised warnings on some of them - open the import for the rows and the rules."
               >
                 with warnings
               </span>
               <span
                 v-if="summary.isEffective"
-                class="rounded-full bg-[var(--c-success-subtle)] px-2 py-0.5 text-2xs font-medium text-[var(--c-success)]"
+                class="rounded-full bg-[var(--c-success-subtle)] px-2 py-0.5 text-2xs font-medium text-[var(--c-success-text)]"
                 title="This import is the one currently in effect for its business day."
               >
                 In effect
@@ -122,7 +122,7 @@ function toggleRule(summaryId: number) {
             <button
               v-if="running"
               type="button"
-              class="rounded-[var(--radius-md)] border border-[var(--c-danger)] px-3 py-1.5 text-xs font-medium text-[var(--c-danger)] enabled:hover:bg-[var(--c-danger-subtle)] disabled:opacity-50"
+              class="rounded-[var(--radius-md)] border border-[var(--c-danger)] px-3 py-1.5 text-xs font-medium text-[var(--c-danger-text)] enabled:hover:bg-[var(--c-danger-subtle)] disabled:opacity-50"
               :disabled="cancel.isPending.value"
               @click="cancel.mutate(jobId)"
             >
@@ -169,7 +169,7 @@ function toggleRule(summaryId: number) {
             <p class="text-xs text-[var(--c-text-muted)]">{{ counter.label }}</p>
             <p
               class="tabular mt-0.5 text-lg font-semibold tracking-tight"
-              :style="counter.warn ? { color: 'var(--c-warning)' } : undefined"
+              :style="counter.warn ? { color: 'var(--c-warning-text)' } : undefined"
             >
               {{ counter.value }}
             </p>
@@ -251,7 +251,7 @@ function toggleRule(summaryId: number) {
                       Loading examples…
                     </p>
                     <!-- An error is not an absence: "no examples" would misreport a failed request. -->
-                    <p v-else-if="samples.isError.value" class="text-xs text-[var(--c-danger)]">
+                    <p v-else-if="samples.isError.value" class="text-xs text-[var(--c-danger-text)]">
                       The examples could not be loaded.
                       <button type="button" class="underline" @click="samples.refetch()">Try again</button>
                     </p>
@@ -298,7 +298,7 @@ function toggleRule(summaryId: number) {
                 <dt class="text-[var(--c-text-muted)]">Stored at</dt>
                 <dd class="mt-0.5 font-mono wrap-anywhere">
                   {{ detail.data.value.storedPath }}
-                  <span v-if="!detail.data.value.isBlobPresent" class="text-[var(--c-danger)]">
+                  <span v-if="!detail.data.value.isBlobPresent" class="text-[var(--c-danger-text)]">
                     (deleted)
                   </span>
                 </dd>
@@ -346,7 +346,7 @@ function toggleRule(summaryId: number) {
                     </RouterLink>
                     for this day
                   </p>
-                  <p v-if="detail.data.value.supersededByJobId" class="text-[var(--c-warning)]">
+                  <p v-if="detail.data.value.supersededByJobId" class="text-[var(--c-warning-text)]">
                     Superseded by
                     <RouterLink
                       :to="`/imports/${detail.data.value.supersededByJobId}`"

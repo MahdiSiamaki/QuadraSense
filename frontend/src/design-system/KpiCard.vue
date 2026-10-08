@@ -54,7 +54,7 @@ const toneClass = computed(
     ({
       default: 'text-[var(--c-text)]',
       muted: 'text-[var(--c-text-secondary)]',
-      warning: 'text-[var(--c-warning)]',
+      warning: 'text-[var(--c-warning-text)]',
     })[props.tone],
 )
 </script>

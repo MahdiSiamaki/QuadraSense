@@ -54,10 +54,10 @@ async function confirm(id: number) {
 }
 
 const tone: Record<string, string> = {
-  Active: 'var(--c-success)',
-  Ready: 'var(--c-warning)',
+  Active: 'var(--c-success-text)',
+  Ready: 'var(--c-warning-text)',
   Superseded: 'var(--c-text-muted)',
-  Failed: 'var(--c-danger)',
+  Failed: 'var(--c-danger-text)',
   Draft: 'var(--c-text-muted)',
   Processing: 'var(--c-accent)',
 }
@@ -71,14 +71,14 @@ const tone: Record<string, string> = {
   >
     <p
       v-if="result"
-      class="mx-4 mt-3 rounded-[var(--radius-md)] bg-[var(--c-success-subtle)] px-3 py-2 text-xs text-[var(--c-success)]"
+      class="mx-4 mt-3 rounded-[var(--radius-md)] bg-[var(--c-success-subtle)] px-3 py-2 text-xs text-[var(--c-success-text)]"
       role="status"
     >
       {{ result }}
     </p>
     <p
       v-if="failure"
-      class="mx-4 mt-3 rounded-[var(--radius-md)] bg-[var(--c-danger-subtle)] px-3 py-2 text-xs text-[var(--c-danger)]"
+      class="mx-4 mt-3 rounded-[var(--radius-md)] bg-[var(--c-danger-subtle)] px-3 py-2 text-xs text-[var(--c-danger-text)]"
       role="alert"
     >
       {{ failure }}
@@ -130,19 +130,19 @@ const tone: Record<string, string> = {
         >
           <div class="flex gap-1.5">
             <dt class="text-[var(--c-text-muted)]">added</dt>
-            <dd class="tabular font-medium text-[var(--c-success)]">
+            <dd class="tabular font-medium text-[var(--c-success-text)]">
               +{{ formatFull(version.tacsAdded ?? 0) }}
             </dd>
           </div>
           <div class="flex gap-1.5">
             <dt class="text-[var(--c-text-muted)]">removed</dt>
-            <dd class="tabular font-medium text-[var(--c-danger)]">
+            <dd class="tabular font-medium text-[var(--c-danger-text)]">
               −{{ formatFull(version.tacsRemoved ?? 0) }}
             </dd>
           </div>
           <div class="flex gap-1.5">
             <dt class="text-[var(--c-text-muted)]">changed</dt>
-            <dd class="tabular font-medium text-[var(--c-warning)]">
+            <dd class="tabular font-medium text-[var(--c-warning-text)]">
               {{ formatFull(version.tacsUpdated ?? 0) }}
             </dd>
           </div>
@@ -154,7 +154,7 @@ const tone: Record<string, string> = {
           </div>
         </dl>
 
-        <p v-if="isUnusual(version)" class="mt-1.5 text-xs text-[var(--c-warning)]">
+        <p v-if="isUnusual(version)" class="mt-1.5 text-xs text-[var(--c-warning-text)]">
           {{ formatFull(changeTotal(version)) }} TACs changed. A month's revision has been
           1,000–1,650 — this is far outside that, so it is worth confirming this is the intended
           file before activating it.

@@ -62,7 +62,7 @@ defineProps<{ rows: ImportJobSummary[] }>()
             <StatusBadge :status="row.status" />
             <span
               v-if="row.status === 'Completed' && row.warningCount > 0"
-              class="ml-1 text-2xs font-medium text-[var(--c-warning)]"
+              class="ml-1 text-2xs font-medium text-[var(--c-warning-text)]"
               title="Every row was imported. Validation raised warnings on some of them - open the import for the rows and the rules."
             >
               with warnings
@@ -79,7 +79,7 @@ defineProps<{ rows: ImportJobSummary[] }>()
           <td class="tabular px-3 py-2 text-right">{{ formatFull(row.rowsInserted) }}</td>
 
           <td class="tabular px-3 py-2 text-right">
-            <span :class="row.rowsInvalid > 0 ? 'text-[var(--c-warning)]' : ''">
+            <span :class="row.rowsInvalid > 0 ? 'text-[var(--c-warning-text)]' : ''">
               {{ row.rowsInvalid > 0 ? formatFull(row.rowsInvalid) : '—' }}
             </span>
           </td>

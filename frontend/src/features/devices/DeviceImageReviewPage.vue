@@ -481,7 +481,7 @@ const emptyMessage = computed(() => {
           {{ formatFull(selectedItems.length) }} selected
         </p>
 
-        <p v-if="duplicateModels.length" class="text-xs text-[var(--c-danger)]" role="alert">
+        <p v-if="duplicateModels.length" class="text-xs text-[var(--c-danger-text)]" role="alert">
           Two images of {{ duplicateModels.join(', ') }} are selected - keep one.
         </p>
         <p v-else-if="replacing.length" class="text-2xs text-[var(--c-text-muted)]">
@@ -614,11 +614,11 @@ const emptyMessage = computed(() => {
 
             <p
               v-if="image.status === 'verified'"
-              class="mt-0.5 text-2xs text-[var(--c-success)]"
+              class="mt-0.5 text-2xs text-[var(--c-success-text)]"
             >
               verified<template v-if="image.verifiedBy"> by {{ image.verifiedBy }}</template>
             </p>
-            <p v-else class="mt-0.5 text-2xs text-[var(--c-warning)]">
+            <p v-else class="mt-0.5 text-2xs text-[var(--c-warning-text)]">
               nobody has checked this
             </p>
 

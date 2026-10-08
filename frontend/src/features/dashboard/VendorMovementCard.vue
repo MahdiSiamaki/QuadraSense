@@ -236,7 +236,7 @@ watch(ranking, (value) => {
             (<span class="tabular">{{ data.networkChangePercent.toFixed(2) }}%</span>). Bars show
             each vendor's change <em>against</em> that, so positive means share gained even where
             the count fell.
-            <span v-if="data.startIsInitialDump" class="text-[var(--c-warning)]">
+            <span v-if="data.startIsInitialDump" class="text-[var(--c-warning-text)]">
               The starting point is the initial dump, which covers a 30-day window rather than an
               instant and averages 1.57 handsets per SIM — so part of the network's decline is
               that over-count being resolved, not devices leaving.

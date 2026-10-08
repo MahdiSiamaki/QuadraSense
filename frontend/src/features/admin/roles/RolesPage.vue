@@ -245,7 +245,7 @@ async function submit() {
                         class="rounded-full px-1.5 text-2xs font-medium"
                         :style="{
                           backgroundColor: 'var(--c-warning-subtle)',
-                          color: 'var(--c-warning)',
+                          color: 'var(--c-warning-text)',
                         }"
                       >
                         sensitive

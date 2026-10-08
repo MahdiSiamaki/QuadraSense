@@ -99,7 +99,7 @@ function removeChild(index: number) {
       </button>
     </div>
 
-    <p v-for="(message, i) in problems.get(node.id) ?? []" :key="i" class="text-2xs text-[var(--c-danger)]" role="alert">
+    <p v-for="(message, i) in problems.get(node.id) ?? []" :key="i" class="text-2xs text-[var(--c-danger-text)]" role="alert">
       {{ message }}
     </p>
 

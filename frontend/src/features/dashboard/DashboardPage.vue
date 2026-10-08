@@ -560,7 +560,7 @@ const activeTacRows = computed(
           <dl class="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <dt class="text-xs text-[var(--c-text-muted)]">Enriched from GSMA</dt>
-              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-success)]">
+              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-success-text)]">
                 {{ formatFull(kpi.data.value?.tacMatchedBindings ?? 0) }}
               </dd>
               <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">
@@ -572,7 +572,7 @@ const activeTacRows = computed(
               <dt class="text-xs text-[var(--c-text-muted)]">
                 Unknown device (<code class="font-mono">000000</code>)
               </dt>
-              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-warning)]">
+              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-warning-text)]">
                 {{ formatFull(kpi.data.value?.unknownDeviceBindings ?? 0) }}
               </dd>
               <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">
@@ -582,7 +582,7 @@ const activeTacRows = computed(
 
             <div>
               <dt class="text-xs text-[var(--c-text-muted)]">Malformed IMEI</dt>
-              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-danger)]">
+              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-danger-text)]">
                 {{ formatFull(kpi.data.value?.malformedImeiBindings ?? 0) }}
               </dd>
               <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">

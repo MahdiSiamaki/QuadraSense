@@ -48,8 +48,8 @@ watch([search, action, outcome, category], () => {
 
 const tone: Record<string, { fg: string; bg: string }> = {
   success: { fg: 'var(--c-text-secondary)', bg: 'transparent' },
-  failure: { fg: 'var(--c-warning)', bg: 'var(--c-warning-subtle)' },
-  denied: { fg: 'var(--c-danger)', bg: 'var(--c-danger-subtle)' },
+  failure: { fg: 'var(--c-warning-text)', bg: 'var(--c-warning-subtle)' },
+  denied: { fg: 'var(--c-danger-text)', bg: 'var(--c-danger-subtle)' },
 }
 
 /** Pretty-prints the JSON detail, or hands back the raw text if it will not parse. */

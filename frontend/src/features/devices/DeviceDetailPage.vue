@@ -363,7 +363,7 @@ const bandsOpen = ref(false)
                       class="rounded-[var(--radius-sm)] px-1.5 py-0.5 text-2xs font-medium"
                       :class="
                         c.state === true
-                          ? 'bg-[var(--c-success-soft,var(--c-surface-sunken))] text-[var(--c-success)]'
+                          ? 'bg-[var(--c-success-subtle)] text-[var(--c-success-text)]'
                           : c.state === false
                             ? 'bg-[var(--c-surface-sunken)] text-[var(--c-text-secondary)]'
                             : 'bg-[var(--c-surface-sunken)] text-[var(--c-text-muted)]'

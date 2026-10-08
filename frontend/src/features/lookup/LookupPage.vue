@@ -170,7 +170,7 @@ function correlationId(e: unknown): string | null {
                   class="inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium"
                   :class="
                     b.isActive
-                      ? 'bg-[var(--c-success-subtle)] text-[var(--c-success)]'
+                      ? 'bg-[var(--c-success-subtle)] text-[var(--c-success-text)]'
                       : 'bg-[var(--c-surface-sunken)] text-[var(--c-text-muted)]'
                   "
                 >

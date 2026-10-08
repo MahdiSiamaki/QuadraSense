@@ -181,7 +181,7 @@ const resetError = computed(() => message(resetPassword.error.value))
               <span
                 v-else-if="locked"
                 class="rounded-full px-2 py-0.5 text-xs font-medium"
-                :style="{ backgroundColor: 'var(--c-warning-subtle)', color: 'var(--c-warning)' }"
+                :style="{ backgroundColor: 'var(--c-warning-subtle)', color: 'var(--c-warning-text)' }"
               >
                 Locked
               </span>
@@ -246,7 +246,7 @@ const resetError = computed(() => message(resetPassword.error.value))
           :style="{
             borderColor: 'var(--c-danger)',
             backgroundColor: 'var(--c-danger-subtle)',
-            color: 'var(--c-danger)',
+            color: 'var(--c-danger-text)',
           }"
           role="alert"
         >
@@ -270,7 +270,7 @@ const resetError = computed(() => message(resetPassword.error.value))
                   {{ role.displayName }}
                 </RouterLink>
               </div>
-              <p v-else class="text-sm text-[var(--c-warning)]">
+              <p v-else class="text-sm text-[var(--c-warning-text)]">
                 No role assigned. This account can sign in but will see nothing.
               </p>
             </Card>
@@ -301,7 +301,7 @@ const resetError = computed(() => message(resetPassword.error.value))
                   <dt class="text-[var(--c-text-muted)]">Failed attempts</dt>
                   <dd class="tabular text-right">
                     {{ user.data.value.failedLoginCount }}
-                    <span v-if="locked" class="text-[var(--c-warning)]">
+                    <span v-if="locked" class="text-[var(--c-warning-text)]">
                       · until {{ formatRelative(user.data.value.lockedUntil) }}
                     </span>
                   </dd>
@@ -320,7 +320,7 @@ const resetError = computed(() => message(resetPassword.error.value))
                 </div>
                 <div v-if="user.data.value.mustChangePassword" class="flex justify-between gap-3">
                   <dt class="text-[var(--c-text-muted)]">Pending</dt>
-                  <dd class="text-right text-[var(--c-warning)]">must change password</dd>
+                  <dd class="text-right text-[var(--c-warning-text)]">must change password</dd>
                 </div>
 
                 <div class="mt-1 border-t pt-2.5 text-xs text-[var(--c-text-muted)]">
@@ -405,7 +405,7 @@ const resetError = computed(() => message(resetPassword.error.value))
         :style="{
           borderColor: 'var(--c-danger)',
           backgroundColor: 'var(--c-danger-subtle)',
-          color: 'var(--c-danger)',
+          color: 'var(--c-danger-text)',
         }"
         role="alert"
       >

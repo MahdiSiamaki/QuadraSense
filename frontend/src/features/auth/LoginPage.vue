@@ -125,7 +125,7 @@ async function submit() {
             :style="{
               borderColor: 'var(--c-danger)',
               backgroundColor: 'var(--c-danger-subtle)',
-              color: 'var(--c-danger)',
+              color: 'var(--c-danger-text)',
             }"
             role="alert"
           >
@@ -139,7 +139,7 @@ async function submit() {
             :style="{
               borderColor: 'var(--c-warning)',
               backgroundColor: 'var(--c-warning-subtle)',
-              color: 'var(--c-warning)',
+              color: 'var(--c-warning-text)',
             }"
             role="alert"
           >
