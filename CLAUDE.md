@@ -55,7 +55,7 @@ Do not re-open these without asking:
 Professional, modern, enterprise-grade, responsive and accessible. Design tokens live in
 `frontend/src/design-system/`; use them rather than literal colours.
 
-Three traps that have already cost time, all still live:
+Six traps that have already cost time, all still live:
 
 - **zrender cannot parse `oklch()`.** Passing a token straight to ECharts yields `undefined` and
   the series disappears on hover. Resolve through `frontend/src/lib/chart-colors.ts`.
@@ -67,6 +67,18 @@ Three traps that have already cost time, all still live:
   `text-2xs` … `text-2xl`, `font-mono` - which read the tokens. Colours as `text-[var(--c-…)]` are
   fine. Every page had this until 2026-10-01; to check a build, list what each `[var(--…)]` class
   compiles to in `dist/assets/index-*.css`.
+- **An unlayered rule beats every utility.** Utilities live in `@layer utilities`, so a plain rule
+  in `tokens.css` outranks them whatever its specificity: `* { border-color }` at top level drew
+  74 of 76 coloured borders grey until 2026-10-08. A default a utility may override goes in
+  `@layer base`.
+- **Vue renames keyframes in `<style scoped>`**, so a utility class naming them animates nothing
+  (the import progress sweep never moved). Keyframes used by utilities are `@theme` tokens,
+  `--animate-<name>`, in `tokens.css`.
+- **ECharts' tooltip ignores `animation: false`**: it glides for 0.4s by default. Every chart
+  spreads `tooltipBounds` from `frontend/src/lib/chart-tooltip.ts`, which sets it to 0.
+
+The UI conventions these and the layout review settled are in
+`docs/architecture/16-ui-design-system.md`.
 
 ## Counting rules
 
