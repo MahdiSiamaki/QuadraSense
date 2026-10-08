@@ -42,6 +42,15 @@ const showPreview = ref(false)
 const samples = useQuarantineSamples(jobId, openRule)
 
 const summary = computed(() => detail.data.value?.summary)
+
+/** "SQM · Oct 3, 2026 · 337.0 MB". A file with no business day leaves the day out, not a dash. */
+const facts = computed(() => {
+  const s = summary.value
+  if (!s) return ''
+  return [s.sourceCode, s.businessDate ? formatDate(s.businessDate) : null, formatBytes(s.fileBytes)]
+    .filter(Boolean)
+    .join(' · ')
+})
 const running = computed(() => (summary.value ? !isTerminal(summary.value.status) : false))
 
 /** Row counts, only the ones that carry information for this particular job. */
@@ -103,9 +112,9 @@ function toggleRule(summaryId: number) {
                 In effect
               </span>
             </div>
-            <p class="mt-1 text-sm text-[var(--c-text-secondary)]">
-              {{ summary.sourceCode }} · {{ formatDate(summary.businessDate) }} ·
-              {{ formatBytes(summary.fileBytes) }} · uploaded by {{ summary.createdBy }}
+            <!-- wrap-anywhere: a user name has no length limit and must not widen a phone's page. -->
+            <p class="mt-1 text-sm wrap-anywhere text-[var(--c-text-secondary)]">
+              {{ facts }} · uploaded by {{ summary.createdBy }}
             </p>
           </div>
 
@@ -113,7 +122,7 @@ function toggleRule(summaryId: number) {
             <button
               v-if="running"
               type="button"
-              class="rounded-[var(--radius-md)] border border-[var(--c-danger)] px-3 py-1.5 text-xs font-medium text-[var(--c-danger)] hover:bg-[var(--c-danger-subtle)] disabled:opacity-50"
+              class="rounded-[var(--radius-md)] border border-[var(--c-danger)] px-3 py-1.5 text-xs font-medium text-[var(--c-danger)] enabled:hover:bg-[var(--c-danger-subtle)] disabled:opacity-50"
               :disabled="cancel.isPending.value"
               @click="cancel.mutate(jobId)"
             >
@@ -122,7 +131,7 @@ function toggleRule(summaryId: number) {
             <button
               v-if="!running && detail.data.value.isBlobPresent"
               type="button"
-              class="rounded-[var(--radius-md)] border px-3 py-1.5 text-xs font-medium hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
+              class="rounded-[var(--radius-md)] border px-3 py-1.5 text-xs font-medium enabled:hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
               :disabled="reprocess.isPending.value"
               @click="reprocess.mutate(jobId)"
             >
@@ -167,8 +176,12 @@ function toggleRule(summaryId: number) {
           </Card>
         </div>
 
-        <div class="grid gap-5 lg:grid-cols-[1fr_20rem]">
-          <div class="space-y-5">
+        <!--
+          minmax(0, 1fr) and min-w-0: a bare 1fr track is at least as wide as its content, so the
+          preview of a 26-column TAC file widened the column instead of scrolling inside its card.
+        -->
+        <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div class="min-w-0 space-y-5">
             <Card title="The file as delivered" subtitle="The first rows, exactly as they arrived">
               <template #actions>
                 <button
@@ -252,7 +265,7 @@ function toggleRule(summaryId: number) {
                       </thead>
                       <tbody class="font-mono">
                         <tr v-for="sample in samples.data.value" :key="sample.rowNumber" class="border-t">
-                          <td class="tabular py-1 pr-3 align-top">{{ sample.rowNumber }}</td>
+                          <td class="tabular py-1 pr-3 align-top">{{ formatFull(sample.rowNumber) }}</td>
                           <td class="py-1 pr-3 align-top wrap-anywhere">{{ sample.rawLine }}</td>
                           <td class="py-1 align-top wrap-anywhere">{{ sample.offendingValue ?? '—' }}</td>
                         </tr>

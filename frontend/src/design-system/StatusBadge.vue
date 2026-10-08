@@ -31,8 +31,12 @@ const style = computed(() => styles[tone.value] ?? styles['neutral']!)
 
 <template>
   <span
-    class="inline-flex items-center gap-1.5 rounded-full font-medium whitespace-nowrap"
-    :class="compact ? 'px-1.5 py-0.5 text-2xs' : 'px-2 py-0.5 text-xs'"
+    class="inline-flex items-center gap-1.5 rounded-full whitespace-nowrap"
+    :class="[
+      compact ? 'px-1.5 py-0.5 text-2xs' : 'px-2 py-0.5 text-xs',
+      // Failed and Quarantined share a colour; the weight is what tells a failure apart.
+      status === 'Failed' ? 'font-semibold' : 'font-medium',
+    ]"
     :style="{ backgroundColor: style.bg, color: style.fg }"
   >
     <span

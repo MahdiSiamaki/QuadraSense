@@ -8,7 +8,7 @@ import Pagination from '@/design-system/Pagination.vue'
 import CreateUserDialog from './CreateUserDialog.vue'
 import { useRoles, useUsers, type UserFilters } from '@/api/admin'
 import { useAuth, Permission } from '@/features/auth/useAuth'
-import { formatDateTime, formatRelative } from '@/lib/format'
+import { formatDateTime, formatFull, formatRelative } from '@/lib/format'
 
 /**
  * The user list.
@@ -75,8 +75,9 @@ const selectClass =
 
     <Card flush>
       <template #actions>
-        <span class="tabular text-xs text-[var(--c-text-muted)]">
-          {{ users.data.value?.total ?? 0 }} total
+        <!-- Only once loaded: "0 total" during the first load, or after an error, read as no users. -->
+        <span v-if="users.data.value" class="tabular text-xs text-[var(--c-text-muted)]">
+          {{ formatFull(users.data.value.total) }} {{ users.data.value.total === 1 ? 'user' : 'users' }}
         </span>
       </template>
 

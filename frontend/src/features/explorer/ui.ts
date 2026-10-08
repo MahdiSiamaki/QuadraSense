@@ -24,7 +24,7 @@ export const segment = (on: boolean): string =>
   'last:rounded-r-[var(--radius-md)] focus-visible:outline-2 focus-visible:outline-[var(--c-accent)] ' +
   (on
     ? 'bg-[var(--c-accent-subtle)] text-[var(--c-accent)]'
-    : 'bg-[var(--c-surface)] text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]')
+    : 'bg-[var(--c-surface)] text-[var(--c-text-secondary)] enabled:hover:bg-[var(--c-surface-hover)]')
 
 /** Field types whose values are identifiers or codes: digits, set in monospace. */
 export const DIGIT_TYPES = new Set(['Msisdn', 'Imsi', 'Imei', 'Tac'])

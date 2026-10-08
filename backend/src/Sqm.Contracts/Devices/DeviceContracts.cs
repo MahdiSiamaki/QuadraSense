@@ -127,9 +127,12 @@ public sealed record DeviceCapabilities(bool? Lte, bool? FiveG, bool? Esim, bool
 /// <param name="Sims">Distinct SIMs.</param>
 /// <param name="Subscribers">Distinct subscriber numbers.</param>
 /// <param name="BindingsAtStart">Active bindings at the first delivery.</param>
-/// <param name="ChangePercent">Change against that start, as a percentage.</param>
+/// <param name="ChangePercent">
+/// Change against that start, as a percentage; null when the model had no bindings at the start.
+/// </param>
 /// <param name="VsNetworkPoints">
-/// That change minus the network's own over the same span, in percentage points.
+/// That change minus the network's own over the same span, in percentage points; null when either
+/// change is.
 /// </param>
 /// <param name="FirstSeen">First day a daily file named a binding of this model.</param>
 /// <param name="LastSeen">Last such day.</param>
@@ -144,8 +147,8 @@ public sealed record DevicePopulation(
     long Sims,
     long Subscribers,
     long BindingsAtStart,
-    double ChangePercent,
-    double VsNetworkPoints,
+    double? ChangePercent,
+    double? VsNetworkPoints,
     DateOnly? FirstSeen,
     DateOnly? LastSeen);
 

@@ -373,7 +373,7 @@ function onToggle(event: Event) {
       </dl>
     </details>
 
-    <p v-if="candidate.rejectionReason" class="mt-2 text-2xs text-[var(--c-danger)]">
+    <p v-if="candidate.rejectionReason" class="mt-2 text-2xs wrap-anywhere text-[var(--c-danger)]">
       Rejected: {{ candidate.rejectionReason }}
     </p>
 

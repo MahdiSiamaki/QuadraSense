@@ -208,7 +208,8 @@ function resetPaging() {
       </Card>
     </div>
 
-    <div class="grid gap-5 lg:grid-cols-[1fr_20rem]">
+    <!-- minmax(0, 1fr): the history table scrolls inside its card instead of widening the column. -->
+    <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <!-- History -->
       <Card title="Import history" flush>
         <template #actions>

@@ -20,7 +20,7 @@ withDefaults(
     onLabel?: string
     offLabel?: string
     disabled?: boolean
-    /** Paints the "on" state in the warning colour, for switches that grant something. */
+    /** Paints the "on" state in the success colour, for switches that grant something. */
     tone?: 'accent' | 'success'
   }>(),
   { onLabel: 'On', offLabel: 'Off', disabled: false, tone: 'accent' },
@@ -34,7 +34,15 @@ const id = useId()
 <template>
   <div class="flex items-start justify-between gap-4">
     <div class="min-w-0">
-      <label :id="`${id}-label`" class="text-sm font-medium">{{ label }}</label>
+      <!-- for + the switch's id: clicking the words toggles it, not only the 36x20px track. -->
+      <label
+        :id="`${id}-label`"
+        :for="id"
+        class="text-sm font-medium"
+        :class="disabled ? 'cursor-not-allowed' : 'cursor-pointer'"
+      >
+        {{ label }}
+      </label>
       <p v-if="description" class="mt-0.5 text-xs text-[var(--c-text-muted)]">
         {{ description }}
       </p>
@@ -55,6 +63,7 @@ const id = useId()
       </span>
 
       <button
+        :id="id"
         type="button"
         role="switch"
         :aria-checked="modelValue"
@@ -72,8 +81,8 @@ const id = useId()
         @click="emit('update:modelValue', !modelValue)"
       >
         <span
-          class="absolute top-0.5 size-3.5 rounded-full bg-white shadow-[var(--shadow-xs)] transition-[left]"
-          :class="modelValue ? 'left-[1.125rem]' : 'left-0.5'"
+          class="absolute top-0.5 left-0.5 size-3.5 rounded-full bg-white shadow-[var(--shadow-xs)] transition-transform"
+          :class="modelValue ? 'translate-x-4' : 'translate-x-0'"
           aria-hidden="true"
         />
       </button>

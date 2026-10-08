@@ -61,33 +61,17 @@ const colour = computed(
         class="absolute inset-y-0 left-0 rounded-full transition-[width] duration-500 ease-out"
         :style="{ width: `${width}%`, backgroundColor: colour }"
       />
-      <!-- Unknown total: a sweep that says "working" without claiming a position. -->
+      <!--
+        Unknown total: a sweep that says "working" without claiming a position. With reduced motion
+        it is a faint full-width bar instead: the global rule would otherwise run the sweep once in
+        0.01ms and leave a still third at the left of the track, which reads as 33% done.
+      -->
       <span
         v-else
-        class="absolute inset-y-0 w-1/3 animate-[indeterminate_1.4s_ease-in-out_infinite] rounded-full"
+        class="absolute inset-y-0 left-0 w-1/3 animate-indeterminate rounded-full motion-reduce:w-full motion-reduce:animate-none motion-reduce:opacity-40"
         :style="{ backgroundColor: colour }"
       />
     </div>
   </div>
 </template>
 
-<style scoped>
-@keyframes indeterminate {
-  0% {
-    left: -35%;
-  }
-  100% {
-    left: 100%;
-  }
-}
-
-/* Respect a reader who has asked the system for less motion. */
-@media (prefers-reduced-motion: reduce) {
-  span[class*='animate-'] {
-    animation: none;
-    left: 0;
-    width: 100%;
-    opacity: 0.4;
-  }
-}
-</style>
