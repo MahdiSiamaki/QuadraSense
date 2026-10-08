@@ -4,9 +4,9 @@ import { CHECK_LABELS, RULE_TITLES, useRiskDaily, useRiskOverview, useRiskStatus
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import SplitView from '@/design-system/SplitView.vue'
 import Card from '@/design-system/Card.vue'
+import SegmentedControl, { tabId } from '@/design-system/SegmentedControl.vue'
 import { Permission, useAuth } from '@/features/auth/useAuth'
 import EntityPanel from '@/features/explorer/EntityPanel.vue'
-import { segment } from '@/features/explorer/ui'
 import TimelineView from '@/features/timeline/TimelineView.vue'
 import { formatDate, formatDateTime, formatFull } from '@/lib/format'
 import RiskLevelBadge from './RiskLevelBadge.vue'
@@ -138,23 +138,22 @@ function drill(identifier: string) {
           {{ data.run.stale }} Until then, everything here is as of {{ formatDate(data.run.asOf) }}.
         </p>
 
-        <div class="inline-flex w-fit flex-wrap overflow-hidden rounded-[var(--radius-md)] border" role="tablist" aria-label="Risk signals">
-          <button
-            v-for="t in tabs"
-            :key="t.id"
-            type="button"
-            role="tab"
-            :aria-selected="tab === t.id"
-            :aria-disabled="t.disabled !== null"
-            :title="t.disabled ?? ''"
-            :class="[segment(tab === t.id), t.disabled ? 'cursor-not-allowed opacity-50' : '']"
-            @click="t.disabled ? null : ((focus = null), (tab = t.id))"
-          >
-            {{ t.label }}
-          </button>
-        </div>
+        <SegmentedControl
+          :model-value="tab"
+          class="w-fit"
+          tabs
+          panel-id="risk-panel"
+          :options="tabs.map((t) => ({ value: t.id, label: t.label, disabled: t.disabled }))"
+          label="Risk signals"
+          @update:model-value="(next) => { focus = null; tab = next }"
+        />
 
-        <SplitView :aside="!!current">
+        <SplitView
+          id="risk-panel"
+          role="tabpanel"
+          :aria-labelledby="tabId('risk-panel', tabs.findIndex((t) => t.id === tab))"
+          :aside="!!current"
+        >
           <div class="min-w-0">
             <!-- Overview: counts only, naming nobody. -->
             <div v-if="tab === 'overview'" class="flex flex-col gap-3">

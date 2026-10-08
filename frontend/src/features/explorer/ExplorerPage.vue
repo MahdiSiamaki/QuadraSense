@@ -20,6 +20,7 @@ import Button from '@/design-system/Button.vue'
 import Card from '@/design-system/Card.vue'
 import SplitView from '@/design-system/SplitView.vue'
 import Modal from '@/design-system/Modal.vue'
+import SegmentedControl, { tabId } from '@/design-system/SegmentedControl.vue'
 import { Permission, useAuth } from '@/features/auth/useAuth'
 import { formatDate } from '@/lib/format'
 import ConditionTree from './ConditionTree.vue'
@@ -43,7 +44,6 @@ import ShapeEditor from './ShapeEditor.vue'
 import TemplatesPanel from './TemplatesPanel.vue'
 import TimelineView from '@/features/timeline/TimelineView.vue'
 import type { ExplorerTemplate } from './templates'
-import { segment } from './ui'
 
 /**
  * The Explorer: ask questions of current bindings and the dated event log.
@@ -401,21 +401,20 @@ const eventsNote = computed(() =>
       </p>
     </header>
 
-    <div class="inline-flex w-fit overflow-hidden rounded-[var(--radius-md)] border" role="tablist" aria-label="Explorer">
-      <button
-        v-for="t in tabs"
-        :key="t.id"
-        type="button"
-        role="tab"
-        :aria-selected="tab === t.id"
-        :class="segment(tab === t.id)"
-        @click="tab = t.id"
-      >
-        {{ t.label }}
-      </button>
-    </div>
+    <SegmentedControl
+      v-model="tab"
+      class="w-fit"
+      tabs
+      panel-id="explorer-panel"
+      :options="tabs.map((t) => ({ value: t.id, label: t.label }))"
+      label="Explorer"
+    />
 
+    <!-- The tabs' panel: named by the chosen tab, as the tab names it through aria-controls. -->
     <AsyncBoundary
+      id="explorer-panel"
+      role="tabpanel"
+      :aria-labelledby="tabId('explorer-panel', tabs.findIndex((t) => t.id === tab))"
       :is-loading="catalogue.isPending.value"
       :is-error="catalogue.isError.value"
       :error="catalogue.error.value"
@@ -426,21 +425,12 @@ const eventsNote = computed(() =>
       <Card v-if="ready && tab === 'build'">
         <form class="flex flex-col gap-5" @submit.prevent="runDraft">
           <div class="flex flex-wrap items-center gap-3">
-            <div class="inline-flex overflow-hidden rounded-[var(--radius-md)] border" role="radiogroup" aria-label="Dataset">
-              <button
-                v-for="d in catalogue.data.value?.datasets ?? []"
-                :key="d.dataset"
-                type="button"
-                role="radio"
-                :aria-checked="draft.dataset === d.dataset"
-                :aria-label="d.label"
-                :class="segment(draft.dataset === d.dataset)"
-                :title="d.description"
-                @click="chooseDataset(d.dataset)"
-              >
-                {{ d.label }}
-              </button>
-            </div>
+            <SegmentedControl
+              :model-value="draft.dataset"
+              :options="(catalogue.data.value?.datasets ?? []).map((d) => ({ value: d.dataset, label: d.label, title: d.description }))"
+              label="Dataset"
+              @update:model-value="chooseDataset"
+            />
             <p class="min-w-0 flex-1 text-xs text-[var(--c-text-muted)]">{{ dataset?.description }}</p>
 
             <span

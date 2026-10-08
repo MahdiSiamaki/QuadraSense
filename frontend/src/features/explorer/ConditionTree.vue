@@ -2,9 +2,10 @@
 import { computed } from 'vue'
 import type { ExplorerField } from '@/api/explorer'
 import Button from '@/design-system/Button.vue'
+import SegmentedControl from '@/design-system/SegmentedControl.vue'
 import ConditionRow from './ConditionRow.vue'
 import { emptyGroup, newCondition, type GroupDraft } from './model'
-import { iconButton, segment } from './ui'
+import { iconButton } from './ui'
 
 /**
  * A group of conditions - AND or OR, optionally negated - and the groups inside it.
@@ -57,26 +58,14 @@ function removeChild(index: number) {
     "
   >
     <div class="flex flex-wrap items-center gap-2">
-      <div class="inline-flex overflow-hidden rounded-[var(--radius-md)] border" role="radiogroup" :aria-label="isRoot ? 'Rows must match' : 'This group must match'">
-        <button
-          type="button"
-          role="radio"
-          :aria-checked="node.logic === 'And'"
-          :class="segment(node.logic === 'And')"
-          @click="node.logic = 'And'"
-        >
-          All (AND)
-        </button>
-        <button
-          type="button"
-          role="radio"
-          :aria-checked="node.logic === 'Or'"
-          :class="segment(node.logic === 'Or')"
-          @click="node.logic = 'Or'"
-        >
-          Any (OR)
-        </button>
-      </div>
+      <SegmentedControl
+        v-model="node.logic"
+        :options="[
+          { value: 'And', label: 'All (AND)' },
+          { value: 'Or', label: 'Any (OR)' },
+        ]"
+        :label="isRoot ? 'Rows must match' : 'This group must match'"
+      />
 
       <label class="inline-flex items-center gap-1 text-2xs font-medium text-[var(--c-text-muted)]">
         <input v-model="node.not" type="checkbox" />

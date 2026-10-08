@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import Card from '@/design-system/Card.vue'
+import SegmentedControl from '@/design-system/SegmentedControl.vue'
 import Button from '@/design-system/Button.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import Pagination from '@/design-system/Pagination.vue'
@@ -344,51 +345,22 @@ const emptyMessage = computed(() => {
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <div class="flex rounded-[var(--radius-md)] border p-0.5" role="radiogroup" aria-label="Which queue">
-          <button
-            type="button"
-            role="radio"
-            :aria-checked="tab === 'candidates'"
-            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="tab === 'candidates'
-              ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
-              : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'"
-            @click="tab = 'candidates'"
-          >
-            Proposed
-          </button>
-          <button
-            type="button"
-            role="radio"
-            :aria-checked="tab === 'current'"
-            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="tab === 'current'
-              ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
-              : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'"
-            @click="tab = 'current'"
-          >
-            Current images
-          </button>
-        </div>
+        <SegmentedControl
+          v-model="tab"
+          :options="[
+            { value: 'candidates', label: 'Proposed' },
+            { value: 'current', label: 'Current images' },
+          ]"
+          label="Which queue"
+        />
 
-        <div v-if="tab === 'current'" class="flex rounded-[var(--radius-md)] border p-0.5" role="radiogroup" aria-label="Which images">
-          <button
-            v-for="option in LIVE_STATUSES"
-            :key="option.value"
-            type="button"
-            role="radio"
-            :aria-checked="liveStatus === option.value"
-            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="
-              liveStatus === option.value
-                ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
-                : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'
-            "
-            @click="setLiveStatus(option.value)"
-          >
-            {{ option.label }}
-          </button>
-        </div>
+        <SegmentedControl
+          v-if="tab === 'current'"
+          :model-value="liveStatus"
+          :options="LIVE_STATUSES"
+          label="Which images"
+          @update:model-value="setLiveStatus"
+        />
       </div>
     </header>
 
@@ -396,24 +368,7 @@ const emptyMessage = computed(() => {
     <section v-if="tab === 'candidates'" class="space-y-3" aria-label="Proposed images">
       <!-- One filter row. Every change goes back to page 1 and clears the selection. -->
       <div ref="queueTop" tabindex="-1" class="flex scroll-mt-20 flex-wrap items-center gap-2 focus:outline-none">
-        <div class="flex rounded-[var(--radius-md)] border p-0.5" role="radiogroup" aria-label="Review status">
-          <button
-            v-for="option in STATUSES"
-            :key="option.value"
-            type="button"
-            role="radio"
-            :aria-checked="filters.status === option.value"
-            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="
-              filters.status === option.value
-                ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
-                : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'
-            "
-            @click="filters.status = option.value"
-          >
-            {{ option.label }}
-          </button>
-        </div>
+        <SegmentedControl v-model="filters.status" :options="STATUSES" label="Review status" />
 
         <label class="sr-only" for="candidate-brand">Brand</label>
         <select id="candidate-brand" v-model="filters.brand" :class="selectClass">

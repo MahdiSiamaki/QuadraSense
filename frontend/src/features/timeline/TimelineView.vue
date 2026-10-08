@@ -5,6 +5,7 @@ import { KIND_LABEL, useTimeline, type Timeline, type TimelineKind, type Timelin
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import Button from '@/design-system/Button.vue'
 import Card from '@/design-system/Card.vue'
+import SegmentedControl from '@/design-system/SegmentedControl.vue'
 import { formatDate, formatFull, formatImei, formatMsisdn } from '@/lib/format'
 import TimelineChart, { type ChartRow } from './TimelineChart.vue'
 
@@ -135,20 +136,12 @@ const centreText = computed(() => {
   <Card :title="data ? `${KIND_LABEL[data.kind].one} timeline` : 'Timeline'" :subtitle="centreText">
     <template #actions>
       <div class="flex flex-wrap items-center gap-2">
-        <div v-if="views.length > 1" class="inline-flex overflow-hidden rounded-[var(--radius-md)] border" role="radiogroup" aria-label="Show">
-          <button
-            v-for="v in views"
-            :key="v.id"
-            type="button"
-            role="radio"
-            :aria-checked="view === v.id"
-            class="px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="view === v.id ? 'bg-[var(--c-accent-subtle)] text-[var(--c-accent)]' : 'bg-[var(--c-surface)] text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'"
-            @click="view = v.id"
-          >
-            {{ v.label }}
-          </button>
-        </div>
+        <SegmentedControl
+          v-if="views.length > 1"
+          v-model="view"
+          :options="views.map((v) => ({ value: v.id, label: v.label }))"
+          label="Show"
+        />
         <button
           type="button"
           class="grid size-7 place-items-center rounded-[var(--radius-md)] text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
