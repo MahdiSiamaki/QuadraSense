@@ -10,7 +10,7 @@ import DeviceImageUpload from './DeviceImageUpload.vue'
 import { useDevice, useDeviceTimeline } from '@/api/devices'
 import { networkAgeText, useModelNetworkAge } from '@/api/modelArrivals'
 import { useAuth, Permission } from '@/features/auth/useAuth'
-import { formatDate, formatFull } from '@/lib/format'
+import { formatDate, formatFull, formatSignedDecimal } from '@/lib/format'
 
 /**
  * One device model.
@@ -297,36 +297,56 @@ const bandsOpen = ref(false)
                   </div>
                   <div class="flex items-baseline justify-between gap-3 border-t pt-2">
                     <dt class="text-[var(--c-text-secondary)]">Change</dt>
+                    <!-- No bindings at the start: there is no percentage of zero to show or compare. -->
                     <dd
+                      v-if="detail.population.changePercent === null"
+                      class="text-right text-xs text-[var(--c-text-muted)]"
+                    >
+                      New since the first delivery
+                    </dd>
+                    <dd
+                      v-else
                       class="tabular font-medium"
                       :style="{
                         color:
-                          detail.population.changePercent >= 0 ? 'var(--viz-3)' : 'var(--viz-6)',
+                          Math.round(detail.population.changePercent * 100) >= 0
+                            ? 'var(--viz-3)'
+                            : 'var(--viz-6)',
                       }"
                     >
-                      {{ detail.population.changePercent >= 0 ? '+' : ''
-                      }}{{ detail.population.changePercent.toFixed(2) }}%
+                      {{ formatSignedDecimal(detail.population.changePercent, 2) }}%
                     </dd>
                   </div>
-                  <div class="flex items-baseline justify-between gap-3">
+                  <div
+                    v-if="detail.population.vsNetworkPoints !== null"
+                    class="flex items-baseline justify-between gap-3"
+                  >
                     <dt class="text-[var(--c-text-secondary)]">Against the network</dt>
                     <dd
                       class="tabular font-medium"
                       :style="{
                         color:
-                          detail.population.vsNetworkPoints >= 0 ? 'var(--viz-3)' : 'var(--viz-6)',
+                          Math.round(detail.population.vsNetworkPoints * 10) >= 0
+                            ? 'var(--viz-3)'
+                            : 'var(--viz-6)',
                       }"
                     >
-                      {{ detail.population.vsNetworkPoints >= 0 ? '+' : ''
-                      }}{{ detail.population.vsNetworkPoints.toFixed(1) }} pts
+                      {{ formatSignedDecimal(detail.population.vsNetworkPoints, 1) }} pts
                     </dd>
                   </div>
                 </dl>
 
-                <p class="mt-3 border-t pt-2 text-2xs text-[var(--c-text-muted)]">
+                <p
+                  v-if="detail.population.vsNetworkPoints !== null"
+                  class="mt-3 border-t pt-2 text-2xs text-[var(--c-text-muted)]"
+                >
                   The whole active population fell over this span, so almost every model's absolute
                   change is negative. The second figure is the one that says whether this model
                   gained or lost <em>share</em>.
+                </p>
+                <p v-else class="mt-3 border-t pt-2 text-2xs text-[var(--c-text-muted)]">
+                  This model had no bindings at the first delivery, so there is no change to
+                  measure or to compare with the network's.
                 </p>
               </Card>
 

@@ -52,6 +52,18 @@ export function formatSigned(value: number): string {
 }
 
 /**
+ * A signed decimal: "+12.34", "-9.30", "0.00". Grouped, so a model that grew from 3 bindings reads
+ * "+41,233.33", and never "-0.00" for a change that rounds to nothing.
+ */
+export function formatSignedDecimal(value: number, digits: number): string {
+  return new Intl.NumberFormat(LOCALE, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+    signDisplay: 'exceptZero',
+  }).format(value)
+}
+
+/**
  * Groups a long identifier so it can be read and compared by eye.
  *
  * An IMEI is TAC(8) + serial(6); splitting on that boundary is not cosmetic,

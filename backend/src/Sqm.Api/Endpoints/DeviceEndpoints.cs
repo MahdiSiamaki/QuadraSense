@@ -351,12 +351,14 @@ public static class DeviceEndpoints
             ? null
             : await images.GetInfoAsync(modelKey, ct).ConfigureAwait(false);
 
-        var change = row.BindingsAtStart == 0
-            ? 0
+        // A model absent at the first delivery has no percentage change. Answering 0 showed "+0.00%"
+        // and, against a network that fell 9.3%, a green "+9.3 pts" for every new model.
+        double? change = row.BindingsAtStart == 0
+            ? null
             : Math.Round(100.0 * (row.Summary.Bindings - row.BindingsAtStart) / row.BindingsAtStart, 4);
 
-        var networkChange = row.NetworkAtStart == 0
-            ? 0
+        double? networkChange = row.NetworkAtStart == 0
+            ? null
             : Math.Round(100.0 * (row.NetworkNow - row.NetworkAtStart) / row.NetworkAtStart, 4);
 
         return Results.Ok(new DeviceDetail(
@@ -387,7 +389,7 @@ public static class DeviceEndpoints
                 Subscribers: row.Summary.Subscribers,
                 BindingsAtStart: row.BindingsAtStart,
                 ChangePercent: change,
-                VsNetworkPoints: Math.Round(change - networkChange, 4),
+                VsNetworkPoints: change is { } c && networkChange is { } n ? Math.Round(c - n, 4) : null,
                 FirstSeen: row.Summary.FirstSeen,
                 LastSeen: row.Summary.LastSeen),
             KnownToGsma: row.KnownToGsma,

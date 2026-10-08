@@ -96,9 +96,13 @@ export interface DevicePopulation {
   sims: number
   subscribers: number
   bindingsAtStart: number
-  changePercent: number
-  /** The change minus the network's own, in points. The figure that makes growth readable. */
-  vsNetworkPoints: number
+  /** Null when the model had no bindings at the first delivery: there is no percentage of zero. */
+  changePercent: number | null
+  /**
+   * The change minus the network's own, in points. The figure that makes growth readable. Null
+   * whenever the change is.
+   */
+  vsNetworkPoints: number | null
   firstSeen: string | null
   lastSeen: string | null
 }
