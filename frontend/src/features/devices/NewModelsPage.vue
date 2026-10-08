@@ -6,7 +6,8 @@ import { networkAgeText, useModelArrivals, useModelArrivalStatus, useNewModels }
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import Card from '@/design-system/Card.vue'
 import Pagination from '@/design-system/Pagination.vue'
-import { control, miniLabel, segment } from '@/features/explorer/ui'
+import SegmentedControl from '@/design-system/SegmentedControl.vue'
+import { control, miniLabel } from '@/features/explorer/ui'
 import { formatDate, formatFull } from '@/lib/format'
 import ModelArrivalsChart from './ModelArrivalsChart.vue'
 
@@ -26,6 +27,12 @@ const grain = ref<'month' | 'week'>('month')
 const arrivals = useModelArrivals(grain, ready)
 
 type Preset = '7' | '30' | '90' | 'custom'
+const PRESETS: Array<{ value: Preset; label: string }> = [
+  { value: '7', label: 'Last 7 days' },
+  { value: '30', label: 'Last 30 days' },
+  { value: '90', label: 'Last 90 days' },
+  { value: 'custom', label: 'Custom' },
+]
 const preset = ref<Preset>('30')
 const from = ref('')
 const to = ref('')
@@ -100,14 +107,14 @@ const result = computed(() => list.data.value ?? null)
       <template v-else>
         <Card title="Models first seen" :subtitle="`Since the first daily file, ${formatDate(status.data.value?.dataStart ?? null)}`">
           <template #actions>
-            <div class="inline-flex overflow-hidden rounded-[var(--radius-md)] border" role="radiogroup" aria-label="Period">
-              <button type="button" role="radio" :aria-checked="grain === 'month'" :class="segment(grain === 'month')" @click="grain = 'month'">
-                Month
-              </button>
-              <button type="button" role="radio" :aria-checked="grain === 'week'" :class="segment(grain === 'week')" @click="grain = 'week'">
-                Week
-              </button>
-            </div>
+            <SegmentedControl
+              v-model="grain"
+              :options="[
+                { value: 'month', label: 'Month' },
+                { value: 'week', label: 'Week' },
+              ]"
+              label="Period"
+            />
           </template>
           <ModelArrivalsChart v-if="arrivals.data.value" :data="arrivals.data.value" />
           <p v-else class="py-10 text-center text-2xs text-[var(--c-text-muted)]">Loading…</p>
@@ -121,19 +128,12 @@ const result = computed(() => list.data.value ?? null)
         <div class="flex flex-wrap items-end gap-x-6 gap-y-3">
           <div>
             <span :class="miniLabel">First seen</span>
-            <div class="mt-1 inline-flex overflow-hidden rounded-[var(--radius-md)] border" role="radiogroup" aria-label="First seen">
-              <button
-                v-for="p in [{ id: '7', label: 'Last 7 days' }, { id: '30', label: 'Last 30 days' }, { id: '90', label: 'Last 90 days' }, { id: 'custom', label: 'Custom' }]"
-                :key="p.id"
-                type="button"
-                role="radio"
-                :aria-checked="preset === p.id"
-                :class="segment(preset === p.id)"
-                @click="preset = p.id as Preset"
-              >
-                {{ p.label }}
-              </button>
-            </div>
+            <SegmentedControl
+              v-model="preset"
+              class="mt-1"
+              :options="PRESETS"
+              label="First seen"
+            />
           </div>
           <template v-if="preset === 'custom'">
             <label>

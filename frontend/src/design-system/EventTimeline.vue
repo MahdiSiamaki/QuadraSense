@@ -44,7 +44,7 @@ function prettyDetail(json: string | null): string | null {
 const tone: Record<string, { dot: string; text: string }> = {
   info: { dot: 'var(--c-text-muted)', text: 'var(--c-text)' },
   warning: { dot: 'var(--c-warning)', text: 'var(--c-text)' },
-  error: { dot: 'var(--c-danger)', text: 'var(--c-danger)' },
+  error: { dot: 'var(--c-danger)', text: 'var(--c-danger-text)' },
 }
 </script>
 

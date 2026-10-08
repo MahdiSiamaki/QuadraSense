@@ -13,12 +13,13 @@ import {
 } from '@/api/risk'
 import Button from '@/design-system/Button.vue'
 import Pagination from '@/design-system/Pagination.vue'
-import { control, miniLabel, segment } from '@/features/explorer/ui'
+import { control, miniLabel } from '@/features/explorer/ui'
 import { formatDate, formatFull } from '@/lib/format'
 import RiskLevelBadge from './RiskLevelBadge.vue'
 import RiskDistributionChart from './RiskDistributionChart.vue'
 import RiskDailyChart from './RiskDailyChart.vue'
 import DimensionTable from '@/design-system/DimensionTable.vue'
+import SegmentedControl from '@/design-system/SegmentedControl.vue'
 import { useRiskDaily, useRiskDeviceTypes, useRiskDistribution } from '@/api/risk'
 
 /**
@@ -163,39 +164,30 @@ const kindLabel = computed(() =>
     <div class="flex flex-wrap items-end gap-x-6 gap-y-3">
       <div v-if="rules.length > 1">
         <span :class="miniLabel">Rule</span>
-        <div class="mt-1 inline-flex overflow-hidden rounded-[var(--radius-md)] border" role="radiogroup" aria-label="Rule">
-          <button
-            v-for="r in rules"
-            :key="r.rule"
-            type="button"
-            role="radio"
-            :aria-checked="selected === r.rule"
-            :class="segment(selected === r.rule)"
-            @click="selected = r.rule"
-          >
-            {{ RULE_TITLES[r.rule] ?? r.rule }}
-          </button>
-        </div>
+        <SegmentedControl
+          v-model="selected"
+          class="mt-1"
+          :options="rules.map((r) => ({ value: r.rule, label: RULE_TITLES[r.rule] ?? r.rule }))"
+          label="Rule"
+        />
       </div>
 
       <div>
         <span :class="miniLabel">View</span>
-        <div class="mt-1 inline-flex overflow-hidden rounded-[var(--radius-md)] border" role="radiogroup" aria-label="View">
-          <button type="button" role="radio" :aria-checked="view === 'risk'" :class="segment(view === 'risk')" @click="setView('risk')">
-            Risk
-          </button>
-          <button
-            type="button"
-            role="radio"
-            :aria-checked="view === 'dataQuality'"
-            :class="segment(view === 'dataQuality')"
-            :disabled="!rule?.hasDataQualityView"
-            :title="rule?.hasDataQualityView ? '' : 'An all-time count has no raw count and no share set aside.'"
-            @click="setView('dataQuality')"
-          >
-            Data quality (not risk)
-          </button>
-        </div>
+        <SegmentedControl
+          :model-value="view"
+          class="mt-1"
+          :options="[
+            { value: 'risk', label: 'Risk' },
+            {
+              value: 'dataQuality',
+              label: 'Data quality (not risk)',
+              disabled: rule?.hasDataQualityView ? null : 'An all-time count has no raw count and no share set aside.',
+            },
+          ]"
+          label="View"
+          @update:model-value="setView"
+        />
       </div>
 
       <form v-if="rule" class="flex flex-wrap items-end gap-2" @submit.prevent="apply">
@@ -255,7 +247,7 @@ const kindLabel = computed(() =>
       </div>
     </div>
 
-    <p v-if="belowFloor && rule" class="text-xs text-[var(--c-danger)]" role="alert">
+    <p v-if="belowFloor && rule" class="text-xs text-[var(--c-danger-text)]" role="alert">
       Values below {{ rule.floor }} are not stored, so a threshold under {{ rule.floor - 1 }} cannot be listed here. The
       Explorer can count smaller values from the history.
     </p>

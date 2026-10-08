@@ -20,11 +20,12 @@ const ACCESS: Record<string, string> = {
   Scan: 'Scan - reads every row in range',
 }
 
-const TONES: Record<string, { fg: string; bg: string }> = {
-  Light: { fg: 'var(--c-success)', bg: 'var(--c-success-subtle)' },
-  Moderate: { fg: 'var(--c-accent)', bg: 'var(--c-accent-subtle)' },
-  Heavy: { fg: 'var(--c-warning)', bg: 'var(--c-warning-subtle)' },
-  Refused: { fg: 'var(--c-danger)', bg: 'var(--c-danger-subtle)' },
+// fg for the words, dot for the dot and the meter: a mark keeps the plain status colour.
+const TONES: Record<string, { fg: string; dot: string; bg: string }> = {
+  Light: { fg: 'var(--c-success-text)', dot: 'var(--c-success)', bg: 'var(--c-success-subtle)' },
+  Moderate: { fg: 'var(--c-accent)', dot: 'var(--c-accent)', bg: 'var(--c-accent-subtle)' },
+  Heavy: { fg: 'var(--c-warning-text)', dot: 'var(--c-warning)', bg: 'var(--c-warning-subtle)' },
+  Refused: { fg: 'var(--c-danger-text)', dot: 'var(--c-danger)', bg: 'var(--c-danger-subtle)' },
 }
 
 const tone = computed(() => TONES[props.plan.verdict] ?? TONES['Moderate']!)
@@ -38,7 +39,7 @@ const share = computed(() => Math.min(100, (props.plan.estimatedRows / Math.max(
         class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold"
         :style="{ color: tone.fg, backgroundColor: tone.bg }"
       >
-        <span class="size-1.5 rounded-full" :style="{ backgroundColor: tone.fg }" aria-hidden="true" />
+        <span class="size-1.5 rounded-full" :style="{ backgroundColor: tone.dot }" aria-hidden="true" />
         {{ plan.verdict }}
       </span>
 
@@ -59,7 +60,7 @@ const share = computed(() => Math.min(100, (props.plan.estimatedRows / Math.max(
       aria-valuemin="0"
       aria-valuemax="100"
     >
-      <div class="h-full rounded-full" :style="{ width: `${Math.max(share, 1)}%`, backgroundColor: tone.fg }" />
+      <div class="h-full rounded-full" :style="{ width: `${Math.max(share, 1)}%`, backgroundColor: tone.dot }" />
     </div>
 
     <ul v-if="!compact && plan.notes.length" class="flex list-disc flex-col gap-0.5 pl-4 text-2xs text-[var(--c-text-secondary)]">

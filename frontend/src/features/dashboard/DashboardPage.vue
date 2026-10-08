@@ -11,6 +11,7 @@ import {
   useDailyChurn,
 } from '@/api/dashboard'
 import Card from '@/design-system/Card.vue'
+import SegmentedControl from '@/design-system/SegmentedControl.vue'
 import KpiCard from '@/design-system/KpiCard.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import BarChart from '@/design-system/BarChart.vue'
@@ -185,32 +186,17 @@ const activeTacRows = computed(
         <!-- A segmented control rather than a dropdown: three options users switch between
              constantly, and showing all three keeps the distinction present rather than hidden
              behind a click. -->
-        <div
-          class="flex rounded-[var(--radius-md)] border p-0.5"
-          role="radiogroup"
-          aria-label="Count breakdowns by"
-        >
-          <button
-            v-for="o in COUNT_BY_OPTIONS"
-            :key="o.value"
-            type="button"
-            role="radio"
-            :aria-checked="countBy === o.value"
-            class="rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="
-              countBy === o.value
-                ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
-                : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'
-            "
-            @click="setCountBy(o.value)"
-          >
-            {{ o.label }}
-          </button>
-        </div>
+        <SegmentedControl
+          :model-value="countBy"
+          :options="COUNT_BY_OPTIONS"
+          label="Count breakdowns by"
+          @update:model-value="setCountBy"
+        />
 
+        <!-- py-1: the 26px of the segmented control beside it, so the row's controls line up. -->
         <button
           type="button"
-          class="rounded-[var(--radius-md)] border px-2.5 py-1.5 text-xs font-medium hover:bg-[var(--c-surface-hover)]"
+          class="rounded-[var(--radius-md)] border px-2.5 py-1 text-xs font-medium hover:bg-[var(--c-surface-hover)]"
           :class="filters.includeUnknownDevice ? '' : 'bg-[var(--c-surface-sunken)]'"
           @click="toggleUnknownDevice"
         >
@@ -560,7 +546,7 @@ const activeTacRows = computed(
           <dl class="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <dt class="text-xs text-[var(--c-text-muted)]">Enriched from GSMA</dt>
-              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-success)]">
+              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-success-text)]">
                 {{ formatFull(kpi.data.value?.tacMatchedBindings ?? 0) }}
               </dd>
               <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">
@@ -572,7 +558,7 @@ const activeTacRows = computed(
               <dt class="text-xs text-[var(--c-text-muted)]">
                 Unknown device (<code class="font-mono">000000</code>)
               </dt>
-              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-warning)]">
+              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-warning-text)]">
                 {{ formatFull(kpi.data.value?.unknownDeviceBindings ?? 0) }}
               </dd>
               <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">
@@ -582,7 +568,7 @@ const activeTacRows = computed(
 
             <div>
               <dt class="text-xs text-[var(--c-text-muted)]">Malformed IMEI</dt>
-              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-danger)]">
+              <dd class="mt-1 text-lg font-semibold tabular text-[var(--c-danger-text)]">
                 {{ formatFull(kpi.data.value?.malformedImeiBindings ?? 0) }}
               </dd>
               <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">

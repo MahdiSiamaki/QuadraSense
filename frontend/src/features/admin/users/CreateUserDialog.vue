@@ -110,6 +110,7 @@ async function submit() {
     description="Creates a local account. Directory accounts are not created here."
     :busy="create.isPending.value"
     @close="emit('close')"
+    @submit="submit"
   >
     <div class="flex flex-col gap-4">
       <div class="grid gap-3.5 sm:grid-cols-2">
@@ -117,6 +118,7 @@ async function submit() {
           v-model="username"
           label="Username"
           required
+          autofocus
           :error="fieldErrors['username'] ?? null"
           hint="Used to sign in. Cannot be changed later."
         />
@@ -152,7 +154,7 @@ async function submit() {
         </legend>
         <p
           v-if="fieldErrors['roleCodes']"
-          class="mt-1 text-xs text-[var(--c-danger)]"
+          class="mt-1 text-xs text-[var(--c-danger-text)]"
           role="alert"
         >
           {{ fieldErrors['roleCodes'] }}
@@ -186,7 +188,7 @@ async function submit() {
 
         <p
           v-if="selectedRoles.length === 0"
-          class="mt-2 text-xs text-[var(--c-warning)]"
+          class="mt-2 text-xs text-[var(--c-warning-text)]"
         >
           With no role, this account can sign in but see nothing.
         </p>
@@ -198,7 +200,7 @@ async function submit() {
         :style="{
           borderColor: 'var(--c-danger)',
           backgroundColor: 'var(--c-danger-subtle)',
-          color: 'var(--c-danger)',
+          color: 'var(--c-danger-text)',
         }"
         role="alert"
       >
@@ -209,10 +211,10 @@ async function submit() {
     <template #actions>
       <Button :disabled="create.isPending.value" @click="emit('close')">Cancel</Button>
       <Button
+        type="submit"
         variant="primary"
         :pending="create.isPending.value"
         :disabled="!canSubmit"
-        @click="submit"
       >
         Create user
       </Button>

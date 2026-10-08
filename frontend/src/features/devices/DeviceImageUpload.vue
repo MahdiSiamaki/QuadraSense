@@ -135,7 +135,7 @@ async function remove() {
 
       <p
         v-if="problem"
-        class="mt-2 text-2xs text-[var(--c-danger)]"
+        class="mt-2 text-2xs text-[var(--c-danger-text)]"
       >
         {{ problem }}
       </p>
@@ -152,7 +152,7 @@ async function remove() {
         <button
           v-if="hasImage"
           type="button"
-          class="rounded-[var(--radius-md)] px-2 py-1.5 text-xs text-[var(--c-danger)] hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
+          class="rounded-[var(--radius-md)] px-2 py-1.5 text-xs text-[var(--c-danger-text)] hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
           :disabled="busy"
           @click="remove"
         >

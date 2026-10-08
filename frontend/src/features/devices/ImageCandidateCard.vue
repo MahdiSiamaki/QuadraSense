@@ -132,8 +132,8 @@ const hiddenWarnings = computed(() => warnings.value.length - WARNINGS_SHOWN)
 /** Green above 70, amber 50-70, muted below: the score is advice, not a verdict. */
 const scoreTone = computed(() => {
   const score = props.candidate.qualityScore
-  if (score >= 70) return 'var(--c-success)'
-  if (score >= 50) return 'var(--c-warning)'
+  if (score >= 70) return 'var(--c-success-text)'
+  if (score >= 50) return 'var(--c-warning-text)'
   return 'var(--c-text-muted)'
 })
 
@@ -216,7 +216,7 @@ function onToggle(event: Event) {
             @failed="imageFailed = true"
           />
         </div>
-        <figcaption v-if="imageFailed" class="mt-1 text-2xs font-medium text-[var(--c-danger)]" role="alert">
+        <figcaption v-if="imageFailed" class="mt-1 text-2xs font-medium text-[var(--c-danger-text)]" role="alert">
           The proposed image did not load - reload before deciding
         </figcaption>
         <figcaption v-else class="mt-1 text-2xs text-[var(--c-text-muted)]">Proposed</figcaption>
@@ -236,7 +236,7 @@ function onToggle(event: Event) {
           Current ·
           <span
             :class="candidate.currentStatus === 'verified'
-              ? 'text-[var(--c-success)]'
+              ? 'text-[var(--c-success-text)]'
               : 'text-[var(--c-text-secondary)]'"
           >
             {{ candidate.currentStatus === 'verified' ? 'verified' : 'unverified' }}
@@ -295,7 +295,7 @@ function onToggle(event: Event) {
             <!-- Shape as well as colour: a triangle for high, a dot for a note. -->
             <svg
               v-if="warning.severity === 'high'"
-              class="size-2.5 shrink-0 text-[var(--c-danger)]"
+              class="size-2.5 shrink-0 text-[var(--c-danger-text)]"
               viewBox="0 0 10 10"
               fill="currentColor"
               aria-hidden="true"
@@ -340,7 +340,7 @@ function onToggle(event: Event) {
         <li v-for="term in candidate.scoreBreakdown" :key="term.term" class="flex gap-2">
           <span
             class="tabular w-7 shrink-0 text-right font-medium"
-            :class="term.points > 0 ? 'text-[var(--c-success)]' : 'text-[var(--c-text-muted)]'"
+            :class="term.points > 0 ? 'text-[var(--c-success-text)]' : 'text-[var(--c-text-muted)]'"
           >
             {{ term.points > 0 ? '+' : '' }}{{ term.points }}
           </span>
@@ -373,7 +373,7 @@ function onToggle(event: Event) {
       </dl>
     </details>
 
-    <p v-if="candidate.rejectionReason" class="mt-2 text-2xs wrap-anywhere text-[var(--c-danger)]">
+    <p v-if="candidate.rejectionReason" class="mt-2 text-2xs wrap-anywhere text-[var(--c-danger-text)]">
       Rejected: {{ candidate.rejectionReason }}
     </p>
 

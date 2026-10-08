@@ -170,7 +170,7 @@ const selectClass =
                       {{ role.displayName }}
                     </span>
                   </div>
-                  <span v-else class="text-2xs text-[var(--c-warning)]">
+                  <span v-else class="text-2xs text-[var(--c-warning-text)]">
                     no role
                   </span>
                 </td>
@@ -198,7 +198,7 @@ const selectClass =
                     class="ml-1.5 rounded-full px-1.5 py-0.5 text-2xs font-medium"
                     :style="{
                       backgroundColor: 'var(--c-warning-subtle)',
-                      color: 'var(--c-warning)',
+                      color: 'var(--c-warning-text)',
                     }"
                     title="Temporarily locked by failed sign-in attempts. Clears itself."
                   >

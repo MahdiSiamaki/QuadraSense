@@ -156,7 +156,7 @@ const digits = computed(() => DIGIT_TYPES.has(field.value?.type ?? ''))
     <p v-if="field?.description" class="text-2xs text-pretty text-[var(--c-text-muted)]">
       {{ field.description }}
     </p>
-    <p v-for="(message, i) in problems" :key="i" class="text-2xs text-[var(--c-danger)]" role="alert">
+    <p v-for="(message, i) in problems" :key="i" class="text-2xs text-[var(--c-danger-text)]" role="alert">
       {{ message }}
     </p>
   </div>

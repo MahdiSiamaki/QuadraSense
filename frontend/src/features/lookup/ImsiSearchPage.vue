@@ -158,7 +158,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
           rather than as an arbitrary rule somebody chose.
         -->
         <p id="imsi-help" class="text-xs" role="status">
-          <span v-if="problem" class="text-[var(--c-danger)]">{{ problem }}</span>
+          <span v-if="problem" class="text-[var(--c-danger-text)]">{{ problem }}</span>
 
           <span v-else-if="term.digits.length === 0" class="text-[var(--c-text-muted)]">
             Every IMSI here begins <code class="font-mono">{{ IMSI_CONSTANT_PREFIX }}</code> — MCC 432,
@@ -166,7 +166,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
             {{ MIN_IMSI_PREFIX }}.
           </span>
 
-          <span v-else-if="term.isExact" class="text-[var(--c-success)]">
+          <span v-else-if="term.isExact" class="text-[var(--c-success-text)]">
             {{ term.digits.length }} digits — a complete IMSI.
           </span>
 
@@ -246,7 +246,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
           -->
           <p
             v-if="from || to"
-            class="basis-full text-2xs text-[var(--c-warning)]"
+            class="basis-full text-2xs text-[var(--c-warning-text)]"
           >
             A date filter excludes bindings no daily file has ever mentioned — they have no change
             date at all, not a date outside the range.
@@ -263,7 +263,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
         :style="{
           borderColor: 'var(--c-warning)',
           backgroundColor: 'var(--c-warning-subtle)',
-          color: 'var(--c-warning)',
+          color: 'var(--c-warning-text)',
         }"
       >
         Identifiers are shown masked. Your account does not hold
@@ -277,7 +277,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
         :style="{
           borderColor: 'var(--c-warning)',
           backgroundColor: 'var(--c-warning-subtle)',
-          color: 'var(--c-warning)',
+          color: 'var(--c-warning-text)',
         }"
       >
         {{ result.term.length }} digits — an IMSI is {{ IMSI_LENGTH }}. Shown for review: 28 rows in

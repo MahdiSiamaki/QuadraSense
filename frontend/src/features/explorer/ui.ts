@@ -15,16 +15,8 @@ export const miniLabel = 'block text-2xs font-medium text-[var(--c-text-muted)]'
 
 export const iconButton =
   'grid size-7 shrink-0 place-items-center rounded-[var(--radius-md)] text-[var(--c-text-muted)] ' +
-  'hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-danger)] ' +
+  'hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-danger-text)] ' +
   'focus-visible:outline-2 focus-visible:outline-[var(--c-accent)]'
-
-/** A two- or three-way choice drawn as joined buttons. */
-export const segment = (on: boolean): string =>
-  'px-2.5 py-1 text-xs font-medium transition-colors first:rounded-l-[var(--radius-md)] ' +
-  'last:rounded-r-[var(--radius-md)] focus-visible:outline-2 focus-visible:outline-[var(--c-accent)] ' +
-  (on
-    ? 'bg-[var(--c-accent-subtle)] text-[var(--c-accent)]'
-    : 'bg-[var(--c-surface)] text-[var(--c-text-secondary)] enabled:hover:bg-[var(--c-surface-hover)]')
 
 /** Field types whose values are identifiers or codes: digits, set in monospace. */
 export const DIGIT_TYPES = new Set(['Msisdn', 'Imsi', 'Imei', 'Tac'])

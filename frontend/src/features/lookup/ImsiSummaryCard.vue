@@ -39,7 +39,7 @@ const renumbered = computed(() => props.summary.distinctSubscribers > 1)
           <dt class="text-2xs text-[var(--c-text-muted)]">Numbers</dt>
           <dd
             class="text-lg font-semibold"
-            :style="renumbered ? { color: 'var(--c-warning)' } : undefined"
+            :style="renumbered ? { color: 'var(--c-warning-text)' } : undefined"
           >
             {{ summary.distinctSubscribers }}
           </dd>
@@ -89,7 +89,7 @@ const renumbered = computed(() => props.summary.distinctSubscribers > 1)
     -->
     <p class="mt-4 border-t pt-3 text-xs text-[var(--c-text-secondary)]">
       <template v-if="!summary.everTouchedByDailyFile">
-        <span class="font-medium text-[var(--c-warning)]">Never confirmed.</span>
+        <span class="font-medium text-[var(--c-warning-text)]">Never confirmed.</span>
         No daily file has mentioned this SIM since the initial dump, so everything above rests on
         that dump alone — it has been neither confirmed nor contradicted.
       </template>

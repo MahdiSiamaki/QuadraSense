@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import Card from '@/design-system/Card.vue'
+import SegmentedControl from '@/design-system/SegmentedControl.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import VendorMovementChart from '@/design-system/VendorMovementChart.vue'
 import { useVendorMovement, type VendorRanking } from '@/api/dashboard'
@@ -105,27 +106,11 @@ watch(ranking, (value) => {
     <template #actions>
       <div class="flex flex-wrap items-center justify-end gap-2">
         <!-- Mode. A segmented control rather than a dropdown: three options, all worth seeing. -->
-        <div
-          class="inline-flex overflow-hidden rounded-[var(--radius-md)] border"
-          role="group"
-          aria-label="What to measure"
-        >
-          <button
-            v-for="m in MODES"
-            :key="m.id"
-            type="button"
-            class="px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="
-              ranking === m.id
-                ? 'bg-[var(--c-accent)] text-[var(--c-accent-text)]'
-                : 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'
-            "
-            :aria-pressed="ranking === m.id"
-            @click="ranking = m.id"
-          >
-            {{ m.label }}
-          </button>
-        </div>
+        <SegmentedControl
+          v-model="ranking"
+          :options="MODES.map((m) => ({ value: m.id, label: m.label }))"
+          label="What to measure"
+        />
 
         <label
           v-if="ranking === 'movement'"
@@ -236,7 +221,7 @@ watch(ranking, (value) => {
             (<span class="tabular">{{ data.networkChangePercent.toFixed(2) }}%</span>). Bars show
             each vendor's change <em>against</em> that, so positive means share gained even where
             the count fell.
-            <span v-if="data.startIsInitialDump" class="text-[var(--c-warning)]">
+            <span v-if="data.startIsInitialDump" class="text-[var(--c-warning-text)]">
               The starting point is the initial dump, which covers a 30-day window rather than an
               instant and averages 1.57 handsets per SIM — so part of the network's decline is
               that over-count being resolved, not devices leaving.

@@ -20,6 +20,7 @@ import Button from '@/design-system/Button.vue'
 import Card from '@/design-system/Card.vue'
 import SplitView from '@/design-system/SplitView.vue'
 import Modal from '@/design-system/Modal.vue'
+import SegmentedControl, { tabId } from '@/design-system/SegmentedControl.vue'
 import { Permission, useAuth } from '@/features/auth/useAuth'
 import { formatDate } from '@/lib/format'
 import ConditionTree from './ConditionTree.vue'
@@ -43,7 +44,6 @@ import ShapeEditor from './ShapeEditor.vue'
 import TemplatesPanel from './TemplatesPanel.vue'
 import TimelineView from '@/features/timeline/TimelineView.vue'
 import type { ExplorerTemplate } from './templates'
-import { segment } from './ui'
 
 /**
  * The Explorer: ask questions of current bindings and the dated event log.
@@ -128,11 +128,29 @@ const tabs = computed<Array<{ id: Tab; label: string }>>(() => [
   { id: 'saved', label: `My queries${saved.data.value ? ` (${saved.data.value.length})` : ''}` },
 ])
 
+/**
+ * Each dataset keeps its own query while the other is shown.
+ *
+ * Switching used to build a fresh starter and drop the query on screen, with the saved query it
+ * was editing. That was one deliberate click; once the choice became a radio group, where an arrow
+ * key selects, it was one stray key press, and a screen-reader user listening to the other option
+ * lost their work. Now the query is parked and comes back when its dataset is chosen again.
+ */
+const parked: Partial<
+  Record<
+    ExplorerDataset,
+    { draft: QueryDraft; editing: typeof editing.value; template: ExplorerTemplate | null }
+  >
+> = {}
+
 function chooseDataset(which: ExplorerDataset) {
   if (which === draft.value.dataset) return
-  draft.value = starter(which)
-  editing.value = null
-  template.value = null
+  parked[draft.value.dataset] = { draft: draft.value, editing: editing.value, template: template.value }
+  const back = parked[which]
+  draft.value = back?.draft ?? starter(which)
+  editing.value = back?.editing ?? null
+  template.value = back?.template ?? null
+  delete parked[which]
   clearFeedback()
 }
 
@@ -401,21 +419,20 @@ const eventsNote = computed(() =>
       </p>
     </header>
 
-    <div class="inline-flex w-fit overflow-hidden rounded-[var(--radius-md)] border" role="tablist" aria-label="Explorer">
-      <button
-        v-for="t in tabs"
-        :key="t.id"
-        type="button"
-        role="tab"
-        :aria-selected="tab === t.id"
-        :class="segment(tab === t.id)"
-        @click="tab = t.id"
-      >
-        {{ t.label }}
-      </button>
-    </div>
+    <SegmentedControl
+      v-model="tab"
+      class="w-fit"
+      tabs
+      panel-id="explorer-panel"
+      :options="tabs.map((t) => ({ value: t.id, label: t.label }))"
+      label="Explorer"
+    />
 
+    <!-- The tabs' panel: named by the chosen tab, as the tab names it through aria-controls. -->
     <AsyncBoundary
+      id="explorer-panel"
+      role="tabpanel"
+      :aria-labelledby="tabId('explorer-panel', tabs.findIndex((t) => t.id === tab))"
       :is-loading="catalogue.isPending.value"
       :is-error="catalogue.isError.value"
       :error="catalogue.error.value"
@@ -426,21 +443,12 @@ const eventsNote = computed(() =>
       <Card v-if="ready && tab === 'build'">
         <form class="flex flex-col gap-5" @submit.prevent="runDraft">
           <div class="flex flex-wrap items-center gap-3">
-            <div class="inline-flex overflow-hidden rounded-[var(--radius-md)] border" role="radiogroup" aria-label="Dataset">
-              <button
-                v-for="d in catalogue.data.value?.datasets ?? []"
-                :key="d.dataset"
-                type="button"
-                role="radio"
-                :aria-checked="draft.dataset === d.dataset"
-                :aria-label="d.label"
-                :class="segment(draft.dataset === d.dataset)"
-                :title="d.description"
-                @click="chooseDataset(d.dataset)"
-              >
-                {{ d.label }}
-              </button>
-            </div>
+            <SegmentedControl
+              :model-value="draft.dataset"
+              :options="(catalogue.data.value?.datasets ?? []).map((d) => ({ value: d.dataset, label: d.label, title: d.description }))"
+              label="Dataset"
+              @update:model-value="chooseDataset"
+            />
             <p class="min-w-0 flex-1 text-xs text-[var(--c-text-muted)]">{{ dataset?.description }}</p>
 
             <span
@@ -478,7 +486,7 @@ const eventsNote = computed(() =>
 
           <ul
             v-if="problems.general.length"
-            class="flex flex-col gap-0.5 rounded-[var(--radius-md)] border border-[var(--c-danger)] bg-[var(--c-danger-subtle)] px-3 py-2 text-xs text-[var(--c-danger)]"
+            class="flex flex-col gap-0.5 rounded-[var(--radius-md)] border border-[var(--c-danger)] bg-[var(--c-danger-subtle)] px-3 py-2 text-xs text-[var(--c-danger-text)]"
             role="alert"
           >
             <li v-for="(p, i) in problems.general" :key="i">{{ p }}</li>
@@ -604,7 +612,7 @@ const eventsNote = computed(() =>
       :busy="deleteQuery.isPending.value"
       @close="confirmDelete = null"
     >
-      <p v-if="deleteQuery.isError.value" class="text-xs text-[var(--c-danger)]" role="alert">
+      <p v-if="deleteQuery.isError.value" class="text-xs text-[var(--c-danger-text)]" role="alert">
         Could not delete it. Try again.
       </p>
       <p v-else class="text-xs text-[var(--c-text-secondary)]">

@@ -92,7 +92,7 @@ function resetPaging() {
         <span class="text-[var(--c-text-secondary)]">
           {{ health.data.value.queued }} queued · {{ health.data.value.running }} running
         </span>
-        <span v-if="health.data.value.staleLeases > 0" class="font-medium text-[var(--c-danger)]">
+        <span v-if="health.data.value.staleLeases > 0" class="font-medium text-[var(--c-danger-text)]">
           {{ health.data.value.staleLeases }} stale lease(s)
         </span>
       </div>
@@ -185,9 +185,9 @@ function resetPaging() {
               :style="{
                 color:
                   row.daysBehind > 45
-                    ? 'var(--c-danger)'
+                    ? 'var(--c-danger-text)'
                     : row.daysBehind > 35
-                      ? 'var(--c-warning)'
+                      ? 'var(--c-warning-text)'
                       : 'var(--c-text-secondary)',
               }"
             >
@@ -195,12 +195,12 @@ function resetPaging() {
             </p>
             <p
               v-if="row.missingBusinessDates.length"
-              class="text-xs text-[var(--c-warning)]"
+              class="text-xs text-[var(--c-warning-text)]"
               :title="row.missingBusinessDates.slice(0, 20).join(', ')"
             >
               {{ row.missingBusinessDates.length }} day(s) missing
             </p>
-            <p v-if="row.failedLast7Days" class="text-xs text-[var(--c-danger)]">
+            <p v-if="row.failedLast7Days" class="text-xs text-[var(--c-danger-text)]">
               {{ row.failedLast7Days }} failed this week
             </p>
           </div>

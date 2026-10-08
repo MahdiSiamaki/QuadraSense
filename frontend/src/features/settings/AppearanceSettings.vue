@@ -50,7 +50,7 @@ const options: Array<{ value: ThemeMode; label: string; hint: string }> = [
             type="radio"
             name="theme"
             :value="option.value"
-            class="mt-0.5 accent-[var(--c-accent)]"
+            class="mt-0.5 accent-[var(--c-accent)] focus-visible:outline-none"
           />
           <span>
             <span class="block text-sm font-medium">{{ option.label }}</span>
@@ -111,7 +111,7 @@ const options: Array<{ value: ThemeMode; label: string; hint: string }> = [
 }
 
 .half-light b {
-  background: oklch(58% 0.011 250 / 0.45);
+  background: oklch(53% 0.011 250 / 0.45);
 }
 
 .half-dark {
@@ -124,7 +124,7 @@ const options: Array<{ value: ThemeMode; label: string; hint: string }> = [
 }
 
 .half-dark b {
-  background: oklch(60% 0.011 260 / 0.45);
+  background: oklch(65% 0.011 260 / 0.45);
 }
 
 /* System shows both halves; light and dark only their own. */

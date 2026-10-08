@@ -5,6 +5,7 @@ import { KIND_LABEL, useTimeline, type Timeline, type TimelineKind, type Timelin
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import Button from '@/design-system/Button.vue'
 import Card from '@/design-system/Card.vue'
+import SegmentedControl from '@/design-system/SegmentedControl.vue'
 import { formatDate, formatFull, formatImei, formatMsisdn } from '@/lib/format'
 import TimelineChart, { type ChartRow } from './TimelineChart.vue'
 
@@ -135,20 +136,12 @@ const centreText = computed(() => {
   <Card :title="data ? `${KIND_LABEL[data.kind].one} timeline` : 'Timeline'" :subtitle="centreText">
     <template #actions>
       <div class="flex flex-wrap items-center gap-2">
-        <div v-if="views.length > 1" class="inline-flex overflow-hidden rounded-[var(--radius-md)] border" role="radiogroup" aria-label="Show">
-          <button
-            v-for="v in views"
-            :key="v.id"
-            type="button"
-            role="radio"
-            :aria-checked="view === v.id"
-            class="px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="view === v.id ? 'bg-[var(--c-accent-subtle)] text-[var(--c-accent)]' : 'bg-[var(--c-surface)] text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)]'"
-            @click="view = v.id"
-          >
-            {{ v.label }}
-          </button>
-        </div>
+        <SegmentedControl
+          v-if="views.length > 1"
+          v-model="view"
+          :options="views.map((v) => ({ value: v.id, label: v.label }))"
+          label="Show"
+        />
         <button
           type="button"
           class="grid size-7 place-items-center rounded-[var(--radius-md)] text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
@@ -166,7 +159,7 @@ const centreText = computed(() => {
       class="rounded-[var(--radius-md)] border border-[var(--c-warning)] bg-[var(--c-warning-subtle)] px-3 py-2 text-xs"
       role="status"
     >
-      <p class="font-semibold text-[var(--c-warning)]">{{ problem.title }}</p>
+      <p class="font-semibold text-[var(--c-warning-text)]">{{ problem.title }}</p>
       <p class="mt-0.5 text-[var(--c-text-secondary)]">{{ problem.detail }}</p>
     </div>
 
@@ -220,14 +213,14 @@ const centreText = computed(() => {
 
         <!-- What the reader may not see, and what the feed did that does not fit. -->
         <ul class="flex flex-col gap-1 text-2xs">
-          <li v-if="data.withheld.length" class="text-[var(--c-warning)]">
+          <li v-if="data.withheld.length" class="text-[var(--c-warning-text)]">
             {{ data.withheld.map((k) => KIND_LABEL[k].many).join(' and ') }} withheld: your account may not look them up.
           </li>
-          <li v-if="data.masked" class="text-[var(--c-warning)]">
+          <li v-if="data.masked" class="text-[var(--c-warning-text)]">
             Identifiers are masked: your account does not hold <code class="font-mono">identifier.reveal</code>. A masked
             identifier cannot be opened.
           </li>
-          <li v-if="data.truncated" class="text-[var(--c-warning)]">
+          <li v-if="data.truncated" class="text-[var(--c-warning-text)]">
             Showing the {{ formatFull(data.maxBindings) }} most recently changed bindings of more.
           </li>
           <li v-if="data.summary.redundantAdds || data.summary.orphanRemoves" class="text-[var(--c-text-muted)]">
@@ -235,7 +228,7 @@ const centreText = computed(() => {
             being a month rather than a moment - and {{ formatFull(data.summary.orphanRemoves) }} remove(s) of one not held. Marked
             amber on the bindings view; neither changes a binding's state.
           </li>
-          <li v-if="data.summary.stateDisagreements" class="text-[var(--c-warning)]">
+          <li v-if="data.summary.stateDisagreements" class="text-[var(--c-warning-text)]">
             {{ data.summary.stateDisagreements }} binding(s) end differently by their events than in current state - usually a day
             part way through being imported. "Active" shows current state.
           </li>

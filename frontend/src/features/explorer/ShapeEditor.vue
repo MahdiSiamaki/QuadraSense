@@ -2,9 +2,10 @@
 import { computed } from 'vue'
 import type { ExplorerAggregate, ExplorerField } from '@/api/explorer'
 import Button from '@/design-system/Button.vue'
+import SegmentedControl from '@/design-system/SegmentedControl.vue'
 import ConditionTree from './ConditionTree.vue'
 import { MEASURE_OPERATORS, nextId, suggestMeasureName, type MeasureDraft, type QueryDraft } from './model'
-import { control, iconButton, miniLabel, mono, segment } from './ui'
+import { control, iconButton, miniLabel, mono } from './ui'
 
 /**
  * What a query returns: rows with chosen columns, or groups with measures - and then the order
@@ -96,14 +97,15 @@ const PAGE_SIZES = computed(() => [25, 50, 100, 200, 500].filter((n) => n <= pro
 
 <template>
   <div class="flex flex-col gap-4">
-    <div class="inline-flex w-fit overflow-hidden rounded-[var(--radius-md)] border" role="radiogroup" aria-label="Return">
-      <button type="button" role="radio" :aria-checked="!draft.grouped" :class="segment(!draft.grouped)" @click="draft.grouped = false">
-        Rows
-      </button>
-      <button type="button" role="radio" :aria-checked="draft.grouped" :class="segment(draft.grouped)" @click="draft.grouped = true">
-        Groups and counts
-      </button>
-    </div>
+    <SegmentedControl
+      v-model="draft.grouped"
+      class="w-fit"
+      :options="[
+        { value: false, label: 'Rows' },
+        { value: true, label: 'Groups and counts' },
+      ]"
+      label="Return"
+    />
 
     <!-- Rows: which columns, in the order chosen. -->
     <fieldset v-if="!draft.grouped" class="flex flex-col gap-1.5">

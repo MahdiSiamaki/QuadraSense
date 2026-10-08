@@ -79,7 +79,7 @@ const orphaned = computed(() =>
         :style="{
           borderColor: 'var(--c-warning)',
           backgroundColor: 'var(--c-warning-subtle)',
-          color: 'var(--c-warning)',
+          color: 'var(--c-warning-text)',
         }"
       >
         No role carries {{ orphaned.map((p) => p.displayName).join(', ') }}. Only a direct
@@ -154,7 +154,7 @@ const orphaned = computed(() =>
                         class="rounded-full px-1.5 text-2xs font-medium"
                         :style="{
                           backgroundColor: 'var(--c-warning-subtle)',
-                          color: 'var(--c-warning)',
+                          color: 'var(--c-warning-text)',
                         }"
                         title="Sensitive"
                       >

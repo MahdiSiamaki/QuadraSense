@@ -60,7 +60,7 @@ const rows = computed(() =>
 
       <p
         v-if="row.lowCoverage"
-        class="text-2xs text-[var(--c-warning)]"
+        class="text-2xs text-[var(--c-warning-text)]"
       >
         Only {{ formatPercent(row.coveragePercent, 2) }} of the base can be assessed for this —
         treat the percentage as indicative, not representative.

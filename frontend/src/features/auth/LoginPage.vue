@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import BrandMark from '@/design-system/BrandMark.vue'
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from '@/design-system/Button.vue'
 import TextField from '@/design-system/TextField.vue'
@@ -54,6 +54,8 @@ const lockedUntil = computed(() =>
     : null,
 )
 
+const form = ref<HTMLFormElement | null>(null)
+
 async function submit() {
   if (!username.value.trim() || !password.value) return
 
@@ -68,6 +70,11 @@ async function submit() {
   } catch {
     // Rendered from login.error; a rejected mutation is not an unhandled failure here.
     password.value = ''
+    // Back into the field that was cleared. The fields were disabled during the request, and a
+    // focused element that becomes disabled hands focus to the page body: the next keystroke went
+    // nowhere. Once they are enabled again, the password field takes it.
+    await nextTick()
+    form.value?.querySelector<HTMLInputElement>('input[type="password"]')?.focus()
   }
 }
 </script>
@@ -98,7 +105,7 @@ async function submit() {
           Use the account your administrator created for you.
         </p>
 
-        <form class="flex flex-col gap-3.5" @submit.prevent="submit">
+        <form ref="form" class="flex flex-col gap-3.5" @submit.prevent="submit">
           <TextField
             v-model="username"
             label="Username"
@@ -125,7 +132,7 @@ async function submit() {
             :style="{
               borderColor: 'var(--c-danger)',
               backgroundColor: 'var(--c-danger-subtle)',
-              color: 'var(--c-danger)',
+              color: 'var(--c-danger-text)',
             }"
             role="alert"
           >
@@ -139,7 +146,7 @@ async function submit() {
             :style="{
               borderColor: 'var(--c-warning)',
               backgroundColor: 'var(--c-warning-subtle)',
-              color: 'var(--c-warning)',
+              color: 'var(--c-warning-text)',
             }"
             role="alert"
           >
