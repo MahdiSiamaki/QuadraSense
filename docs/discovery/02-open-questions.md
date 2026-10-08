@@ -225,6 +225,22 @@ Do you need separate **Dev / Staging / Production** environments, or is a local 
 
 ---
 
+## F. Raised after Phase 0, from the data
+
+### Q18 [IMPORTANT] Since 15 September the daily files attach other subscribers' handsets, one day at a time. What changed, and can the days be re-sent?
+
+Added 2026-10-08. The evidence is `04-handset-changes-from-2026-09-15.md`. In short: about 1.0–1.6 million adds a day carry a `35…` IMEI with its first digit dropped and a `0` appended; with the digit put back, 87.5% of them (1% sample) are handsets that until then belonged only to other numbers. They sit beside the subscriber's own handset and 78% are removed the next day. That churn is 85% of the rise in handset changes, and it was still there on 6 October. On 16 September the same happened with IMEIs in their normal form, about 166,000 handset changes more than an ordinary day.
+
+**What I need from the operator:**
+
+- What changed in the export on 15 September, and was 16 September the same change?
+- Can corrected files be sent from 15 September? They replace each day in place, and every chart follows.
+- On ordinary days too, about two thirds of the handsets newly added in a handset change belong to another number and three quarters are gone within two days. Is that how the network really sees subscribers, or a smaller form of the same thing?
+
+**Why it matters:** until it is answered, handset and SIM change counts from 16 September are 3.5–5 times what subscribers did, and the last question decides whether the ordinary days' figures can be trusted either.
+
+---
+
 ## Assumptions I am proceeding on unless corrected
 
 These are non-blocking; I have picked a sensible default and will document it. Tell me if any is wrong.
