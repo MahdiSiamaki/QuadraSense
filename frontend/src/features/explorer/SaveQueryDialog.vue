@@ -70,12 +70,14 @@ function save(asNew: boolean) {
     description="Saves the query, not its results: it runs again, on the data as it is then, each time you open it. Only you can see it."
     :busy="busy"
     @close="emit('close')"
+    @submit="save(false)"
   >
     <div class="flex flex-col gap-3">
       <TextField
         v-model="name"
         label="Name"
         required
+        autofocus
         :error="name.length > 0 ? nameProblem : null"
         placeholder="e.g. Weekly SIM check - Galaxy A01"
       />
@@ -100,7 +102,7 @@ function save(asNew: boolean) {
     <template #actions>
       <Button variant="ghost" :disabled="busy" @click="emit('close')">Cancel</Button>
       <Button v-if="editing" :disabled="!!nameProblem" :pending="busy" @click="save(true)">Save as new</Button>
-      <Button variant="primary" :disabled="!!nameProblem" :pending="busy" @click="save(false)">
+      <Button type="submit" variant="primary" :disabled="!!nameProblem" :pending="busy">
         {{ editing ? 'Save changes' : 'Save' }}
       </Button>
     </template>

@@ -110,6 +110,7 @@ async function submit() {
     description="Creates a local account. Directory accounts are not created here."
     :busy="create.isPending.value"
     @close="emit('close')"
+    @submit="submit"
   >
     <div class="flex flex-col gap-4">
       <div class="grid gap-3.5 sm:grid-cols-2">
@@ -117,6 +118,7 @@ async function submit() {
           v-model="username"
           label="Username"
           required
+          autofocus
           :error="fieldErrors['username'] ?? null"
           hint="Used to sign in. Cannot be changed later."
         />
@@ -209,10 +211,10 @@ async function submit() {
     <template #actions>
       <Button :disabled="create.isPending.value" @click="emit('close')">Cancel</Button>
       <Button
+        type="submit"
         variant="primary"
         :pending="create.isPending.value"
         :disabled="!canSubmit"
-        @click="submit"
       >
         Create user
       </Button>

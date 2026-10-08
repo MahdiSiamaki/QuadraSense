@@ -182,6 +182,7 @@ async function submit() {
       size="lg"
       :busy="create.isPending.value"
       @close="creating = false"
+      @submit="submit"
     >
       <div class="flex flex-col gap-4">
         <div class="grid gap-3.5 sm:grid-cols-2">
@@ -189,6 +190,7 @@ async function submit() {
             v-model="displayName"
             label="Name"
             required
+            autofocus
             :error="fieldErrors['displayName'] ?? null"
           />
           <TextField
@@ -265,10 +267,10 @@ async function submit() {
       <template #actions>
         <Button :disabled="create.isPending.value" @click="creating = false">Cancel</Button>
         <Button
+          type="submit"
           variant="primary"
           :pending="create.isPending.value"
           :disabled="!code || !displayName.trim()"
-          @click="submit"
         >
           Create role
         </Button>

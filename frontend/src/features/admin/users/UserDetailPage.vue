@@ -375,7 +375,7 @@ const resetError = computed(() => message(resetPassword.error.value))
     >
       <div class="flex flex-col gap-1.5">
         <label
-          v-for="role in roles.data.value ?? []"
+          v-for="(role, index) in roles.data.value ?? []"
           :key="role.code"
           class="flex cursor-pointer items-start gap-2.5 rounded-[var(--radius-md)] border px-2.5 py-2 hover:bg-[var(--c-surface-hover)]"
           :style="
@@ -387,6 +387,7 @@ const resetError = computed(() => message(resetPassword.error.value))
           <input
             type="checkbox"
             class="mt-0.5"
+            :autofocus="index === 0 || undefined"
             :checked="draftRoles.includes(role.code)"
             @change="toggleRole(role.code)"
           />
@@ -427,11 +428,13 @@ const resetError = computed(() => message(resetPassword.error.value))
       size="sm"
       :busy="resetPassword.isPending.value"
       @close="resetting = false"
+      @submit="submitReset"
     >
       <TextField
         v-model="newPassword"
         label="New password"
         type="password"
+        autofocus
         autocomplete="new-password"
         required
         hint="At least 12 characters. Give it to them directly, not by message."
@@ -441,10 +444,10 @@ const resetError = computed(() => message(resetPassword.error.value))
       <template #actions>
         <Button :disabled="resetPassword.isPending.value" @click="resetting = false">Cancel</Button>
         <Button
+          type="submit"
           variant="primary"
           :pending="resetPassword.isPending.value"
           :disabled="newPassword.length < 12"
-          @click="submitReset"
         >
           Reset password
         </Button>
@@ -459,11 +462,14 @@ const resetError = computed(() => message(resetPassword.error.value))
       :busy="setActive.isPending.value"
       @close="deactivating = false"
     >
+      <!-- Focus starts on the reason. Enter deliberately does not deactivate: the dialog has no
+           submit listener, so a destructive action needs its button. -->
       <TextField
         v-model="reason"
         label="Reason"
         optional-note="shown on this page and in the audit log"
         placeholder="Left the company"
+        autofocus
       />
 
       <template #actions>

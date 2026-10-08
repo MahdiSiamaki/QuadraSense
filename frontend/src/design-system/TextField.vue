@@ -25,8 +25,10 @@ const props = withDefaults(
     disabled?: boolean
     /** Rendered small and muted to the right of the label. */
     optionalNote?: string
+    /** Where a dialog's focus starts: the first field, not the close button. */
+    autofocus?: boolean
   }>(),
-  { type: 'text', required: false, disabled: false },
+  { type: 'text', required: false, disabled: false, autofocus: false },
 )
 
 defineEmits<{ 'update:modelValue': [value: string] }>()
@@ -57,6 +59,7 @@ const describedBy = computed(() =>
       :autocomplete="autocomplete"
       :required="required"
       :disabled="disabled"
+      :autofocus="autofocus || undefined"
       :aria-invalid="error ? 'true' : undefined"
       :aria-describedby="describedBy"
       class="w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-2.5 py-1.5 text-sm text-[var(--c-text)] transition-colors placeholder:text-[var(--c-text-muted)] disabled:opacity-60"

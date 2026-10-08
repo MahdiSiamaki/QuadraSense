@@ -383,9 +383,10 @@ const deleteError = computed(() => message(remove.error.value))
       description="The code cannot change: audit entries and configuration refer to it."
       :busy="saveDetails.isPending.value"
       @close="editingDetails = false"
+      @submit="submitDetails"
     >
       <div class="flex flex-col gap-3.5">
-        <TextField v-model="displayName" label="Name" required />
+        <TextField v-model="displayName" label="Name" required autofocus />
         <TextField v-model="description" label="Description" />
       </div>
 
@@ -394,10 +395,10 @@ const deleteError = computed(() => message(remove.error.value))
           Cancel
         </Button>
         <Button
+          type="submit"
           variant="primary"
           :pending="saveDetails.isPending.value"
           :disabled="!displayName.trim()"
-          @click="submitDetails"
         >
           Save
         </Button>

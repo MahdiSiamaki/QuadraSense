@@ -227,15 +227,17 @@ async function submit() {
       </p>
 
       <div class="flex flex-col gap-3">
-        <div v-for="[category, permissions] in categories" :key="category">
+        <div v-for="([category, permissions], categoryIndex) in categories" :key="category">
           <h4 class="mb-1 text-2xs font-medium tracking-wide text-[var(--c-text-muted)] uppercase">
             {{ category }}
           </h4>
 
           <ul class="flex flex-col gap-1">
-            <li v-for="permission in permissions" :key="permission.code">
+            <li v-for="(permission, permissionIndex) in permissions" :key="permission.code">
+              <!-- Focus starts on the first permission, not the dialog's close button. -->
               <button
                 type="button"
+                :autofocus="(categoryIndex === 0 && permissionIndex === 0) || undefined"
                 class="flex w-full items-center gap-2.5 rounded-[var(--radius-md)] border px-2.5 py-1.5 text-left hover:bg-[var(--c-surface-hover)]"
                 :style="
                   draft.get(permission.code) === 'deny'

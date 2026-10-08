@@ -11,6 +11,12 @@ import { onBeforeUnmount, ref, watch } from 'vue'
  *
  * Deliberately not dismissible while `busy`: a dialog that vanishes mid-request leaves the user
  * unable to tell whether what they asked for happened.
+ *
+ * A form dialog whose primary action is not destructive submits on Enter: its primary button is
+ * `type="submit"` and the dialog emits `submit`. It used to swallow the submission, so Enter did
+ * nothing in any dialog. A destructive confirmation does not listen for `submit`. Where focus
+ * starts is the content's choice - `autofocus` on the first field, which the browser's dialog
+ * focusing steps honour; without one it lands on the first control, the close button.
  */
 const props = withDefaults(
   defineProps<{
@@ -24,7 +30,7 @@ const props = withDefaults(
   { size: 'md', busy: false },
 )
 
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; submit: [] }>()
 
 const dialog = ref<HTMLDialogElement | null>(null)
 
@@ -42,6 +48,10 @@ watch(
 function requestClose(event?: Event) {
   event?.preventDefault()
   if (!props.busy) emit('close')
+}
+
+function onSubmit() {
+  if (!props.busy) emit('submit')
 }
 
 /** A click that lands on the dialog element itself is a click on the backdrop. */
@@ -75,7 +85,7 @@ const widths: Record<string, string> = {
     @cancel="requestClose"
     @click="onBackdropClick"
   >
-    <form method="dialog" class="flex max-h-[85vh] flex-col" @submit.prevent>
+    <form method="dialog" class="flex max-h-[85vh] flex-col" @submit.prevent="onSubmit">
       <header class="flex items-start justify-between gap-4 border-b px-4 py-3">
         <div class="min-w-0">
           <h2 class="text-sm font-semibold">{{ title }}</h2>
@@ -83,9 +93,10 @@ const widths: Record<string, string> = {
             {{ description }}
           </p>
         </div>
+        <!-- 32px, not the 21x20 the bare glyph made: a target a thumb can hit. -->
         <button
           type="button"
-          class="-mt-0.5 -mr-1 rounded-[var(--radius-md)] px-1.5 py-0.5 text-lg leading-none text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)] disabled:opacity-40"
+          class="-mt-1 -mr-2 grid size-8 shrink-0 place-items-center rounded-[var(--radius-md)] text-lg leading-none text-[var(--c-text-muted)] enabled:hover:bg-[var(--c-surface-hover)] enabled:hover:text-[var(--c-text)] disabled:opacity-40"
           :disabled="busy"
           aria-label="Close"
           @click="requestClose()"
