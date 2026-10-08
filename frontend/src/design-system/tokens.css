@@ -42,6 +42,25 @@
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
+
+  /* ------------------------------------------------------------- motion */
+  /*
+    The indeterminate sweep: "working, position unknown". Declared here rather than in a
+    component's <style scoped>, because Vue renames scoped keyframes (indeterminate-<hash>) and a
+    utility class names the plain one - the sweep sat still at 0-33% for that reason. Translate
+    percentages are of the bar itself: -100% is just off the left edge of the track, 300% just
+    past the right edge of a bar a third of its width.
+  */
+  --animate-indeterminate: indeterminate 1.4s ease-in-out infinite;
+
+  @keyframes indeterminate {
+    from {
+      translate: -100% 0;
+    }
+    to {
+      translate: 300% 0;
+    }
+  }
 }
 
 /*
