@@ -1,7 +1,8 @@
 # UI design system — layout, charts, responsiveness, and how a UI fix is proven
 
-**Status:** Written 2026-10-07, after the product-wide layout review (PR #28). Motion conventions are
-being decided now and will be added as their own section.
+**Status:** Written 2026-10-07, after the product-wide layout review (PR #28). Extended 2026-10-08 with
+Phase 1 of the design audit (below). Motion conventions beyond the two settled here wait for the
+owner's Phase 3 decisions.
 **Read after:** `06-repository-structure.md`.
 
 ---
@@ -29,6 +30,18 @@ them rather than rediscovering them.
   - Preflight's `margin: 0` breaks `<dialog>` centring — `Modal.vue` restores it with `m-auto`;
   - `text-[var(--text-xs)]` compiles to a *colour* and `font-[var(--font-mono)]` to a *weight*.
     Sizes and faces use the theme utilities (`text-2xs` … `text-2xl`, `font-mono`).
+- **Three more, found by the design audit (2026-10-07):**
+  - **An unlayered rule beats every utility.** Tailwind's utilities live in `@layer utilities`;
+    a plain rule in `tokens.css` outranks them whatever its specificity. `* { border-color }` at
+    top level painted 74 of 76 coloured borders grey on five pages, and `:focus-visible`'s radius
+    squared every round control while focused. A default a utility may override goes in
+    `@layer base`.
+  - **Vue renames keyframes in `<style scoped>`** (`indeterminate` became
+    `indeterminate-af83c61a`), so a utility class that names them animates nothing. Keyframes
+    that utilities use are `@theme` tokens (`--animate-<name>` plus its `@keyframes`) in
+    `tokens.css`.
+  - **ECharts' tooltip ignores `animation: false`.** It defaults `transitionDuration` to 0.4s
+    and throttles repositioning to 50ms; `tooltipBounds` sets it to 0.
 
 ## Page frame and spacing rhythm
 
@@ -99,8 +112,9 @@ Explorer's results and entity panel, the Risk page's lists and entity card.
 - **No `grid.containLabel`.** Under ECharts 6, without the legacy plugin, it keeps only axis
   *labels* inside the canvas; axis *names* were laid out at a fixed gap and drawn over rotated
   labels. The default outer-bounds layout contains both.
-- **Tooltips** spread `tooltipBounds` from `lib/chart-tooltip.ts`: confined to the chart and wrapping
-  at 20rem (a nowrap flagged-day tooltip ran off the window).
+- **Tooltips** spread `tooltipBounds` from `lib/chart-tooltip.ts`: confined to the chart, wrapping
+  at 20rem (a nowrap flagged-day tooltip ran off the window), and `transitionDuration: 0`, so the
+  tooltip follows the pointer instead of trailing it for 400ms.
 - **Time axes** align their first and last labels to the plot's edges
   (`alignMinLabel: 'left'`, `alignMaxLabel: 'right'`) — centred on the end tick, the last date ran
   16px off the canvas.
@@ -122,6 +136,44 @@ placeholder (silhouette + initials) renders only when there is no photo: a `v-el
 "unverified" badge drew it over every verified photo and squashed the photo to 110×25. Catalogue
 images are normalised to the verified images' standard — 800×800, the device's long side 752px —
 see ADR-011's amendment.
+
+## Controls
+
+- **One button.** `Button.vue`'s four variants are the same height: primary and ghost carry a
+  transparent 1px border, as secondary and danger carry a visible one (30.56px against 32.16px
+  before). A hand-rolled button is a smell; `AsyncBoundary`'s "Try again" was one.
+- **A disabled control does not answer the pointer.** Hover backgrounds are `enabled:hover:`
+  (Button, the pager, `segment()`). Controls disabled only through `aria-disabled` (the Risk
+  page's tabs) are not covered yet.
+- **A label that names a control operates it.** `Toggle`'s label is `for` the switch, so the
+  words toggle it, not only the 36×20px track.
+
+## Figures and words
+
+- **Every number goes through `lib/format.ts`**, fixed `en-US`. Never `toLocaleString()`: it uses
+  the browser's locale, and a fa-IR browser printed Persian digits in the pager.
+- **Signed decimals** use `formatSignedDecimal` (grouped, never "-0.00"); their colour is chosen
+  from the value as shown, not the raw one.
+- **A share above zero never reads 0.** `formatPercent` prints "<0.1%" (or "<0.01%") when a
+  positive value would round to zero.
+- **A count appears once it is known.** "0 total" during the first load read as "no users".
+- **One and many.** "1 model", "1 IMEI", "1 of 30 days has data".
+- **A missing value is left out, not drawn as an orphaned dash** ("TAC · 200.0 MB", not
+  "TAC · — · 200.0 MB"), and a figure that cannot exist is said in words ("New since the first
+  delivery"), never shown as 0.
+
+## Motion — settled so far
+
+The brief and ADR-005 allow functional motion only (~150ms), and the global reduced-motion rule
+in `tokens.css` sets every duration to 0.01ms. Two things are settled; the rest (tokens, press
+feedback, menu and dialog entry, theme switching, the gear and theme-icon timings, what reduced
+motion should mean) is Phase 3 of the design audit and waits for the owner.
+
+- **Hovering a chart has no motion** (tooltip `transitionDuration: 0`).
+- **The indeterminate sweep** (`ProgressBar`, an import stage that cannot be counted) is the
+  `--animate-indeterminate` token: translate −100% → 300% of a bar a third of the track, 1.4s.
+  Under reduced motion it is a faint full-width band, because the global rule would otherwise
+  leave a still third that reads as 33%.
 
 ## Responsive targets
 
@@ -157,6 +209,27 @@ bug and watch the check fail:
 - **Prove the fix:** restore the old file (`git show HEAD:<file> > <file>`), let Vite reload,
   measure the defect, restore the fix.
 
+## Design audit, 2026-10-07
+
+The product owner asked for the design to be measured with Emil Kowalski's design-engineering
+skills. Four reviewers read the frontend, one per skill — motion (`improve-animations`),
+realistic worst-case data (`break-ui`), component polish (`emil-design-eng`) and phones
+(`mobile-native`) — and four separate verifiers then tried to refute each of the 56 findings at
+its file:line. None was refuted: 37 confirmed, 9 confirmed with a corrected location or
+severity, 10 needing a real device. Final severity: 3 high, 14 medium, 39 low; 13 proposed fixes
+were corrected on the way (in Tailwind v4 `scale-*` sets the `scale` property, which a
+transition on `transform` does not ease, for one).
+
+The owner chose to take the work in phases, asked before each:
+
+| Phase | Scope | State |
+|---|---|---|
+| 1 | Defects with no taste decision: the cascade, the frozen sweep, wrong device figures, tooltip glide, import pages, figures and words, controls | **Done** on `feature/design-audit-fixes`; the cascade change approved from before/after screenshots |
+| 2 | Accessibility and keyboard: user menu name and keyboard model, Enter in dialogs and initial focus, segmented-control focus ring and arrow keys, light-theme status-text contrast (warning text 2.42:1) | Waiting |
+| 3 | Motion system: tokens, press feedback, menu and dialog entry, theme switching, gear and theme-icon timings, reduced motion | Waiting; every item is the owner's decision |
+| 4 | Phones: 16px fields on touch screens (iOS zooms on focus), charts that trap vertical scrolling, `dvh`, `theme-color`, ungated scoped hovers, `select-none` on control chrome | Waiting; half need a real device |
+| 5 | Data decisions: GSMA's "Not Known" brand sentinel (moves approved image keys), length limits on user names | Waiting; the owner's call |
+
 ## Change record
 
 | Date | Change | Commits (PR #28) |
@@ -173,3 +246,16 @@ bug and watch the check fail:
 | 2026-10-07 | Data quality stacking; template form under the cards | 8fb346b, 97c3944 |
 | 2026-10-07 | Matrix contain-paint; 320px fits | b6320de, 373bbe2 |
 | 2026-10-07 | Review fixes: pagers flush, panel header, no stale grid | 4c067b3 |
+
+Design audit, Phase 1 (`feature/design-audit-fixes`):
+
+| Date | Change | Commit |
+|---|---|---|
+| 2026-10-08 | Device page: no percentage change for a model new since the first delivery | e0c0da5 |
+| 2026-10-08 | Indeterminate sweep moves (keyframes as a theme token) | 74481a3 |
+| 2026-10-08 | Chart tooltips without glide | 2dfd0a3 |
+| 2026-10-08 | Import pages: "Not finished", a wide preview scrolls in its card | 292754b |
+| 2026-10-08 | Figures and words: en-US counts, plurals, "<0.01%", counts once loaded | 4a65eae |
+| 2026-10-08 | Controls: no hover while disabled, switch label, Try again is a Button | 21ef991 |
+| 2026-10-08 | Base defaults in `@layer base`: coloured borders and round focus rings show | a7541c2 |
+| 2026-10-08 | Every button variant the same height | 9da4ae6 |
