@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import Button from './Button.vue'
 import { ApiError } from '@/api/client'
 
 /**
@@ -104,13 +105,8 @@ function correlationId(error: unknown): string | null {
       <p v-if="correlationId(error)" class="font-mono text-2xs text-[var(--c-text-muted)]">
         Reference: {{ correlationId(error) }}
       </p>
-      <button
-        type="button"
-        class="mt-1 rounded-[var(--radius-sm)] border border-[var(--c-border-strong)] px-2.5 py-1 text-xs font-medium hover:bg-[var(--c-surface-hover)]"
-        @click="$emit('retry')"
-      >
-        Try again
-      </button>
+      <!-- The design-system button: same radius, height and states as every other one. -->
+      <Button size="sm" class="mt-1" @click="$emit('retry')">Try again</Button>
     </div>
 
     <!-- Empty -->

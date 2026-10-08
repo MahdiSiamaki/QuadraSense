@@ -29,7 +29,7 @@ const last = computed(() => Math.min(props.page * props.pageSize, props.total))
 
 const buttonClass =
   'rounded-[var(--radius-md)] border px-2 py-1 text-xs font-medium ' +
-  'hover:bg-[var(--c-surface-hover)] disabled:cursor-not-allowed disabled:opacity-40'
+  'enabled:hover:bg-[var(--c-surface-hover)] disabled:cursor-not-allowed disabled:opacity-40'
 </script>
 
 <template>

@@ -38,14 +38,15 @@ const classes = computed(() => {
 
   const variants: Record<string, string> = {
     primary:
-      'bg-[var(--c-accent)] text-[var(--c-accent-text)] hover:bg-[var(--c-accent-hover)] ' +
+      'bg-[var(--c-accent)] text-[var(--c-accent-text)] enabled:hover:bg-[var(--c-accent-hover)] ' +
       'shadow-[var(--shadow-xs)]',
     secondary:
-      'border bg-[var(--c-surface)] text-[var(--c-text)] hover:bg-[var(--c-surface-hover)]',
+      'border bg-[var(--c-surface)] text-[var(--c-text)] enabled:hover:bg-[var(--c-surface-hover)]',
     danger:
       'border border-[var(--c-danger)] bg-[var(--c-surface)] text-[var(--c-danger)] ' +
-      'hover:bg-[var(--c-danger-subtle)]',
-    ghost: 'text-[var(--c-text-secondary)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]',
+      'enabled:hover:bg-[var(--c-danger-subtle)]',
+    ghost:
+      'text-[var(--c-text-secondary)] enabled:hover:bg-[var(--c-surface-hover)] enabled:hover:text-[var(--c-text)]',
   }
 
   return [base, size, variants[props.variant], props.block ? 'w-full' : ''].join(' ')
