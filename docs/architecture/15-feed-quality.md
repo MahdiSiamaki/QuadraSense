@@ -14,7 +14,7 @@ wrong, and that is what the operator sent for weeks:
 |---|---|---:|---:|
 | 2026-07-27 | SIMs carrying more than one phone number on the same day | 500–900 SIMs | 383,000 SIMs (Sep 21) |
 | 2026-08-25/26 | IMEIs cut to eight digits | ~3,500 rows | 793,475 rows (10% of Aug 25) |
-| 2026-09-15 | IMEIs with the first digit dropped and a 0 added | ~7,000 rows (0.1%) | 3.16 million rows (25% of Sep 22) |
+| 2026-09-15 | IMEIs with the first digit dropped and a 0 added — in most cases another subscriber's handset; still present on 6 Oct | ~7,000 rows (0.1%) | 3.16 million rows (25% of Sep 22) |
 
 Together they inflated the dashboard's SIM changes about 15-fold and handset changes about 5-fold, and
 they were found because a chart looked wrong — weeks after the first file. Every one of them was in the
@@ -39,6 +39,16 @@ digits kept instead of the first. Measured on 20 September, before anything was 
 The test used everywhere is that one: 14 digits, TAC unknown to GSMA, ending in `0`, and made a GSMA TAC
 by one leading digit. The ~7,000 rows a day that pass it before 15 September are the part of ordinary
 unknown IMEIs that pass by chance, and they are part of the reference.
+
+### Whose handset it is (added 2026-10-08)
+
+The digits restore; the binding does not. Of the numbers given a shifted IMEI on 24 September (1%
+sample, 14,909), the IMEI with its digit put back had before 15 September been held **only by other
+numbers** in 87.5% of cases, by this number in 11.6%, and never seen in 0.9%. Almost all are `35…`
+handsets (99.2% of shifted rows begin `5`), each is added beside the subscriber's own handset rather
+than in its place, and 78% are removed the next day, when another arrives. That daily churn is what
+multiplied the handset-change chart. The full investigation, with the per-day decomposition, is
+`docs/discovery/04-handset-changes-from-2026-09-15.md`.
 
 ## What is measured
 
@@ -101,6 +111,14 @@ At ×5 every known defect is flagged: shifted IMEIs from their first day, 15 Sep
 episodes nobody had noticed are flagged too — multi-number SIMs in April–May, malformed IMEIs on 2–3 May,
 and the `000000` code on up to 13% of rows until late February, falling to almost none after. They are
 facts about the files; whether each was a defect is a question for the operator.
+
+**Since then (re-measured 2026-10-08 from `dq_daily`, latest measurement of each day).** The table is the
+calibration on the 233 days through 26 September. Neither of the September defects has ended. Shifted
+IMEIs were 3.44% of rows on 15 September, 11.52% on the 16th, and 19.5–25.1% on every day from the 17th
+to 6 October. Multi-number SIMs fell from 2.6–4.2% of SIMs in late September to 0.61–0.67% on 2–6
+October, still 55–61 times ordinary. Both are above their ×5 thresholds (0.445% of rows and 0.055% of
+SIMs) on every one of those days. 2–6 October were measured against v2026.10.04, the version active
+when they were measured; the days before, against v2026.09.16.
 ## Where it shows
 
 - **On the import.** Each flagged check is a warning note on the job's timeline; an ordinary day gets one
@@ -130,6 +148,12 @@ nothing fails for want of the check.
   multi-number SIMs, which are listed.
 - **A SIM with two numbers is not always a defect.** Number changes and recycling produce 500–900 a day;
   that is what the reference is for.
-- **Nothing is repaired.** 99.4% of the shifted IMEIs could be restored, but the restoration would be an
-  inference written into the data, and the SIM-to-number defect cannot be repaired from this side at all.
-  The fix is corrected files from the operator; when they arrive they replace the days in place.
+- **Nothing is repaired, and the shifted IMEIs must not be.** The fix is corrected files from the
+  operator; when they arrive they replace the days in place. The SIM-to-number defect cannot be repaired
+  from this side at all.
+
+  > **SUPERSEDED (2026-10-08).** This used to read: "99.4% of the shifted IMEIs could be restored, but
+  > the restoration would be an inference written into the data". The digits do restore — one leading
+  > digit makes a real TAC — but the handset they restore to is, in 87.5% of the sampled cases, one that
+  > belonged only to other numbers (`docs/discovery/04-handset-changes-from-2026-09-15.md`). A repair
+  > would attach other subscribers' phones to these numbers. It was never built; it is now ruled out.
