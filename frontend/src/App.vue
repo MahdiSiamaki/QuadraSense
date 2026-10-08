@@ -101,7 +101,7 @@ async function signOut() {
             v-for="item in nav"
             :key="item.to"
             :to="item.to"
-            class="shrink-0 rounded-[var(--radius-md)] px-2.5 py-1.5 text-sm font-medium whitespace-nowrap transition-colors"
+            class="shrink-0 rounded-[var(--radius-md)] px-2.5 py-1.5 text-sm font-medium whitespace-nowrap"
             :class="
               isCurrent(item.to)
                 ? 'bg-[var(--c-surface-sunken)] text-[var(--c-text)]'
@@ -174,14 +174,24 @@ async function signOut() {
 </template>
 
 <style scoped>
-/* The gear turns a little on hover and while Settings is open; the one flourish it gets. */
+/*
+  The gear turns 45deg on hover and while Settings is open; the one flourish it gets, kept by the
+  product owner and shortened to 250ms (from 400). A turn in place, so ease-in-out. Hover only
+  where a fine pointer really hovers: some touch screens report hover and leave a tap's :hover
+  stuck, and this one moves.
+*/
 .settings-link svg {
-  transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform var(--duration-turn) var(--ease-in-out);
 }
 
-.settings-link:hover svg,
 .settings-link.is-current svg {
   transform: rotate(45deg);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .settings-link:hover svg {
+    transform: rotate(45deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -38,7 +38,7 @@ defineProps<{ rows: ImportJobSummary[] }>()
         <tr
           v-for="row in rows"
           :key="row.jobId"
-          class="border-b transition-colors last:border-0 hover:bg-[var(--c-surface-hover)]"
+          class="border-b last:border-0 hover:bg-[var(--c-surface-hover)]"
           :class="row.isEffective ? '' : 'text-[var(--c-text-muted)]'"
         >
           <td class="max-w-[22rem] px-3 py-2">

@@ -127,7 +127,7 @@ function toggleSort(column: ExplorerColumn) {
       Nothing matches.
     </div>
 
-    <div v-else class="overflow-x-auto" :class="loading ? 'opacity-60' : ''">
+    <div v-else class="overflow-x-auto transition-opacity" :class="loading ? 'opacity-60' : ''">
       <table class="w-full text-left text-sm">
         <thead class="border-b text-2xs tracking-wide text-[var(--c-text-muted)] uppercase">
           <tr>

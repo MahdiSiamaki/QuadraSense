@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import Button from '@/design-system/Button.vue'
 import { RouterLink, useRoute } from 'vue-router'
 import Card from '@/design-system/Card.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
@@ -119,24 +120,23 @@ function toggleRule(summaryId: number) {
           </div>
 
           <div class="flex shrink-0 gap-2">
-            <button
+            <Button
               v-if="running"
-              type="button"
-              class="rounded-[var(--radius-md)] border border-[var(--c-danger)] px-3 py-1.5 text-xs font-medium text-[var(--c-danger-text)] enabled:hover:bg-[var(--c-danger-subtle)] disabled:opacity-50"
-              :disabled="cancel.isPending.value"
+              variant="danger"
+              size="sm"
+              :pending="cancel.isPending.value"
               @click="cancel.mutate(jobId)"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               v-if="!running && detail.data.value.isBlobPresent"
-              type="button"
-              class="rounded-[var(--radius-md)] border px-3 py-1.5 text-xs font-medium enabled:hover:bg-[var(--c-surface-hover)] disabled:opacity-50"
-              :disabled="reprocess.isPending.value"
+              size="sm"
+              :pending="reprocess.isPending.value"
               @click="reprocess.mutate(jobId)"
             >
               Import again
-            </button>
+            </Button>
           </div>
         </header>
 

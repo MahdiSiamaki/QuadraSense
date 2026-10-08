@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import Button from '@/design-system/Button.vue'
 import { RouterLink, useRoute, useRouter, type LocationQuery } from 'vue-router'
 import Card from '@/design-system/Card.vue'
 import Pagination from '@/design-system/Pagination.vue'
@@ -263,12 +264,7 @@ function ariaSort(column: DeviceSort): 'ascending' | 'descending' | 'none' {
             </p>
           </div>
 
-          <button
-            type="submit"
-            class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-4 py-2 text-sm font-medium text-[var(--c-accent-text)]"
-          >
-            Search
-          </button>
+          <Button type="submit" variant="primary" size="lg">Search</Button>
         </div>
 
         <div class="flex flex-wrap items-center gap-2 border-t pt-3">

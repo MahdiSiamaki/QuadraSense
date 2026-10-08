@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import Button from '@/design-system/Button.vue'
 import { lookupMsisdn, type LookupResult } from '@/api/dashboard'
 import { ApiError } from '@/api/client'
 import Card from '@/design-system/Card.vue'
@@ -87,13 +88,9 @@ function correlationId(e: unknown): string | null {
               class="mt-1.5 w-full rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-3 py-2 font-mono text-sm tabular placeholder:text-[var(--c-text-muted)]"
             />
           </div>
-          <button
-            type="submit"
-            :disabled="isLoading || !input.trim()"
-            class="rounded-[var(--radius-md)] bg-[var(--c-accent)] px-4 py-2 text-sm font-medium text-[var(--c-accent-text)] hover:bg-[var(--c-accent-hover)] disabled:opacity-50"
-          >
+          <Button type="submit" variant="primary" size="lg" :disabled="!input.trim()" :pending="isLoading">
             {{ isLoading ? 'Searching…' : 'Search' }}
-          </button>
+          </Button>
         </div>
 
         <!--

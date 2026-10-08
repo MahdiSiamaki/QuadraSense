@@ -2,6 +2,8 @@ import { ref, watch, readonly } from 'vue'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
+// public/theme-init.js repeats this key and the rule in apply() before the bundle loads, so the
+// first paint is in the reader's theme: change one, change the other.
 const STORAGE_KEY = 'sqm.theme'
 
 const mode = ref<ThemeMode>(readStoredMode())
@@ -24,7 +26,18 @@ const systemPrefersDark =
 function apply() {
   const dark = mode.value === 'dark' || (mode.value === 'system' && (systemPrefersDark?.matches ?? false))
   isDark.value = dark
-  document.documentElement.dataset['theme'] = dark ? 'dark' : 'light'
+  const root = document.documentElement
+  const next = dark ? 'dark' : 'light'
+  // public/theme-init.js has usually set it before the first paint already.
+  if (root.dataset['theme'] === next) return
+  // The new colours apply with every transition off (tokens.css), in one style pass; a second
+  // pass turns transitions back on, and since nothing changes in it, none starts. Both passes are
+  // synchronous: a timer could let a frame render with the theme icon's own morph switched off.
+  root.dataset['themeSwitching'] = ''
+  root.dataset['theme'] = next
+  void document.body?.offsetWidth
+  delete root.dataset['themeSwitching']
+  void document.body?.offsetWidth
 }
 
 watch(mode, (next) => {

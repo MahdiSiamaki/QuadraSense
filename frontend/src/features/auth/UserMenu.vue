@@ -16,6 +16,9 @@ import type { CurrentUser } from '@/api/auth'
  * `aria-controls`, Escape and outside-click to close, focus back on the button when Escape closes
  * it (the panel's items are removed with it, and focus fell to the page), and closing when focus
  * moves on past the last item.
+ *
+ * It opens out of its own corner, the one under the button (150ms, opacity and a 3% scale), and
+ * closes at once: the reader asked for it and is watching it arrive; when it closes they are not.
  */
 const props = defineProps<{
   user: CurrentUser
@@ -92,7 +95,7 @@ onBeforeUnmount(() => {
     <div
       v-if="open"
       :id="panelId"
-      class="absolute right-0 z-20 mt-1.5 w-60 overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--c-surface)] shadow-[var(--shadow-md)]"
+      class="absolute right-0 z-20 mt-1.5 w-60 overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--c-surface)] shadow-[var(--shadow-md)] origin-top-right transition-[opacity,scale] duration-(--duration-popover) ease-out starting:opacity-0 motion-safe:starting:scale-[0.97]"
     >
       <div class="border-b px-3 py-2.5">
         <p class="truncate text-sm font-medium">{{ user.displayName }}</p>

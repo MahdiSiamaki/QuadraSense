@@ -121,7 +121,7 @@ const toneClass = computed(
       v-if="infoOpen"
       :id="infoId"
       title=""
-      class="absolute inset-x-2 top-9 z-30 rounded-[var(--radius-md)] border bg-[var(--c-surface-raised)] px-3 py-2 text-xs whitespace-pre-line text-[var(--c-text-secondary)] shadow-[var(--shadow-md)]"
+      class="absolute inset-x-2 top-9 z-30 rounded-[var(--radius-md)] border bg-[var(--c-surface-raised)] px-3 py-2 text-xs whitespace-pre-line text-[var(--c-text-secondary)] shadow-[var(--shadow-md)] origin-top-right transition-[opacity,scale] duration-(--duration-popover) ease-out starting:opacity-0 motion-safe:starting:scale-[0.97]"
     >
       {{ tooltip }}
     </div>

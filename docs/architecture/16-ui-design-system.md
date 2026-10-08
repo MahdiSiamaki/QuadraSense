@@ -1,8 +1,7 @@
 # UI design system — layout, charts, responsiveness, and how a UI fix is proven
 
 **Status:** Written 2026-10-07, after the product-wide layout review (PR #28). Extended 2026-10-08 with
-Phases 1 and 2 of the design audit (below). Motion conventions beyond the two settled here wait for
-the owner's Phase 3 decisions.
+Phases 1-3 of the design audit (below), motion included.
 **Read after:** `06-repository-structure.md`.
 
 ---
@@ -23,7 +22,8 @@ them rather than rediscovering them.
 
 - **Stack.** Vue 3 + TypeScript, Tailwind CSS v4, ECharts 6, TanStack Query. `reka-ui` is installed
   and unused.
-- **Tokens.** `frontend/src/design-system/tokens.css` holds colours, radii and shadows, light and
+- **Tokens.** `frontend/src/design-system/tokens.css` holds colours, radii, shadows and motion (two
+  curves, five durations, the indeterminate sweep), light and
   dark. Use them; never literal colours.
 - **Three Tailwind/ECharts traps** (from `CLAUDE.md`, all still live):
   - zrender cannot parse `oklch()` — resolve every chart colour through `lib/chart-colors.ts`;
@@ -202,18 +202,73 @@ linear sRGB → WCAG luminance, against every ground the text is placed on. Neve
   "TAC · — · 200.0 MB"), and a figure that cannot exist is said in words ("New since the first
   delivery"), never shown as 0.
 
-## Motion — settled so far
+## Motion
 
-The brief and ADR-005 allow functional motion only (~150ms), and the global reduced-motion rule
-in `tokens.css` sets every duration to 0.01ms. Two things are settled; the rest (tokens, press
-feedback, menu and dialog entry, theme switching, the gear and theme-icon timings, what reduced
-motion should mean) is Phase 3 of the design audit and waits for the owner.
+Functional only: ~150ms typical, 300ms at most for anything that answers the reader (ADR-005 and
+its 2026-10-08 amendment). Three deliberate exceptions run longer because they report work, not a
+response: the determinate progress fill (500ms, smoothing between 1.5s polls), the indeterminate
+sweep (a 1.4s loop) and the pulse of a loading skeleton or a "running" dot. The question before
+any motion is how often it is seen: what happens tens or hundreds of times a day gets none - the
+press is the one exception, because it is the feedback that the click registered.
 
-- **Hovering a chart has no motion** (tooltip `transitionDuration: 0`).
-- **The indeterminate sweep** (`ProgressBar`, an import stage that cannot be counted) is the
-  `--animate-indeterminate` token: translate −100% → 300% of a bar a third of the track, 1.4s.
-  Under reduced motion it is a faint full-width band, because the global rule would otherwise
-  leave a still third that reads as 33%.
+**Curves** (`tokens.css`), which replace Tailwind's softer ones, so the `ease-out` and
+`ease-in-out` utilities use them too: `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)` for what
+arrives, presses or retargets - entrances, the press, the bars; `--ease-in-out: cubic-bezier(0.77,
+0, 0.175, 1)` for what moves or morphs in place - the gear, the theme icon, the switch knob. Never
+`ease-in` on UI. **Durations** by what moves:
+
+| Token | Value | Used for |
+|---|---|---|
+| `--duration-press` | 120ms | a button giving under the pointer, and its colour change |
+| `--duration-popover` | 150ms | the user menu, the KPI popover |
+| `--duration-dialog` | 200ms | a dialog and its backdrop |
+| `--duration-turn` | 250ms | the settings gear's 45deg turn |
+| `--duration-morph` | 300ms | the theme icon, sun to moon, and its colour |
+
+**What moves, and how** - all measured in the browser (`getAnimations()`, transition events):
+
+- **Press**: `motion-safe:enabled:active:scale-[0.97]`, transition on `scale` (in Tailwind v4,
+  `scale-*` sets the `scale` property, not `transform`). `Button`, `Pagination`, the dialog's close
+  button, the Explorer's icon buttons. Hand-built buttons were moved onto `Button` and `Pagination`
+  (the import history's pager, the import page's Cancel and Import again, the Search buttons, the
+  device-image form, the TAC activation) so every button presses alike; `Button` gained `lg`, the
+  38px of a full-size field beside it. Not rows, nav links or segmented controls.
+- **Popover and menu entrance**: `@starting-style` via `starting:opacity-0
+  motion-safe:starting:scale-[0.97]`, `origin-top-right` (the corner under the trigger), 150ms.
+  No exit animation: the reader is already looking elsewhere.
+- **Dialog entrance**: `Modal.vue`'s scoped style - `dialog[open]` transitions opacity and scale
+  from `@starting-style`, `::backdrop` its opacity, 200ms from the centre (a dialog is not
+  anchored to its trigger). No exit.
+- **Bars move by `translate`, never `width`** (width is layout on every frame): a full-width fill
+  slid left by what is still to do, clipped by its track - the progress bar, the capability bars.
+- **Hovering a chart, a table row or a nav link changes at once**: tooltip `transitionDuration: 0`;
+  rows, nav links and DOM-drawn chart bars carry no transition. Colour on pressable controls changes
+  in `--duration-press`, on the theme toggle in `--duration-morph`, on other controls in Tailwind's
+  default 150ms.
+- **Hover motion only where a pointer hovers**: Tailwind gates `hover:`; hand-written `:hover`
+  rules sit in a media query - `(hover: hover) and (pointer: fine)` for the gear, which moves,
+  `(hover: hover)` for the theme toggle's colour - or a tap leaves them stuck.
+
+**Reduced motion is less motion, not none.** Nothing moves, scales or turns; fades stay. Movement
+is opt-in where it is written - `motion-safe:` on presses and entrances, `motion-reduce:` on the
+switch knob, the bars and the sweep - because a global rule cannot tell a fade from a slide (the
+old one, which cut everything to 0.01ms, removed both). Opacity loops keep running: the loading
+skeleton, a running import's dot, the busy-worker dot, an image loading - they say "working", and
+the product owner chose to keep them. The pending spinner pulses instead of turning, because a
+still ring with a gap reads as stalled.
+
+**Theme switching changes everything in one frame.** `lib/theme.ts` sets `data-theme-switching`,
+applies the theme, forces a style pass, removes the attribute and forces another, all
+synchronously; `tokens.css` disables every transition under the attribute. Measured on the Users
+page: switching with the attribute left out started 57 transitions, mostly colours on controls;
+with it, 5 - all the theme icon's own (its colour, three transforms, the rays' fade). **The first paint
+is already in the reader's theme**: `public/theme-init.js` runs from `<head>` before the bundle,
+a file rather than inline script because the security model allows no `unsafe-inline`; it must
+follow `lib/theme.ts`'s key and rule.
+
+**The indeterminate sweep** (`ProgressBar`, an import stage that cannot be counted) is the
+`--animate-indeterminate` token: translate −100% → 300% of a bar a third of the track, 1.4s.
+Under reduced motion it is a faint full-width band, because a still third would read as 33%.
 
 ## Responsive targets
 
@@ -266,8 +321,8 @@ The owner chose to take the work in phases, asked before each:
 |---|---|---|
 | 1 | Defects with no taste decision: the cascade, the frozen sweep, wrong device figures, tooltip glide, import pages, figures and words, controls | **Done** on `feature/design-audit-fixes`; the cascade change approved from before/after screenshots |
 | 2 | Accessibility and keyboard: user menu name and keyboard model, Enter in dialogs and initial focus, segmented-control focus ring and arrow keys, light-theme status-text contrast (warning text 2.42:1) | **Done** on `feature/design-audit-phase2`; the owner chose a disclosure for the user menu, one `SegmentedControl`, the text tokens with darker muted text, an "i" button on KPI cards, and one parked query per Explorer dataset |
-| 3 | Motion system: tokens, press feedback, menu and dialog entry, theme switching, gear and theme-icon timings, reduced motion | Waiting; every item is the owner's decision |
-| 4 | Phones: 16px fields on touch screens (iOS zooms on focus), charts that trap vertical scrolling, `dvh`, `theme-color`, ungated scoped hovers, `select-none` on control chrome | Waiting; half need a real device |
+| 3 | Motion system: tokens, press feedback, menu and dialog entry, theme switching, gear and theme-icon timings, reduced motion | **Done** on `feature/design-audit-phase3`; the owner chose short functional entrances, press feedback on buttons (hand-built ones moved onto `Button`), the gear's turn kept but shortened to 250ms (from 400) and the icon's morph to 300ms (from 500), fades-only reduced motion with the "working" loops kept, and nav links that snap like rows. The two hand-written hovers were gated here, not in Phase 4 |
+| 4 | Phones: 16px fields on touch screens (iOS zooms on focus), charts that trap vertical scrolling, `dvh`, `theme-color`, `select-none` on control chrome | Waiting; half need a real device |
 | 5 | Data decisions: GSMA's "Not Known" brand sentinel (moves approved image keys), length limits on user names | Waiting; the owner's call |
 
 ## Change record
@@ -311,3 +366,14 @@ Design audit, Phase 2 (`feature/design-audit-phase2`):
 | 2026-10-08 | Dialogs: Enter submits, focus starts on the first field | 3ff2755 |
 | 2026-10-08 | KPI definition behind a focusable "i" button | 17431bf |
 | 2026-10-08 | Focus after a failed sign-in, theme cards, upload input | 00f4c49 |
+
+Design audit, Phase 3 (`feature/design-audit-phase3`):
+
+| Date | Change | Commit |
+|---|---|---|
+| 2026-10-08 | Motion tokens; reduced motion removes movement, keeps fades; bars slide by translate | 804eecf |
+| 2026-10-08 | Press feedback; hand-built buttons onto `Button` and `Pagination`; `Button` size `lg` | ce17e01 |
+| 2026-10-08 | Menus, popovers and dialogs arrive (150 / 200ms) | acf338e |
+| 2026-10-08 | Theme switch in one frame; first paint in the reader's theme; gear and icon timings | b7d7c0e |
+| 2026-10-08 | Rows, nav links and chart bars change at once; busy dims fade | 1a2f537 |
+| 2026-10-08 | Drop zone no longer flickers under a dragged file | db0c70a |

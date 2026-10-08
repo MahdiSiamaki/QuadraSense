@@ -96,7 +96,7 @@ const widths: Record<string, string> = {
         <!-- 32px, not the 21x20 the bare glyph made: a target a thumb can hit. -->
         <button
           type="button"
-          class="-mt-1 -mr-2 grid size-8 shrink-0 place-items-center rounded-[var(--radius-md)] text-lg leading-none text-[var(--c-text-muted)] enabled:hover:bg-[var(--c-surface-hover)] enabled:hover:text-[var(--c-text)] disabled:opacity-40"
+          class="-mt-1 -mr-2 grid size-8 shrink-0 place-items-center rounded-[var(--radius-md)] text-lg leading-none text-[var(--c-text-muted)] transition-[color,background-color,scale] duration-(--duration-press) ease-out motion-safe:enabled:active:scale-[0.97] enabled:hover:bg-[var(--c-surface-hover)] enabled:hover:text-[var(--c-text)] disabled:opacity-40"
           :disabled="busy"
           aria-label="Close"
           @click="requestClose()"
@@ -118,3 +118,36 @@ const widths: Record<string, string> = {
     </form>
   </dialog>
 </template>
+
+<style scoped>
+/*
+  The dialog arrives from the centre: 200ms, opacity and a 3% scale, its backdrop fading with it
+  so the two read as one surface. Centred, not from the button that opened it - a dialog is not
+  anchored to its trigger. No exit: closing is the reader's own action, and they are already
+  looking elsewhere. With reduced motion only the fades remain.
+*/
+dialog[open] {
+  transition:
+    opacity var(--duration-dialog) var(--ease-out),
+    scale var(--duration-dialog) var(--ease-out);
+}
+
+dialog[open]::backdrop {
+  transition: opacity var(--duration-dialog) var(--ease-out);
+}
+
+@starting-style {
+  dialog[open],
+  dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @starting-style {
+    dialog[open] {
+      scale: 0.97;
+    }
+  }
+}
+</style>

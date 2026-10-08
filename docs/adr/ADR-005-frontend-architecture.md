@@ -118,3 +118,34 @@ Built before the first screen, not retrofitted:
 - **Neutral:** English/LTR/Gregorian removes i18n, RTL and calendar-library work entirely. If Persian or RTL
   is ever required, using logical CSS properties from the start keeps the door open at low cost — so the
   design system will use them regardless.
+
+---
+
+## Amendment, 2026-10-08 — motion, measured against the design audit
+
+The decision above - "**Motion is functional only** (state transitions, ~150 ms), honouring
+`prefers-reduced-motion`. The brief rules out decorative animation." - now reads: functional only,
+~150 ms typical and 300 ms at most for anything that answers the reader. Three things report work
+rather than answer, and run longer by design: the progress fill (500 ms between 1.5 s polls), the
+indeterminate sweep (a 1.4 s loop) and the "working" pulses. The design audit
+(docs/architecture/16-ui-design-system.md) found what motion had become in practice, and the
+product owner settled these questions:
+
+1. **Things that open occasionally arrive, briefly.** The user menu and popovers: 150 ms, opacity
+   and a 3% scale from the corner they open from. Dialogs: 200 ms from the centre, the backdrop
+   fading with them. No exit animation. They used to appear in a single frame.
+2. **A button gives under the pointer**: a 3% scale (the CSS `scale` property) for 120 ms, on the
+   `Button` and `Pagination` components, the dialog's close button and the Explorer's icon
+   buttons - not on rows, links or segmented controls, which are used too often for it. Buttons
+   built by hand were moved onto those components, so every button presses alike.
+3. **The settings gear keeps its one flourish**, shortened from 400 to 250 ms; the theme icon's
+   sun-to-moon morph from 500 to 300 ms.
+4. **Reduced motion means less motion, not none.** Nothing moves, scales or turns; opacity fades
+   stay, because they explain a change without moving anything, and so do the opacity loops that
+   say "working"; the spinner pulses instead of turning. This supersedes the previous global
+   rule, which cut every transition and animation to 0.01 ms - fades included.
+5. **What is seen tens of times a day changes at once**: rows, nav links, chart hovers.
+
+The two curves and the press, popover, dialog, turn and morph durations are tokens in
+`tokens.css`; nothing animates a layout property. Each was measured in the browser; the evidence
+is in the UI doc's Motion section and in the commits that made the change.

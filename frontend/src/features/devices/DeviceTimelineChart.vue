@@ -77,14 +77,14 @@ const totals = computed(() => ({
       >
         <div class="flex flex-1 items-end">
           <div
-            class="w-full rounded-t-[1px] transition-opacity group-hover:opacity-70"
+            class="w-full rounded-t-[1px] group-hover:opacity-70"
             :style="{ height: `${bar.up}%`, backgroundColor: 'var(--viz-3)' }"
           />
         </div>
         <div class="h-px shrink-0 bg-[var(--c-border-strong)]" />
         <div class="flex flex-1 items-start">
           <div
-            class="w-full rounded-b-[1px] transition-opacity group-hover:opacity-70"
+            class="w-full rounded-b-[1px] group-hover:opacity-70"
             :style="{ height: `${bar.down}%`, backgroundColor: 'var(--viz-6)' }"
           />
         </div>
