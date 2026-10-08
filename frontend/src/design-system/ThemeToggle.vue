@@ -69,12 +69,14 @@ const rays = Array.from({ length: 8 }, (_, i) => i * 45)
   background: transparent;
   cursor: pointer;
   transition:
-    color 400ms ease,
+    color var(--duration-morph) ease,
     background-color 150ms ease;
 }
 
-.theme-toggle:hover {
-  background: var(--c-surface-hover);
+@media (hover: hover) {
+  .theme-toggle:hover {
+    background: var(--c-surface-hover);
+  }
 }
 
 .theme-toggle.is-dark {
@@ -90,9 +92,11 @@ const rays = Array.from({ length: 8 }, (_, i) => i * 45)
 .rays {
   transform-box: view-box;
   transform-origin: 12px 12px;
+  /* A morph on screen, so ease-in-out. 300ms: the page changes in one frame, and at 500ms the icon
+     was still turning half a second later. */
   transition:
-    transform 500ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 300ms ease;
+    transform var(--duration-morph) var(--ease-in-out),
+    opacity 200ms ease;
 }
 
 /* Sun: a small disc, the bite moved clear of it, rays out. */
@@ -118,12 +122,12 @@ const rays = Array.from({ length: 8 }, (_, i) => i * 45)
   opacity: 0;
 }
 
+/* Reduced motion: the drawing changes without turning or growing; the colour still fades. */
 @media (prefers-reduced-motion: reduce) {
-  .theme-toggle,
   .disc,
   .bite,
   .rays {
-    transition: none;
+    transition: opacity 200ms ease;
   }
 }
 </style>
