@@ -88,11 +88,20 @@ defineProps<{ rows: ImportJobSummary[] }>()
             {{ formatDuration(row.durationMs) }}
           </td>
 
+          <!-- A queued or running job has not finished: its upload time here made it look done. -->
           <td
+            v-if="row.finishedAt"
             class="px-3 py-2 text-right whitespace-nowrap"
-            :title="formatDateTime(row.finishedAt ?? row.createdAt)"
+            :title="formatDateTime(row.finishedAt)"
           >
-            {{ formatRelative(row.finishedAt ?? row.createdAt) }}
+            {{ formatRelative(row.finishedAt) }}
+          </td>
+          <td
+            v-else
+            class="px-3 py-2 text-right whitespace-nowrap text-[var(--c-text-muted)]"
+            :title="`Uploaded ${formatDateTime(row.createdAt)}`"
+          >
+            Not finished
           </td>
         </tr>
       </tbody>
