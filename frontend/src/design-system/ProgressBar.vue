@@ -56,15 +56,19 @@ const colour = computed(
       aria-valuemax="100"
       :aria-label="label ?? 'Progress'"
     >
+      <!--
+        A full-width bar slid left by what is still to do, not a bar whose width grows: width is
+        layout on every frame. The track clips it, and its rounded right end stays round.
+      -->
       <span
         v-if="percent !== null"
-        class="absolute inset-y-0 left-0 rounded-full transition-[width] duration-500 ease-out"
-        :style="{ width: `${width}%`, backgroundColor: colour }"
+        class="absolute inset-0 rounded-full transition-[translate] duration-500 ease-out motion-reduce:transition-none"
+        :style="{ translate: `${width - 100}% 0`, backgroundColor: colour }"
       />
       <!--
         Unknown total: a sweep that says "working" without claiming a position. With reduced motion
-        it is a faint full-width bar instead: the global rule would otherwise run the sweep once in
-        0.01ms and leave a still third at the left of the track, which reads as 33% done.
+        the sweep does not run, and a still third at the left of the track would read as 33% done,
+        so the bar becomes a faint full-width band instead.
       -->
       <span
         v-else

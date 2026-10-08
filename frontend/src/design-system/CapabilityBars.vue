@@ -52,9 +52,10 @@ const rows = computed(() =>
         role="img"
         :aria-label="`${row.capability}: ${formatPercent(row.percentOfAssessable, 1)} of assessable devices`"
       >
+        <!-- Slid by translate, not grown by width (layout on every frame); the track clips it. -->
         <div
-          class="h-full rounded-full transition-[width] duration-200"
-          :style="{ width: `${row.percentOfAssessable}%`, backgroundColor: row.color }"
+          class="h-full w-full rounded-full transition-[translate] duration-200 ease-out motion-reduce:transition-none"
+          :style="{ translate: `${row.percentOfAssessable - 100}% 0`, backgroundColor: row.color }"
         />
       </div>
 

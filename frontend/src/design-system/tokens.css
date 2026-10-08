@@ -45,6 +45,16 @@
 
   /* ------------------------------------------------------------- motion */
   /*
+    Curves. Tailwind's own ease-out and ease-in-out are too soft to read as intentional; these
+    replace them, so the `ease-out` and `ease-in-out` utilities use them too. What arrives, presses
+    or retargets uses ease-out (fast first, so the reader sees a response at once): entrances, the
+    press, the bars. What moves or morphs in place uses ease-in-out: the gear, the theme icon, the
+    switch knob. Never ease-in on UI: it starts slow at the exact moment someone is watching.
+  */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  /*
     The indeterminate sweep: "working, position unknown". Declared here rather than in a
     component's <style scoped>, because Vue renames scoped keyframes (indeterminate-<hash>) and a
     utility class names the plain one - the sweep sat still at 0-33% for that reason. Translate
@@ -275,19 +285,40 @@ table,
 }
 
 /*
-  Motion is functional only: it explains a state change and then gets out of
-  the way. The brief rules out decorative animation, and anyone who has set
-  prefers-reduced-motion has asked for none of it.
+  Motion is functional only: it explains a state change and then gets out of the way, inside
+  300ms. Durations by what moves (decided by the product owner on 2026-10-08, see
+  docs/architecture/16-ui-design-system.md):
+*/
+:root {
+  --duration-press: 120ms;    /* a button giving under the pointer */
+  --duration-popover: 150ms;  /* a menu or popover arriving from its trigger */
+  --duration-dialog: 200ms;   /* a dialog arriving in the centre */
+  --duration-turn: 250ms;     /* the settings gear's 45deg turn */
+  --duration-morph: 300ms;    /* the theme icon changing from sun to moon */
+}
+
+/*
+  Reduced motion means less motion, not none (the owner's choice, 2026-10-08). Nothing moves,
+  scales or turns; opacity fades stay, because they explain a change without moving anything.
+  Movement is therefore opt-in where it is written - motion-safe: on a press or an entrance,
+  motion-reduce: on a bar, a knob or a spinner - rather than cut by a rule here, which could not
+  tell a fade from a slide and used to remove both.
 */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  * {
     scroll-behavior: auto !important;
   }
+}
+
+/*
+  Switching theme changes every colour in one frame. Without this, every control with a colour
+  transition faded from the old theme's colours for 150ms, so light buttons sat on a dark page
+  for a few frames. lib/theme.ts sets the attribute around the switch.
+*/
+:root[data-theme-switching] *,
+:root[data-theme-switching] *::before,
+:root[data-theme-switching] *::after {
+  transition: none !important;
 }
 
 /* Scrollbars that match the theme instead of punching a bright hole in dark mode. */

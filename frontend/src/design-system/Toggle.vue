@@ -81,7 +81,7 @@ const id = useId()
         @click="emit('update:modelValue', !modelValue)"
       >
         <span
-          class="absolute top-0.5 left-0.5 size-3.5 rounded-full bg-white shadow-[var(--shadow-xs)] transition-transform"
+          class="absolute top-0.5 left-0.5 size-3.5 rounded-full bg-white shadow-[var(--shadow-xs)] transition-transform duration-150 ease-in-out motion-reduce:transition-none"
           :class="modelValue ? 'translate-x-4' : 'translate-x-0'"
           aria-hidden="true"
         />
