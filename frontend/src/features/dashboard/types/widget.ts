@@ -112,6 +112,12 @@ export interface WidgetDefinition<C extends WidgetConfig = WidgetConfig> {
   validate?: (config: C) => FieldError[]
   /** What exports can take from it. */
   exports: { csv: boolean; image: boolean }
+  /**
+   * `card` (default): the frame draws the card, its title and subtitle, and the widget draws the body.
+   * `bare`: the widget is itself a card (a KPI is a `KpiCard`), so the frame draws only the edit
+   * controls around it.
+   */
+  chrome?: 'card' | 'bare'
 }
 
 /** A definition with its contract attached by the registry. */
