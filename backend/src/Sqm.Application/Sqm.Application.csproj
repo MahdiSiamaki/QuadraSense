@@ -1,8 +1,19 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Sqm.Domain\Sqm.Domain.csproj" />
     <ProjectReference Include="..\Sqm.Contracts\Sqm.Contracts.csproj" />
+  </ItemGroup>
+
+  <!--
+    The dashboard widget allow-list (ADR-016 section 3). One file for both sides: the frontend
+    registry is typed against it and the validator here embeds it, so a widget type cannot exist on
+    one side only. The API therefore builds from the whole repository, not from backend/ alone.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\frontend\src\features\dashboard\registry\widget-contract.json"
+                      LogicalName="Sqm.Application.Dashboards.widget-contract.json"
+                      Link="Dashboards\widget-contract.json" />
   </ItemGroup>
 
   <PropertyGroup>
