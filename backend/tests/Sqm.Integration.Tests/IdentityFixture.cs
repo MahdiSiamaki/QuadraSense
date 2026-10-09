@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Sqm.Application.Identity;
@@ -59,6 +59,9 @@ public sealed class IdentityFixture : IAsyncLifetime
     /// <summary>My Queries, for the saved-query tests.</summary>
     public PostgresExplorerSavedQueryStore SavedQueries { get; private set; } = null!;
 
+    /// <summary>Dashboards, their grants and preferences (operational migration 016).</summary>
+    public PostgresDashboardStore Dashboards { get; private set; } = null!;
+
     /// <summary>The options the stack was built with.</summary>
     public AuthOptions Options { get; } = new();
 
@@ -108,6 +111,7 @@ public sealed class IdentityFixture : IAsyncLifetime
             LiveImages = new Sqm.Infrastructure.Catalog.PostgresDeviceImageStore(
                 _dataSource, postgres);
             SavedQueries = new PostgresExplorerSavedQueryStore(_dataSource, postgres);
+            Dashboards = new PostgresDashboardStore(_dataSource, postgres);
 
             IsAvailable = true;
         }
