@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, ref, useId, watch } from 'vue'
 
 /**
  * A dialog, built on the native `<dialog>` element.
@@ -17,22 +17,30 @@ import { onBeforeUnmount, ref, watch } from 'vue'
  * nothing in any dialog. A destructive confirmation does not listen for `submit`. Where focus
  * starts is the content's choice - `autofocus` on the first field, which the browser's dialog
  * focusing steps honour; without one it lands on the first control, the close button.
+ *
+ * `xl` is for a workspace rather than a form - the dashboard's Add widget wizard: about 1200px wide
+ * and 90% of the viewport tall on a desktop, the whole screen on a phone. With `fill` the body does
+ * not scroll as a whole; the content lays out its own scrolling columns between the fixed header and
+ * footer. The other sizes are unchanged.
  */
 const props = withDefaults(
   defineProps<{
     open: boolean
     title: string
     description?: string
-    /** sm for confirmations, md for forms, lg for the permission editor. */
-    size?: 'sm' | 'md' | 'lg'
+    /** sm for confirmations, md for forms, lg for the permission editor, xl for a workspace. */
+    size?: 'sm' | 'md' | 'lg' | 'xl'
     busy?: boolean
+    /** The content manages its own scrolling (xl). */
+    fill?: boolean
   }>(),
-  { size: 'md', busy: false },
+  { size: 'md', busy: false, fill: false },
 )
 
 const emit = defineEmits<{ close: []; submit: [] }>()
 
 const dialog = ref<HTMLDialogElement | null>(null)
+const titleId = useId()
 
 watch(
   () => props.open,
@@ -61,10 +69,12 @@ function onBackdropClick(event: MouseEvent) {
 
 onBeforeUnmount(() => dialog.value?.close())
 
+// Literal class strings, so Tailwind finds them.
 const widths: Record<string, string> = {
-  sm: 'max-w-sm',
-  md: 'max-w-lg',
-  lg: 'max-w-3xl',
+  sm: 'w-[calc(100vw-2rem)] max-w-sm',
+  md: 'w-[calc(100vw-2rem)] max-w-lg',
+  lg: 'w-[calc(100vw-2rem)] max-w-3xl',
+  xl: 'w-[min(1200px,94vw)] max-w-none max-sm:h-dvh max-sm:max-h-dvh max-sm:w-screen max-sm:rounded-none max-sm:border-0',
 }
 </script>
 
@@ -80,15 +90,21 @@ const widths: Record<string, string> = {
   -->
   <dialog
     ref="dialog"
-    class="m-auto w-[calc(100vw-2rem)] rounded-[var(--radius-lg)] border bg-[var(--c-surface)] p-0 text-[var(--c-text)] shadow-[var(--shadow-md)] backdrop:bg-black/40 backdrop:backdrop-blur-[1px]"
+    class="m-auto rounded-[var(--radius-lg)] border bg-[var(--c-surface)] p-0 text-[var(--c-text)] shadow-[var(--shadow-md)] backdrop:bg-black/40 backdrop:backdrop-blur-[1px]"
     :class="widths[size]"
+    :aria-labelledby="titleId"
     @cancel="requestClose"
     @click="onBackdropClick"
   >
-    <form method="dialog" class="flex max-h-[85vh] flex-col" @submit.prevent="onSubmit">
+    <form
+      method="dialog"
+      class="flex flex-col"
+      :class="size === 'xl' ? 'h-[min(90dvh,880px)] max-sm:h-dvh' : 'max-h-[85vh]'"
+      @submit.prevent="onSubmit"
+    >
       <header class="flex items-start justify-between gap-4 border-b px-4 py-3">
         <div class="min-w-0">
-          <h2 class="text-sm font-semibold">{{ title }}</h2>
+          <h2 :id="titleId" class="text-sm font-semibold">{{ title }}</h2>
           <p v-if="description" class="mt-0.5 text-xs text-[var(--c-text-muted)]">
             {{ description }}
           </p>
@@ -105,7 +121,7 @@ const widths: Record<string, string> = {
         </button>
       </header>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div :class="fill ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'min-h-0 flex-1 overflow-y-auto px-4 py-4'">
         <slot />
       </div>
 
