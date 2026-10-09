@@ -56,6 +56,25 @@ export interface FieldError {
   message: string
 }
 
+/** Where a field sits in the configure form. Advanced appears only when a type has such fields. */
+export type FieldSection = 'general' | 'data' | 'display' | 'advanced'
+
+/**
+ * How the generic configure form (`components/ConfigForm.vue`) presents one contract field. The
+ * field's kind, bounds and allowed values come from the contract; this is only the words and order.
+ */
+export interface FieldPresentation<C extends WidgetConfig = WidgetConfig> {
+  label: string
+  help?: string
+  section: FieldSection
+  /** Labels for enum / enumList values, in the order they should be offered. */
+  options?: Record<string, string>
+  /** Hide the field unless the rest of the config makes it meaningful. */
+  visibleWhen?: (config: C) => boolean
+  /** Whether changing it only redraws (true) or needs new data (false, the default). Drives the preview debounce. */
+  visual?: boolean
+}
+
 /** What the catalogue and the configure step say about a type. */
 export interface WidgetDefinition<C extends WidgetConfig = WidgetConfig> {
   type: string
@@ -76,8 +95,19 @@ export interface WidgetDefinition<C extends WidgetConfig = WidgetConfig> {
   presets?: WidgetPreset<C>[]
   /** Draws an instance. Receives `WidgetViewProps`. */
   component: Component
-  /** The configure form. Receives `WidgetSettingsProps`; emits `update:config`. Omitted when the type has nothing to set. */
+  /**
+   * How each contract field is presented by the generic form. Every config field of the type must
+   * appear here or in `customFields` (a test checks).
+   */
+  fields: Partial<Record<keyof C & string, FieldPresentation<C>>>
+  /**
+   * A form for fields the generic form cannot draw (an Explorer query, a pair of baseline dates), shown
+   * in the Data & filters section. Receives `WidgetSettingsProps`; emits `update:config` with a whole
+   * new config.
+   */
   settings?: Component
+  /** Fields `settings` draws, so the generic form leaves them out. */
+  customFields?: (keyof C & string)[]
   /** Semantic checks beyond the contract's bounds (e.g. a custom baseline needs both dates). */
   validate?: (config: C) => FieldError[]
   /** What exports can take from it. */
@@ -145,3 +175,12 @@ export interface DashboardContext {
 }
 
 export const DASHBOARD_CONTEXT: InjectionKey<DashboardContext> = Symbol('dashboard-context')
+
+/**
+ * Types a definition against its own config. Each group exports its definitions from
+ * `widgets/<group>/index.ts` as `export const definitions = [defineWidget({...}), ...]`; the registry
+ * collects every group with `import.meta.glob`.
+ */
+export function defineWidget<C extends WidgetConfig>(definition: WidgetDefinition<C>): WidgetDefinition<C> {
+  return definition
+}
