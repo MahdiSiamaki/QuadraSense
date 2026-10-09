@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
@@ -99,6 +99,27 @@ builder.Services.AddSingleton<Sqm.Application.Risk.IRiskReader, Sqm.Infrastructu
 // New models and network age (analytics migration 025).
 builder.Services.AddSingleton<Sqm.Application.Devices.IModelArrivalReader, Sqm.Infrastructure.ClickHouse.ClickHouseModelArrivalReader>();
 builder.Services.AddSingleton<Sqm.Application.Quality.IQualityReader, Sqm.Infrastructure.ClickHouse.ClickHouseQualityReader>();
+
+// The dashboard builder (ADR-016): the widget contract the frontend registry is typed against, the
+// validator that refuses anything it does not name, the PostgreSQL store, and the rules of who may do
+// what. The application layer takes plain option values; they are read here, once.
+builder.Services.Configure<Sqm.Application.Dashboards.DashboardOptions>(
+    builder.Configuration.GetSection(Sqm.Application.Dashboards.DashboardOptions.SectionName));
+builder.Services.AddSingleton<Sqm.Application.Dashboards.IWidgetContract>(_ => Sqm.Application.Dashboards.WidgetContract.Load());
+builder.Services.AddSingleton<Sqm.Application.Dashboards.IDashboardDefinitionValidator>(sp =>
+    new Sqm.Application.Dashboards.DashboardDefinitionValidator(
+        sp.GetRequiredService<Sqm.Application.Dashboards.IWidgetContract>(),
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Sqm.Application.Dashboards.DashboardOptions>>().Value,
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Sqm.Application.Explorer.ExplorerOptions>>().Value,
+        sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddSingleton<Sqm.Application.Dashboards.IDashboardStore, PostgresDashboardStore>();
+builder.Services.AddSingleton(sp => new Sqm.Application.Dashboards.DashboardService(
+    sp.GetRequiredService<Sqm.Application.Dashboards.IDashboardStore>(),
+    sp.GetRequiredService<Sqm.Application.Dashboards.IDashboardDefinitionValidator>(),
+    sp.GetRequiredService<Sqm.Application.Dashboards.IWidgetContract>(),
+    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Sqm.Application.Dashboards.DashboardOptions>>().Value,
+    sp.GetRequiredService<IAuditLog>(),
+    sp.GetRequiredService<TimeProvider>()));
 
 // Curated device photographs. The GSMA TAC record carries none and this deployment has no
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.
@@ -265,6 +286,7 @@ app.MapRoleEndpoints();
 app.MapAuditEndpoints();
 
 app.MapDashboardEndpoints();
+app.MapDashboardBuilderEndpoints();
 app.MapImportEndpoints();
 app.MapTacEndpoints();
 app.MapLookupEndpoints();
