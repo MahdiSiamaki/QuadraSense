@@ -563,14 +563,6 @@ public sealed record FilePreview(
 /// <param name="Stored">Where it went, how big it was, and what it hashed to.</param>
 internal sealed record ReceivedFile(string OriginalName, StoredFile Stored);
 
-/// <summary>A page of import history.</summary>
-/// <param name="Items">The jobs on this page.</param>
-/// <param name="Total">Total jobs matching the filter.</param>
-/// <param name="Page">1-based page number.</param>
-/// <param name="PageSize">Rows per page.</param>
-public sealed record ImportPage(
-    IReadOnlyList<ImportJobSummary> Items, long Total, int Page, int PageSize);
-
 /// <summary>Returned when an upload is accepted and queued.</summary>
 /// <param name="JobId">The queued job.</param>
 /// <param name="FileId">The stored file.</param>

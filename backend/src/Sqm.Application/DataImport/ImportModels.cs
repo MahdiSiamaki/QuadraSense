@@ -337,6 +337,18 @@ public sealed record WorkerHealth(
 /// <param name="Waiting">Later days of the same source queued behind it.</param>
 public sealed record QueueBlockage(string SourceCode, DateOnly BusinessDate, long JobId, string Status, int Waiting);
 
+/// <summary>A page of import history.</summary>
+/// <remarks>
+/// Here rather than beside the route so the dashboard export's recent-imports card carries the very
+/// type the route returns.
+/// </remarks>
+/// <param name="Items">The jobs on this page.</param>
+/// <param name="Total">Total jobs matching the filter.</param>
+/// <param name="Page">1-based page number.</param>
+/// <param name="PageSize">Rows per page.</param>
+public sealed record ImportPage(
+    IReadOnlyList<ImportJobSummary> Items, long Total, int Page, int PageSize);
+
 /// <summary>What an activation changed.</summary>
 /// <param name="TacVersionId">The operational row that is now active.</param>
 /// <param name="AnalyticsVersionId">The version number the analytics store must point at.</param>
