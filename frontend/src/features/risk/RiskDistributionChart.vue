@@ -20,7 +20,17 @@ echarts.use([BarChart, GridComponent, LegendComponent, MarkAreaComponent, Toolti
  * are drawn strong from the threshold up and pale below it, and the count before the screens sits
  * beside each in neutral grey - the gap between the two is what the feed defects added.
  */
-const props = withDefaults(defineProps<{ data: RiskDistribution; height?: string }>(), { height: '16rem' })
+const props = withDefaults(
+  defineProps<{
+    data: RiskDistribution
+    height?: string
+    /** Clean counts, the counts before the screens, or both (the default) where the rule has both. */
+    values?: 'clean' | 'raw' | 'both'
+    /** Shade the listed range and label it with the threshold. */
+    showThreshold?: boolean
+  }>(),
+  { height: '16rem', values: 'both', showThreshold: true },
+)
 
 const container = ref<HTMLElement | null>(null)
 const chart = shallowRef<echarts.ECharts | null>(null)
@@ -35,8 +45,12 @@ const labels = computed(() =>
 /** The first bucket wholly above the threshold. */
 const firstListed = computed(() => {
   const t = props.data.threshold
-  return t === null ? -1 : props.data.buckets.findIndex((b) => b.from > t)
+  return t === null || !props.showThreshold ? -1 : props.data.buckets.findIndex((b) => b.from > t)
 })
+
+/** Whether each series is drawn: raw only where the rule has it. */
+const drawRaw = computed(() => props.values !== 'clean' && props.data.buckets.some((b) => b.raw !== null))
+const drawClean = computed(() => props.values !== 'raw' || !drawRaw.value)
 
 function render() {
   if (!chart.value) return
@@ -45,16 +59,34 @@ function render() {
   const border = chartColor('--c-border')
   const clean = chartColor('--viz-1')
   const before = chartColor('--viz-null')
-  const hasRaw = props.data.buckets.some((b) => b.raw !== null)
+  const hasRaw = drawRaw.value
+  const both = hasRaw && drawClean.value
   const t = props.data.threshold
+  // The listed range, shaded, with the threshold as its label: a category axis has no position
+  // between two bars for a line to stand on.
+  const listed =
+    firstListed.value >= 0
+      ? {
+          silent: true,
+          itemStyle: { color: chartColor('--c-accent'), opacity: 0.07 },
+          label: {
+            show: true,
+            position: 'insideTop',
+            formatter: `listed: more than ${formatFull(t ?? 0)}`,
+            color: chartColor('--c-text-secondary'),
+            fontSize: 10,
+          },
+          data: [[{ xAxis: labels.value[firstListed.value] }, { xAxis: labels.value[labels.value.length - 1] }]],
+        }
+      : undefined
 
   chart.value.setOption(
     {
       animation: false,
-      legend: hasRaw
+      legend: both
         ? { top: 0, right: 0, textStyle: { color: chartColor('--c-text-secondary'), fontSize: 11 }, itemWidth: 10, itemHeight: 10 }
         : undefined,
-      grid: { left: 8, right: 8, top: hasRaw ? 28 : 12, bottom: 8 },
+      grid: { left: 8, right: 8, top: both ? 28 : 12, bottom: 8 },
       tooltip: {
         ...tooltipBounds,
         trigger: 'axis',
@@ -101,36 +133,26 @@ function render() {
                 itemStyle: { color: before, borderRadius: [4, 4, 0, 0] },
                 barMaxWidth: 14,
                 barGap: '15%',
+                markArea: drawClean.value ? undefined : listed,
               },
             ]
           : []),
-        {
-          name: 'Clean',
-          type: 'bar',
-          data: props.data.buckets.map((b, i) => ({
-            value: b.clean ? b.clean : null,
-            itemStyle: { color: clean, opacity: firstListed.value >= 0 && i >= firstListed.value ? 1 : 0.4 },
-          })),
-          itemStyle: { borderRadius: [4, 4, 0, 0] },
-          barMaxWidth: 14,
-          // The listed range, shaded, with the threshold as its label: a category axis has no
-          // position between two bars for a line to stand on.
-          markArea:
-            firstListed.value >= 0
-              ? {
-                  silent: true,
-                  itemStyle: { color: chartColor('--c-accent'), opacity: 0.07 },
-                  label: {
-                    show: true,
-                    position: 'insideTop',
-                    formatter: `listed: more than ${formatFull(t ?? 0)}`,
-                    color: chartColor('--c-text-secondary'),
-                    fontSize: 10,
-                  },
-                  data: [[{ xAxis: labels.value[firstListed.value] }, { xAxis: labels.value[labels.value.length - 1] }]],
-                }
-              : undefined,
-        },
+        ...(drawClean.value
+          ? [
+              {
+                name: 'Clean',
+                type: 'bar',
+                data: props.data.buckets.map((b, i) => ({
+                  value: b.clean ? b.clean : null,
+                  // Outside the listed range dimmed; with the threshold hidden, nothing is.
+                  itemStyle: { color: clean, opacity: !props.showThreshold || (firstListed.value >= 0 && i >= firstListed.value) ? 1 : 0.4 },
+                })),
+                itemStyle: { borderRadius: [4, 4, 0, 0] },
+                barMaxWidth: 14,
+                markArea: listed,
+              },
+            ]
+          : []),
       ],
     },
     { notMerge: true },
@@ -153,7 +175,7 @@ onBeforeUnmount(() => {
   chart.value = null
 })
 
-watch(() => props.data, render, { deep: true })
+watch(() => [props.data, props.values, props.showThreshold], render, { deep: true })
 watch(isDark, () => requestAnimationFrame(render))
 </script>
 
