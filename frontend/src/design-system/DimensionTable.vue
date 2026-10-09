@@ -13,12 +13,21 @@ import { formatFull, formatPercent } from '@/lib/format'
  * these tables answer is "how do these compare to each other", not "what share of
  * everything is this".
  */
-const props = defineProps<{
-  rows: Array<{ key: string; count: number; percent: number }>
-  header: string
-  /** Column heading for the measure, so the figures are never an unlabelled quantity. */
-  unit?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    rows: Array<{ key: string; count: number; percent: number }>
+    header: string
+    /** Column heading for the measure, so the figures are never an unlabelled quantity. */
+    unit?: string
+    /** The count column. On by default. */
+    showCount?: boolean
+    /** The share column. On by default. */
+    showShare?: boolean
+    /** Whether a row drills in. Off draws plain rows: no button, no pointer, nothing to press. */
+    selectable?: boolean
+  }>(),
+  { unit: undefined, showCount: true, showShare: true, selectable: true },
+)
 
 defineEmits<{ select: [key: string] }>()
 
@@ -34,8 +43,8 @@ function isUnknown(key: string): boolean {
     <thead>
       <tr class="border-b text-left text-xs text-[var(--c-text-muted)]">
         <th scope="col" class="px-4 py-2 font-medium">{{ header }}</th>
-        <th scope="col" class="px-4 py-2 text-right font-medium capitalize">{{ unit ?? 'bindings' }}</th>
-        <th scope="col" class="px-4 py-2 text-right font-medium">Share</th>
+        <th v-if="showCount" scope="col" class="px-4 py-2 text-right font-medium capitalize">{{ unit ?? 'bindings' }}</th>
+        <th v-if="showShare" scope="col" class="px-4 py-2 text-right font-medium">Share</th>
       </tr>
     </thead>
     <tbody>
@@ -43,8 +52,8 @@ function isUnknown(key: string): boolean {
         v-for="row in rows"
         :key="row.key"
         class="relative border-b last:border-0"
-        :class="isUnknown(row.key) ? '' : 'cursor-pointer hover:bg-[var(--c-surface-hover)]'"
-        @click="!isUnknown(row.key) && $emit('select', row.key)"
+        :class="isUnknown(row.key) || !selectable ? '' : 'cursor-pointer hover:bg-[var(--c-surface-hover)]'"
+        @click="selectable && !isUnknown(row.key) && $emit('select', row.key)"
       >
         <td class="relative px-4 py-2.5">
           <!-- The proportion bar. aria-hidden because the figures beside it already
@@ -60,6 +69,7 @@ function isUnknown(key: string): boolean {
           <span v-if="isUnknown(row.key)" class="relative text-[var(--c-text-muted)] italic">
             {{ row.key }}
           </span>
+          <span v-else-if="!selectable" class="relative">{{ row.key }}</span>
           <!-- The whole row stays clickable for the mouse; this is what a keyboard reaches. A
                click on a row cannot take focus, so the drill-down was mouse-only. -->
           <button
@@ -71,8 +81,8 @@ function isUnknown(key: string): boolean {
             {{ row.key }}
           </button>
         </td>
-        <td class="relative px-4 py-2.5 text-right tabular">{{ formatFull(row.count) }}</td>
-        <td class="relative px-4 py-2.5 text-right tabular text-[var(--c-text-secondary)]">
+        <td v-if="showCount" class="relative px-4 py-2.5 text-right tabular">{{ formatFull(row.count) }}</td>
+        <td v-if="showShare" class="relative px-4 py-2.5 text-right tabular text-[var(--c-text-secondary)]">
           {{ formatPercent(row.percent, 2) }}
         </td>
       </tr>
