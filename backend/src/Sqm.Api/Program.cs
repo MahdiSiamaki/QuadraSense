@@ -121,6 +121,32 @@ builder.Services.AddSingleton(sp => new Sqm.Application.Dashboards.DashboardServ
     sp.GetRequiredService<IAuditLog>(),
     sp.GetRequiredService<TimeProvider>()));
 
+// Exports read each widget through the composition its own endpoint uses, for the person exporting.
+// Scoped: one request's widgets share one read of the daily series, the feed-quality days and the
+// risk context.
+builder.Services.AddScoped<Sqm.Application.Dashboards.IWidgetDataLoader>(sp =>
+    new Sqm.Application.Dashboards.DashboardWidgetDataLoader(
+        sp.GetRequiredService<IDeviceAnalyticsStore>(),
+        sp.GetRequiredService<IImportJobRepository>(),
+        sp.GetRequiredService<Sqm.Application.Risk.IRiskReader>(),
+        sp.GetRequiredService<Sqm.Application.Quality.IFeedQualityReader>(),
+        sp.GetRequiredService<Sqm.Application.Quality.IQualityReader>(),
+        sp.GetRequiredService<Sqm.Application.Devices.IModelArrivalReader>(),
+        sp.GetRequiredService<IDeviceImageStore>(),
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Sqm.Application.Quality.FeedQualityOptions>>().Value,
+        () => sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Sqm.Application.Risk.RiskOptions>>().CurrentValue,
+        sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddScoped(sp => new Sqm.Application.Dashboards.DashboardExportService(
+    sp.GetRequiredService<Sqm.Application.Dashboards.IWidgetContract>(),
+    sp.GetRequiredService<Sqm.Application.Dashboards.IDashboardDefinitionValidator>(),
+    sp.GetRequiredService<Sqm.Application.Dashboards.DashboardService>(),
+    sp.GetRequiredService<Sqm.Application.Dashboards.IWidgetDataLoader>(),
+    sp.GetRequiredService<IAuditLog>(),
+    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Sqm.Application.Dashboards.DashboardOptions>>().Value,
+    sp.GetRequiredService<TimeProvider>(),
+    (message, ex) => DashboardExportEndpoints.ReportFailure(
+        sp.GetRequiredService<ILogger<Sqm.Application.Dashboards.DashboardExportService>>(), message, ex)));
+
 // Curated device photographs. The GSMA TAC record carries none and this deployment has no
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.
 builder.Services.AddSingleton<IDeviceImageStore, PostgresDeviceImageStore>();
@@ -287,6 +313,7 @@ app.MapAuditEndpoints();
 
 app.MapDashboardEndpoints();
 app.MapDashboardBuilderEndpoints();
+app.MapDashboardExportEndpoints();
 app.MapImportEndpoints();
 app.MapTacEndpoints();
 app.MapLookupEndpoints();

@@ -328,7 +328,7 @@ public sealed class DashboardEndpointTests : IClassFixture<WebApplicationFactory
     }
 
     /// <summary>The store in memory: owner and direct user grants. Role grants are SQL, tested against the database.</summary>
-    private sealed class InMemoryDashboards : IDashboardStore
+    internal sealed class InMemoryDashboards : IDashboardStore
     {
         private readonly List<DashboardRecord> _all = [];
         private readonly List<DashboardGrantRecord> _grants = [];
