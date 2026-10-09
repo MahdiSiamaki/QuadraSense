@@ -127,11 +127,12 @@ tables and nothing else, which is what makes the audit trail append-only in fact
 convention — `UPDATE` and `DELETE` on it are refused by PostgreSQL.
 
 A schema added after that gets its own grants file, run once after the migration that creates it.
-There are two so far; both are safe to re-run:
+There are three so far; all are safe to re-run:
 
 ```bash
 psql -U sqm -d sqm -f db/operational/grants/005_device_catalog.sql   # after migration 005
 psql -U sqm -d sqm -f db/operational/grants/013_explorer.sql         # after migration 013
+psql -U sqm -d sqm -f db/operational/grants/016_dashboards.sql       # after migration 016
 ```
 
 Without them `sqm_app` has no privileges on the new schema at all.

@@ -264,6 +264,11 @@ a year), not new aggregations.
 - **A server-side PDF renderer.** No measured need; the browser prints to PDF.
 - **Sharing by link.** A link that grants access would be an access-control bypass; anonymous links
   are out of scope.
+- **Building on the parked `wip/widget-grid-system` branch** (commit `80ad846`, PR #2, never
+  merged). It kept the layout in `localStorage`, rejected above; used `grid-layout-plus`, which was
+  not the library evaluated here; and branched from `main` a month before the mart, risk and
+  quality work it would have had to absorb. Its idea - a registry of widget components - survives;
+  its code does not.
 
 ## Out of scope
 
@@ -278,3 +283,32 @@ subscribers, VoLTE.
 - A widget type is a three-file change, and the tests say which file is missing.
 - The API build reads one file from `frontend/` (the widget contract). A backend built without the
   repository's frontend folder fails at compile time, by name, rather than accepting anything.
+
+## Amendments while building, 2026-10-09
+
+Recorded here rather than silently folded into the sections above.
+
+- **PNG is drawn in the browser from server-prepared data.** `html-to-image` 1.11.13 renders the
+  report view; the data in it is what `export/snapshot` returned, so an image never shows more
+  than the exporter may see, and no server-side browser is needed. Charts are re-coloured for the
+  light report by clearing the chart-colour cache, because ECharts holds resolved colours. Pages
+  over 6,500 px are split. Not measured on the largest dashboard yet; recorded as a limitation in
+  `docs/architecture/17-dashboard-builder.md`.
+- **The design system gained a wide dialog** (`Modal` size `xl`, `fill`) for the Add Widget wizard
+  and the export review. The `<dialog>` centring trap in `CLAUDE.md` applies to it unchanged.
+- **Snapshot statuses** are `ok`, `forbidden`, `notReady`, `error`, `interactive` and `noData`.
+  A card that is not `ok` is never mounted in the report; it is named with its reason or left out
+  by the person's choice. A load that throws becomes `error` for that card only and is logged as
+  event 1400; the rest of the export continues.
+- **The export loader is scoped per request** and reads each source once: several daily-chart
+  cards share one read of the daily series, every risk card one risk context.
+- **Period comparison compares the population, not its change.** The contract's
+  `populationChange` was the running total's difference, which is the `net` metric under another
+  name (the running total is walked back by each day's net). It is now `population`: active
+  bindings on the period's last delivered day, or their average. No stored definition used the old
+  value. The arithmetic exists twice - `periodComparison.ts` for the card and
+  `PeriodComparison.cs` for the export - and both are tested against the same cases.
+- **Quick lookup hands its value over in history state**, never the URL, and the lookup page
+  removes it as it reads it, so Back or a reload never re-runs an audited lookup (`lib/prefill.ts`).
+- **The Explorer question's form offers no field behind a lookup permission at all**, even to a
+  person who holds it, rather than offering them and failing on save: the definition is shared.
