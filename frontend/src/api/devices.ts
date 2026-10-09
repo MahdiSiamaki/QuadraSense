@@ -233,11 +233,11 @@ export function useDeviceSearch(filters: MaybeRefOrGetter<DeviceSearchFilters>) 
 }
 
 /** One device model. */
-export function useDevice(tac: MaybeRefOrGetter<string | null>) {
+export function useDevice(tac: MaybeRefOrGetter<string | null>, options: { enabled?: MaybeRefOrGetter<boolean> } = {}) {
   return useQuery({
     queryKey: ['device', computed(() => toValue(tac))],
     queryFn: ({ signal }) => api.get<DeviceDetail>(`/api/v1/devices/${toValue(tac)}`, undefined, signal),
-    enabled: computed(() => isTac(toValue(tac))),
+    enabled: computed(() => toValue(options.enabled ?? true) && isTac(toValue(tac))),
     staleTime: 5 * 60_000,
   })
 }
