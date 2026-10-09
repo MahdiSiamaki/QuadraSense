@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import Card from '@/design-system/Card.vue'
 import Button from '@/design-system/Button.vue'
 import { useRelationshipExplorer, type RelatedNode } from '@/api/relationships'
 import { ApiError } from '@/api/client'
 import { formatDate, formatFull, formatImei, formatMsisdn } from '@/lib/format'
+import { takePrefill } from '@/lib/prefill'
 
 /**
  * Explore what one identifier is connected to, and step from any of them to the next.
@@ -34,6 +35,12 @@ function explore(value?: string) {
   const term = (value ?? input.value).replace(/\D/g, '')
   if (term) explorer.mutate(term)
 }
+
+// An identifier handed over by a dashboard's quick lookup: in history state, never the URL.
+onMounted(() => {
+  const prefill = takePrefill()
+  if (prefill !== null) explore(prefill)
+})
 
 function labelFor(node: RelatedNode): string {
   if (node.kind === 'Msisdn') return formatMsisdn(node.value)
