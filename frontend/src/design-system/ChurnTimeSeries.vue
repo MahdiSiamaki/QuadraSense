@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import * as echarts from 'echarts/core'
-import { LineChart } from 'echarts/charts'
+import { BarChart, LineChart } from 'echarts/charts'
 import {
   GridComponent,
   TooltipComponent,
@@ -19,6 +19,7 @@ import type { DailyChurn } from '@/api/dashboard'
 import { tooltipBounds } from '@/lib/chart-tooltip'
 
 echarts.use([
+  BarChart,
   LineChart,
   GridComponent,
   TooltipComponent,
@@ -44,8 +45,20 @@ const props = withDefaults(
     height?: string
     /** Days the feed itself looked wrong, date to reason: shaded, and said in the tooltip. */
     flagged?: ReadonlyMap<string, string>
+    /** Which of the two to draw; both by default. */
+    series?: Array<'simChanges' | 'deviceChanges'>
+    /** Lines (the default) or bars. */
+    chart?: 'line' | 'bar'
+    /** Where the zoom window opens, in percent of the days drawn; 66 opens on the most recent third. */
+    zoomStart?: number
   }>(),
-  { height: '18rem', flagged: () => new Map<string, string>() },
+  {
+    height: '18rem',
+    flagged: () => new Map<string, string>(),
+    series: () => ['simChanges', 'deviceChanges'],
+    chart: 'line',
+    zoomStart: 66,
+  },
 )
 
 const container = ref<HTMLElement | null>(null)
@@ -70,6 +83,28 @@ function render() {
   const days = fillCalendar(props.data)
   const value = (pick: (row: DailyChurn) => number) =>
     days.map((d) => (isMissing(d) ? null : pick(d)))
+
+  const chosen = new Set(props.series)
+  const one = (name: string, data: Array<number | null>, color: string) =>
+    props.chart === 'bar'
+      ? { name, type: 'bar', data, itemStyle: { color }, barMaxWidth: 14 }
+      : { name, type: 'line', data, itemStyle: { color }, areaStyle: { opacity: 0.12 }, lineStyle: { width: 2 }, symbol: 'none' }
+
+  // Handset changes first, in the order the chart has always drawn them.
+  const series: Array<Record<string, unknown>> = []
+  if (chosen.has('deviceChanges') || chosen.size === 0) {
+    series.push(one('Handset changes', value((d) => d.deviceChanges), cssVar('--viz-1')))
+  }
+  if (chosen.has('simChanges') || chosen.size === 0) {
+    series.push(one('SIM changes', value((d) => d.simChanges), cssVar('--viz-5')))
+  }
+  // The flagged-day bands ride on whichever series is drawn first.
+  if (series[0]) {
+    series[0]['markArea'] = feedQualityMarkArea(
+      days.map((d) => d.date),
+      props.flagged,
+    )
+  }
 
   chart.value.setOption(
     {
@@ -105,31 +140,8 @@ function render() {
         axisLabel: { color: muted, fontSize: 10, formatter: (v: number) => formatCompact(v) },
         splitLine: { lineStyle: { color: border, type: 'dashed' } },
       },
-      dataZoom: [{ type: 'inside', start: 66, end: 100 }],
-      series: [
-        {
-          name: 'Handset changes',
-          type: 'line',
-          data: value((d) => d.deviceChanges),
-          itemStyle: { color: cssVar('--viz-1') },
-          areaStyle: { opacity: 0.12 },
-          lineStyle: { width: 2 },
-          symbol: 'none',
-          markArea: feedQualityMarkArea(
-            days.map((d) => d.date),
-            props.flagged,
-          ),
-        },
-        {
-          name: 'SIM changes',
-          type: 'line',
-          data: value((d) => d.simChanges),
-          itemStyle: { color: cssVar('--viz-5') },
-          areaStyle: { opacity: 0.12 },
-          lineStyle: { width: 2 },
-          symbol: 'none',
-        },
-      ],
+      dataZoom: [{ type: 'inside', start: props.zoomStart, end: 100 }],
+      series,
     },
     { notMerge: true },
   )
@@ -151,7 +163,7 @@ onBeforeUnmount(() => {
   chart.value = null
 })
 
-watch(() => [props.data, props.flagged], render, { deep: true })
+watch(() => [props.data, props.flagged, props.series, props.chart, props.zoomStart], render, { deep: true })
 watch(isDark, () => requestAnimationFrame(render))
 </script>
 

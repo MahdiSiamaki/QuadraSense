@@ -48,8 +48,24 @@ const props = withDefaults(
     missingDates?: string[]
     /** Days the feed itself looked wrong, date to reason: shaded, and said in the tooltip. */
     flagged?: ReadonlyMap<string, string>
+    /**
+     * Which series to draw. The default is the dashboard's original three: adds and removes around
+     * zero, and the running total on its own axis. `net` is the day's added minus removed.
+     */
+    series?: Array<'added' | 'removed' | 'net' | 'cumulative'>
+    /** The day's flow as bars (the default) or as lines. The running total is always a line. */
+    chart?: 'bar' | 'line'
+    /** Where the zoom window opens, in percent of the days drawn; 66 opens on the most recent third. */
+    zoomStart?: number
   }>(),
-  { height: '20rem', missingDates: () => [], flagged: () => new Map<string, string>() },
+  {
+    height: '20rem',
+    missingDates: () => [],
+    flagged: () => new Map<string, string>(),
+    series: () => ['added', 'removed', 'cumulative'],
+    chart: 'bar',
+    zoomStart: 66,
+  },
 )
 
 const container = ref<HTMLElement | null>(null)
@@ -79,6 +95,65 @@ function render() {
   const dates = days.map((d) => d.date)
   const value = (pick: (row: DailyChange) => number) =>
     days.map((d) => (isMissing(d) ? null : pick(d)))
+
+  const chosen = new Set(props.series)
+  const flow = (['added', 'removed', 'net'] as const).filter((s) => chosen.has(s))
+  const withTotal = chosen.has('cumulative') || flow.length === 0
+  const asBars = props.chart === 'bar'
+
+  // The day's flow. Bars stack around zero (adds up, removes down); net, when asked for, stands
+  // beside that stack rather than in it, because it is the stack's imbalance, not a third part.
+  function flowSeries(name: string, data: Array<number | null>, color: string, stacked: boolean) {
+    return asBars
+      ? { name, type: 'bar', ...(stacked ? { stack: 'flow' } : {}), data, itemStyle: { color }, barMaxWidth: 14 }
+      : { name, type: 'line', data, itemStyle: { color }, lineStyle: { width: 2 }, symbol: 'none' }
+  }
+
+  const series: Array<Record<string, unknown>> = []
+  if (chosen.has('added')) series.push(flowSeries('Added', value((d) => d.added), added, true))
+  // Negative so the two directions separate around zero and the net reads as the
+  // visible imbalance.
+  if (chosen.has('removed')) series.push(flowSeries('Removed', value((d) => -d.removed), removed, true))
+  if (chosen.has('net')) series.push(flowSeries('Net', value((d) => d.net), cssVar('--viz-2'), false))
+  if (withTotal) {
+    series.push({
+      name: 'Active bindings',
+      type: 'line',
+      yAxisIndex: flow.length > 0 ? 1 : 0,
+      data: value((d) => d.cumulative),
+      itemStyle: { color: total },
+      lineStyle: { width: 2 },
+      symbol: 'none',
+      z: 5,
+    })
+  }
+  // The flagged-day bands ride on whichever series is drawn first.
+  if (series[0]) series[0]['markArea'] = feedQualityMarkArea(dates, props.flagged)
+
+  const flowAxis = {
+    type: 'value',
+    name: 'daily change',
+    nameTextStyle: { color: muted, fontSize: 10, align: 'left' },
+    axisLabel: {
+      color: muted,
+      fontSize: 10,
+      // Removes are drawn below zero but are not negative quantities, so the axis reads them as
+      // magnitudes - unless net is drawn, which really can be negative.
+      formatter: chosen.has('net') ? (v: number) => formatCompact(v) : (v: number) => formatCompact(Math.abs(v)),
+    },
+    splitLine: { lineStyle: { color: border, type: 'dashed' } },
+  }
+  const totalAxis = {
+    type: 'value',
+    name: 'active bindings',
+    nameTextStyle: { color: muted, fontSize: 10, align: flow.length > 0 ? 'right' : 'left' },
+    axisLabel: { color: muted, fontSize: 10, formatter: (v: number) => formatCompact(v) },
+    splitLine: flow.length > 0 ? { show: false } : { lineStyle: { color: border, type: 'dashed' } },
+    // Not starting at zero, on purpose: the population moves by a fraction of a percent
+    // a day, and a zero-based axis would render that as a flat line.
+    scale: true,
+  }
+  const yAxis = flow.length === 0 ? [totalAxis] : withTotal ? [flowAxis, totalAxis] : [flowAxis]
 
   chart.value.setOption(
     {
@@ -120,36 +195,14 @@ function render() {
         axisLabel: { color: muted, fontSize: 10, hideOverlap: true, alignMinLabel: 'left', alignMaxLabel: 'right' },
         axisLine: { lineStyle: { color: border } },
       },
-      yAxis: [
-        {
-          type: 'value',
-          name: 'daily change',
-          nameTextStyle: { color: muted, fontSize: 10, align: 'left' },
-          axisLabel: {
-            color: muted,
-            fontSize: 10,
-            formatter: (v: number) => formatCompact(Math.abs(v)),
-          },
-          splitLine: { lineStyle: { color: border, type: 'dashed' } },
-        },
-        {
-          type: 'value',
-          name: 'active bindings',
-          nameTextStyle: { color: muted, fontSize: 10, align: 'right' },
-          axisLabel: { color: muted, fontSize: 10, formatter: (v: number) => formatCompact(v) },
-          splitLine: { show: false },
-          // Not starting at zero, on purpose: the population moves by a fraction of a percent
-          // a day, and a zero-based axis would render that as a flat line.
-          scale: true,
-        },
-      ],
+      yAxis,
       // 133 days is more than fits legibly; the zoom starts on the most recent third and
       // the whole range stays reachable by dragging.
       dataZoom: [
-        { type: 'inside', start: 66, end: 100 },
+        { type: 'inside', start: props.zoomStart, end: 100 },
         {
           type: 'slider',
-          start: 66,
+          start: props.zoomStart,
           end: 100,
           height: 18,
           bottom: 4,
@@ -159,37 +212,7 @@ function render() {
           textStyle: { color: muted, fontSize: 9 },
         },
       ],
-      series: [
-        {
-          name: 'Added',
-          type: 'bar',
-          stack: 'flow',
-          data: value((d) => d.added),
-          itemStyle: { color: added },
-          barMaxWidth: 14,
-          markArea: feedQualityMarkArea(dates, props.flagged),
-        },
-        {
-          name: 'Removed',
-          type: 'bar',
-          stack: 'flow',
-          // Negative so the two directions separate around zero and the net reads as the
-          // visible imbalance.
-          data: value((d) => -d.removed),
-          itemStyle: { color: removed },
-          barMaxWidth: 14,
-        },
-        {
-          name: 'Active bindings',
-          type: 'line',
-          yAxisIndex: 1,
-          data: value((d) => d.cumulative),
-          itemStyle: { color: total },
-          lineStyle: { width: 2 },
-          symbol: 'none',
-          z: 5,
-        },
-      ],
+      series,
     },
     { notMerge: true },
   )
@@ -211,7 +234,7 @@ onBeforeUnmount(() => {
   chart.value = null
 })
 
-watch(() => [props.data, props.flagged], render, { deep: true })
+watch(() => [props.data, props.flagged, props.series, props.chart, props.zoomStart], render, { deep: true })
 watch(isDark, () => requestAnimationFrame(render))
 </script>
 
