@@ -4,7 +4,7 @@ import * as echarts from 'echarts/core'
 import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { formatCompact, formatFull } from '@/lib/format'
+import { formatCompact, formatFull, formatPercent } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
 import { chartColor } from '@/lib/chart-colors'
 import { tooltipBounds } from '@/lib/chart-tooltip'
@@ -27,8 +27,17 @@ const props = withDefaults(
     height?: string
     /** What the numbers are, named in the tooltip so a bare figure is never ambiguous. */
     unit?: string
+    /** The value at the end of each bar. On by default. */
+    showValues?: boolean
+    /** The share at the end of each bar, after the value when both are on. Off by default. */
+    showPercent?: boolean
+    /**
+     * Whether a bar is something to press. Off draws the default cursor; `select` is still emitted,
+     * so a caller that does not drill simply does not listen.
+     */
+    selectable?: boolean
   }>(),
-  { horizontal: true, height: '18rem', unit: 'bindings' },
+  { horizontal: true, height: '18rem', unit: 'bindings', showValues: true, showPercent: false, selectable: true },
 )
 
 const emit = defineEmits<{ select: [key: string] }>()
@@ -64,10 +73,21 @@ function render() {
     itemStyle: { color: d.key.startsWith('(unknown') ? nullColour : accent },
   }))
 
+  // The bar-end label: the value as before, the share after it when asked for.
+  const labelled = props.showValues || props.showPercent
+  const labelText = (p: { value: number; dataIndex: number }) => {
+    const share = props.data[p.dataIndex]?.percent
+    const parts: string[] = []
+    if (props.showValues) parts.push(formatCompact(p.value))
+    if (props.showPercent && share !== undefined) parts.push(formatPercent(share, 1))
+    return parts.join(' · ')
+  }
+
   chart.value.setOption(
     {
       animation: false,
-      grid: { left: 8, right: 56, top: 8, bottom: 8 },
+      // A wider right margin only when the label carries both figures; 56 fits one.
+      grid: { left: 8, right: props.showValues && props.showPercent ? 104 : 56, top: 8, bottom: 8 },
       tooltip: {
         ...tooltipBounds,
         trigger: 'item',
@@ -107,12 +127,13 @@ function render() {
           data: values,
           barMaxWidth: 18,
           itemStyle: { borderRadius: props.horizontal ? [0, 3, 3, 0] : [3, 3, 0, 0] },
+          ...(props.selectable ? {} : { cursor: 'default' }),
           label: {
-            show: true,
+            show: labelled,
             position: props.horizontal ? 'right' : 'top',
             color: muted,
             fontSize: 11,
-            formatter: (p: { value: number }) => formatCompact(p.value),
+            formatter: labelText,
           },
         },
       ],
@@ -139,7 +160,7 @@ onBeforeUnmount(() => {
   chart.value = null
 })
 
-watch(() => [props.data, props.unit], render, { deep: true })
+watch(() => [props.data, props.unit, props.showValues, props.showPercent, props.selectable], render, { deep: true })
 watch(isDark, () => requestAnimationFrame(render))
 </script>
 
