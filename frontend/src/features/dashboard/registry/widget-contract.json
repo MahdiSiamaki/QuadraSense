@@ -231,7 +231,7 @@
       "execution": "auto",
       "size": { "w": 6, "h": 6, "minW": 3, "minH": 4 },
       "config": {
-        "metric": { "kind": "enum", "required": true, "default": "net", "values": ["added", "removed", "net", "simChanges", "deviceChanges", "populationChange"] },
+        "metric": { "kind": "enum", "required": true, "default": "net", "values": ["added", "removed", "net", "simChanges", "deviceChanges", "population"] },
         "baseline": { "kind": "enum", "default": "previous", "values": ["previous", "custom"] },
         "baselineFrom": { "kind": "date", "default": null, "nullable": true },
         "baselineTo": { "kind": "date", "default": null, "nullable": true },
