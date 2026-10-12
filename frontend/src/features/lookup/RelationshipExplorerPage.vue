@@ -36,9 +36,9 @@ function explore(value?: string) {
   if (term) explorer.mutate(term)
 }
 
-// An identifier handed over by a dashboard's quick lookup: in history state, never the URL.
+// An identifier handed over by a dashboard's quick lookup: in memory, never the URL or history.
 onMounted(() => {
-  const prefill = takePrefill()
+  const prefill = takePrefill('relationships')
   if (prefill !== null) explore(prefill)
 })
 

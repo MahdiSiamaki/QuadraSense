@@ -4,14 +4,14 @@ import { useRouter } from 'vue-router'
 import Button from '@/design-system/Button.vue'
 import { control } from '@/features/explorer/ui'
 import type { WidgetViewProps } from '@/features/dashboard/types/widget'
-import { prefillState } from '@/lib/prefill'
+import { handOver } from '@/lib/prefill'
 import type { QuickLookupConfig } from './config'
 
 /**
  * A lookup box on the dashboard that opens the real lookup page with the value already in it.
  *
  * What is typed never leaves this card except to that page, and never through a URL: numbers, SIMs
- * and handsets travel in history state (`lib/prefill.ts`), are not stored in the dashboard and are
+ * and handsets are handed over in memory (`lib/prefill.ts`), are not stored in the dashboard and are
  * not shared with it. The lookup itself is the page's own audited request. A TAC is a model code, so
  * it opens the device page by its path like everywhere else.
  */
@@ -41,7 +41,10 @@ const id = computed(() => `quick-lookup-${props.instance.id}`)
 function open() {
   if (!valid.value || !live.value) return
   if (props.instance.config.target === 'tac') void router.push({ name: 'device-detail', params: { tac: digits.value } })
-  else void router.push({ name: target.value.route, state: prefillState(digits.value) })
+  else {
+    handOver(target.value.route, digits.value)
+    void router.push({ name: target.value.route })
+  }
 }
 </script>
 

@@ -91,9 +91,9 @@ function run(toPage = 1) {
   })
 }
 
-// An IMSI or prefix handed over by a dashboard's quick lookup: in history state, never the URL.
+// An IMSI or prefix handed over by a dashboard's quick lookup: in memory, never the URL or history.
 onMounted(() => {
-  const prefill = takePrefill()
+  const prefill = takePrefill('imsi-search')
   if (prefill === null) return
   raw.value = prefill
   run()

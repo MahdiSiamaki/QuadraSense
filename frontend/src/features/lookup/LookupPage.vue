@@ -36,9 +36,9 @@ async function search() {
   }
 }
 
-// A number handed over by a dashboard's quick lookup: in history state, never the URL (lib/prefill.ts).
+// A number handed over by a dashboard's quick lookup: in memory, never the URL or history (lib/prefill.ts).
 onMounted(() => {
-  const prefill = takePrefill()
+  const prefill = takePrefill('lookup')
   if (prefill === null) return
   input.value = prefill
   void search()
