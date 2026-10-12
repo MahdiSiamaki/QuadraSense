@@ -188,7 +188,7 @@ function level(d: DashboardSummary) {
           <button
             v-if="others === null"
             type="button"
-            class="w-full rounded-none px-3 py-1.5 text-left text-xs text-[var(--c-accent-text)] hover:bg-[var(--c-surface-hover)] focus-visible:-outline-offset-2"
+            class="w-full rounded-none px-3 py-1.5 text-left text-xs text-[var(--c-accent)] hover:bg-[var(--c-surface-hover)] focus-visible:-outline-offset-2"
             @click="emit('loadOthers')"
           >
             Show them (administrator)
@@ -209,7 +209,7 @@ function level(d: DashboardSummary) {
 
         <p v-if="nothing" class="px-3 py-4 text-center text-xs text-[var(--c-text-muted)]">
           Nothing matches "{{ query }}".
-          <button type="button" class="font-medium text-[var(--c-accent-text)] underline-offset-2 hover:underline" @click="query = ''">Clear search</button>
+          <button type="button" class="font-medium text-[var(--c-accent)] underline-offset-2 hover:underline" @click="query = ''">Clear search</button>
         </p>
       </div>
     </div>

@@ -69,7 +69,7 @@ const titleId = useId()
           :key="badge.label"
           class="rounded-full border px-1.5 py-px text-2xs font-medium"
           :class="{
-            'border-[var(--c-accent)] text-[var(--c-accent-text)]': badge.tone === 'accent',
+            'border-[var(--c-accent)] text-[var(--c-accent)]': badge.tone === 'accent',
             'border-[var(--c-warning)] text-[var(--c-warning-text)]': badge.tone === 'warning',
             'text-[var(--c-text-secondary)]': !badge.tone || badge.tone === 'neutral',
           }"

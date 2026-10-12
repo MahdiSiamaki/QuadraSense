@@ -601,7 +601,7 @@ const problems = computed(() => migrated.value?.problems ?? [])
             class="rounded-full border px-2 py-0.5 text-2xs font-medium text-[var(--c-text-secondary)]"
             :title="ownership.description"
           >{{ ownership.label }}<span class="sr-only">: {{ ownership.description }}</span></span>
-          <span v-if="editing" class="rounded-full bg-[var(--c-accent-subtle)] px-2 py-0.5 text-2xs font-semibold text-[var(--c-accent-text)]">Editing</span>
+          <span v-if="editing" class="rounded-full bg-[var(--c-accent-subtle)] px-2 py-0.5 text-2xs font-semibold text-[var(--c-accent)]">Editing</span>
           <button
             v-if="detail.data.value && !editing"
             type="button"
@@ -689,11 +689,11 @@ const problems = computed(() => migrated.value?.problems ?? [])
     <!-- States -->
     <div v-if="notFound" class="rounded-[var(--radius-lg)] border px-4 py-8 text-center text-sm">
       <p class="font-medium">This dashboard does not exist, or it is not shared with you.</p>
-      <RouterLink :to="{ name: 'dashboard' }" class="mt-2 inline-block text-[var(--c-accent-text)] underline-offset-2 hover:underline">Open your default dashboard</RouterLink>
+      <RouterLink :to="{ name: 'dashboard' }" class="mt-2 inline-block text-[var(--c-accent)] underline-offset-2 hover:underline">Open your default dashboard</RouterLink>
     </div>
     <div v-else-if="unknownTemplate" class="rounded-[var(--radius-lg)] border px-4 py-8 text-center text-sm">
       <p class="font-medium">There is no such template.</p>
-      <RouterLink :to="{ name: 'dashboard' }" class="mt-2 inline-block text-[var(--c-accent-text)] underline-offset-2 hover:underline">Open your default dashboard</RouterLink>
+      <RouterLink :to="{ name: 'dashboard' }" class="mt-2 inline-block text-[var(--c-accent)] underline-offset-2 hover:underline">Open your default dashboard</RouterLink>
     </div>
     <div v-else-if="detail.isError.value" class="rounded-[var(--radius-lg)] border px-4 py-8 text-center text-sm" role="alert">
       <p class="font-medium">The dashboard could not be loaded.</p>
