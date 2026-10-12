@@ -201,7 +201,10 @@ public sealed partial class DashboardWidgetDataLoader : IWidgetDataLoader
         var filter = Filter(lens) with { IncludeUnknownDevice = !c.Bool("excludeUnknownBucket") && (lens.IncludeUnknownDevice ?? true) };
         var limit = c.Int("limit", 10);
         var rows = await _analytics.GetTopDimensionAsync(dimension, filter, limit, CountOf(lens), ct).ConfigureAwait(false);
-        IEnumerable<DimensionCount> ordered = c.Str("sort") == "name" ? rows.OrderBy(r => r.Key, StringComparer.Ordinal) : rows;
+        // Alphabetical as the card sorts it: case-insensitive, ties broken by the exact text.
+        IEnumerable<DimensionCount> ordered = c.Str("sort") == "name"
+            ? rows.OrderBy(r => r.Key, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.Key, StringComparer.Ordinal)
+            : rows;
 
         return Done(
             Data(("rows", rows)), null, Notes(lens),
@@ -423,8 +426,18 @@ public sealed partial class DashboardWidgetDataLoader : IWidgetDataLoader
             rows.Add(PeriodRow("Baseline", b));
         }
 
-        rows.Add(Row("Change", null, null, null, null, result.Absolute));
-        rows.Add(Row("Change, percent", null, null, null, null, result.Percent));
+        // The change rows the card shows: its "change" setting picks one or both, and none when there
+        // is nothing to compare with. One cell per heading - label, from, to, days, value.
+        var change = c.Str("change");
+        if (result.Unavailable is null && change != "percent")
+        {
+            rows.Add(Row("Change", null, null, null, result.Absolute));
+        }
+
+        if (result.Unavailable is null && change != "absolute")
+        {
+            rows.Add(Row("Change, percent", null, null, null, result.Percent));
+        }
 
         var notes = new List<string> { NetworkWide };
         if (result.Unavailable is { } why)

@@ -59,12 +59,16 @@ public sealed partial class DashboardWidgetDataLoader
             return NotReady(answer.Reason ?? status.NotReady ?? "Risk signals are not available.", Data(("status", status), ("overview", null)));
         }
 
+        // Every rule the card lists, in its order - a rule without a threshold too, said as the card says it.
         var wanted = c.List("rules");
+        var counts = overview.Rules.ToDictionary(r => r.Rule, StringComparer.Ordinal);
         return Done(
             Data(("status", status), ("overview", overview)), overview.AsOf, [NamesNobody, Observed],
-            Table(["Rule", "Listed", "Level", "Held by feed defects", "Data quality (not risk)"],
-                [.. overview.Rules.Where(r => wanted.Contains(r.Rule, StringComparer.Ordinal))
-                    .Select(r => Row(RuleTitle(r.Rule), r.Listed, r.Level, r.Capped, r.DataQuality))],
+            Table(["Rule", "Listed", "Level", "Held by feed defects", "Data quality (not risk)", "Note"],
+                [.. status.Rules.Where(r => wanted.Contains(r.Rule, StringComparer.Ordinal)).Select(r => counts.TryGetValue(r.Rule, out var n)
+                    ? Row(RuleTitle(r.Rule), n.Listed, n.Level, n.Capped, n.DataQuality, null)
+                    : Row(RuleTitle(r.Rule), null, null, null, null,
+                        r.Threshold is null ? "Not calibrated: nothing is judged." : "Not available."))],
                 Visible, $"At each rule's configured threshold, rules {overview.RuleSetVersion}."));
     }
 
@@ -143,21 +147,78 @@ public sealed partial class DashboardWidgetDataLoader
     private async Task<WidgetDataResult> SimChangeEvidenceAsync(Config c, DashboardLens lens, WidgetLoadContext context, CancellationToken ct)
     {
         var status = await RiskStatusResponseAsync(ct).ConfigureAwait(false);
+        // The card waits for the risk status to be ready before it reads the evidence; so does its export.
+        if (status.NotReady is { } notReady)
+        {
+            return NotReady(notReady, Data(("status", status), ("daily", null)));
+        }
+
         var answer = await RiskQueries.DailyAsync(_risk, _feed, _feedOptions, _riskOptions().Floors, ct).ConfigureAwait(false);
         if (answer.Value is not { } daily)
         {
             return NotReady(answer.Reason ?? "Risk signals are not available.", Data(("status", status), ("daily", null)));
         }
 
+        // The columns the card draws: the day's total, or what it counted and set aside, or both; and the
+        // flagged checks only when the card shades them. Always the dashboard's range, so always visible.
         var series = c.List("series");
-        var both = series.Contains("changes", StringComparer.Ordinal) && series.Contains("setAside", StringComparer.Ordinal);
+        var total = series.Contains("changes", StringComparer.Ordinal);
+        var setAside = series.Contains("setAside", StringComparer.Ordinal);
+        var both = total && setAside;
+        var flagged = c.Bool("showFlagged");
         var days = InWindow(daily.Days, lens, context, d => DateOnly.ParseExact(d.Date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+
+        var headers = new List<string> { "Day" };
+        if (total)
+        {
+            headers.Add("Numbers whose SIM changed");
+        }
+
+        if (both)
+        {
+            headers.Add("Counted");
+        }
+
+        if (setAside)
+        {
+            headers.Add("Set aside as feed defects");
+        }
+
+        if (flagged)
+        {
+            headers.Add("Flagged checks");
+        }
+
+        IReadOnlyList<object?> DayRow(RiskChangeDayInfo d)
+        {
+            var row = new List<object?> { d.Date };
+            if (total)
+            {
+                row.Add(d.Changes);
+            }
+
+            if (both)
+            {
+                row.Add(d.Changes - d.SetAside);
+            }
+
+            if (setAside)
+            {
+                row.Add(d.SetAside);
+            }
+
+            if (flagged)
+            {
+                row.Add(string.Join(' ', d.Flagged));
+            }
+
+            return row;
+        }
 
         return Done(
             Data(("status", status), ("daily", daily)), daily.Days.Count == 0 ? null : daily.Days[^1].Date, [NamesNobody],
-            Table(["Day", "Numbers whose SIM changed", "Counted", "Set aside as feed defects", "Flagged checks"],
-                [.. days.Select(d => Row(d.Date, d.Changes, d.Changes - d.SetAside, d.SetAside, string.Join(' ', d.Flagged)))],
-                both ? Visible : Full, "Every day in the dashboard's range; counted and set aside sum to the day's total."));
+            Table(headers, [.. days.Select(DayRow)], Visible,
+                both ? "Every day in the dashboard's range; counted and set aside sum to the day's total." : "Every day in the dashboard's range."));
     }
 
     private async Task<WidgetDataResult> EvidenceQualityAsync(Config c, CancellationToken ct)
