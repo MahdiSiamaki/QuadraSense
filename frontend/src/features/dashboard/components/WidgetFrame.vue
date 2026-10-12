@@ -8,8 +8,9 @@
  * never only on hover: a control that appears under the pointer does not exist for a keyboard or a
  * touch screen.
  *
- * A widget that is a card itself (a KPI) asks for `bare` chrome: then only the edit strip is drawn,
- * above it.
+ * A widget that is a card itself (a KPI) asks for `bare` chrome: then only a strip is drawn above it,
+ * carrying the edit handle, the badges and the card's menu - drawn whenever any of them has something
+ * to show, so a KPI's Download CSV and Save as image are there in view mode too.
  */
 import { useId } from 'vue'
 import ActionMenu, { type ActionMenuItem } from './ActionMenu.vue'
@@ -88,7 +89,7 @@ const titleId = useId()
   </section>
 
   <div v-else class="flex h-full min-w-0 flex-col" :class="editing ? 'gap-1' : ''">
-    <div v-if="editing || badges.length" class="flex items-center gap-1.5">
+    <div v-if="editing || badges.length || menu.length" class="flex items-center gap-1.5">
       <span
         v-if="editing"
         class="dashboard-drag-handle grid size-6 shrink-0 cursor-grab place-items-center rounded-[var(--radius-sm)] text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] active:cursor-grabbing"
