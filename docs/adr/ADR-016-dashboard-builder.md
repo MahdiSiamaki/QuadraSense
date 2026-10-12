@@ -308,7 +308,10 @@ Recorded here rather than silently folded into the sections above.
   bindings on the period's last delivered day, or their average. No stored definition used the old
   value. The arithmetic exists twice - `periodComparison.ts` for the card and
   `PeriodComparison.cs` for the export - and both are tested against the same cases.
-- **Quick lookup hands its value over in history state**, never the URL, and the lookup page
-  removes it as it reads it, so Back or a reload never re-runs an audited lookup (`lib/prefill.ts`).
+- **Quick lookup hands its value over in memory**, never the URL or history (`lib/prefill.ts`):
+  for one named page, once, and only for a few seconds. It was first done in router history state,
+  removed as it was read; the review found that vue-router keeps its own copy of an entry's state
+  and writes it back on the next in-app navigation, so Back re-ran the audited lookup and the
+  identifier stayed in the tab's session history. Nothing of it is in history now.
 - **The Explorer question's form offers no field behind a lookup permission at all**, even to a
   person who holds it, rather than offering them and failing on save: the definition is shared.

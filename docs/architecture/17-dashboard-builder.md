@@ -31,7 +31,7 @@ rules live. The decision and its evidence are in
 - **Identifiers never enter a URL, a stored definition, a log or an audit detail.** Lists of
   identifiers (risk list, Explorer question) run only on an explicit Run, through their own audited
   endpoints, and never in an export. The quick-lookup box hands its value to a lookup page in
-  router history state, read once.
+  memory only - for that page, once, for a few seconds - never in the URL or browser history.
 
 ## Catalogue
 
@@ -168,6 +168,11 @@ Measured or observed on 2026-10-09; each says what was and was not checked.
 - **No end-to-end browser suite.** The project has no Playwright dependency; adding one downloads
   browsers. Component behaviour is covered by Vitest, the API by integration tests, and the layout
   is checked in the browser by measurement.
+- **Dashboard names are unique per owner, and that can be probed.** An editor who renames a shared
+  dashboard onto a name the owner already uses gets 409; the message no longer names it or says
+  whose it is, but the refusal itself confirms the owner has a dashboard of that name. Each probe
+  that does not collide really renames the dashboard and is audited, so it is noisy, not silent.
+  Closing it fully - for example by not letting editors rename - is a product decision, not made.
 - **The old page's parts remain in the tree unused**: `DataFreshnessCard.vue`,
   `VendorMovementCard.vue`, `useFilterState.ts`. Their content moved into widgets; removing them is
   a separate change.
