@@ -220,6 +220,13 @@ public sealed class DashboardExportEndpointTests : IClassFixture<WebApplicationF
     {
         using var response = await SendAsync("noImports", HttpMethod.Post, "/api/v1/dashboards/export/csv", Csv("""["w_ops0000001"]"""));
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        // Refused, and audited as refused - with the missing permission, never the lens.
+        var entry = Assert.Single(_audited, a => a.Action == "data.export");
+        Assert.Equal(AuditOutcome.Denied, entry.Outcome);
+        var detail = JsonSerializer.Serialize(entry.Detail);
+        Assert.Contains("import.view", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("Samsung", detail, StringComparison.Ordinal);
     }
 
     /// <summary>Answers every type with a fixed table; the KPI and top list carry the scopes a real loader gives them.</summary>

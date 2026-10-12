@@ -130,9 +130,14 @@ public sealed class DashboardExportService
         if (loaded.Count == 1 && loaded[0].Result.Status != "ok")
         {
             var only = loaded[0].Result;
-            return only.Status == "forbidden"
-                ? new(DashboardOutcome.Forbidden, Message: only.Reason)
-                : Invalid<DashboardCsvExport>("widgetIds", only.Reason ?? "This widget has no rows to export.");
+            if (only.Status == "forbidden")
+            {
+                // A refused data export is audited as the data endpoints audit theirs: Denied, with the reason.
+                await AuditDeniedAsync(user, context, request.DashboardId, name, only.Reason, ct).ConfigureAwait(false);
+                return new(DashboardOutcome.Forbidden, Message: only.Reason);
+            }
+
+            return Invalid<DashboardCsvExport>("widgetIds", only.Reason ?? "This widget has no rows to export.");
         }
 
         var parts = loaded.Select(w => new WidgetCsvPart(
@@ -249,6 +254,14 @@ public sealed class DashboardExportService
             "dashboard", dashboardId?.ToString(CultureInfo.InvariantCulture), name,
             context.Ip, context.UserAgent, context.CorrelationId, detail), ct);
     }
+
+    private Task AuditDeniedAsync(
+        AuthenticatedUser user, AuthenticationContext context, long? dashboardId, string? name, string? reason, CancellationToken ct) =>
+        _audit.WriteAsync(new AuditEntry(
+            user.Username, "data.export", AuditCategory.Data, AuditOutcome.Denied, user.UserId,
+            "dashboard", dashboardId?.ToString(CultureInfo.InvariantCulture), name,
+            context.Ip, context.UserAgent, context.CorrelationId,
+            new Dictionary<string, object?> { ["format"] = "csv", ["widgets"] = 1, ["reason"] = reason }), ct);
 
     private static DashboardResult<T> Invalid<T>(string path, string message) =>
         new(DashboardOutcome.Invalid, Errors: [new DefinitionError(path, message)]);
