@@ -41,9 +41,11 @@ function matches(name: string, description: string, owner = '') {
 
 const mine = computed(() => (props.list?.mine ?? []).filter((d) => matches(d.name, d.description)))
 const shared = computed(() => (props.list?.sharedWithMe ?? []).filter((d) => matches(d.name, d.description, d.owner.displayName)))
-const others = computed(() => (props.others ?? []).filter((d) => matches(d.name, d.description, d.owner.displayName)))
+// Named apart from the `others` prop: in the template the prop decides whether the list is loaded at
+// all (null), this decides what of it matches the search.
+const othersShown = computed(() => (props.others ?? []).filter((d) => matches(d.name, d.description, d.owner.displayName)))
 const templates = computed(() => TEMPLATES.filter((t) => matches(t.name, t.description)))
-const nothing = computed(() => !mine.value.length && !shared.value.length && !templates.value.length && !others.value.length)
+const nothing = computed(() => !mine.value.length && !shared.value.length && !templates.value.length && !othersShown.value.length)
 
 async function toggle() {
   open.value = !open.value
@@ -96,18 +98,24 @@ function level(d: DashboardSummary) {
 
 <template>
   <div ref="root" class="relative" @focusout="onFocusOut">
-    <button
-      ref="trigger"
-      type="button"
-      class="flex max-w-full items-center gap-2 rounded-[var(--radius-md)] px-1.5 py-0.5 -ml-1.5 text-left hover:bg-[var(--c-surface-hover)]"
-      :aria-expanded="open"
-      :aria-controls="panelId"
-      @click="toggle"
-    >
-      <h1 class="truncate text-xl font-semibold tracking-tight">{{ label }}</h1>
-      <span aria-hidden="true" class="text-sm text-[var(--c-text-muted)]">▾</span>
-      <span class="sr-only">Switch dashboard</span>
-    </button>
+    <!--
+      The page's heading holds the switcher's button, not the other way round: a button's children are
+      presentational, so an h1 inside it left the page without a level-1 heading.
+    -->
+    <h1 class="min-w-0 text-xl font-semibold tracking-tight">
+      <button
+        ref="trigger"
+        type="button"
+        class="flex max-w-full items-center gap-2 rounded-[var(--radius-md)] px-1.5 py-0.5 -ml-1.5 text-left hover:bg-[var(--c-surface-hover)]"
+        :aria-expanded="open"
+        :aria-controls="panelId"
+        @click="toggle"
+      >
+        <span class="truncate">{{ label }}</span>
+        <span aria-hidden="true" class="text-sm font-normal text-[var(--c-text-muted)]">▾</span>
+        <span class="sr-only">Switch dashboard</span>
+      </button>
+    </h1>
 
     <div
       v-if="open"
@@ -186,7 +194,7 @@ function level(d: DashboardSummary) {
         <section v-if="canManage" aria-label="Everybody else's dashboards">
           <h2 class="px-3 pt-3 pb-1 text-2xs font-semibold tracking-wide text-[var(--c-text-muted)] uppercase">Everybody else's</h2>
           <button
-            v-if="others === null"
+            v-if="props.others === null"
             type="button"
             class="w-full rounded-none px-3 py-1.5 text-left text-xs text-[var(--c-accent)] hover:bg-[var(--c-surface-hover)] focus-visible:-outline-offset-2"
             @click="emit('loadOthers')"
@@ -194,7 +202,7 @@ function level(d: DashboardSummary) {
             Show them (administrator)
           </button>
           <button
-            v-for="d in others"
+            v-for="d in othersShown"
             :key="d.id"
             type="button"
             class="flex w-full items-center gap-2 rounded-none px-3 py-1.5 text-left text-sm hover:bg-[var(--c-surface-hover)] focus-visible:-outline-offset-2"
