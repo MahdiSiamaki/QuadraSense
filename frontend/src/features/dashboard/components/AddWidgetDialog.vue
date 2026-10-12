@@ -31,6 +31,7 @@ import type { WidgetGroupId } from '../registry/contract'
 import ConfigForm from './ConfigForm.vue'
 import WidgetFrame from './WidgetFrame.vue'
 import WidgetErrorBoundary from './WidgetErrorBoundary.vue'
+import WidgetAbout from './WidgetAbout.vue'
 import WidgetIcon from './WidgetIcon.vue'
 
 export interface WizardResult {
@@ -66,12 +67,34 @@ const selectedKey = ref<string | null>(null)
 const form = ref<{ type: string; config: WidgetConfig; title: string; subtitle: string; overrides: DashboardLens } | null>(null)
 const initial = ref('')
 const confirmingClose = ref(false)
+const keepEditing = ref<InstanceType<typeof Button> | null>(null)
+const cancelButton = ref<InstanceType<typeof Button> | null>(null)
+
+/** Back from the confirmation to the form, with focus where it was: on Cancel. */
+function keepEditingSettings() {
+  confirmingClose.value = false
+  void nextTick(() => (cancelButton.value?.$el as HTMLElement | undefined)?.focus())
+}
 const mobileTab = ref<'settings' | 'preview'>('settings')
 
 const entries = catalogEntries()
 
-function missingFor(entry: Pick<CatalogEntry, 'type' | 'config'>) {
-  return requiredPermissions(entry.type, entry.config).filter((p) => !can(p))
+/**
+ * The config a new widget starts from. For a type whose permissions follow a config value - a lookup
+ * box's target - the plain type starts on a value the person may use, so someone who may search IMSIs
+ * but not subscribers can still add one. A preset keeps what it chose: its value is its meaning.
+ */
+function startingConfig(entry: Pick<CatalogEntry, 'type' | 'config' | 'presetKey'>): WidgetConfig {
+  const byConfig = typeSpec(entry.type)?.permissionsByConfig
+  if (!byConfig || entry.presetKey !== null) return entry.config
+  const current = String(entry.config[byConfig.field] ?? '')
+  if ((byConfig.map[current] ?? []).every((p) => can(p))) return entry.config
+  const allowed = Object.keys(byConfig.map).find((value) => byConfig.map[value]!.every((p) => can(p)))
+  return allowed === undefined ? entry.config : { ...entry.config, [byConfig.field]: allowed }
+}
+
+function missingFor(entry: Pick<CatalogEntry, 'type' | 'config' | 'presetKey'>) {
+  return requiredPermissions(entry.type, startingConfig(entry)).filter((p) => !can(p))
 }
 
 watch(
@@ -126,6 +149,7 @@ const groups = computed(() => catalogGroups(searched.value))
 const selected = computed(() => entries.find((e) => e.key === selectedKey.value) ?? null)
 const selectedDefinition = computed(() => (selected.value ? getWidget(selected.value.type) : undefined))
 const selectedMissing = computed(() => (selected.value ? missingFor(selected.value) : []))
+const selectedNeeds = computed(() => (selected.value ? requiredPermissions(selected.value.type, startingConfig(selected.value)) : []))
 const full = computed(() => !props.widget && props.widgetCount >= props.maxWidgets)
 
 function select(entry: CatalogEntry) {
@@ -153,7 +177,7 @@ function goConfigure() {
   if (!keep) {
     form.value = {
       type: entry.type,
-      config: normalizeConfig(entry.type, structuredClone(entry.config)),
+      config: normalizeConfig(entry.type, structuredClone(startingConfig(entry))),
       title: entry.title ?? '',
       subtitle: '',
       overrides: {},
@@ -269,6 +293,9 @@ function back() {
 function requestClose() {
   if (dirty.value && form.value && !confirmingClose.value) {
     confirmingClose.value = true
+    // The Cancel that asked is gone from the footer now, and autofocus does nothing in a dialog that is
+    // already open: focus moves to the safe answer by hand, and the question is announced.
+    void nextTick(() => (keepEditing.value?.$el as HTMLElement | undefined)?.focus())
     return
   }
   confirmingClose.value = false
@@ -368,6 +395,18 @@ function requestClose() {
             </div>
           </div>
         </div>
+        <!-- Below 1024 px the side panel is not drawn; the same details are a disclosure here. -->
+        <details v-if="selected && selectedDefinition" class="shrink-0 border-t px-3 py-2 lg:hidden">
+          <summary class="cursor-pointer text-xs font-medium text-[var(--c-text-secondary)]">About “{{ selected.name }}”</summary>
+          <p class="mt-2 text-xs text-[var(--c-text-secondary)]">{{ selected.description }}</p>
+          <WidgetAbout
+            class="mt-2 max-h-[40dvh] overflow-y-auto"
+            :definition="selectedDefinition"
+            :filters="describeFilters(selected.type)"
+            :needs="selectedNeeds"
+            :missing="selectedMissing"
+          />
+        </details>
       </div>
 
       <aside class="hidden min-h-0 overflow-y-auto border-l p-4 lg:block" aria-label="About the selected widget">
@@ -377,22 +416,13 @@ function requestClose() {
             <h3 class="text-sm font-semibold">{{ selected.name }}</h3>
           </div>
           <p class="mt-1 text-xs text-[var(--c-text-secondary)]">{{ selected.description }}</p>
-          <dl class="mt-3 space-y-2 text-xs">
-            <div><dt class="font-medium text-[var(--c-text-secondary)]">Counts</dt><dd>{{ selectedDefinition.unit }}</dd></div>
-            <div><dt class="font-medium text-[var(--c-text-secondary)]">Time</dt><dd>{{ selectedDefinition.timeScope }}</dd></div>
-            <div><dt class="font-medium text-[var(--c-text-secondary)]">Filters</dt><dd>{{ describeFilters(selected.type) }}</dd></div>
-            <div><dt class="font-medium text-[var(--c-text-secondary)]">Source</dt><dd class="font-mono text-2xs">{{ selectedDefinition.source }}</dd></div>
-            <div>
-              <dt class="font-medium text-[var(--c-text-secondary)]">Needs</dt>
-              <dd>{{ requiredPermissions(selected.type, selected.config).join(', ') || 'Nothing beyond the dashboard' }}</dd>
-            </div>
-          </dl>
-          <ul v-if="selectedDefinition.caveats.length" class="mt-3 list-disc space-y-1 pl-4 text-2xs text-[var(--c-text-muted)]">
-            <li v-for="c in selectedDefinition.caveats" :key="c">{{ c }}</li>
-          </ul>
-          <p v-if="selectedMissing.length" class="mt-3 text-xs text-[var(--c-warning-text)]" role="note">
-            You cannot add this: it needs {{ selectedMissing.join(', ') }}. A dashboard never grants access to data.
-          </p>
+          <WidgetAbout
+            class="mt-3"
+            :definition="selectedDefinition"
+            :filters="describeFilters(selected.type)"
+            :needs="selectedNeeds"
+            :missing="selectedMissing"
+          />
         </template>
         <p v-else class="text-xs text-[var(--c-text-muted)]">Select a widget to see what it shows, how it counts and what it needs.</p>
       </aside>
@@ -459,8 +489,8 @@ function requestClose() {
 
     <template #actions>
       <template v-if="confirmingClose">
-        <span class="mr-auto text-sm">Discard these settings?</span>
-        <Button variant="ghost" autofocus @click="confirmingClose = false">Keep editing</Button>
+        <span id="add-widget-discard" class="mr-auto text-sm" role="alert">Discard these settings?</span>
+        <Button ref="keepEditing" variant="ghost" aria-describedby="add-widget-discard" @click="keepEditingSettings">Keep editing</Button>
         <Button variant="danger" @click="requestClose">Discard</Button>
       </template>
       <template v-else-if="step === 'select'">
@@ -471,7 +501,7 @@ function requestClose() {
       <template v-else>
         <Button v-if="!widget" variant="ghost" class="mr-auto" @click="back">Back</Button>
         <span v-if="!valid" class="mr-auto text-xs text-[var(--c-text-muted)]">Fix the highlighted settings to continue.</span>
-        <Button variant="ghost" @click="requestClose">Cancel</Button>
+        <Button ref="cancelButton" variant="ghost" @click="requestClose">Cancel</Button>
         <Button type="submit" variant="primary" :disabled="!valid">{{ widget ? 'Apply' : 'Add to dashboard' }}</Button>
       </template>
     </template>
