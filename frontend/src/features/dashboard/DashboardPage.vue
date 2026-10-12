@@ -354,7 +354,7 @@ const nameDialogProps = computed(() => {
         notes: (templateCopy.value?.omitted ?? []).map((o) => `Left out: ${o.title} - needs ${o.missing.join(', ')}.`),
       }
     case 'duplicate':
-      return { title: 'Duplicate dashboard', description: 'A private copy; who it is shared with is not copied.', initialName: `Copy of ${name.value}`, submit: 'Duplicate', notes: [] }
+      return { title: 'Duplicate dashboard', description: 'A private copy with the same description; who it is shared with is not copied.', initialName: `Copy of ${name.value}`, submit: 'Duplicate', notes: [] }
     case 'rename':
       return { title: 'Rename dashboard', description: undefined, initialName: name.value, submit: 'Rename', notes: [] }
     default:
@@ -386,14 +386,16 @@ async function onName(value: { name: string; description: string }) {
       nameDialog.value = null
       await router.push({ name: 'dashboard-view', params: { id: created.id }, query: route.query })
     } else if (nameDialog.value === 'rename') {
+      // The dialog shows the description, so what is typed there is saved with the name.
       if (editing.value) {
         draft.rename(value.name)
+        if (value.description !== draft.description) draft.setDescription(value.description)
         nameDialog.value = null
       } else if (detail.data.value && savedDefinition.value) {
         await update.mutateAsync({
           id: detail.data.value.id,
           name: value.name,
-          description: detail.data.value.description,
+          description: value.description,
           definition: savedDefinition.value,
           expectedRevision: detail.data.value.revision,
         })
@@ -743,6 +745,7 @@ const problems = computed(() => migrated.value?.problems ?? [])
       :description="nameDialogProps.description"
       :initial-name="nameDialogProps.initialName"
       :initial-description="nameDialog === 'rename' ? description : ''"
+      :with-description="nameDialog !== 'duplicate'"
       :submit-label="nameDialogProps.submit"
       :notes="nameDialogProps.notes"
       :busy="nameBusy"

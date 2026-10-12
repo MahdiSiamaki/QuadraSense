@@ -24,8 +24,10 @@ const props = withDefaults(
     maxDescription?: number
     /** Things the person should know before confirming, e.g. widgets left out of a template copy. */
     notes?: string[]
+    /** Whether the description is asked for: only where it is saved (a duplicate keeps the original's). */
+    withDescription?: boolean
   }>(),
-  { description: undefined, initialDescription: '', maxName: 100, maxDescription: 1000, notes: () => [] },
+  { description: undefined, initialDescription: '', maxName: 100, maxDescription: 1000, notes: () => [], withDescription: true },
 )
 
 const emit = defineEmits<{ close: []; submit: [value: { name: string; description: string }] }>()
@@ -67,7 +69,7 @@ function submit() {
     <div class="flex flex-col gap-3">
       <TextField v-model="name" label="Name" required autofocus :error="name.length > 0 ? nameProblem : null" />
 
-      <div class="flex flex-col gap-1">
+      <div v-if="withDescription" class="flex flex-col gap-1">
         <label for="dashboard-description" class="text-xs font-medium text-[var(--c-text-secondary)]">Description</label>
         <textarea
           id="dashboard-description"
