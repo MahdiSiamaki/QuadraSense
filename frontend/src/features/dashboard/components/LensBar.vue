@@ -78,7 +78,8 @@ function onRange(event: Event) {
         @update:model-value="emit('countBy', $event)"
       />
 
-      <Button v-if="showUnknown" size="sm" :aria-pressed="!includeUnknown" @click="emit('includeUnknown', !includeUnknown)">
+      <!-- An action whose words say what it will do; no aria-pressed, which contradicted the flipping label. -->
+      <Button v-if="showUnknown" size="sm" @click="emit('includeUnknown', !includeUnknown)">
         {{ includeUnknown ? 'Hide unknown devices' : 'Show unknown devices' }}
       </Button>
 
