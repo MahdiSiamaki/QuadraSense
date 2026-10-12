@@ -66,7 +66,11 @@ const rows = computed(() => {
       section: 'data' as const,
     }
     if (presentation.visibleWhen && !presentation.visibleWhen(props.config)) continue
-    bySection[presentation.section].push({ name, field, presentation })
+    // A contract field placed in "general" (a lookup box's target) is drawn first in the data section by
+    // the same renderer as every other field: the general fieldset holds only the title and subtitle.
+    const section = presentation.section === 'general' ? 'data' : presentation.section
+    if (presentation.section === 'general') bySection.data.unshift({ name, field, presentation })
+    else bySection[section].push({ name, field, presentation })
   }
   return bySection
 })
@@ -102,7 +106,10 @@ function toggleListValue(row: Row, value: string, on: boolean) {
 }
 
 function onInt(row: Row, raw: string) {
-  if (raw.trim() === '') return set(row.name, row.field.nullable ? null : row.field.default)
+  // Emptied while typing a new number: stays empty - writing the default back into the box made it
+  // impossible to clear (typing 25 after clearing 5 gave 1025). A required field left empty is
+  // reported by validateConfig like any other bad value.
+  if (raw.trim() === '') return set(row.name, row.field.nullable ? null : '')
   const n = Number(raw)
   set(row.name, Number.isFinite(n) ? n : raw)
 }
@@ -155,9 +162,6 @@ function onOverrideSelect(key: 'countBy' | 'range' | 'includeUnknownDevice', raw
         :error="subtitle.length > CONTRACT.limits.subtitleMaxLength ? `At most ${CONTRACT.limits.subtitleMaxLength} characters.` : null"
         @update:model-value="emit('update:subtitle', $event)"
       />
-      <template v-for="row in rows.general" :key="row.name">
-        <slot name="field" :row="row" />
-      </template>
     </fieldset>
 
     <template v-for="section in (['data', 'display', 'advanced'] as const)" :key="section">
