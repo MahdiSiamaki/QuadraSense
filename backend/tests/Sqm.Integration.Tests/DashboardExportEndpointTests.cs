@@ -74,13 +74,18 @@ public sealed class DashboardExportEndpointTests : IClassFixture<WebApplicationF
     private static AuthenticatedUser Person(long id, params string[] permissions) =>
         new(id, $"user{id}", $"Person {id}", false, permissions.ToFrozenSet(StringComparer.Ordinal));
 
-    private async Task<HttpResponseMessage> SendAsync(string who, HttpMethod method, string path, string? json = null)
+    private async Task<HttpResponseMessage> SendAsync(string who, HttpMethod method, string path, string? json = null, string? origin = null)
     {
         var client = _factory.CreateClient();
         var request = new HttpRequestMessage(method, path)
         {
             Content = json is null ? null : new StringContent(json, Encoding.UTF8, "application/json"),
         };
+        if (origin is not null)
+        {
+            request.Headers.Add("Origin", origin);
+        }
+
         request.Headers.Add("Cookie", $"sqm_session={who}; sqm_csrf=t");
         request.Headers.Add("X-CSRF-Token", "t");
         return await client.SendAsync(request, TestContext.Current.CancellationToken);
@@ -193,6 +198,18 @@ public sealed class DashboardExportEndpointTests : IClassFixture<WebApplicationF
         var text = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         // Neutralised, then quoted as RFC 4180 asks: the quotes inside are doubled.
         Assert.Contains("\"'=HYPERLINK(\"\"x\"\")\"", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Across_origins_the_browser_may_read_the_files_name_and_scope()
+    {
+        // Development puts the SPA on another port than the API: unexposed, the name and its scope are hidden.
+        using var response = await SendAsync("exporter", HttpMethod.Post, "/api/v1/dashboards/export/csv", Csv("""["w_top0000001"]"""), "http://localhost:5173");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var exposed = string.Join(",", response.Headers.GetValues("Access-Control-Expose-Headers")).Split(',').Select(h => h.Trim()).ToList();
+        Assert.Contains("Content-Disposition", exposed, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("X-Export-Scope", exposed, StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]

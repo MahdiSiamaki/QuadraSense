@@ -261,11 +261,15 @@ builder.Services.AddOpenApi();
 // eventually carry credentials, and `*` is incompatible with that anyway.
 var corsOrigins = builder.Configuration["Api:CorsOrigins"]?.Split(',', StringSplitOptions.RemoveEmptyEntries)
                   ?? ["http://localhost:5173"];
+// The headers the client reads are exposed: across origins (development: the SPA and the API on
+// different ports) a browser hides every other header from scripts, so a download lost its file name -
+// and with it the scope a dashboard CSV's name carries - and an error lost its correlation id.
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
     .WithOrigins(corsOrigins)
     .AllowAnyHeader()
     .AllowAnyMethod()
-    .AllowCredentials()));
+    .AllowCredentials()
+    .WithExposedHeaders("Content-Disposition", "X-Export-Scope", "X-Correlation-Id")));
 
 builder.Services.AddHealthChecks()
     .AddCheck<ClickHouseHealthCheck>("clickhouse", tags: ["ready"]);
