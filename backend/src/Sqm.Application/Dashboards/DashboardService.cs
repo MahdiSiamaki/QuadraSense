@@ -208,7 +208,13 @@ public sealed class DashboardService
             case DashboardWriteOutcome.NotFound:
                 return NotFound<DashboardDetail>();
             case DashboardWriteOutcome.NameTaken:
-                return NameTaken<DashboardDetail>(request.Name);
+                // Names are unique per owner. For an editor the clash is with the owner's names, and
+                // repeating it as "you already have" would confirm the name of a dashboard they may
+                // not be able to open; they are told only that this name cannot be used here.
+                return record.OwnerUserId == user.UserId
+                    ? NameTaken<DashboardDetail>(request.Name)
+                    : new DashboardResult<DashboardDetail>(DashboardOutcome.NameTaken,
+                        Message: "This name cannot be used for this dashboard. Choose another.");
             case DashboardWriteOutcome.Conflict:
                 return new DashboardResult<DashboardDetail>(DashboardOutcome.Conflict, Conflict: conflict,
                     Message: "Somebody saved this dashboard after you started editing it.");

@@ -168,6 +168,26 @@ public sealed class DashboardEndpointTests : IClassFixture<WebApplicationFactory
     }
 
     [Fact]
+    public async Task An_editor_renaming_onto_an_owners_name_is_not_told_the_owner_has_it()
+    {
+        await CreateAsOwnerAsync("Fraud watch");
+        var id = await CreateAsOwnerAsync("Shared ops");
+        _store.Grant(id, People["editor"].UserId, GrantLevels.Editor);
+        var rename = $$"""{"name":"fraud watch","description":"","definition":{{Definition}},"expectedRevision":1}""";
+
+        var (status, body) = await SendAsync("editor", HttpMethod.Put, $"/api/v1/dashboards/{id}", rename);
+        Assert.Equal(HttpStatusCode.Conflict, status);
+        var detail = body.GetProperty("detail").GetString()!;
+        Assert.DoesNotContain("already have", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("fraud watch", detail, StringComparison.OrdinalIgnoreCase);
+
+        // The owner, renaming their own, is still told plainly.
+        var (ownStatus, ownBody) = await SendAsync("owner", HttpMethod.Put, $"/api/v1/dashboards/{id}", rename);
+        Assert.Equal(HttpStatusCode.Conflict, ownStatus);
+        Assert.Contains("You already have a dashboard called", ownBody.GetProperty("detail").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_save_from_an_old_revision_is_409_with_the_winning_revision()
     {
         var id = await CreateAsOwnerAsync();
@@ -429,6 +449,12 @@ public sealed class DashboardEndpointTests : IClassFixture<WebApplicationFactory
                 }
 
                 var current = _all[index];
+                // As the unique index on (owner, lower(btrim(name))) does in PostgreSQL.
+                if (_all.Any(d => d.Id != id && d.OwnerUserId == current.OwnerUserId && string.Equals(d.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)))
+                {
+                    return Task.FromResult<(DashboardWriteOutcome, DashboardRecord?, DashboardConflict?)>((DashboardWriteOutcome.NameTaken, null, null));
+                }
+
                 if (current.Revision != expectedRevision)
                 {
                     return Task.FromResult<(DashboardWriteOutcome, DashboardRecord?, DashboardConflict?)>(
