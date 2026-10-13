@@ -8,7 +8,9 @@ import {
   overlaps,
   readingOrder,
   resolveCollisions,
+  rowHeights,
   sizePreset,
+  toStoredRows,
 } from '@/features/dashboard/composables/layout'
 import { CONTRACT } from '@/features/dashboard/registry/contract'
 import type { WidgetInstance } from '@/features/dashboard/types/definition'
@@ -114,5 +116,51 @@ describe('size presets', () => {
     const out = resolveCollisions([w('a', 0, 0, 12, 2), w('b', 0, 2, 6, 2)].map((x) => (x.id === 'a' ? { ...x, layout: { ...x.layout, h: 4 } } : x)), 'a')
     noOverlaps(out)
     expect(out.find((x) => x.id === 'b')!.layout.y).toBe(4)
+  })
+})
+
+describe('sub-rows to stored rows', () => {
+  const asLayout = (places: { id: string; x: number; y: number; w: number; h: number }[]) =>
+    places.map((p) => w(p.id, p.x, p.y, p.w, p.h))
+
+  it('rounds a fixed card to the nearest row and a content-sized one up, so its stored height still holds it', () => {
+    const out = toStoredRows([{ id: 'chart', x: 0, y: 0, w: 12, h: 37 }, { id: 'kpis', x: 0, y: 37, w: 12, h: 13 }], 4, new Set(['kpis']))
+    expect(out.find((p) => p.id === 'chart')!.h).toBe(9)
+    expect(out.find((p) => p.id === 'kpis')!.h).toBe(4)
+  })
+
+  it('never lets rounding make two cards overlap: each starts below what is above it in its columns', () => {
+    // a, sub-rows 2..7, is stored as rows 1..2; b, from sub-row 7, rounds to row 2 - inside a.
+    const out = toStoredRows(
+      [{ id: 'a', x: 0, y: 2, w: 6, h: 5 }, { id: 'b', x: 0, y: 7, w: 6, h: 8 }, { id: 'c', x: 6, y: 0, w: 6, h: 3 }],
+      4,
+      new Set(['a']),
+    )
+    noOverlaps(asLayout(out))
+    expect(out.find((p) => p.id === 'b')!.y).toBe(3)
+    expect(out.find((p) => p.id === 'c')!.y).toBe(0)
+  })
+
+  it('keeps the arrangement of a layout that was already whole rows', () => {
+    const whole = page.map((x) => ({ id: x.id, x: x.layout.x, y: x.layout.y * 4, w: x.layout.w, h: x.layout.h * 4 }))
+    expect(toStoredRows(whole, 4)).toEqual(expect.arrayContaining(page.map((x) => ({ id: x.id, ...x.layout }))))
+  })
+})
+
+describe('content-sized cards on a row', () => {
+  it('gives each the tallest need on its row, so the row ends together', () => {
+    const heights = rowHeights([w('vendors', 0, 0, 6, 9), w('models', 6, 0, 6, 9), w('below', 0, 9, 12, 5)], new Map([['vendors', 49], ['models', 38]]), 4)
+    expect(heights.get('vendors')).toBe(49)
+    expect(heights.get('models')).toBe(49)
+    expect(heights.has('below')).toBe(false)
+  })
+
+  it('never makes one shorter than a fixed card beside it', () => {
+    const heights = rowHeights([w('freshness', 0, 0, 6, 4), w('chart', 6, 0, 6, 10)], new Map([['freshness', 19]]), 4)
+    expect(heights.get('freshness')).toBe(40)
+  })
+
+  it('sizes a card alone on its row to its own need', () => {
+    expect(rowHeights([w('kpis', 0, 4, 12, 3)], new Map([['kpis', 13]]), 4).get('kpis')).toBe(13)
   })
 })

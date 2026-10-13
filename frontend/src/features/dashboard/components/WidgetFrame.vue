@@ -8,12 +8,18 @@
  * never only on hover: a control that appears under the pointer does not exist for a keyboard or a
  * touch screen.
  *
- * A widget that is a card itself (a KPI) asks for `bare` chrome: then only a strip is drawn above it,
- * carrying the edit handle, the badges and the card's menu - drawn whenever any of them has something
- * to show, so a KPI's Download CSV and Save as image are there in view mode too.
+ * A widget that is a card itself (a KPI) asks for `bare` chrome: then the frame draws only what it
+ * needs around it. In edit mode, or with badges, a strip above carries the handle, the badges and the
+ * menu. In view mode the menu goes inside the widget's own card, top right like every other card's
+ * (frameActions.ts): drawn beside it, it narrowed the card and broke the grid's right edge.
+ *
+ * A content-sized card (`fit`) wraps the widget in an element that always has the content's own
+ * height, and hands it to the grid, which sizes the card to it (composables/fitContent.ts).
  */
-import { useId } from 'vue'
+import { computed, inject, onBeforeUnmount, provide, ref, useId, watch } from 'vue'
+import { FIT_CONTENT } from '../composables/fitContent'
 import ActionMenu, { type ActionMenuItem } from './ActionMenu.vue'
+import { FRAME_ACTIONS } from './frameActions'
 
 export interface FrameBadge {
   label: string
@@ -22,7 +28,7 @@ export interface FrameBadge {
   tone?: 'neutral' | 'accent' | 'warning'
 }
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     title: string
     subtitle?: string | null
@@ -32,13 +38,35 @@ withDefaults(
     chrome?: 'card' | 'bare'
     /** Refreshing with the previous data still shown. */
     updating?: boolean
+    /** As tall as the content: the grid reads the content's height from the wrapper drawn for it. */
+    fit?: boolean
   }>(),
-  { subtitle: null, badges: () => [], menu: () => [], editing: false, chrome: 'card', updating: false },
+  { subtitle: null, badges: () => [], menu: () => [], editing: false, chrome: 'card', updating: false, fit: false },
 )
 
 const emit = defineEmits<{ action: [key: string] }>()
 
 const titleId = useId()
+
+// A bare card's menu in view mode, for the widget to draw inside its own card.
+provide(
+  FRAME_ACTIONS,
+  computed(() =>
+    props.chrome === 'bare' && !props.editing && !props.badges.length && props.menu.length
+      ? { label: `Actions for ${props.title}`, items: props.menu, select: (key: string) => emit('action', key) }
+      : null,
+  ),
+)
+
+const registry = inject(FIT_CONTENT, null)
+const fitContent = ref<HTMLElement | null>(null)
+watch(fitContent, (now, before) => {
+  if (before) registry?.unobserve(before)
+  if (now) registry?.observe(now)
+})
+onBeforeUnmount(() => {
+  if (fitContent.value) registry?.unobserve(fitContent.value)
+})
 </script>
 
 <template>
@@ -84,12 +112,13 @@ const titleId = useId()
     </header>
 
     <div class="min-h-0 flex-1 overflow-auto overscroll-contain px-4 py-3">
-      <slot />
+      <div v-if="fit" ref="fitContent" data-fit-content><slot /></div>
+      <slot v-else />
     </div>
   </section>
 
   <div v-else class="flex h-full min-w-0 flex-col" :class="editing ? 'gap-1' : ''">
-    <div v-if="editing || badges.length || menu.length" class="flex items-center gap-1.5">
+    <div v-if="editing || badges.length" class="flex items-center gap-1.5">
       <span
         v-if="editing"
         class="dashboard-drag-handle grid size-6 shrink-0 cursor-grab place-items-center rounded-[var(--radius-sm)] text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] active:cursor-grabbing"
@@ -103,8 +132,9 @@ const titleId = useId()
       </span>
       <ActionMenu v-if="menu.length" :label="`Actions for ${title}`" :items="menu" class="shrink-0" @select="emit('action', $event)" />
     </div>
-    <div class="min-h-0 flex-1">
-      <slot />
+    <div class="min-h-0 min-w-0 flex-1">
+      <div v-if="fit" ref="fitContent" data-fit-content><slot /></div>
+      <slot v-else />
     </div>
   </div>
 </template>

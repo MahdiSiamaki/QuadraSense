@@ -164,6 +164,7 @@ onBeforeUnmount(() => observer?.disconnect())
       :menu="menu"
       :editing="mode === 'edit'"
       :chrome="blocked ? 'card' : (definition?.chrome ?? 'card')"
+      :fit="definition?.height === 'content'"
       @action="emit('action', $event)"
     >
       <div v-if="blocked" class="flex h-full flex-col justify-center gap-1 text-sm" role="note">

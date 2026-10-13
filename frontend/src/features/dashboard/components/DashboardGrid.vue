@@ -14,9 +14,13 @@
  *    ends - never per frame, and never from a change GridStack made on our behalf.
  *  - Drag and resize happen only in edit mode on the 12-column grid. Everywhere else, and for
  *    keyboard and touch users, the card's menu moves and resizes (WCAG 2.2, 2.5.7).
- *  - A type whose definition asks for `height: 'content'` (a KPI row, the freshness strip) is as tall
- *    as what it draws: GridStack's sizeToContent, re-measured whenever the content's own height
- *    changes - data arriving, text wrapping at a new width - which GridStack does not watch itself.
+ *  - A type whose definition asks for `height: 'content'` (a KPI row, the freshness strip, a bar
+ *    chart) is as tall as what it draws, re-measured whenever that changes - data arriving, text
+ *    wrapping at a new width. Its frame wraps the content in an element that keeps the content's own
+ *    height (composables/fitContent.ts); every card on a row ends with the tallest (`rowHeights`).
+ *  - GridStack works in sub-rows of 10px, a quarter of the stored 40px row, so a card sized to its
+ *    content wastes at most 10px rather than a whole row. Layouts are still stored in rows
+ *    (`toStoredRows`); nothing outside this file sees a sub-row.
  */
 import { computed, defineComponent, h, inject, markRaw, onBeforeUnmount, onMounted, provide, ref, watch, type InjectionKey, type VNode } from 'vue'
 import { GridStack as GridStackView, type GridStackOptions, type GridStackWidget } from 'gridstack/dist/vue'
@@ -25,7 +29,8 @@ import 'gridstack/dist/gridstack.css'
 import type { WidgetInstance } from '../types/definition'
 import { getWidget } from '../registry'
 import { CONTRACT, typeSpec } from '../registry/contract'
-import { deriveLayout, type Columns } from '../composables/layout'
+import { FIT_CONTENT } from '../composables/fitContent'
+import { deriveLayout, rowHeights, toStoredRows, type Columns } from '../composables/layout'
 
 const props = defineProps<{
   widgets: WidgetInstance[]
@@ -44,8 +49,10 @@ const slots = defineSlots<{
   item(props: { widget: WidgetInstance; columns: Columns }): VNode[]
 }>()
 
-/** One grid row, in pixels, and the gap between cards: the page's 20px block gap (16-ui). */
-const CELL_HEIGHT = 40
+/** A stored row is 40px; the grid works in quarters of it. The gap is the page's 20px block gap (16-ui). */
+const ROW_HEIGHT = 40
+const SUB_ROWS = 4
+const CELL_HEIGHT = ROW_HEIGHT / SUB_ROWS
 const GAP = 20
 
 const root = ref<HTMLElement | null>(null)
@@ -58,52 +65,34 @@ function fitsContent(type: string | undefined): boolean {
   return type !== undefined && getWidget(type)?.height === 'content'
 }
 
-interface HostApi {
-  render: (id: string) => VNode[] | null
-  fits: (id: string) => boolean
-  /** A content-sized host's element, watched for its height while it is mounted. */
-  watch: (element: HTMLElement) => void
-  unwatch: (element: HTMLElement) => void
-}
-
-/** Content-sized items, re-fitted whenever what they draw changes height. */
-let contentObserver: ResizeObserver | null = null
-
-const HOST: InjectionKey<HostApi> = Symbol('dashboard-grid-host')
-provide(HOST, {
-  render: (id) => {
-    const widget = byId.value.get(id)
-    return widget ? slots.item({ widget, columns: columns.value }) : null
-  },
-  fits: (id) => fitsContent(byId.value.get(id)?.type),
-  watch: (element) => contentObserver?.observe(element),
-  unwatch: (element) => contentObserver?.unobserve(element),
+const RENDER: InjectionKey<(id: string) => VNode[] | null> = Symbol('dashboard-grid-render')
+provide(RENDER, (id) => {
+  const widget = byId.value.get(id)
+  return widget ? slots.item({ widget, columns: columns.value }) : null
 })
 
-/**
- * What GridStack teleports into each item: the page's slot for that widget id. A fixed-height card
- * fills the item; a content-sized one keeps its own height, which is what GridStack measures.
- */
+/** The content of each content-sized card on the grid, watched for its height. */
+const fitted = new Set<HTMLElement>()
+const contentObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => scheduleRefit())
+provide(FIT_CONTENT, {
+  observe: (content) => {
+    fitted.add(content)
+    contentObserver?.observe(content)
+  },
+  unobserve: (content) => {
+    fitted.delete(content)
+    contentObserver?.unobserve(content)
+  },
+})
+
+/** What GridStack teleports into each item: the page's slot for that widget id. */
 const Host = markRaw(
   defineComponent({
     name: 'DashboardGridHost',
     props: { id: { type: String, required: true } },
     setup(hostProps) {
-      const host = inject(HOST)!
-      const element = ref<HTMLElement | null>(null)
-      const fits = computed(() => host.fits(hostProps.id))
-      watch(
-        [element, fits],
-        ([el, fit], [previous]) => {
-          if (previous) host.unwatch(previous)
-          if (el && fit) host.watch(el)
-        },
-        { flush: 'post' },
-      )
-      onBeforeUnmount(() => {
-        if (element.value) host.unwatch(element.value)
-      })
-      return () => h('div', { ref: element, class: fits.value ? 'dashboard-fit' : 'h-full' }, host.render(hostProps.id) ?? undefined)
+      const render = inject(RENDER)!
+      return () => h('div', { class: 'h-full' }, render(hostProps.id) ?? undefined)
     },
   }),
 )
@@ -145,24 +134,26 @@ function sync() {
       if (!layouts.has(id)) g.removeWidget(el, true, false)
     }
     for (const widget of props.widgets) {
-      const layout = layouts.get(widget.id)!
+      const stored = layouts.get(widget.id)!
+      // Rows to sub-rows: the only place a stored layout becomes the grid's unit.
+      const layout = { x: stored.x, y: stored.y * SUB_ROWS, w: stored.w, h: stored.h * SUB_ROWS }
       const spec = typeSpec(widget.type)
       const minW = columns.value === 12 ? (spec?.size.minW ?? 1) : 1
-      const minH = spec?.size.minH ?? 1
+      const minH = (spec?.size.minH ?? 1) * SUB_ROWS
       // The contract's tallest card: a resize stops there instead of making a height Save refuses.
-      const maxH = CONTRACT.limits.maxWidgetHeight
+      const maxH = CONTRACT.limits.maxWidgetHeight * SUB_ROWS
       const fits = fitsContent(widget.type)
       const el = existing.get(widget.id)
       if (!el) {
-        g.addWidget({ id: widget.id, ...layout, minW, minH, maxH, sizeToContent: fits, component: 'Host', props: { id: widget.id } } as GridStackWidget as never)
+        g.addWidget({ id: widget.id, ...layout, minW, minH, maxH, component: 'Host', props: { id: widget.id } } as GridStackWidget as never)
         continue
       }
       const node = el.gridstackNode!
       // A content-sized card's height is its content's, never the stored one written back over it.
       const heightDiffers = !fits && node.h !== layout.h
-      if (node.x !== layout.x || node.y !== layout.y || node.w !== layout.w || heightDiffers || node.minW !== minW || node.maxH !== maxH || !!node.sizeToContent !== fits) {
+      if (node.x !== layout.x || node.y !== layout.y || node.w !== layout.w || heightDiffers || node.minW !== minW || node.maxH !== maxH) {
         const { h: storedH, ...position } = layout
-        g.update(el as GridItemHTMLElement, { ...position, ...(fits ? {} : { h: storedH }), minW, minH, maxH, sizeToContent: fits })
+        g.update(el as GridItemHTMLElement, { ...position, ...(fits ? {} : { h: storedH }), minW, minH, maxH })
       }
     }
   } finally {
@@ -170,6 +161,61 @@ function sync() {
     applying = false
   }
   g.setStatic(!(props.editable && columns.value === 12))
+  scheduleRefit()
+}
+
+let refitQueued = false
+
+/**
+ * One refit for however many cards changed together, before the next paint. A microtask, not an
+ * animation frame: a frame never comes in a hidden tab, and the cards would wait there unfitted.
+ */
+function scheduleRefit() {
+  if (refitQueued) return
+  refitQueued = true
+  queueMicrotask(() => {
+    refitQueued = false
+    refit()
+  })
+}
+
+/**
+ * Sizes every content-sized card to what its content needs, every card on a row to the tallest.
+ *
+ * What a card needs is read from where it is now: its item's height, less the room inside its frame
+ * that the content does not use (or plus what overflows). The content element keeps the content's
+ * own height whatever the card's, so growing the card to its row never feeds back into the need.
+ */
+function refit() {
+  const g = grid()
+  if (!g || fitted.size === 0) return
+  const needs = new Map<string, number>()
+  for (const content of fitted) {
+    const item = content.closest<GridItemHTMLElement>('.grid-stack-item')
+    const node = item?.gridstackNode
+    const box = item?.querySelector<HTMLElement>('.grid-stack-item-content')
+    const body = content.parentElement
+    if (!item || !node || node.id === undefined || !box || !body || box.clientHeight === 0) continue
+    const style = getComputedStyle(body)
+    const room = body.clientHeight - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0)
+    const needed = box.clientHeight - (room - content.getBoundingClientRect().height)
+    needs.set(String(node.id), Math.ceil((needed + GAP) / CELL_HEIGHT))
+  }
+  if (needs.size === 0) return
+
+  const heights = rowHeights(deriveLayout(props.widgets, columns.value), needs, SUB_ROWS)
+  const items = new Map(g.getGridItems().map((el) => [String(el.gridstackNode?.id ?? ''), el] as const))
+  applying = true
+  g.batchUpdate()
+  try {
+    for (const [id, h] of heights) {
+      const el = items.get(id)
+      if (el?.gridstackNode && el.gridstackNode.h !== h) g.update(el, { h })
+    }
+  } finally {
+    g.batchUpdate(false)
+    applying = false
+  }
 }
 
 /** After a drag or resize ends: every position, as one commit. */
@@ -178,8 +224,9 @@ function endGesture(label: string) {
   setTimeout(() => {
     const g = grid()
     if (!g || applying || columns.value !== 12) return
-    const positions = g.engine.nodes.map((n) => ({ id: String(n.id), x: n.x ?? 0, y: n.y ?? 0, w: n.w ?? 1, h: n.h ?? 1 }))
-    emit('commit', positions, label)
+    const places = g.engine.nodes.map((n) => ({ id: String(n.id), x: n.x ?? 0, y: n.y ?? 0, w: n.w ?? 1, h: n.h ?? 1 }))
+    const sized = new Set(props.widgets.filter((w) => fitsContent(w.type)).map((w) => w.id))
+    emit('commit', toStoredRows(places, SUB_ROWS, sized), label)
   }, 0)
 }
 
@@ -195,18 +242,6 @@ watch(
 watch(() => props.editable, () => sync())
 
 let observer: ResizeObserver | null = null
-
-/** Fits each content-sized item whose content changed height to that height. */
-function refit(entries: ResizeObserverEntry[]) {
-  const g = grid()
-  if (!g) return
-  for (const entry of entries) {
-    const item = (entry.target as HTMLElement).closest<GridItemHTMLElement>('.grid-stack-item')
-    if (item?.gridstackNode) g.resizeToContent(item)
-  }
-}
-
-contentObserver = new ResizeObserver(refit)
 
 onMounted(() => {
   if (root.value) columns.value = columnsFor(root.value.clientWidth)
@@ -231,10 +266,10 @@ onBeforeUnmount(() => {
   observer?.disconnect()
   observer = null
   contentObserver?.disconnect()
-  contentObserver = null
+  fitted.clear()
 })
 
-defineExpose({ sync, columns })
+defineExpose({ sync, refit, columns })
 </script>
 
 <template>
@@ -255,11 +290,6 @@ defineExpose({ sync, columns })
   dragged card will land) takes the accent tint instead of the library's grey, so it reads as this
   app's - drawn with tokens, never literal colours.
 */
-/* A content-sized card never scrolls: the grid makes room for all of it. */
-.dashboard-grid :deep(.grid-stack-item-content:has(> .dashboard-fit)) {
-  overflow: hidden;
-}
-
 .dashboard-grid :deep(.grid-stack-placeholder > .placeholder-content) {
   background: var(--c-accent-subtle);
   border: 1px dashed var(--c-accent);

@@ -67,7 +67,6 @@ export const definitions = [
       showDefinition: { label: 'Show definitions (the “i”)', section: 'display', visual: true },
     },
     exports: { csv: true, image: true },
-    chrome: 'bare',
     height: 'content',
   }),
 

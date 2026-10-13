@@ -16,8 +16,9 @@ import { useRefresh } from './shared/useRefresh'
 /**
  * Several headline figures from one /kpi response: the dashboard page's KPI row, as one widget.
  *
- * The widget is a row of cards, so it has no card of its own (chrome `bare`), and it is as tall as
- * its cards (`height: 'content'`): a figure read at a glance is never behind a scrollbar. The cards
+ * A card like every other on the dashboard - its title and its menu in the header, its edges on the
+ * grid's - holding the row of figures, and as tall as they are (`height: 'content'`): a figure read
+ * at a glance is never behind a scrollbar. The cards
  * sit in one row when the width allows, otherwise in even rows of three or two - never five and a
  * stray one (`kpiRow.ts`), as the dashboard page's own KPI row did.
  *
@@ -72,12 +73,6 @@ const gridStyle = computed(() => ({
 
 <template>
   <div ref="row" class="flex h-full min-h-0 flex-col gap-3" :aria-busy="updating">
-    <!-- No frame draws a title for a bare widget: its own, when it has one. -->
-    <div v-if="instance.title || instance.subtitle" class="shrink-0">
-      <p v-if="instance.title" class="text-sm font-semibold">{{ instance.title }}</p>
-      <p v-if="instance.subtitle" class="text-xs text-[var(--c-text-muted)]">{{ instance.subtitle }}</p>
-    </div>
-
     <AsyncBoundary
       class="min-h-0 flex-1"
       :is-loading="loading"

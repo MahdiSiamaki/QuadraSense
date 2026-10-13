@@ -112,6 +112,7 @@ const toneClass = computed(
       <p class="text-xs font-medium tracking-wide text-[var(--c-text-muted)]">
         {{ label }}
       </p>
+      <div class="flex shrink-0 items-start gap-0.5">
       <button
         v-if="tooltip"
         ref="infoButton"
@@ -124,6 +125,9 @@ const toneClass = computed(
       >
         i
       </button>
+      <!-- A host's own controls (a dashboard card's menu), top right like any card's. -->
+      <slot name="actions" />
+      </div>
     </div>
 
     <div

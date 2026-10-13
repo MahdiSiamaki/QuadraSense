@@ -9,7 +9,7 @@ import type { DashboardTemplate } from './types'
  */
 export const devicePopulation: DashboardTemplate = {
   key: 'device-population',
-  version: 2,
+  version: 3,
   name: 'Device population',
   description: 'Active device–SIM bindings across the network, enriched with GSMA device data.',
   definition: {
@@ -20,8 +20,8 @@ export const devicePopulation: DashboardTemplate = {
       { id: 'w_dpfreshness', type: 'ops.freshness', configVersion: 1, title: 'Data freshness', subtitle: null,
         config: { showPipeline: true, showTac: true }, overrides: {}, layout: { x: 0, y: 0, w: 12, h: 4 } },
 
-      // The page's KPI row: one widget, one menu, the six figures side by side as they always were.
-      { id: 'w_dpkpirow', type: 'metric.kpiSummary', configVersion: 1, title: null, subtitle: null,
+      // The page's KPI row: one card, one menu, the six figures side by side as they always were.
+      { id: 'w_dpkpirow', type: 'metric.kpiSummary', configVersion: 1, title: 'Key figures', subtitle: null,
         config: {
           metrics: ['activeBindings', 'distinctSubscribers', 'distinctSims', 'distinctDevices', 'unknownDeviceBindings', 'tacCoveragePercent'],
           numberFormat: 'compact', precision: 1, showDefinition: true,

@@ -15,7 +15,13 @@ describe('the KPI row', () => {
     expect(kpiRowColumns(6, 990)).toBe(3)
     expect(kpiRowColumns(6, 3 * 160 + 2 * 12)).toBe(3)
     expect(kpiRowColumns(6, 350)).toBe(2)
-    expect(kpiRowColumns(6, 300)).toBe(1)
+    expect(kpiRowColumns(6, 280)).toBe(1)
+  })
+
+  it('keeps two to a row on a phone, where the row is about 316px and two 10rem cards would not fit', () => {
+    expect(kpiRowColumns(6, 316)).toBe(2)
+    expect(kpiRowColumns(6, 2 * 140 + 12)).toBe(2)
+    expect(kpiRowColumns(6, 2 * 140 + 11)).toBe(1)
   })
 
   it('takes as many columns as there are cards, never more', () => {

@@ -173,3 +173,51 @@ export function sizePreset(layout: WidgetLayout, spec: Pick<WidgetTypeSpec, 'siz
   const x = layout.x + w > COLUMNS ? COLUMNS - w : layout.x
   return { x, y: layout.y, w, h }
 }
+
+/** A grid item's place, in whatever unit of height the caller uses. */
+export interface GridPlace {
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * Positions read from the grid, in sub-rows of `sub` to a stored row, as stored rows.
+ *
+ * The grid works in finer rows than it stores so a card sized to its content wastes at most a
+ * sub-row, not a whole row; a layout is still saved in the contract's rows. Heights round to the
+ * nearest row - up for a content-sized card, so its stored height still holds it - and each card
+ * starts below every card above it that it shares a column with, so rounding never makes two
+ * overlap.
+ */
+export function toStoredRows(places: readonly GridPlace[], sub: number, sizedToContent: ReadonlySet<string> = new Set()): GridPlace[] {
+  const placed: GridPlace[] = []
+  for (const p of [...places].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const h = Math.max(1, sizedToContent.has(p.id) ? Math.ceil(p.h / sub) : Math.round(p.h / sub))
+    let y = Math.round(p.y / sub)
+    for (const above of placed) if (above.x < p.x + p.w && p.x < above.x + above.w) y = Math.max(y, above.y + above.h)
+    placed.push({ id: p.id, x: p.x, y, w: p.w, h })
+  }
+  return placed
+}
+
+/**
+ * The height, in sub-rows, of each content-sized card: what its content needs, but never less than
+ * the rest of its row - every card on a row ends together, as the dashboard page's rows did. Rows
+ * are the cards' rows in `widgets` (one breakpoint's layout); a fixed card's height counts for its
+ * row, and only content-sized cards change.
+ */
+export function rowHeights(widgets: readonly WidgetInstance[], needs: ReadonlyMap<string, number>, sub: number): Map<string, number> {
+  const rows = new Map<number, WidgetInstance[]>()
+  for (const widget of widgets) rows.set(widget.layout.y, [...(rows.get(widget.layout.y) ?? []), widget])
+  const heights = new Map<string, number>()
+  for (const row of rows.values()) {
+    const sized = row.filter((w) => needs.has(w.id))
+    if (!sized.length) continue
+    const target = Math.max(...sized.map((w) => needs.get(w.id)!), ...row.filter((w) => !needs.has(w.id)).map((w) => w.layout.h * sub))
+    for (const widget of sized) heights.set(widget.id, target)
+  }
+  return heights
+}

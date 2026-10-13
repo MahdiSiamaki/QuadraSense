@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import { useKpiSummary } from '@/api/dashboard'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import KpiCard from '@/design-system/KpiCard.vue'
+import ActionMenu from '@/features/dashboard/components/ActionMenu.vue'
+import { FRAME_ACTIONS } from '@/features/dashboard/components/frameActions'
 import { useQueryActive, useWidgetData } from '@/features/dashboard/composables/useWidgetData'
 import type { SnapshotData } from '@/features/dashboard/types/snapshot'
 import type { WidgetViewProps } from '@/features/dashboard/types/widget'
@@ -37,6 +39,9 @@ const qualifier = computed(() =>
   config.value.showQualifier === false ? undefined : metricQualifier(spec.value, summary.value, precision.value),
 )
 const definition = computed(() => (config.value.showDefinition === false ? undefined : spec.value.definition))
+
+/** The card's menu, inside the card like every other card's (frameActions.ts). */
+const actions = inject(FRAME_ACTIONS, null)
 </script>
 
 <template>
@@ -66,7 +71,11 @@ const definition = computed(() => (config.value.showDefinition === false ? undef
         :tone="spec.tone"
         :format="config.numberFormat"
         :precision="spec.percent ? precision : undefined"
-      />
+      >
+        <template v-if="actions" #actions>
+          <ActionMenu :label="actions.label" :items="actions.items" class="-mt-1.5 -mr-2" @select="actions.select" />
+        </template>
+      </KpiCard>
     </AsyncBoundary>
   </div>
 </template>

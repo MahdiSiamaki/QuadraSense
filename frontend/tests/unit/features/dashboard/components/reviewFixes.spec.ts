@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { h } from 'vue'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { api } from '@/api/client'
 import ConfigForm from '@/features/dashboard/components/ConfigForm.vue'
@@ -56,11 +57,27 @@ describe('the dashboard switcher', () => {
 })
 
 describe('the widget frame', () => {
-  it("draws a bare card's menu in view mode with no badges: a KPI keeps Download CSV", () => {
+  it("draws a bare card's menu in view mode with no badges, inside the KPI card: a KPI keeps Download CSV", () => {
+    const kpi = { activeBindings: 1000, distinctSubscribers: 900, distinctSims: 900, distinctDevices: 950, unknownDeviceBindings: 50, malformedImeiBindings: 1, tacMatchedBindings: 900, tacCoveragePercent: 90 }
     const wrapper = mount(WidgetFrame, {
       props: { title: 'Active bindings', chrome: 'bare', editing: false, badges: [], menu: [{ key: 'export:csv', label: 'Download CSV' }] },
+      slots: {
+        default: () =>
+          h(getWidget('metric.kpi')!.component, {
+            instance: instance('metric.kpi'),
+            lens: {},
+            mode: 'view',
+            active: true,
+            snapshot: { id: 'w_test0001', type: 'metric.kpi', status: 'ok', reason: null, data: { kpi }, asOf: null, notes: [], effective: {} },
+          }),
+      },
+      global: { plugins: [[VueQueryPlugin, { queryClient: new QueryClient() }]] as never },
     })
-    expect(wrapper.find('[aria-label="Actions for Active bindings"]').exists()).toBe(true)
+    const menu = wrapper.find('[aria-label="Actions for Active bindings"]')
+    expect(menu.exists()).toBe(true)
+    // Inside the card, top right like every card's menu - not beside it, narrowing it.
+    expect(menu.element.closest('.kpi-value')).toBeNull()
+    expect(wrapper.get('.kpi-value').element.parentElement!.contains(menu.element)).toBe(true)
   })
 })
 

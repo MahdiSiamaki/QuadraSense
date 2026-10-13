@@ -125,7 +125,7 @@ describe('templates', () => {
 
     expect(ordered.map((w) => w.title)).toEqual([
       'Data freshness',
-      null,
+      'Key figures',
       'Daily change',
       'SIM and handset changes', 'Vendor movement',
       'Device class mix',
