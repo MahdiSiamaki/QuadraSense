@@ -31,10 +31,24 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Change password', chrome: false, allowDuringPasswordChange: true },
   },
   {
+    // The person's default dashboard - or Device Population, the page this used to be. It never
+    // redirects, so every old link with ?vendor=…&countBy=… keeps its meaning (ADR-016 §7).
     path: '/',
     name: 'dashboard',
     component: () => import('@/features/dashboard/DashboardPage.vue'),
-    meta: { title: 'Device population', permission: Permission.DashboardView },
+    meta: { title: 'Dashboard', permission: Permission.DashboardView },
+  },
+  {
+    path: '/dashboards/:id(\\d+)',
+    name: 'dashboard-view',
+    component: () => import('@/features/dashboard/DashboardPage.vue'),
+    meta: { title: 'Dashboard', permission: Permission.DashboardView },
+  },
+  {
+    path: '/dashboards/templates/:key([a-z][a-z0-9-]{1,47})',
+    name: 'dashboard-template',
+    component: () => import('@/features/dashboard/DashboardPage.vue'),
+    meta: { title: 'Dashboard template', permission: Permission.DashboardView },
   },
   {
     path: '/imports',

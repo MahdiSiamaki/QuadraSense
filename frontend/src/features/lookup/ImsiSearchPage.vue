@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import Card from '@/design-system/Card.vue'
 import Button from '@/design-system/Button.vue'
 import Pagination from '@/design-system/Pagination.vue'
@@ -17,6 +17,7 @@ import {
 import { useTopDimension, useDistribution } from '@/api/dashboard'
 import { ApiError } from '@/api/client'
 import { formatDate, formatFull } from '@/lib/format'
+import { takePrefill } from '@/lib/prefill'
 
 /**
  * Search by IMSI.
@@ -89,6 +90,14 @@ function run(toPage = 1) {
     pageSize: 50,
   })
 }
+
+// An IMSI or prefix handed over by a dashboard's quick lookup: in memory, never the URL or history.
+onMounted(() => {
+  const prefill = takePrefill('imsi-search')
+  if (prefill === null) return
+  raw.value = prefill
+  run()
+})
 
 // Re-running on a filter change rather than making the user press the button again: they have
 // already asked for this term, and the filters only narrow it.

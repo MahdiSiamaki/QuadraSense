@@ -172,8 +172,8 @@ async function send(path: string, init?: RequestInit, accept = 'application/json
 export interface DownloadedFile {
   blob: Blob
   /**
-   * From Content-Disposition. Null across origins - in development the SPA and the API are on
-   * different ports, and the header is not exposed to scripts there - so callers keep a fallback.
+   * From Content-Disposition, which the API exposes to scripts across origins (development puts the
+   * SPA and the API on different ports). Null if a proxy strips it, so callers keep a fallback.
    */
   filename: string | null
 }

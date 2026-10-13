@@ -70,11 +70,12 @@ export interface ModelNetworkAge {
   dataThrough: string | null
 }
 
-export function useModelArrivalStatus() {
+export function useModelArrivalStatus(options: { enabled?: MaybeRefOrGetter<boolean> } = {}) {
   return useQuery({
     queryKey: ['model-arrivals', 'status'],
     queryFn: ({ signal }) => api.get<ModelArrivalStatus>('/api/v1/devices/arrivals/status', undefined, signal),
     staleTime: 60_000,
+    enabled: computed(() => toValue(options.enabled ?? true)),
   })
 }
 
@@ -97,11 +98,14 @@ export function useModelArrivals(grain: MaybeRefOrGetter<'month' | 'week'>, enab
   })
 }
 
-export function useModelNetworkAge(tac: MaybeRefOrGetter<string | null>) {
+export function useModelNetworkAge(
+  tac: MaybeRefOrGetter<string | null>,
+  options: { enabled?: MaybeRefOrGetter<boolean> } = {},
+) {
   return useQuery({
     queryKey: computed(() => ['model-arrivals', 'age', toValue(tac)]),
     queryFn: ({ signal }) => api.get<ModelNetworkAge>(`/api/v1/devices/${toValue(tac)}/network-age`, undefined, signal),
-    enabled: computed(() => /^\d{8}$/.test(toValue(tac) ?? '')),
+    enabled: computed(() => toValue(options.enabled ?? true) && /^\d{8}$/.test(toValue(tac) ?? '')),
     staleTime: 5 * 60_000,
     retry: false,
   })

@@ -107,11 +107,22 @@ export interface DashboardFilters {
  */
 const DAILY_DATA_STALE_TIME = 5 * 60 * 1000
 
-export function useKpiSummary(filters: MaybeRefOrGetter<DashboardFilters>) {
+/**
+ * Lets a caller hold a query back. A dashboard widget that is off screen, not permitted or drawing an
+ * export's server-prepared data must send nothing; every other caller passes nothing and is unchanged.
+ */
+export interface QueryGate {
+  enabled?: MaybeRefOrGetter<boolean>
+}
+
+const gate = (options: QueryGate) => computed(() => toValue(options.enabled ?? true))
+
+export function useKpiSummary(filters: MaybeRefOrGetter<DashboardFilters>, options: QueryGate = {}) {
   return useQuery({
     queryKey: ['kpi', computed(() => toValue(filters))],
     queryFn: ({ signal }) => api.get<KpiSummary>('/api/v1/dashboard/kpi', { ...toValue(filters) }, signal),
     staleTime: DAILY_DATA_STALE_TIME,
+    enabled: gate(options),
   })
 }
 
@@ -122,6 +133,7 @@ export function useTopDimension(
   filters: MaybeRefOrGetter<DashboardFilters>,
   limit: MaybeRefOrGetter<number> = 10,
   countBy: MaybeRefOrGetter<CountBy> = 'bindings',
+  options: QueryGate = {},
 ) {
   return useQuery({
     queryKey: [
@@ -138,6 +150,7 @@ export function useTopDimension(
         signal,
       ),
     staleTime: DAILY_DATA_STALE_TIME,
+    enabled: gate(options),
   })
 }
 
@@ -145,6 +158,7 @@ export function useDistribution(
   dimension: MaybeRefOrGetter<Dimension>,
   filters: MaybeRefOrGetter<DashboardFilters>,
   countBy: MaybeRefOrGetter<CountBy> = 'bindings',
+  options: QueryGate = {},
 ) {
   return useQuery({
     queryKey: [
@@ -160,6 +174,7 @@ export function useDistribution(
         signal,
       ),
     staleTime: DAILY_DATA_STALE_TIME,
+    enabled: gate(options),
   })
 }
 
@@ -169,7 +184,7 @@ export function useDistribution(
  * Read from a pre-computed 8-row table, so this is effectively free (~106 ms end
  * to end, most of it HTTP).
  */
-export function useDeviceClassMix(countBy: MaybeRefOrGetter<CountBy> = 'bindings') {
+export function useDeviceClassMix(countBy: MaybeRefOrGetter<CountBy> = 'bindings', options: QueryGate = {}) {
   return useQuery({
     queryKey: ['device-class-mix', computed(() => toValue(countBy))],
     queryFn: ({ signal }) =>
@@ -179,6 +194,7 @@ export function useDeviceClassMix(countBy: MaybeRefOrGetter<CountBy> = 'bindings
         signal,
       ),
     staleTime: DAILY_DATA_STALE_TIME,
+    enabled: gate(options),
   })
 }
 
@@ -202,7 +218,7 @@ export interface CapabilitySupport {
  * in 2 rows out of 270,166, and the IMS columns describe emergency calling, not VoLTE.
  * Reporting a guess here would be worse than reporting nothing.
  */
-export function useCapabilities(countBy: MaybeRefOrGetter<CountBy> = 'bindings') {
+export function useCapabilities(countBy: MaybeRefOrGetter<CountBy> = 'bindings', options: QueryGate = {}) {
   return useQuery({
     queryKey: ['capabilities', computed(() => toValue(countBy))],
     queryFn: ({ signal }) =>
@@ -212,6 +228,7 @@ export function useCapabilities(countBy: MaybeRefOrGetter<CountBy> = 'bindings')
         signal,
       ),
     staleTime: DAILY_DATA_STALE_TIME,
+    enabled: gate(options),
   })
 }
 
@@ -240,21 +257,23 @@ export interface DailyChurn {
  * Only possible since the source began supplying dated filenames - before that the axis
  * could only honestly be labelled "delivery sequence".
  */
-export function useDailyChanges() {
+export function useDailyChanges(options: QueryGate = {}) {
   return useQuery({
     queryKey: ['daily-changes'],
     queryFn: ({ signal }) =>
       api.get<DailyChange[]>('/api/v1/dashboard/daily-changes', undefined, signal),
     staleTime: DAILY_DATA_STALE_TIME,
+    enabled: gate(options),
   })
 }
 
-export function useDailyChurn() {
+export function useDailyChurn(options: QueryGate = {}) {
   return useQuery({
     queryKey: ['daily-churn'],
     queryFn: ({ signal }) =>
       api.get<DailyChurn[]>('/api/v1/dashboard/daily-churn', undefined, signal),
     staleTime: DAILY_DATA_STALE_TIME,
+    enabled: gate(options),
   })
 }
 
@@ -329,7 +348,7 @@ export interface VendorMovementFilters {
   limit?: number
 }
 
-export function useVendorMovement(filters: MaybeRefOrGetter<VendorMovementFilters>) {
+export function useVendorMovement(filters: MaybeRefOrGetter<VendorMovementFilters>, options: QueryGate = {}) {
   return useQuery({
     queryKey: ['vendor-movement', computed(() => toValue(filters))],
     queryFn: ({ signal }) =>
@@ -339,6 +358,7 @@ export function useVendorMovement(filters: MaybeRefOrGetter<VendorMovementFilter
         signal,
       ),
     staleTime: DAILY_DATA_STALE_TIME,
+    enabled: gate(options),
   })
 }
 

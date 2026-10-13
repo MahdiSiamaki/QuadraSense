@@ -23,10 +23,14 @@ const RUNNING_POLL_MS = 1500
 const LIST_POLL_MS = 10_000
 const FRESHNESS_STALE_MS = 60_000
 
-export function useImportHistory(query: MaybeRefOrGetter<ImportHistoryQuery>) {
+export function useImportHistory(
+  query: MaybeRefOrGetter<ImportHistoryQuery>,
+  options: { enabled?: MaybeRefOrGetter<boolean> } = {},
+) {
   return useQuery({
     queryKey: ['imports', 'list', computed(() => toValue(query))],
     queryFn: ({ signal }) => importsApi.list(toValue(query), signal),
+    enabled: computed(() => toValue(options.enabled ?? true)),
 
     // Keeps the previous page on screen while the next one loads, so paging and filtering do
     // not blank the table and shift the layout under the cursor.

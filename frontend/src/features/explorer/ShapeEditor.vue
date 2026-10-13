@@ -22,6 +22,11 @@ const props = defineProps<{
   maxDepth: number
   maxPageSize: number
   problems: Map<string, string[]>
+  /**
+   * Groups and counts only, with no page size: a dashboard widget's query, which must be aggregated
+   * and takes its row count from the widget. The caller keeps `draft.grouped` true.
+   */
+  groupsOnly?: boolean
 }>()
 
 const AGGREGATES: Array<{ value: ExplorerAggregate; label: string }> = [
@@ -98,6 +103,7 @@ const PAGE_SIZES = computed(() => [25, 50, 100, 200, 500].filter((n) => n <= pro
 <template>
   <div class="flex flex-col gap-4">
     <SegmentedControl
+      v-if="!groupsOnly"
       v-model="draft.grouped"
       class="w-fit"
       :options="[
@@ -259,7 +265,7 @@ const PAGE_SIZES = computed(() => [25, 50, 100, 200, 500].filter((n) => n <= pro
         </Button>
       </fieldset>
 
-      <label class="flex flex-col gap-1">
+      <label v-if="!groupsOnly" class="flex flex-col gap-1">
         <span :class="miniLabel">Rows per page</span>
         <select v-model.number="draft.pageSize" :class="control">
           <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }}</option>

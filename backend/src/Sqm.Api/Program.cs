@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
@@ -99,6 +99,53 @@ builder.Services.AddSingleton<Sqm.Application.Risk.IRiskReader, Sqm.Infrastructu
 // New models and network age (analytics migration 025).
 builder.Services.AddSingleton<Sqm.Application.Devices.IModelArrivalReader, Sqm.Infrastructure.ClickHouse.ClickHouseModelArrivalReader>();
 builder.Services.AddSingleton<Sqm.Application.Quality.IQualityReader, Sqm.Infrastructure.ClickHouse.ClickHouseQualityReader>();
+
+// The dashboard builder (ADR-016): the widget contract the frontend registry is typed against, the
+// validator that refuses anything it does not name, the PostgreSQL store, and the rules of who may do
+// what. The application layer takes plain option values; they are read here, once.
+builder.Services.Configure<Sqm.Application.Dashboards.DashboardOptions>(
+    builder.Configuration.GetSection(Sqm.Application.Dashboards.DashboardOptions.SectionName));
+builder.Services.AddSingleton<Sqm.Application.Dashboards.IWidgetContract>(_ => Sqm.Application.Dashboards.WidgetContract.Load());
+builder.Services.AddSingleton<Sqm.Application.Dashboards.IDashboardDefinitionValidator>(sp =>
+    new Sqm.Application.Dashboards.DashboardDefinitionValidator(
+        sp.GetRequiredService<Sqm.Application.Dashboards.IWidgetContract>(),
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Sqm.Application.Dashboards.DashboardOptions>>().Value,
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Sqm.Application.Explorer.ExplorerOptions>>().Value,
+        sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddSingleton<Sqm.Application.Dashboards.IDashboardStore, PostgresDashboardStore>();
+builder.Services.AddSingleton(sp => new Sqm.Application.Dashboards.DashboardService(
+    sp.GetRequiredService<Sqm.Application.Dashboards.IDashboardStore>(),
+    sp.GetRequiredService<Sqm.Application.Dashboards.IDashboardDefinitionValidator>(),
+    sp.GetRequiredService<Sqm.Application.Dashboards.IWidgetContract>(),
+    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Sqm.Application.Dashboards.DashboardOptions>>().Value,
+    sp.GetRequiredService<IAuditLog>(),
+    sp.GetRequiredService<TimeProvider>()));
+
+// Exports read each widget through the composition its own endpoint uses, for the person exporting.
+// Scoped: one request's widgets share one read of the daily series, the feed-quality days and the
+// risk context.
+builder.Services.AddScoped<Sqm.Application.Dashboards.IWidgetDataLoader>(sp =>
+    new Sqm.Application.Dashboards.DashboardWidgetDataLoader(
+        sp.GetRequiredService<IDeviceAnalyticsStore>(),
+        sp.GetRequiredService<IImportJobRepository>(),
+        sp.GetRequiredService<Sqm.Application.Risk.IRiskReader>(),
+        sp.GetRequiredService<Sqm.Application.Quality.IFeedQualityReader>(),
+        sp.GetRequiredService<Sqm.Application.Quality.IQualityReader>(),
+        sp.GetRequiredService<Sqm.Application.Devices.IModelArrivalReader>(),
+        sp.GetRequiredService<IDeviceImageStore>(),
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Sqm.Application.Quality.FeedQualityOptions>>().Value,
+        () => sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Sqm.Application.Risk.RiskOptions>>().CurrentValue,
+        sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddScoped(sp => new Sqm.Application.Dashboards.DashboardExportService(
+    sp.GetRequiredService<Sqm.Application.Dashboards.IWidgetContract>(),
+    sp.GetRequiredService<Sqm.Application.Dashboards.IDashboardDefinitionValidator>(),
+    sp.GetRequiredService<Sqm.Application.Dashboards.DashboardService>(),
+    sp.GetRequiredService<Sqm.Application.Dashboards.IWidgetDataLoader>(),
+    sp.GetRequiredService<IAuditLog>(),
+    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Sqm.Application.Dashboards.DashboardOptions>>().Value,
+    sp.GetRequiredService<TimeProvider>(),
+    (message, ex) => DashboardExportEndpoints.ReportFailure(
+        sp.GetRequiredService<ILogger<Sqm.Application.Dashboards.DashboardExportService>>(), message, ex)));
 
 // Curated device photographs. The GSMA TAC record carries none and this deployment has no
 // internet access, so they are uploaded here and held in PostgreSQL. See ADR-009.
@@ -214,11 +261,15 @@ builder.Services.AddOpenApi();
 // eventually carry credentials, and `*` is incompatible with that anyway.
 var corsOrigins = builder.Configuration["Api:CorsOrigins"]?.Split(',', StringSplitOptions.RemoveEmptyEntries)
                   ?? ["http://localhost:5173"];
+// The headers the client reads are exposed: across origins (development: the SPA and the API on
+// different ports) a browser hides every other header from scripts, so a download lost its file name -
+// and with it the scope a dashboard CSV's name carries - and an error lost its correlation id.
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
     .WithOrigins(corsOrigins)
     .AllowAnyHeader()
     .AllowAnyMethod()
-    .AllowCredentials()));
+    .AllowCredentials()
+    .WithExposedHeaders("Content-Disposition", "X-Export-Scope", "X-Correlation-Id")));
 
 builder.Services.AddHealthChecks()
     .AddCheck<ClickHouseHealthCheck>("clickhouse", tags: ["ready"]);
@@ -265,6 +316,8 @@ app.MapRoleEndpoints();
 app.MapAuditEndpoints();
 
 app.MapDashboardEndpoints();
+app.MapDashboardBuilderEndpoints();
+app.MapDashboardExportEndpoints();
 app.MapImportEndpoints();
 app.MapTacEndpoints();
 app.MapLookupEndpoints();

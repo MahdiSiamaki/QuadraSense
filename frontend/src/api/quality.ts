@@ -119,10 +119,11 @@ export interface QualitySignalsResponse {
  * The data-quality categories of the newest published measures run. They change only when the
  * worker publishes a run, at most a few times a day.
  */
-export function useQualitySignals() {
+export function useQualitySignals(options: { enabled?: MaybeRefOrGetter<boolean> } = {}) {
   return useQuery({
     queryKey: ['quality-signals'],
     queryFn: ({ signal }) => api.get<QualitySignalsResponse>('/api/v1/quality/signals', undefined, signal),
     staleTime: 10 * 60_000,
+    enabled: computed(() => toValue(options.enabled ?? true)),
   })
 }

@@ -1,0 +1,557 @@
+{
+  "$comment": "The dashboard widget allow-list, read by the frontend registry and embedded in the API's validator (ADR-016 section 3). Every type, every config field and its bounds. Adding a widget is three edits: this file, the registry entry, the component - the tests on both sides name the one that is missing.",
+  "contractVersion": 1,
+  "limits": {
+    "titleMaxLength": 120,
+    "subtitleMaxLength": 200,
+    "gridColumns": 12,
+    "maxRows": 400,
+    "maxWidgetHeight": 40
+  },
+  "lens": {
+    "countBy": ["bindings", "subscribers", "handsets"],
+    "ranges": ["all", "last7", "last30", "last90", "last180", "last365"],
+    "rangePattern": "^\\d{4}-\\d{2}-\\d{2}\\.\\.\\d{4}-\\d{2}-\\d{2}$",
+    "textFilterMaxLength": 120,
+    "tacPattern": "^\\d{8}$",
+    "refreshMinutes": [0, 5, 15, 30]
+  },
+  "groups": [
+    { "id": "overview", "name": "Overview & Population" },
+    { "id": "devices", "name": "Device Intelligence" },
+    { "id": "change", "name": "Change & Movement" },
+    { "id": "risk", "name": "Risk & Investigation" },
+    { "id": "quality", "name": "Data Quality" },
+    { "id": "operations", "name": "Data Operations" },
+    { "id": "tools", "name": "Analyst Tools" }
+  ],
+  "types": {
+    "metric.kpi": {
+      "configVersion": 1,
+      "group": "overview",
+      "permissions": ["dashboard.view"],
+      "filters": ["vendor", "deviceType", "operatingSystem", "tac", "includeUnknownDevice"],
+      "measures": [],
+      "time": "current",
+      "execution": "auto",
+      "size": { "w": 2, "h": 3, "minW": 2, "minH": 2 },
+      "config": {
+        "metric": { "kind": "enum", "required": true, "default": "activeBindings",
+          "values": ["activeBindings", "distinctSubscribers", "distinctSims", "distinctDevices", "unknownDeviceBindings", "malformedImeiBindings", "tacMatchedBindings", "unregisteredTacBindings", "tacCoveragePercent"] },
+        "numberFormat": { "kind": "enum", "default": "compact", "values": ["compact", "full"] },
+        "precision": { "kind": "int", "default": 1, "min": 0, "max": 3 },
+        "showDefinition": { "kind": "bool", "default": true },
+        "showQualifier": { "kind": "bool", "default": true }
+      }
+    },
+    "metric.kpiSummary": {
+      "configVersion": 1,
+      "group": "overview",
+      "permissions": ["dashboard.view"],
+      "filters": ["vendor", "deviceType", "operatingSystem", "tac", "includeUnknownDevice"],
+      "measures": [],
+      "time": "current",
+      "execution": "auto",
+      "size": { "w": 12, "h": 3, "minW": 4, "minH": 3 },
+      "config": {
+        "metrics": { "kind": "enumList", "required": true, "minItems": 1, "maxItems": 9,
+          "default": ["activeBindings", "distinctSubscribers", "distinctSims", "distinctDevices", "unknownDeviceBindings", "tacCoveragePercent"],
+          "values": ["activeBindings", "distinctSubscribers", "distinctSims", "distinctDevices", "unknownDeviceBindings", "malformedImeiBindings", "tacMatchedBindings", "unregisteredTacBindings", "tacCoveragePercent"] },
+        "numberFormat": { "kind": "enum", "default": "compact", "values": ["compact", "full"] },
+        "precision": { "kind": "int", "default": 1, "min": 0, "max": 3 },
+        "showDefinition": { "kind": "bool", "default": true }
+      }
+    },
+    "population.trend": {
+      "configVersion": 1,
+      "group": "overview",
+      "permissions": ["dashboard.view"],
+      "filters": [],
+      "measures": [],
+      "time": "series",
+      "execution": "auto",
+      "size": { "w": 12, "h": 8, "minW": 4, "minH": 5 },
+      "config": {
+        "grain": { "kind": "enum", "default": "day", "values": ["day", "week", "month"] },
+        "chart": { "kind": "enum", "default": "line", "values": ["line", "area"] },
+        "showFlagged": { "kind": "bool", "default": true },
+        "showMissing": { "kind": "bool", "default": true }
+      }
+    },
+    "device.top": {
+      "configVersion": 1,
+      "group": "devices",
+      "permissions": ["dashboard.view"],
+      "filters": ["vendor", "deviceType", "operatingSystem", "tac", "includeUnknownDevice"],
+      "measures": ["bindings", "subscribers", "handsets"],
+      "time": "current",
+      "execution": "auto",
+      "size": { "w": 6, "h": 9, "minW": 3, "minH": 5 },
+      "config": {
+        "dimension": { "kind": "enum", "required": true, "default": "vendorCanonical", "values": ["vendorCanonical", "manufacturer", "marketingName", "tac"] },
+        "limit": { "kind": "int", "default": 10, "min": 3, "max": 50 },
+        "display": { "kind": "enum", "default": "bar", "values": ["bar", "table"] },
+        "sort": { "kind": "enum", "default": "count", "values": ["count", "name"] },
+        "showValues": { "kind": "bool", "default": true },
+        "showPercent": { "kind": "bool", "default": true },
+        "excludeUnknownBucket": { "kind": "bool", "default": false },
+        "clickToFilter": { "kind": "bool", "default": true }
+      }
+    },
+    "device.distribution": {
+      "configVersion": 1,
+      "group": "devices",
+      "permissions": ["dashboard.view"],
+      "filters": ["vendor", "deviceType", "operatingSystem", "tac", "includeUnknownDevice"],
+      "measures": ["bindings", "subscribers", "handsets"],
+      "time": "current",
+      "execution": "auto",
+      "size": { "w": 6, "h": 9, "minW": 3, "minH": 5 },
+      "config": {
+        "dimension": { "kind": "enum", "required": true, "default": "deviceType", "values": ["deviceType", "operatingSystem"] },
+        "limit": { "kind": "int", "default": 10, "min": 3, "max": 50 },
+        "display": { "kind": "enum", "default": "table", "values": ["table", "bar"] },
+        "showPercent": { "kind": "bool", "default": true },
+        "clickToFilter": { "kind": "bool", "default": true }
+      }
+    },
+    "device.classMix": {
+      "configVersion": 1,
+      "group": "devices",
+      "permissions": ["dashboard.view"],
+      "filters": [],
+      "measures": ["bindings", "subscribers", "handsets"],
+      "time": "current",
+      "execution": "auto",
+      "size": { "w": 12, "h": 3, "minW": 4, "minH": 3 },
+      "config": {
+        "display": { "kind": "enum", "default": "composition", "values": ["composition", "table"] }
+      }
+    },
+    "device.capabilities": {
+      "configVersion": 1,
+      "group": "devices",
+      "permissions": ["dashboard.view"],
+      "filters": [],
+      "measures": ["bindings", "subscribers", "handsets"],
+      "time": "current",
+      "execution": "auto",
+      "size": { "w": 12, "h": 7, "minW": 4, "minH": 5 },
+      "config": {
+        "capabilities": { "kind": "enumList", "minItems": 1, "maxItems": 4,
+          "default": ["LTE", "5G", "eSIM", "IMS emergency calling"],
+          "values": ["LTE", "5G", "eSIM", "IMS emergency calling"] },
+        "showVolteNote": { "kind": "bool", "default": true }
+      }
+    },
+    "device.newModels": {
+      "configVersion": 1,
+      "group": "devices",
+      "permissions": ["device.view"],
+      "filters": [],
+      "measures": [],
+      "time": "range",
+      "execution": "auto",
+      "size": { "w": 6, "h": 9, "minW": 4, "minH": 5 },
+      "config": {
+        "brand": { "kind": "string", "default": "", "maxLength": 100 },
+        "deviceType": { "kind": "string", "default": "", "maxLength": 100 },
+        "knownOnly": { "kind": "bool", "default": true },
+        "limit": { "kind": "int", "default": 10, "min": 5, "max": 50 }
+      }
+    },
+    "device.modelArrivals": {
+      "configVersion": 1,
+      "group": "devices",
+      "permissions": ["device.view"],
+      "filters": [],
+      "measures": [],
+      "time": "series",
+      "execution": "auto",
+      "size": { "w": 6, "h": 8, "minW": 4, "minH": 5 },
+      "config": {
+        "grain": { "kind": "enum", "default": "month", "values": ["month", "week"] },
+        "display": { "kind": "enum", "default": "chart", "values": ["chart", "table"] }
+      }
+    },
+    "change.daily": {
+      "configVersion": 1,
+      "group": "change",
+      "permissions": ["dashboard.view"],
+      "filters": [],
+      "measures": [],
+      "time": "series",
+      "execution": "auto",
+      "size": { "w": 12, "h": 10, "minW": 4, "minH": 6 },
+      "config": {
+        "series": { "kind": "enumList", "minItems": 1, "maxItems": 4, "default": ["added", "removed", "cumulative"], "values": ["added", "removed", "net", "cumulative"] },
+        "chart": { "kind": "enum", "default": "bar", "values": ["bar", "line"] },
+        "showFlagged": { "kind": "bool", "default": true },
+        "showMissing": { "kind": "bool", "default": true }
+      }
+    },
+    "change.simHandset": {
+      "configVersion": 1,
+      "group": "change",
+      "permissions": ["dashboard.view"],
+      "filters": [],
+      "measures": [],
+      "time": "series",
+      "execution": "auto",
+      "size": { "w": 6, "h": 10, "minW": 4, "minH": 6 },
+      "config": {
+        "series": { "kind": "enumList", "minItems": 1, "maxItems": 2, "default": ["simChanges", "deviceChanges"], "values": ["simChanges", "deviceChanges"] },
+        "chart": { "kind": "enum", "default": "line", "values": ["line", "bar"] },
+        "showFlagged": { "kind": "bool", "default": true }
+      }
+    },
+    "change.vendorMovement": {
+      "configVersion": 1,
+      "group": "change",
+      "permissions": ["dashboard.view"],
+      "filters": [],
+      "measures": [],
+      "time": "range",
+      "execution": "auto",
+      "size": { "w": 6, "h": 10, "minW": 4, "minH": 6 },
+      "config": {
+        "rank": { "kind": "enum", "default": "movement", "values": ["movement", "share", "growth"] },
+        "limit": { "kind": "int", "default": 5, "min": 3, "max": 20 },
+        "display": { "kind": "enum", "default": "chart", "values": ["chart", "table"] },
+        "normalised": { "kind": "bool", "default": false }
+      }
+    },
+    "change.periodComparison": {
+      "configVersion": 1,
+      "group": "change",
+      "permissions": ["dashboard.view"],
+      "filters": [],
+      "measures": [],
+      "time": "range",
+      "execution": "auto",
+      "size": { "w": 6, "h": 6, "minW": 3, "minH": 4 },
+      "config": {
+        "metric": { "kind": "enum", "required": true, "default": "net", "values": ["added", "removed", "net", "simChanges", "deviceChanges", "population"] },
+        "baseline": { "kind": "enum", "default": "previous", "values": ["previous", "custom"] },
+        "baselineFrom": { "kind": "date", "default": null, "nullable": true },
+        "baselineTo": { "kind": "date", "default": null, "nullable": true },
+        "aggregate": { "kind": "enum", "default": "total", "values": ["total", "dailyAverage"] },
+        "change": { "kind": "enum", "default": "both", "values": ["absolute", "percent", "both"] }
+      }
+    },
+    "risk.status": {
+      "configVersion": 1,
+      "group": "risk",
+      "permissions": ["risk.view"],
+      "filters": [],
+      "measures": [],
+      "time": "fixedWindow",
+      "execution": "auto",
+      "size": { "w": 12, "h": 7, "minW": 4, "minH": 4 },
+      "config": {
+        "showRules": { "kind": "bool", "default": true }
+      }
+    },
+    "risk.overview": {
+      "configVersion": 1,
+      "group": "risk",
+      "permissions": ["risk.view"],
+      "filters": [],
+      "measures": [],
+      "time": "fixedWindow",
+      "execution": "auto",
+      "size": { "w": 12, "h": 8, "minW": 4, "minH": 5 },
+      "config": {
+        "rules": { "kind": "enumList", "minItems": 1, "maxItems": 8,
+          "default": ["SharedImeiSims30", "SharedImeiNumbers30", "SharedImeiSimsEver", "SharedImeiSimsNotRemoved", "HighDeviceCount30", "RapidDeviceChange7", "Randomisation20", "RepeatedSimChange7"],
+          "values": ["SharedImeiSims30", "SharedImeiNumbers30", "SharedImeiSimsEver", "SharedImeiSimsNotRemoved", "HighDeviceCount30", "RapidDeviceChange7", "Randomisation20", "RepeatedSimChange7"] },
+        "display": { "kind": "enum", "default": "table", "values": ["table", "bar"] }
+      }
+    },
+    "risk.distribution": {
+      "configVersion": 1,
+      "group": "risk",
+      "permissions": ["risk.view"],
+      "filters": [],
+      "measures": [],
+      "time": "fixedWindow",
+      "execution": "auto",
+      "size": { "w": 6, "h": 9, "minW": 4, "minH": 6 },
+      "config": {
+        "rule": { "kind": "enum", "required": true, "default": "SharedImeiSims30",
+          "values": ["SharedImeiSims30", "SharedImeiNumbers30", "SharedImeiSimsEver", "SharedImeiSimsNotRemoved", "HighDeviceCount30", "RapidDeviceChange7", "Randomisation20", "RepeatedSimChange7"] },
+        "values": { "kind": "enum", "default": "both", "values": ["clean", "raw", "both"] },
+        "showThreshold": { "kind": "bool", "default": true }
+      }
+    },
+    "risk.deviceTypes": {
+      "configVersion": 1,
+      "group": "risk",
+      "permissions": ["risk.view"],
+      "filters": [],
+      "measures": [],
+      "time": "fixedWindow",
+      "execution": "auto",
+      "size": { "w": 6, "h": 8, "minW": 3, "minH": 5 },
+      "config": {
+        "rule": { "kind": "enum", "required": true, "default": "HighDeviceCount30",
+          "values": ["SharedImeiSims30", "SharedImeiNumbers30", "SharedImeiSimsEver", "SharedImeiSimsNotRemoved", "HighDeviceCount30", "RapidDeviceChange7", "Randomisation20"] },
+        "limit": { "kind": "int", "default": 10, "min": 3, "max": 30 },
+        "display": { "kind": "enum", "default": "table", "values": ["table", "bar"] }
+      }
+    },
+    "risk.simChangeEvidence": {
+      "configVersion": 1,
+      "group": "risk",
+      "permissions": ["risk.view"],
+      "filters": [],
+      "measures": [],
+      "time": "series",
+      "execution": "auto",
+      "size": { "w": 12, "h": 9, "minW": 4, "minH": 6 },
+      "config": {
+        "series": { "kind": "enumList", "minItems": 1, "maxItems": 2, "default": ["changes", "setAside"], "values": ["changes", "setAside"] },
+        "showFlagged": { "kind": "bool", "default": true }
+      }
+    },
+    "risk.evidenceQuality": {
+      "configVersion": 1,
+      "group": "risk",
+      "permissions": ["risk.view"],
+      "filters": [],
+      "measures": [],
+      "time": "fixedWindow",
+      "execution": "auto",
+      "size": { "w": 12, "h": 7, "minW": 4, "minH": 4 },
+      "config": {
+        "rules": { "kind": "enumList", "minItems": 1, "maxItems": 8,
+          "default": ["SharedImeiSims30", "SharedImeiNumbers30", "SharedImeiSimsEver", "SharedImeiSimsNotRemoved", "HighDeviceCount30", "RapidDeviceChange7", "Randomisation20", "RepeatedSimChange7"],
+          "values": ["SharedImeiSims30", "SharedImeiNumbers30", "SharedImeiSimsEver", "SharedImeiSimsNotRemoved", "HighDeviceCount30", "RapidDeviceChange7", "Randomisation20", "RepeatedSimChange7"] }
+      }
+    },
+    "risk.list": {
+      "configVersion": 1,
+      "group": "risk",
+      "permissions": ["risk.view"],
+      "permissionsByConfig": {
+        "field": "rule",
+        "map": {
+          "SharedImeiSims30": ["lookup.imei"],
+          "SharedImeiNumbers30": ["lookup.imei"],
+          "SharedImeiSimsEver": ["lookup.imei"],
+          "SharedImeiSimsNotRemoved": ["lookup.imei"],
+          "HighDeviceCount30": ["lookup.imsi"],
+          "RapidDeviceChange7": ["lookup.imsi"],
+          "Randomisation20": ["lookup.imsi"],
+          "RepeatedSimChange7": ["lookup.subscriber"]
+        }
+      },
+      "filters": [],
+      "measures": [],
+      "time": "fixedWindow",
+      "execution": "explicit",
+      "size": { "w": 12, "h": 10, "minW": 6, "minH": 6 },
+      "config": {
+        "rule": { "kind": "enum", "required": true, "default": "HighDeviceCount30",
+          "values": ["SharedImeiSims30", "SharedImeiNumbers30", "SharedImeiSimsEver", "SharedImeiSimsNotRemoved", "HighDeviceCount30", "RapidDeviceChange7", "Randomisation20", "RepeatedSimChange7"] },
+        "view": { "kind": "enum", "default": "risk", "values": ["risk", "dataQuality"] },
+        "pageSize": { "kind": "int", "default": 25, "min": 5, "max": 100 },
+        "deviceTypes": { "kind": "stringList", "default": [], "maxItems": 20, "maxLength": 100 },
+        "thresholdOverride": { "kind": "int", "default": null, "nullable": true, "min": 0, "max": 1000000 },
+        "tacsThresholdOverride": { "kind": "int", "default": null, "nullable": true, "min": 0, "max": 1000000 }
+      }
+    },
+    "quality.enrichment": {
+      "configVersion": 1,
+      "group": "quality",
+      "permissions": ["dashboard.view"],
+      "filters": ["vendor", "deviceType", "operatingSystem", "tac", "includeUnknownDevice"],
+      "measures": [],
+      "time": "current",
+      "execution": "auto",
+      "size": { "w": 12, "h": 5, "minW": 4, "minH": 4 },
+      "config": {
+        "display": { "kind": "enum", "default": "figures", "values": ["figures", "table"] }
+      }
+    },
+    "quality.feedTrend": {
+      "configVersion": 1,
+      "group": "quality",
+      "permissions": ["import.view"],
+      "filters": [],
+      "measures": [],
+      "time": "range",
+      "execution": "auto",
+      "size": { "w": 12, "h": 9, "minW": 4, "minH": 6 },
+      "config": {
+        "checks": { "kind": "enumList", "minItems": 1, "maxItems": 4,
+          "default": ["ShiftedImei", "MultiNumberSim", "MalformedImei", "UnknownDevice"],
+          "values": ["ShiftedImei", "MultiNumberSim", "MalformedImei", "UnknownDevice"] },
+        "measure": { "kind": "enum", "default": "rate", "values": ["rate", "count"] },
+        "display": { "kind": "enum", "default": "chart", "values": ["chart", "table"] },
+        "showReference": { "kind": "bool", "default": true }
+      }
+    },
+    "quality.flaggedDays": {
+      "configVersion": 1,
+      "group": "quality",
+      "permissions": ["import.view"],
+      "filters": [],
+      "measures": [],
+      "time": "range",
+      "execution": "auto",
+      "size": { "w": 6, "h": 8, "minW": 3, "minH": 4 },
+      "config": {
+        "include": { "kind": "enumList", "minItems": 1, "maxItems": 2, "default": ["flagged", "missing"], "values": ["flagged", "missing"] },
+        "limit": { "kind": "int", "default": 20, "min": 5, "max": 100 }
+      }
+    },
+    "quality.signals": {
+      "configVersion": 1,
+      "group": "quality",
+      "permissions": ["import.view"],
+      "filters": [],
+      "measures": [],
+      "time": "current",
+      "execution": "auto",
+      "size": { "w": 12, "h": 9, "minW": 4, "minH": 5 },
+      "config": {
+        "groups": { "kind": "enumList", "minItems": 1, "maxItems": 3, "default": ["identifiers", "sequences", "lifetimes"], "values": ["identifiers", "sequences", "lifetimes"] },
+        "unit": { "kind": "enum", "default": "bindings", "values": ["bindings", "numbers", "sims", "imeis"] },
+        "display": { "kind": "enum", "default": "table", "values": ["table", "bar"] }
+      }
+    },
+    "ops.freshness": {
+      "configVersion": 1,
+      "group": "operations",
+      "permissions": ["import.view"],
+      "filters": [],
+      "measures": [],
+      "time": "none",
+      "execution": "auto",
+      "size": { "w": 12, "h": 4, "minW": 4, "minH": 3 },
+      "config": {
+        "showPipeline": { "kind": "bool", "default": true },
+        "showTac": { "kind": "bool", "default": true }
+      }
+    },
+    "ops.recentImports": {
+      "configVersion": 1,
+      "group": "operations",
+      "permissions": ["import.view"],
+      "filters": [],
+      "measures": [],
+      "time": "none",
+      "execution": "auto",
+      "size": { "w": 12, "h": 8, "minW": 4, "minH": 5 },
+      "config": {
+        "source": { "kind": "enum", "default": "any", "values": ["any", "SQM", "TAC"] },
+        "statuses": { "kind": "enumList", "default": [], "maxItems": 17,
+          "values": ["Uploaded", "Queued", "Validating", "Parsing", "Normalizing", "Deduplicating", "Enriching", "Importing", "Aggregating", "Finalizing", "Completed", "PartiallyCompleted", "Duplicate", "Failed", "Quarantined", "Cancelled", "Retrying"] },
+        "limit": { "kind": "int", "default": 10, "min": 5, "max": 50 }
+      }
+    },
+    "ops.importStatus": {
+      "configVersion": 1,
+      "group": "operations",
+      "permissions": ["import.view"],
+      "filters": [],
+      "measures": [],
+      "time": "none",
+      "execution": "auto",
+      "size": { "w": 6, "h": 4, "minW": 3, "minH": 3 },
+      "config": {}
+    },
+    "ops.workerHealth": {
+      "configVersion": 1,
+      "group": "operations",
+      "permissions": ["import.view"],
+      "filters": [],
+      "measures": [],
+      "time": "none",
+      "execution": "auto",
+      "size": { "w": 6, "h": 4, "minW": 3, "minH": 3 },
+      "config": {
+        "showPendingRebuild": { "kind": "bool", "default": true }
+      }
+    },
+    "ops.blockages": {
+      "configVersion": 1,
+      "group": "operations",
+      "permissions": ["import.view"],
+      "filters": [],
+      "measures": [],
+      "time": "none",
+      "execution": "auto",
+      "size": { "w": 6, "h": 6, "minW": 3, "minH": 4 },
+      "config": {
+        "limit": { "kind": "int", "default": 10, "min": 5, "max": 50 }
+      }
+    },
+    "ops.tacVersion": {
+      "configVersion": 1,
+      "group": "operations",
+      "permissions": ["import.view"],
+      "filters": [],
+      "measures": [],
+      "time": "none",
+      "execution": "auto",
+      "size": { "w": 6, "h": 4, "minW": 3, "minH": 3 },
+      "config": {
+        "showPending": { "kind": "bool", "default": true }
+      }
+    },
+    "tools.explorerAggregate": {
+      "configVersion": 1,
+      "group": "tools",
+      "permissions": ["explorer.query"],
+      "filters": [],
+      "measures": [],
+      "time": "fixedWindow",
+      "execution": "explicit",
+      "size": { "w": 12, "h": 9, "minW": 4, "minH": 5 },
+      "config": {
+        "query": { "kind": "explorerQuery", "required": true, "default": null },
+        "lastDays": { "kind": "int", "default": null, "nullable": true, "min": 1, "max": 365 },
+        "rows": { "kind": "int", "default": 20, "min": 5, "max": 50 },
+        "display": { "kind": "enum", "default": "table", "values": ["table", "bar"] }
+      }
+    },
+    "tools.quickLookup": {
+      "configVersion": 1,
+      "group": "tools",
+      "permissions": [],
+      "permissionsByConfig": {
+        "field": "target",
+        "map": {
+          "msisdn": ["lookup.subscriber"],
+          "imsi": ["lookup.imsi"],
+          "relationships": ["lookup.subscriber"],
+          "tac": ["device.view"]
+        }
+      },
+      "filters": [],
+      "measures": [],
+      "time": "none",
+      "execution": "none",
+      "size": { "w": 4, "h": 3, "minW": 3, "minH": 3 },
+      "config": {
+        "target": { "kind": "enum", "required": true, "default": "msisdn", "values": ["msisdn", "imsi", "relationships", "tac"] }
+      }
+    },
+    "tools.modelNetworkAge": {
+      "configVersion": 1,
+      "group": "tools",
+      "permissions": ["device.view"],
+      "filters": [],
+      "measures": [],
+      "time": "current",
+      "execution": "auto",
+      "size": { "w": 4, "h": 4, "minW": 3, "minH": 3 },
+      "config": {
+        "tac": { "kind": "string", "required": true, "default": "", "maxLength": 8, "pattern": "^\\d{8}$" },
+        "showDetail": { "kind": "bool", "default": true }
+      }
+    }
+  }
+}

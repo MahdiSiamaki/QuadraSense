@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import Button from '@/design-system/Button.vue'
 import { lookupMsisdn, type LookupResult } from '@/api/dashboard'
 import { ApiError } from '@/api/client'
 import Card from '@/design-system/Card.vue'
 import { formatDate, formatImei, formatMsisdn } from '@/lib/format'
+import { takePrefill } from '@/lib/prefill'
 
 const input = ref('')
 const result = ref<LookupResult | null>(null)
@@ -34,6 +35,14 @@ async function search() {
     isLoading.value = false
   }
 }
+
+// A number handed over by a dashboard's quick lookup: in memory, never the URL or history (lib/prefill.ts).
+onMounted(() => {
+  const prefill = takePrefill('lookup')
+  if (prefill === null) return
+  input.value = prefill
+  void search()
+})
 
 function errorMessage(e: unknown): string {
   if (e instanceof ApiError) {

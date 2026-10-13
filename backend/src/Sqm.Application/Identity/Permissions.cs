@@ -106,6 +106,25 @@ public static class Permissions
     /// </remarks>
     public const string RiskView = "risk.view";
 
+    // --------------------------------------------------------------- dashboards
+    /// <summary>Create, duplicate and import dashboards of one's own.</summary>
+    /// <remarks>
+    /// None of the dashboard permissions reaches data. A widget always queries as the person looking
+    /// at it, with their own permissions; a dashboard is an arrangement, never a copy of what its
+    /// owner may see. See ADR-016 and db/operational/migrations/016_dashboards.sql.
+    /// </remarks>
+    public const string DashboardCreate = "dashboard.create";
+
+    /// <summary>Change one's own dashboards, and those shared with one as editor.</summary>
+    /// <remarks>An editor grant without this permission opens the dashboard read-only.</remarks>
+    public const string DashboardEdit = "dashboard.edit";
+
+    /// <summary>Share one's own dashboards with users and roles.</summary>
+    public const string DashboardShare = "dashboard.share";
+
+    /// <summary>Edit, share and delete anybody's dashboard: an administrator's override.</summary>
+    public const string DashboardManage = "dashboard.manage";
+
     // ------------------------------------------------------------------ imports
     /// <summary>Open the Import Center and read job history.</summary>
     public const string ImportView = "import.view";
@@ -154,6 +173,7 @@ public static class Permissions
     public static readonly FrozenSet<string> All = new[]
     {
         DashboardView, LookupSubscriber, DataExport, LookupImsi, IdentifierReveal, ExplorerQuery, RiskView,
+        DashboardCreate, DashboardEdit, DashboardShare, DashboardManage,
         DeviceView, LookupImei, DeviceIdentifiers, DeviceImageManage,
         ImportView, ImportUploadSqm, ImportUploadTac, ImportReprocess, ImportCancel, ImportDelete,
         TacActivate, TacRollback,

@@ -1,8 +1,6 @@
-using System.Globalization;
 using Sqm.Api.Auth;
 using Sqm.Application.Devices;
 using Sqm.Application.Identity;
-using Sqm.Contracts.Devices;
 
 namespace Sqm.Api.Endpoints;
 
@@ -52,18 +50,15 @@ public static class ModelArrivalEndpoints
         return app;
     }
 
-    private static string? Iso(DateOnly? d) => d?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    // Readiness, the default window and every payload are composed in ModelArrivalQueries, which the
+    // dashboard export shares; the routes keep their validation and status codes.
 
-    private static string? NotReady(ModelArrivalState state) =>
-        !state.Deployed ? "New models are not deployed on this server (analytics migration 025)."
-        : !state.Complete ? $"First appearances are still being written ({state.DaysWritten} of {state.DaysInLog} days); "
-                            + "run Sqm.Ingestion --refresh-tac-days."
-        : null;
+    private static string? NotReady(ModelArrivalState state) => ModelArrivalQueries.NotReady(state);
 
     private static async Task<IResult> StatusAsync(IModelArrivalReader reader, CancellationToken ct)
     {
         var state = await reader.GetStateAsync(ct).ConfigureAwait(false);
-        return Results.Ok(new ModelArrivalStatus(NotReady(state) is null, NotReady(state), Iso(state.DataThrough), Iso(NetworkAge.DataStart)!));
+        return Results.Ok(ModelArrivalQueries.Status(state));
     }
 
     private static async Task<IResult> NewModelsAsync(
@@ -78,8 +73,7 @@ public static class ModelArrivalEndpoints
                 detail: NotReady(state) ?? "No day is written yet.");
         }
 
-        var end = to ?? through;
-        var start = from ?? end.AddDays(-29);
+        var (start, end) = ModelArrivalQueries.Window(from, to, through);
         if (page < 1 || pageSize is < 1 or > MaxPageSize || start > end || (brand?.Length ?? 0) > 100 || (deviceType?.Length ?? 0) > 100)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -88,15 +82,9 @@ public static class ModelArrivalEndpoints
             });
         }
 
-        var result = await reader.ListAsync(
-            new NewModelQuery(start, end, string.IsNullOrWhiteSpace(brand) ? null : brand.Trim(),
-                string.IsNullOrWhiteSpace(deviceType) ? null : deviceType, knownOnly, page, pageSize), ct).ConfigureAwait(false);
-
-        return Results.Ok(new NewModelsResponse(
-            [.. result.Rows.Select(r => new NewModelInfo(
-                r.Tac, r.Brand, r.Model, r.DeviceType, Iso(r.FirstSeen)!, NetworkAge.Days(r.FirstSeen, false, through),
-                r.DaysSeen, r.FirstDayImeis, r.Handsets, r.Sims))],
-            result.Total, page, pageSize, Iso(start)!, Iso(end)!, Iso(through)));
+        var query = ModelArrivalQueries.Query(start, end, brand, deviceType, knownOnly, page, pageSize);
+        var result = await reader.ListAsync(query, ct).ConfigureAwait(false);
+        return Results.Ok(ModelArrivalQueries.NewModels(result, query, through));
     }
 
     private static async Task<IResult> ArrivalsAsync(IModelArrivalReader reader, CancellationToken ct, string grain = "month")
@@ -113,9 +101,7 @@ public static class ModelArrivalEndpoints
         }
 
         var periods = await reader.ArrivalsAsync(grain == "week", ct).ConfigureAwait(false);
-        return Results.Ok(new ModelArrivalsResponse(
-            grain, [.. periods.Select(p => new ModelArrivalPeriodInfo(Iso(p.PeriodStart)!, p.Models, p.KnownModels))],
-            Iso(NetworkAge.DataStart)!));
+        return Results.Ok(ModelArrivalQueries.Arrivals(grain, periods));
     }
 
     private static async Task<IResult> NetworkAgeAsync(string tac, IModelArrivalReader reader, CancellationToken ct)
@@ -131,8 +117,6 @@ public static class ModelArrivalEndpoints
             return Results.NotFound();
         }
 
-        return Results.Ok(new ModelNetworkAgeResponse(
-            tac, seen.InDump, Iso(seen.FirstSeen), NetworkAge.Days(seen.FirstSeen, seen.InDump, state.DataThrough),
-            seen.InDump, seen.DaysSeen, Iso(state.DataThrough)));
+        return Results.Ok(ModelArrivalQueries.NetworkAgeOf(tac, seen, state.DataThrough));
     }
 }

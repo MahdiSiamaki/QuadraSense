@@ -163,20 +163,26 @@ export interface RiskChangeDay {
   flagged: string[]
 }
 
-export function useRiskDistribution(rule: MaybeRefOrGetter<string | null>) {
+export function useRiskDistribution(
+  rule: MaybeRefOrGetter<string | null>,
+  options: { enabled?: MaybeRefOrGetter<boolean> } = {},
+) {
   return useQuery({
     queryKey: computed(() => ['risk', 'distribution', toValue(rule)]),
     queryFn: ({ signal }) => api.get<RiskDistribution>('/api/v1/risk/distribution', { rule: toValue(rule) }, signal),
-    enabled: computed(() => !!toValue(rule)),
+    enabled: computed(() => toValue(options.enabled ?? true) && !!toValue(rule)),
     staleTime: 5 * 60_000,
   })
 }
 
-export function useRiskDeviceTypes(rule: MaybeRefOrGetter<string | null>) {
+export function useRiskDeviceTypes(
+  rule: MaybeRefOrGetter<string | null>,
+  options: { enabled?: MaybeRefOrGetter<boolean> } = {},
+) {
   return useQuery({
     queryKey: computed(() => ['risk', 'device-types', toValue(rule)]),
     queryFn: ({ signal }) => api.get<RiskDeviceTypes>('/api/v1/risk/device-types', { rule: toValue(rule) }, signal),
-    enabled: computed(() => !!toValue(rule)),
+    enabled: computed(() => toValue(options.enabled ?? true) && !!toValue(rule)),
     staleTime: 5 * 60_000,
   })
 }

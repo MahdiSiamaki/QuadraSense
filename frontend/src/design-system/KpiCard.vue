@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
-import { formatCompact, formatFull } from '@/lib/format'
+import { formatCompact, formatFull, formatPercent } from '@/lib/format'
 
 /**
  * A headline figure that says what it counts.
@@ -33,14 +33,23 @@ const props = withDefaults(
     definition?: string
     percent?: boolean
     tone?: 'default' | 'muted' | 'warning'
+    /** `compact` (the default) shows 125.9M with the exact figure behind it; `full` shows 125,939,523. */
+    format?: 'compact' | 'full'
+    /**
+     * Decimals of a percent value. Unset keeps the original one decimal; set, the value goes through
+     * formatPercent, so a share above zero never reads 0.
+     */
+    precision?: number
   }>(),
-  { tone: 'default', percent: false },
+  { tone: 'default', percent: false, format: 'compact', precision: undefined },
 )
 
 const display = computed(() => {
   if (props.value === null || props.value === undefined) return '—'
-  if (props.percent) return `${props.value.toFixed(1)}%`
-  return formatCompact(props.value)
+  if (props.percent) {
+    return props.precision === undefined ? `${props.value.toFixed(1)}%` : formatPercent(props.value, props.precision)
+  }
+  return props.format === 'full' ? formatFull(props.value) : formatCompact(props.value)
 })
 
 const exact = computed(() =>
@@ -103,6 +112,7 @@ const toneClass = computed(
       <p class="text-xs font-medium tracking-wide text-[var(--c-text-muted)]">
         {{ label }}
       </p>
+      <div class="flex shrink-0 items-start gap-0.5">
       <button
         v-if="tooltip"
         ref="infoButton"
@@ -115,6 +125,9 @@ const toneClass = computed(
       >
         i
       </button>
+      <!-- A host's own controls (a dashboard card's menu), top right like any card's. -->
+      <slot name="actions" />
+      </div>
     </div>
 
     <div

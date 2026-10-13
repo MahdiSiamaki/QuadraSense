@@ -83,48 +83,23 @@ public static class RiskEndpoints
 
     // ------------------------------------------------------------------ routes
 
+    // The five aggregates are composed in RiskQueries, which the dashboard export shares; a route here
+    // parses what it was sent, reads the options as they are now, and turns the answer into its status.
+
     private static async Task<IResult> StatusAsync(
         IRiskReader reader, IFeedQualityReader quality, IOptions<FeedQualityOptions> qualityOptions,
         IOptionsMonitor<RiskOptions> riskOptions, CancellationToken ct)
     {
-        var context = await ContextAsync(reader, quality, qualityOptions.Value, riskOptions.CurrentValue, ct).ConfigureAwait(false);
-        var options = context.Options;
-
-        return Results.Ok(new RiskStatusResponse(
-            context.NotReady is null,
-            context.NotReady,
-            context.Calibrated,
-            options.Version(),
-            options.MaxDefectShare,
-            Iso(context.State.DataThrough),
-            context.State.Run is { } run ? new RiskRunInfo(Iso(run.AsOf)!, run.PublishedAt, context.State.Stale) : null,
-            [.. RiskRules.Catalogue.Select(spec => RuleInfo(spec, context))],
-            context.State.Deployed ? await reader.DeviceTypesAsync(ct).ConfigureAwait(false) : []));
+        var context = await ContextAsync(reader, quality, qualityOptions, riskOptions, ct).ConfigureAwait(false);
+        return Results.Ok(await RiskQueries.StatusAsync(reader, context, ct).ConfigureAwait(false));
     }
 
     private static async Task<IResult> OverviewAsync(
         IRiskReader reader, IFeedQualityReader quality, IOptions<FeedQualityOptions> qualityOptions,
         IOptionsMonitor<RiskOptions> riskOptions, CancellationToken ct)
     {
-        var context = await ContextAsync(reader, quality, qualityOptions.Value, riskOptions.CurrentValue, ct).ConfigureAwait(false);
-        if (context.NotReady is not null || context.State.Run is not { } run)
-        {
-            return Unavailable(context.NotReady);
-        }
-
-        var thresholds = context.Options.ThresholdsByRule();
-        var counts = await reader.CountAsync(run, thresholds, context.Settings.MaxDefectShare, ct).ConfigureAwait(false);
-
-        return Results.Ok(new RiskOverviewResponse(
-            context.Settings.Version,
-            Iso(run.AsOf)!,
-            [.. counts.Select(c =>
-            {
-                var spec = RiskRules.Spec(c.Rule);
-                var capped = spec.Windowed && context.FlaggedIn(spec).Count > 0;
-                var level = !spec.Windowed || capped ? RiskLevel.Anomaly : RiskLevel.RiskSignal;
-                return new RiskOverviewRule(c.Rule.ToString(), level.ToString(), capped, c.Risk, c.DataQuality);
-            })]));
+        var context = await ContextAsync(reader, quality, qualityOptions, riskOptions, ct).ConfigureAwait(false);
+        return Answer(await RiskQueries.OverviewAsync(reader, context, ct).ConfigureAwait(false));
     }
 
     private static async Task<IResult> DistributionAsync(
@@ -136,27 +111,8 @@ public static class RiskEndpoints
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["rule"] = ["Unknown rule."] });
         }
 
-        var context = await ContextAsync(reader, quality, qualityOptions.Value, riskOptions.CurrentValue, ct).ConfigureAwait(false);
-        if (context.State.Run is not { } run || !context.State.Deployed)
-        {
-            return Unavailable(context.NotReady);
-        }
-
-        // A bucket starts exactly where the list starts, so the listed range is never half a bucket.
-        var threshold = context.Settings.Thresholds.GetValueOrDefault(parsed)?.Value;
-        var edges = RiskEvaluation.DistributionEdges(parsed, context.Options.Floors);
-        if (threshold is { } t && t + 1 > edges[0] && !edges.Contains(t + 1))
-        {
-            edges = [.. edges.Append(t + 1).Order()];
-        }
-
-        var buckets = await reader.DistributionAsync(run, parsed, edges, ct).ConfigureAwait(false);
-        var spec = RiskRules.Spec(parsed);
-
-        return Results.Ok(new RiskDistributionResponse(
-            parsed.ToString(), spec.Unit, threshold,
-            RiskEvaluation.Floor(parsed, context.Options.Floors),
-            [.. buckets.Select(b => new RiskBucketInfo(b.From, b.To, b.Clean, b.Raw))], Iso(run.AsOf)!));
+        var context = await ContextAsync(reader, quality, qualityOptions, riskOptions, ct).ConfigureAwait(false);
+        return Answer(await RiskQueries.DistributionAsync(reader, context, parsed, ct).ConfigureAwait(false));
     }
 
     private static async Task<IResult> DeviceTypesAsync(
@@ -164,7 +120,7 @@ public static class RiskEndpoints
         IOptionsMonitor<RiskOptions> riskOptions, CancellationToken ct)
     {
         if (!Enum.TryParse<RiskRule>(rule, ignoreCase: true, out var parsed) || !Enum.IsDefined(parsed)
-            || RiskEvaluation.ListOf(parsed) == RiskList.Numbers)
+            || !RiskQueries.HasDeviceTypes(parsed))
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
@@ -172,53 +128,15 @@ public static class RiskEndpoints
             });
         }
 
-        var context = await ContextAsync(reader, quality, qualityOptions.Value, riskOptions.CurrentValue, ct).ConfigureAwait(false);
-        if (context.NotReady is not null || context.State.Run is not { } run)
-        {
-            return Unavailable(context.NotReady);
-        }
-
-        if (context.Settings.Thresholds.GetValueOrDefault(parsed) is not { } threshold)
-        {
-            return Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity, title: "No threshold",
-                detail: "This rule has no calibrated threshold.");
-        }
-
-        var rows = await reader.DeviceTypesOfListAsync(
-            run, new RiskListQuery(parsed, RiskView.Risk, threshold, context.Settings.MaxDefectShare, 1, 1), ct).ConfigureAwait(false);
-
-        return Results.Ok(new RiskDeviceTypesResponse(
-            parsed.ToString(),
-            RiskEvaluation.ListOf(parsed) == RiskList.Sims ? "most frequent TAC in 20 days" : "handset",
-            [.. rows.Select(r => new RiskDeviceTypeCount(r.DeviceType, r.Entities))]));
+        var context = await ContextAsync(reader, quality, qualityOptions, riskOptions, ct).ConfigureAwait(false);
+        return Answer(await RiskQueries.DeviceTypesAsync(reader, context, parsed, ct).ConfigureAwait(false));
     }
 
     private static async Task<IResult> DailyAsync(
         IRiskReader reader, IFeedQualityReader quality, IOptions<FeedQualityOptions> qualityOptions,
-        IOptionsMonitor<RiskOptions> riskOptions, CancellationToken ct)
-    {
-        var state = await reader.GetStateAsync(riskOptions.CurrentValue.Floors, ct).ConfigureAwait(false);
-        if (!state.Deployed)
-        {
-            return Unavailable("Risk signals are not deployed on this server (analytics migrations 023 and 024).");
-        }
-
-        var days = await reader.SimChangeDaysAsync(ct).ConfigureAwait(false);
-        if (days.Count == 0)
-        {
-            return Results.Ok(new RiskDailyResponse([]));
-        }
-
-        // Flagged days: dates and check names only, for risk.view holders who may not hold import.view.
-        var report = await FeedQualityReport.BuildAsync(quality, qualityOptions.Value, days[0].Date, days[^1].Date, ct)
-            .ConfigureAwait(false);
-        var flagged = RiskEvaluation.Flagged(report)
-            .GroupBy(f => f.Date)
-            .ToDictionary(g => g.Key, g => (IReadOnlyList<string>)[.. g.Select(f => f.Check.ToString()).Distinct()]);
-
-        return Results.Ok(new RiskDailyResponse([.. days.Select(d => new RiskChangeDayInfo(
-            Iso(d.Date)!, d.Changes, d.MultiNumber + d.Unscreened, flagged.GetValueOrDefault(d.Date) ?? []))]));
-    }
+        IOptionsMonitor<RiskOptions> riskOptions, CancellationToken ct) =>
+        Answer(await RiskQueries.DailyAsync(reader, quality, qualityOptions.Value, riskOptions.CurrentValue.Floors, ct)
+            .ConfigureAwait(false));
 
     private static async Task<IResult> ListAsync(
         RiskListRequest request, HttpContext http, IRiskReader reader, IFeedQualityReader quality,
@@ -327,13 +245,13 @@ public static class RiskEndpoints
                 detail: $"The risk measures of a {KindName(unit)} need the \"{permission}\" permission.");
         }
 
-        var context = await ContextAsync(reader, quality, qualityOptions.Value, riskOptions.CurrentValue, ct).ConfigureAwait(false);
+        var context = await ContextAsync(reader, quality, qualityOptions, riskOptions, ct).ConfigureAwait(false);
         if (context.NotReady is not null || context.State.Run is not { } run)
         {
             return Unavailable(context.NotReady);
         }
 
-        var stored = await reader.GetEntityAsync(run, unit, parsed.Digits, ct).ConfigureAwait(false);
+        var stored =await reader.GetEntityAsync(run, unit, parsed.Digits, ct).ConfigureAwait(false);
         var list = RiskEvaluation.ListOf(RiskRules.Catalogue.First(s => s.Family == unit).Rule);
         var columns = Columns(list);
 
@@ -371,56 +289,25 @@ public static class RiskEndpoints
 
     // ------------------------------------------------------------------ shared
 
-    /// <summary>The rule set, the published run, the flagged days, and whether lists can be served.</summary>
-    private sealed record Context(
-        RiskOptions Options, RiskSettings Settings, RiskReadState State, IReadOnlyList<FlaggedDay> Flagged,
-        bool Calibrated, string? NotReady)
-    {
-        /// <summary>Flagged days relevant to a rule, inside its window.</summary>
-        public IReadOnlyList<DateOnly> FlaggedIn(RiskRuleSpec spec)
+    /// <summary>The rule set in force for this request, read from the options as they are now.</summary>
+    private static Task<RiskContext> ContextAsync(
+        IRiskReader reader, IFeedQualityReader quality, IOptions<FeedQualityOptions> qualityOptions,
+        IOptionsMonitor<RiskOptions> riskOptions, CancellationToken ct) =>
+        RiskQueries.ContextAsync(reader, quality, qualityOptions.Value, riskOptions.CurrentValue, ct);
+
+    /// <summary>An aggregate's answer as the route has always given it: 200, 503 or 422.</summary>
+    private static IResult Answer<T>(RiskAnswer<T> answer)
+        where T : class => answer.Refusal switch
         {
-            if (State.Run is not { } run || spec.WindowDays is not { } days)
-            {
-                return [];
-            }
-
-            var from = run.AsOf.AddDays(-(days - 1));
-            return [.. Flagged.Where(f => f.Date >= from && f.Date <= run.AsOf && spec.RelevantChecks.Contains(f.Check))
-                .Select(f => f.Date).Distinct().Order()];
-        }
-    }
-
-    private static async Task<Context> ContextAsync(
-        IRiskReader reader, IFeedQualityReader quality, FeedQualityOptions qualityOptions, RiskOptions options, CancellationToken ct)
-    {
-        var problems = options.Problems();
-        var state = await reader.GetStateAsync(options.Floors, ct).ConfigureAwait(false);
-        var calibrated = options.ThresholdsByRule().Count > 0;
-
-        IReadOnlyList<FlaggedDay> flagged = [];
-        if (state.Run is { } run)
-        {
-            // The longest window: 30 days to the run's as-of day.
-            var report = await FeedQualityReport.BuildAsync(quality, qualityOptions, run.AsOf.AddDays(-29), run.AsOf, ct)
-                .ConfigureAwait(false);
-            flagged = RiskEvaluation.Flagged(report);
-        }
-
-        string? notReady =
-            problems.Count > 0 ? "The Risk settings are invalid: " + string.Join(" ", problems)
-            : !state.Deployed ? "Risk signals are not deployed on this server (analytics migrations 023 and 024)."
-            : state.Run is null ? "Risk measures have not been computed yet. The import worker computes them while it is idle; "
-                                  + "Sqm.Ingestion --refresh-risk computes them now."
-            : !calibrated ? "Risk thresholds are not calibrated yet. Each is cut from the measured distribution at the number "
-                            + "of entities analysts can review (ADR-014); until then nothing is judged."
-            : null;
-
-        return new Context(options, options.Settings(), state, flagged, calibrated, notReady);
-    }
+            RiskRefusal.None => Results.Ok(answer.Value),
+            RiskRefusal.NoThreshold => Results.Problem(
+                statusCode: StatusCodes.Status422UnprocessableEntity, title: "No threshold", detail: answer.Reason),
+            _ => Unavailable(answer.Reason),
+        };
 
     /// <summary>A checked list request: who, which run, which rule and thresholds.</summary>
     private sealed record PreparedList(
-        AuthenticatedUser User, Context Context, RiskPublishedRun Run, RiskListQuery Query, bool Overridden, bool Reveal)
+        AuthenticatedUser User, RiskContext Context, RiskPublishedRun Run, RiskListQuery Query, bool Overridden, bool Reveal)
     {
         /// <summary>The rule set with this request's threshold in place of the configured one.</summary>
         public RiskSettings Settings { get; } = Context.Settings with
@@ -488,7 +375,7 @@ public static class RiskEndpoints
                 detail: $"This list names {KindName(spec.Family)}s, which needs the \"{permission}\" permission."));
         }
 
-        var context = await ContextAsync(reader, quality, qualityOptions.Value, riskOptions.CurrentValue, ct).ConfigureAwait(false);
+        var context = await ContextAsync(reader, quality, qualityOptions, riskOptions, ct).ConfigureAwait(false);
         if (context.NotReady is not null || context.State.Run is not { } run)
         {
             return (null, Unavailable(context.NotReady));
@@ -644,23 +531,6 @@ public static class RiskEndpoints
         }
 
         return values;
-    }
-
-    private static RiskRuleInfo RuleInfo(RiskRuleSpec spec, Context context)
-    {
-        var threshold = context.Settings.Thresholds.GetValueOrDefault(spec.Rule);
-        RiskWindow? window = context.State.Run is { } run && spec.WindowDays is { } days
-            ? RiskEvaluation.Window(run.AsOf, days, context.State.DaysWithData)
-            : null;
-
-        return new RiskRuleInfo(
-            spec.Rule.ToString(), spec.Family.ToString(), RiskEvaluation.ListOf(spec.Rule).ToString(), spec.Unit, spec.What,
-            spec.WindowDays, Iso(window?.From), Iso(window?.To), window?.DaysWithData,
-            threshold?.Value, threshold?.Tacs, RiskEvaluation.Floor(spec.Rule, context.Options.Floors),
-            (spec.Windowed ? RiskLevel.RiskSignal : RiskLevel.Anomaly).ToString(),
-            [.. spec.RelevantChecks.Select(c => c.ToString())],
-            [.. context.FlaggedIn(spec).Select(d => Iso(d)!)],
-            RiskEvaluation.HasDataQualityView(spec.Rule));
     }
 
     private static IResult Unavailable(string? reason) => Results.Problem(
