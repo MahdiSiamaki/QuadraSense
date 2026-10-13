@@ -118,6 +118,12 @@ export interface WidgetDefinition<C extends WidgetConfig = WidgetConfig> {
    * controls around it.
    */
   chrome?: 'card' | 'bare'
+  /**
+   * `fixed` (default): as tall as the layout says, the body scrolling when it holds more. `content`:
+   * as tall as what it draws, so nothing in it ever scrolls - for a KPI row or a strip of figures,
+   * which read at a glance or not at all. The grid sizes it; its stored height is where it starts.
+   */
+  height?: 'fixed' | 'content'
 }
 
 /** A definition with its contract attached by the registry. */

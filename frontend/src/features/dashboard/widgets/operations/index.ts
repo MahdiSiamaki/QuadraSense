@@ -49,6 +49,7 @@ export const definitions = [
       showPipeline: { label: 'Show the import pipeline', section: 'display', visual: true },
     },
     exports: { csv: true, image: true },
+    height: 'content',
   }),
 
   defineWidget<RecentImportsConfig>({

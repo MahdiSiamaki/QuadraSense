@@ -145,6 +145,7 @@ export const definitions = [
       display: { label: 'Show as', section: 'display', options: { composition: 'Composition bar', table: 'Table' }, visual: true },
     },
     exports: { csv: true, image: true },
+    height: 'content',
   }),
 
   defineWidget<CapabilitiesConfig>({
@@ -178,6 +179,7 @@ export const definitions = [
       },
     },
     exports: { csv: true, image: true },
+    height: 'content',
   }),
 
   defineWidget<NewModelsConfig>({

@@ -45,6 +45,7 @@ export const definitions = [
     },
     exports: { csv: true, image: true },
     chrome: 'bare',
+    height: 'content',
   }),
 
   defineWidget<KpiSummaryConfig>({
@@ -67,6 +68,7 @@ export const definitions = [
     },
     exports: { csv: true, image: true },
     chrome: 'bare',
+    height: 'content',
   }),
 
   defineWidget<PopulationTrendConfig>({

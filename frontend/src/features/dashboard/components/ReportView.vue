@@ -64,8 +64,12 @@ const STATUS_WORDS: Record<WidgetSnapshotData['status'], string> = {
   noData: 'Nothing to show: a launcher has no data.',
 }
 
-/** Rows of the 40px dashboard grid, drawn at a comfortable report height. */
+/**
+ * Rows of the 40px dashboard grid, drawn at a comfortable report height - or nothing, for a type
+ * that is as tall as its content (a KPI row), which the report draws whole like the dashboard does.
+ */
 function height(widget: WidgetInstance) {
+  if (getWidget(widget.type)?.height === 'content') return undefined
   return `${Math.max(3, widget.layout.h) * 40}px`
 }
 </script>
