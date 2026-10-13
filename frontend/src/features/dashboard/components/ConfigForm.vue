@@ -9,7 +9,7 @@
  * for itself), Display (how it is drawn - changes redraw at once, no new request), Advanced only when
  * a type has such fields.
  */
-import { computed, useId } from 'vue'
+import { computed, reactive, useId } from 'vue'
 import SegmentedControl from '@/design-system/SegmentedControl.vue'
 import TextField from '@/design-system/TextField.vue'
 import Toggle from '@/design-system/Toggle.vue'
@@ -103,6 +103,30 @@ function toggleListValue(row: Row, value: string, on: boolean) {
   const next = on ? [...current, value] : current.filter((v) => v !== value)
   // Keep the contract's order, so two equal choices are equal configs.
   set(row.name, (row.field.values ?? []).filter((v) => next.includes(v)))
+}
+
+/**
+ * A list of free-text values (a risk list's device types), typed as one comma-separated line. What was
+ * typed is kept while it still means the saved list, so a comma or a space being typed is not erased.
+ */
+const listText = reactive<Record<string, string>>({})
+
+function parseList(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v) => v !== '')
+}
+
+function listValue(name: string): string {
+  const current = Array.isArray(props.config[name]) ? (props.config[name] as string[]) : []
+  const typed = listText[name]
+  return typed !== undefined && JSON.stringify(parseList(typed)) === JSON.stringify(current) ? typed : current.join(', ')
+}
+
+function onList(name: string, raw: string) {
+  listText[name] = raw
+  set(name, parseList(raw))
 }
 
 function onInt(row: Row, raw: string) {
@@ -243,6 +267,16 @@ function onOverrideSelect(key: 'countBy' | 'range' | 'includeUnknownDevice', raw
             @update:model-value="set(row.name, $event)"
           />
 
+          <!-- stringList: one line, comma-separated -->
+          <TextField
+            v-else-if="row.field.kind === 'stringList'"
+            :model-value="listValue(row.name)"
+            :label="row.presentation.label"
+            placeholder="All"
+            :error="errorFor(row.name)"
+            @update:model-value="onList(row.name, $event)"
+          />
+
           <!-- date -->
           <template v-else-if="row.field.kind === 'date'">
             <label :for="`${formId}-${row.name}`" class="text-xs font-medium text-[var(--c-text-secondary)]">{{ row.presentation.label }}</label>
@@ -269,7 +303,7 @@ function onOverrideSelect(key: 'countBy' | 'range' | 'includeUnknownDevice', raw
           </template>
 
           <p v-if="row.presentation.help" class="text-2xs text-[var(--c-text-muted)]">{{ row.presentation.help }}</p>
-          <p v-if="errorFor(row.name) && row.field.kind !== 'string'" class="text-xs text-[var(--c-danger-text)]" role="alert">
+          <p v-if="errorFor(row.name) && row.field.kind !== 'string' && row.field.kind !== 'stringList'" class="text-xs text-[var(--c-danger-text)]" role="alert">
             {{ errorFor(row.name) }}
           </p>
         </div>

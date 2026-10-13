@@ -5,7 +5,8 @@ import { api } from '@/api/client'
 import AddWidgetDialog from '@/features/dashboard/components/AddWidgetDialog.vue'
 import ConfigForm from '@/features/dashboard/components/ConfigForm.vue'
 import { getWidget } from '@/features/dashboard/registry'
-import { CONTRACT } from '@/features/dashboard/registry/contract'
+import { CONTRACT, defaultConfig } from '@/features/dashboard/registry/contract'
+import type { WidgetInstance } from '@/features/dashboard/types/definition'
 
 /*
   Add widget: what the form starts from, what the preview runs with, and what may be added. Signed in
@@ -119,5 +120,65 @@ describe('the add widget dialog', () => {
 
     expect(form(w).text()).toContain(`At most ${CONTRACT.lens.textFilterMaxLength} characters.`)
     expect(addButton(w).attributes('disabled')).toBeDefined()
+  })
+})
+
+describe('a list setting in the configure form', () => {
+  function instance(): WidgetInstance {
+    return {
+      id: 'w_test0001',
+      type: 'risk.list',
+      configVersion: CONTRACT.types['risk.list']!.configVersion,
+      title: null,
+      subtitle: null,
+      config: defaultConfig('risk.list'),
+      overrides: {},
+      layout: { x: 0, y: 0, w: 12, h: 10 },
+    } as WidgetInstance
+  }
+
+  function mountForm(config = defaultConfig('risk.list')) {
+    return mount(ConfigForm, {
+      props: {
+        definition: getWidget('risk.list')!,
+        config,
+        title: '',
+        subtitle: '',
+        overrides: {},
+        dashboardView: {},
+        errors: [],
+        instance: instance(),
+      },
+      global: { plugins: [[VueQueryPlugin, { queryClient: new QueryClient() }]] },
+    })
+  }
+
+  function deviceTypes(w: VueWrapper) {
+    const label = w.findAll('label').find((l) => l.text() === 'Device types')
+    if (!label) throw new Error('no device types field')
+    return w.get(`#${label.attributes('for')}`)
+  }
+
+  it("draws a risk list's device types as one comma-separated line", async () => {
+    const w = mountForm()
+    await deviceTypes(w).setValue('Smartphone, Tablet')
+    expect((w.emitted('update:config')!.at(-1)![0] as { deviceTypes: string[] }).deviceTypes).toEqual(['Smartphone', 'Tablet'])
+  })
+
+  it('keeps a comma being typed instead of erasing it on the next redraw', async () => {
+    const w = mountForm()
+    await deviceTypes(w).setValue('Smartphone,')
+    const config = w.emitted('update:config')!.at(-1)![0] as Record<string, unknown>
+    expect(config.deviceTypes).toEqual(['Smartphone'])
+
+    await w.setProps({ config })
+    expect((deviceTypes(w).element as HTMLInputElement).value).toBe('Smartphone,')
+  })
+
+  it('shows what the saved list is when the config changes from elsewhere', async () => {
+    const w = mountForm()
+    await deviceTypes(w).setValue('Smartphone,')
+    await w.setProps({ config: { ...defaultConfig('risk.list'), deviceTypes: ['Modem'] } })
+    expect((deviceTypes(w).element as HTMLInputElement).value).toBe('Modem')
   })
 })

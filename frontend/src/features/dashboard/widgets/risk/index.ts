@@ -182,7 +182,7 @@ export const definitions = [
       deviceTypes: {
         label: 'Device types',
         section: 'data',
-        help: 'GSMA device types, exactly as named (e.g. Smartphone). Empty for all. Not used by the per-number rule.',
+        help: 'GSMA device types, exactly as named and separated by commas (e.g. Smartphone, Tablet). Empty for all. Not used by the per-number rule.',
         visibleWhen: (c) => c.rule !== 'RepeatedSimChange7',
       },
       thresholdOverride: {
