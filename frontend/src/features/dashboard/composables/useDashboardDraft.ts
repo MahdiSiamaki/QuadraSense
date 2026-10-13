@@ -50,6 +50,12 @@ function uniqueId(definition: DashboardDefinition): string {
 export const useDashboardDraft = defineStore('dashboardDraft', () => {
   /** What is being edited: a dashboard id, or `template:<key>` for an unsaved copy of a template. */
   const key = ref<string | null>(null)
+  /**
+   * The server revision the draft was taken from, and the one Save must name. Not the cached detail's:
+   * a refetch during an edit (a reconnect, a reload of the other person's version) moved that forward,
+   * and a save naming it overwrote the other person's changes with no conflict.
+   */
+  const revision = ref<number | null>(null)
   const base = ref<Snapshot | null>(null)
   const current = ref<Snapshot | null>(null)
   const past = ref<Entry[]>([])
@@ -65,8 +71,9 @@ export const useDashboardDraft = defineStore('dashboardDraft', () => {
   const undoLabel = computed(() => past.value.at(-1)?.label ?? null)
   const redoLabel = computed(() => future.value.at(-1)?.label ?? null)
 
-  function begin(dashboardKey: string, saved: DashboardDefinition, savedName: string, savedDescription: string) {
+  function begin(dashboardKey: string, saved: DashboardDefinition, savedName: string, savedDescription: string, savedRevision: number | null = null) {
     key.value = dashboardKey
+    revision.value = savedRevision
     base.value = clone({ definition: saved, name: savedName, description: savedDescription })
     current.value = clone(base.value)
     past.value = []
@@ -212,8 +219,9 @@ export const useDashboardDraft = defineStore('dashboardDraft', () => {
   }
 
   /** The server accepted the save: what was saved is the new base. */
-  function markSaved(saved: DashboardDefinition, savedName: string, savedDescription: string, newKey?: string) {
+  function markSaved(saved: DashboardDefinition, savedName: string, savedDescription: string, newKey?: string, savedRevision?: number) {
     if (newKey) key.value = newKey
+    if (savedRevision !== undefined) revision.value = savedRevision
     base.value = clone({ definition: saved, name: savedName, description: savedDescription })
     current.value = clone(base.value)
     past.value = []
@@ -223,6 +231,7 @@ export const useDashboardDraft = defineStore('dashboardDraft', () => {
   /** Leaves edit mode. */
   function end() {
     key.value = null
+    revision.value = null
     base.value = null
     current.value = null
     past.value = []
@@ -235,6 +244,7 @@ export const useDashboardDraft = defineStore('dashboardDraft', () => {
 
   return {
     key,
+    revision,
     editing,
     definition,
     name,

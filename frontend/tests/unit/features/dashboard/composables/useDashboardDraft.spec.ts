@@ -113,6 +113,17 @@ describe('the dashboard draft', () => {
     expect(store.canUndo).toBe(false)
   })
 
+  it('remembers the revision it was taken from until a save names the next one', () => {
+    const store = useDashboardDraft()
+    store.begin('42', saved, 'Operations', '', 3)
+    expect(store.revision).toBe(3)
+    store.rename('Changed')
+    store.markSaved(store.definition!, 'Changed', '', undefined, 4)
+    expect(store.revision).toBe(4)
+    store.end()
+    expect(store.revision).toBeNull()
+  })
+
   it('takes settings straight from a reactive form, arrays included, and keeps a copy of its own', () => {
     // What the Add widget dialog hands over: its form is reactive, and every list in it a proxy.
     const form = reactive({ config: defaultConfig('change.daily') })

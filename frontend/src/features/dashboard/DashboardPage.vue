@@ -205,7 +205,13 @@ function startEditing() {
   if (!savedDefinition.value || !currentKey.value || !detail.data.value) return
   saveError.value = null
   validationErrors.value = []
-  draft.begin(currentKey.value, cloneDefinition(savedDefinition.value), detail.data.value.name, detail.data.value.description)
+  draft.begin(
+    currentKey.value,
+    cloneDefinition(savedDefinition.value),
+    detail.data.value.name,
+    detail.data.value.description,
+    detail.data.value.revision,
+  )
 }
 
 async function save() {
@@ -222,9 +228,10 @@ async function save() {
       name: draft.name,
       description: draft.description,
       definition: draft.definition,
-      expectedRevision: d.revision,
+      // The revision the draft was taken from, never the cache's: a refetch may have moved that on.
+      expectedRevision: draft.revision ?? d.revision,
     })
-    draft.markSaved(saved.definition, saved.name, saved.description)
+    draft.markSaved(saved.definition, saved.name, saved.description, undefined, saved.revision)
     draft.end()
   } catch (error) {
     const winner = conflictOf(error)
@@ -371,7 +378,7 @@ async function onName(value: { name: string; description: string }) {
       const created = await create.mutateAsync({ name: value.name, description: value.description, definition: { schemaVersion: 1, defaults: {}, refreshMinutes: 0, widgets: [] } })
       nameDialog.value = null
       await router.push({ name: 'dashboard-view', params: { id: created.id } })
-      draft.begin(String(created.id), created.definition, created.name, created.description)
+      draft.begin(String(created.id), created.definition, created.name, created.description, created.revision)
     } else if (nameDialog.value === 'template' && template.value && templateCopy.value) {
       const created = await create.mutateAsync({
         name: value.name,
