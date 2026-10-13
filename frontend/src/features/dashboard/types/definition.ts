@@ -82,3 +82,8 @@ export function newWidgetId(): string {
 export function cloneDefinition(definition: DashboardDefinition): DashboardDefinition {
   return JSON.parse(JSON.stringify(definition)) as DashboardDefinition
 }
+
+/** The same for one widget's settings, which arrive from a reactive form with every list a proxy. */
+export function cloneConfig(config: WidgetConfig): WidgetConfig {
+  return JSON.parse(JSON.stringify(config)) as WidgetConfig
+}

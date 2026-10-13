@@ -8,7 +8,7 @@
  */
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { cloneDefinition, newWidgetId, type DashboardDefinition, type DashboardLens, type RefreshMinutes, type WidgetConfig, type WidgetInstance } from '../types/definition'
+import { cloneConfig, cloneDefinition, newWidgetId, type DashboardDefinition, type DashboardLens, type RefreshMinutes, type WidgetConfig, type WidgetInstance } from '../types/definition'
 import { typeSpec } from '../registry/contract'
 import { findSpot, move, resolveCollisions, sizePreset, type MoveTarget, type SizePreset } from './layout'
 
@@ -98,7 +98,7 @@ export const useDashboardDraft = defineStore('dashboardDraft', () => {
         configVersion: spec.configVersion,
         title,
         subtitle: null,
-        config: structuredClone(config),
+        config: cloneConfig(config),
         overrides: { ...overrides },
         layout,
       })
@@ -130,7 +130,7 @@ export const useDashboardDraft = defineStore('dashboardDraft', () => {
     apply(label, (draft) => {
       const widget = draft.definition.widgets.find((w) => w.id === id)
       if (!widget) return
-      if (patch.config !== undefined) widget.config = structuredClone(patch.config)
+      if (patch.config !== undefined) widget.config = cloneConfig(patch.config)
       if (patch.title !== undefined) widget.title = patch.title?.trim() ? patch.title.trim() : null
       if (patch.subtitle !== undefined) widget.subtitle = patch.subtitle?.trim() ? patch.subtitle.trim() : null
       if (patch.overrides !== undefined) widget.overrides = { ...patch.overrides }

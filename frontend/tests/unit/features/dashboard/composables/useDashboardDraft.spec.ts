@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { reactive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { MAX_HISTORY, useDashboardDraft } from '@/features/dashboard/composables/useDashboardDraft'
 import { overlaps } from '@/features/dashboard/composables/layout'
+import { normalizeConfig } from '@/features/dashboard/registry/validate'
 import { defaultConfig } from '@/features/dashboard/registry/contract'
 import { devicePopulation } from '@/features/dashboard/templates/devicePopulation'
 import type { DashboardDefinition } from '@/features/dashboard/types/definition'
@@ -109,5 +111,18 @@ describe('the dashboard draft', () => {
     store.markSaved(store.definition!, 'Saved name', '')
     expect(store.isDirty).toBe(false)
     expect(store.canUndo).toBe(false)
+  })
+
+  it('takes settings straight from a reactive form, arrays included, and keeps a copy of its own', () => {
+    // What the Add widget dialog hands over: its form is reactive, and every list in it a proxy.
+    const form = reactive({ config: defaultConfig('change.daily') })
+    const store = draft()
+    const id = store.addWidget('change.daily', normalizeConfig('change.daily', form.config), 'Daily')!
+    expect(store.widget(id)!.config.series).toEqual(['added', 'removed', 'cumulative'])
+
+    store.updateWidget(id, { config: normalizeConfig('change.daily', { ...form.config, series: ['net'] }) })
+    expect(store.widget(id)!.config.series).toEqual(['net'])
+    ;(form.config.series as string[]).push('net')
+    expect(store.widget(id)!.config.series).toEqual(['net'])
   })
 })
