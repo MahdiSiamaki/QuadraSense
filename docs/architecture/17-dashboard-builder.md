@@ -14,7 +14,7 @@ rules live. The decision and its evidence are in
 | Service | `Sqm.Application/Dashboards/DashboardService.cs` | Access (owner, grants via user or role, `dashboard.*` permissions), optimistic concurrency, audit. |
 | Export | `DashboardExportService.cs`, `DashboardWidgetDataLoader*.cs`, `Sqm.Api/Endpoints/DashboardExportEndpoints.cs` | Snapshot (PNG / print) and CSV, loaded per widget under the exporter's own permissions, audited `data.export`. |
 | Page | `frontend/src/features/dashboard/DashboardPage.vue` | Switcher, lens bar, grid, edit mode with draft / undo / redo / save / conflict, export and share dialogs. |
-| Grid | `components/DashboardGrid.vue` | GridStack 14 behind an adapter: 12 / 6 / 1 columns, drag handle in the card header, keyboard and menu moves. |
+| Grid | `components/DashboardGrid.vue` | GridStack 14 behind an adapter: 12 / 6 / 1 columns, drag handle in the card header, keyboard and menu moves. Cards read at a glance - KPI, KPI summary, Data freshness, Device class mix, Network & SIM capability - are as tall as their content (definition `height: 'content'`) and never scroll; the rest scroll inside their layout height. |
 | Widgets | `widgets/<group>/` | One folder per catalogue group: `config.ts`, components, `index.ts` with `definitions`. |
 
 ## Rules that hold for every widget
@@ -112,7 +112,8 @@ the exported rows carry.
 ## Templates
 
 Code, not data (`frontend/src/features/dashboard/templates/`): **Device Population** (the old page,
-captions preserved; `/` opens it until a person chooses another default), **Security & Risk**,
+captions preserved, its KPI row one KPI-summary widget with one menu, as it was one row; `/` opens
+it until a person chooses another default), **Security & Risk**,
 **Support**, **Data Operations & Quality**. A template opens read-only; *Copy to my dashboards*
 makes it editable.
 
