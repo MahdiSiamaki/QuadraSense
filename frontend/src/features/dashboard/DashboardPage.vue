@@ -112,10 +112,17 @@ const notFound = computed(() => detail.isError.value && detail.error.value insta
 
 const unknownTemplate = computed(() => target.value?.kind === 'template' && !template.value)
 
-/** What the switcher and the browser tab call this. */
-watch(name, (value) => {
-  if (value) document.title = `${value} · QuadraSense`
-})
+/**
+ * What the switcher and the browser tab call this - set on mount and after every navigation too: the
+ * router's afterEach resets the title to the route's on each one, a lens change included.
+ */
+watch(
+  [name, () => route.fullPath],
+  ([value]) => {
+    if (value) document.title = `${value} · QuadraSense`
+  },
+  { immediate: true, flush: 'post' },
+)
 
 // --------------------------------------------------------------------- lens
 
@@ -346,6 +353,10 @@ onBeforeUnmount(() => {
 type NameMode = 'new' | 'template' | 'duplicate' | 'rename'
 const nameDialog = ref<NameMode | null>(null)
 const nameError = ref<unknown>(null)
+// Each name dialog opens clean: a refusal belongs to the attempt that drew it, not to the next dialog.
+watch(nameDialog, (mode) => {
+  if (mode) nameError.value = null
+})
 const duplicate = useDuplicateDashboard()
 const remove = useDeleteDashboard()
 const setDefault = useSetDefault()

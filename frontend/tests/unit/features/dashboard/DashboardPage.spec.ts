@@ -7,6 +7,8 @@ import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { api } from '@/api/client'
 import { DASHBOARDS_KEY, type DashboardDetail, type DashboardList } from '@/api/dashboards'
 import DashboardPage from '@/features/dashboard/DashboardPage.vue'
+import ActionMenu from '@/features/dashboard/components/ActionMenu.vue'
+import NameDialog from '@/features/dashboard/components/NameDialog.vue'
 import { devicePopulation } from '@/features/dashboard/templates/devicePopulation'
 import type { WidgetInstance } from '@/features/dashboard/types/definition'
 
@@ -182,5 +184,33 @@ describe('the dashboard page', () => {
     await hosts(wrapper)[0]!.vm.$emit('action', 'duplicate')
     await flushPromises()
     expect(hosts(wrapper)).toHaveLength(definition.widgets.length + 1)
+  })
+
+  it('opens each name dialog without the refusal the last one drew', async () => {
+    const { wrapper } = await open()
+    const more = wrapper.findAllComponents(ActionMenu).find((m) => m.props('label') === 'More dashboard actions')!
+    vi.spyOn(api, 'put').mockRejectedValue(new Error('This name cannot be used for this dashboard. Choose another.'))
+
+    more.vm.$emit('select', 'rename')
+    await flushPromises()
+    wrapper.findComponent(NameDialog).vm.$emit('submit', { name: 'Taken', description: '' })
+    await flushPromises()
+    expect(wrapper.findComponent(NameDialog).props('error')).toBeInstanceOf(Error)
+
+    wrapper.findComponent(NameDialog).vm.$emit('close')
+    more.vm.$emit('select', 'duplicate')
+    await flushPromises()
+    expect(wrapper.findComponent(NameDialog).props('open')).toBe(true)
+    expect(wrapper.findComponent(NameDialog).props('error')).toBeNull()
+  })
+
+  it("names the tab after the dashboard, and again after a navigation reset it", async () => {
+    const { router } = await open()
+    expect(document.title).toBe('Operations · QuadraSense')
+
+    // A lens change is a navigation: the router's afterEach resets the title before the page sees it.
+    await router.push({ name: 'dashboard-view', params: { id: 7 }, query: { countBy: 'handsets' } })
+    await flushPromises()
+    expect(document.title).toBe('Operations · QuadraSense')
   })
 })
