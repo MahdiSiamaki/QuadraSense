@@ -184,7 +184,7 @@ function onCommit(positions: { id: string; x: number; y: number; w: number; h: n
 
 function onWidgetAction(widget: WidgetInstance, key: string) {
   if (key === 'configure') return openConfigure(widget)
-  if (key === 'duplicate') return void draft.duplicateWidget(widget.id)
+  if (key === 'duplicate') return widgets.value.length < maxWidgets.value ? void draft.duplicateWidget(widget.id) : undefined
   if (key === 'remove') return draft.removeWidget(widget.id)
   if (key.startsWith('move:')) return draft.moveWidget(widget.id, key.slice(5) as MoveTarget)
   if (key.startsWith('size:')) return draft.resizeWidget(widget.id, key.slice(5) as SizePreset)
@@ -203,6 +203,9 @@ const conflict = ref<{ updatedBy: string | null; updatedAt: string | null } | nu
 const canEdit = computed(() => !!access.value?.canEdit)
 const canCreate = computed(() => can(Permission.DashboardCreate))
 
+/** The most widgets a dashboard holds; Add and Duplicate both stop there. */
+const maxWidgets = computed(() => list.data.value?.limits.maxWidgets ?? 24)
+
 function startEditing() {
   if (!savedDefinition.value || !currentKey.value || !detail.data.value) return
   saveError.value = null
@@ -220,7 +223,7 @@ async function save() {
   const d = detail.data.value
   if (!editing.value || !d || !draft.definition || update.isPending.value) return
   saveError.value = null
-  const problems = validateDefinition(draft.definition, { maxWidgets: list.data.value?.limits.maxWidgets ?? 24 })
+  const problems = validateDefinition(draft.definition, { maxWidgets: maxWidgets.value })
   validationErrors.value = problems.map((p) => `${p.field}: ${p.message}`)
   if (problems.length) return
 
@@ -738,6 +741,7 @@ const problems = computed(() => migrated.value?.problems ?? [])
           :can-move-up="canMove(order, widget.id, 'up')"
           :can-move-down="canMove(order, widget.id, 'down')"
           :wide="columns === 12"
+          :full="widgets.length >= maxWidgets"
           @action="(key) => onWidgetAction(widget, key)"
         />
       </template>
@@ -809,7 +813,7 @@ const problems = computed(() => migrated.value?.problems ?? [])
       :defaults="defaults"
       :url-lens="urlLens"
       :widget-count="widgets.length"
-      :max-widgets="list.data.value?.limits.maxWidgets ?? 24"
+      :max-widgets="maxWidgets"
       @close="wizard = { open: false, widget: null }"
       @done="onWizard"
     />

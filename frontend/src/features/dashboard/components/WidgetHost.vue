@@ -37,8 +37,10 @@ const props = withDefaults(
     canMoveDown?: boolean
     /** Whether the 12-column grid is in use (resize presets need it). */
     wide?: boolean
+    /** The dashboard holds as many widgets as it may: Duplicate is not offered. */
+    full?: boolean
   }>(),
-  { snapshot: null, canMoveUp: false, canMoveDown: false, wide: true },
+  { snapshot: null, canMoveUp: false, canMoveDown: false, wide: true, full: false },
 )
 
 const emit = defineEmits<{ action: [key: string] }>()
@@ -97,7 +99,12 @@ const menu = computed<ActionMenuItem[]>(() => {
   if (props.mode === 'edit') {
     const items: ActionMenuItem[] = []
     if (!blocked.value || definition.value) items.push({ key: 'configure', label: 'Configure…', disabled: !!blocked.value })
-    items.push({ key: 'duplicate', label: 'Duplicate', disabled: !!blocked.value })
+    items.push({
+      key: 'duplicate',
+      label: 'Duplicate',
+      disabled: !!blocked.value || props.full,
+      hint: props.full ? 'This dashboard holds as many widgets as it may' : undefined,
+    })
     items.push({ key: 'move:up', label: 'Move up', disabled: !props.canMoveUp, separated: true })
     items.push({ key: 'move:down', label: 'Move down', disabled: !props.canMoveDown })
     items.push({ key: 'move:start', label: 'Move to the start', disabled: !props.canMoveUp })

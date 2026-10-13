@@ -163,4 +163,24 @@ describe('the dashboard page', () => {
     expect(put).toHaveBeenCalledTimes(1)
     expect((put.mock.calls[0]![1] as { expectedRevision: number }).expectedRevision).toBe(3)
   })
+
+  it('does not duplicate past the most widgets a dashboard may hold', async () => {
+    const { wrapper } = await open(definition.widgets.length)
+    await button(wrapper, 'Edit').trigger('click')
+    expect(hosts(wrapper)[0]!.props('full')).toBe(true)
+
+    await hosts(wrapper)[0]!.vm.$emit('action', 'duplicate')
+    await flushPromises()
+    expect(hosts(wrapper)).toHaveLength(definition.widgets.length)
+  })
+
+  it('duplicates below the limit', async () => {
+    const { wrapper } = await open(definition.widgets.length + 1)
+    await button(wrapper, 'Edit').trigger('click')
+    expect(hosts(wrapper)[0]!.props('full')).toBe(false)
+
+    await hosts(wrapper)[0]!.vm.$emit('action', 'duplicate')
+    await flushPromises()
+    expect(hosts(wrapper)).toHaveLength(definition.widgets.length + 1)
+  })
 })

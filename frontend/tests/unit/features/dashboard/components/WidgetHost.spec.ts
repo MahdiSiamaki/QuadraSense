@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { api } from '@/api/client'
+import WidgetFrame from '@/features/dashboard/components/WidgetFrame.vue'
 import WidgetHost from '@/features/dashboard/components/WidgetHost.vue'
 import { getWidget } from '@/features/dashboard/registry'
 import { CONTRACT, defaultConfig } from '@/features/dashboard/registry/contract'
@@ -86,5 +87,22 @@ describe('the widget host', () => {
 
     expect(wrapper.findComponent(getWidget('risk.overview')!.component).exists()).toBe(true)
     expect(get).toHaveBeenCalledWith('/api/v1/risk/status', undefined, expect.anything())
+  })
+
+  it('offers Duplicate in edit mode only while the dashboard has room, and says why not', () => {
+    granted.add('dashboard.view')
+    const menu = (full: boolean) =>
+      mount(WidgetHost, {
+        props: { widget: widget('metric.kpi'), defaults: {}, urlLens: {}, mode: 'edit', full },
+        global: { plugins: [[VueQueryPlugin, { queryClient: new QueryClient() }]] },
+      })
+        .findComponent(WidgetFrame)
+        .props('menu') as { key: string; disabled?: boolean; hint?: string }[]
+
+    expect(menu(false).find((i) => i.key === 'duplicate')).toMatchObject({ disabled: false, hint: undefined })
+    expect(menu(true).find((i) => i.key === 'duplicate')).toMatchObject({
+      disabled: true,
+      hint: 'This dashboard holds as many widgets as it may',
+    })
   })
 })
