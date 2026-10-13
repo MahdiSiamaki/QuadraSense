@@ -9,6 +9,7 @@ import { DASHBOARDS_KEY, type DashboardDetail, type DashboardList } from '@/api/
 import DashboardPage from '@/features/dashboard/DashboardPage.vue'
 import ActionMenu from '@/features/dashboard/components/ActionMenu.vue'
 import NameDialog from '@/features/dashboard/components/NameDialog.vue'
+import DashboardSettingsDialog from '@/features/dashboard/components/DashboardSettingsDialog.vue'
 import { devicePopulation } from '@/features/dashboard/templates/devicePopulation'
 import type { WidgetInstance } from '@/features/dashboard/types/definition'
 
@@ -202,6 +203,17 @@ describe('the dashboard page', () => {
     await flushPromises()
     expect(wrapper.findComponent(NameDialog).props('open')).toBe(true)
     expect(wrapper.findComponent(NameDialog).props('error')).toBeNull()
+  })
+
+  it("renames from the draft's description while editing, so a rename keeps a description just changed", async () => {
+    const { wrapper } = await open()
+    await button(wrapper, 'Edit').trigger('click')
+    wrapper.findComponent(DashboardSettingsDialog).vm.$emit('apply', { description: 'For the night shift', refreshMinutes: 0, defaults: {} })
+    await flushPromises()
+    expect(wrapper.text()).toContain('For the night shift')
+
+    await button(wrapper, 'Rename').trigger('click')
+    expect(wrapper.findComponent(NameDialog).props('initialDescription')).toBe('For the night shift')
   })
 
   it("names the tab after the dashboard, and again after a navigation reset it", async () => {
