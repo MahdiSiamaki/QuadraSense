@@ -102,16 +102,22 @@ function level(d: DashboardSummary) {
       The page's heading holds the switcher's button, not the other way round: a button's children are
       presentational, so an h1 inside it left the page without a level-1 heading.
     -->
-    <h1 class="min-w-0 text-xl font-semibold tracking-tight">
+    <!--
+      The hover box reaches 6px left of the text so the text lines up with the description below. That
+      offset is the heading's margin, not the button's: on the button, the heading measured 6px narrower
+      than the name, the button's max-width took the 6px from the text, and every name lost its end to
+      an ellipsis ("Device populati…"). A name too long for the line wraps; it is never cut.
+    -->
+    <h1 class="-ml-1.5 min-w-0 text-xl font-semibold tracking-tight">
       <button
         ref="trigger"
         type="button"
-        class="flex max-w-full items-center gap-2 rounded-[var(--radius-md)] px-1.5 py-0.5 -ml-1.5 text-left hover:bg-[var(--c-surface-hover)]"
+        class="flex max-w-full items-center gap-2 rounded-[var(--radius-md)] px-1.5 py-0.5 text-left hover:bg-[var(--c-surface-hover)]"
         :aria-expanded="open"
         :aria-controls="panelId"
         @click="toggle"
       >
-        <span class="truncate">{{ label }}</span>
+        <span class="min-w-0 break-words">{{ label }}</span>
         <span aria-hidden="true" class="text-sm font-normal text-[var(--c-text-muted)]">▾</span>
         <span class="sr-only">Switch dashboard</span>
       </button>
