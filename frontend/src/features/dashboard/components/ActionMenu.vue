@@ -9,8 +9,14 @@
  *
  * It opens out of its own corner (150ms, opacity and a 3% scale, scale only with motion allowed) and
  * closes at once.
+ *
+ * The panel is positioned against the viewport (`position: fixed`), measured from the trigger when it
+ * opens, so no scrolling or clipping ancestor can cut it off - a dashboard card scrolls its own body,
+ * and a twelve-item edit menu in a three-row KPI card was clipped inside it. It opens below the trigger,
+ * above it when only the space above fits, and scrolls itself when neither does. A scroll outside it or
+ * a resize closes it rather than leave it floating away from its trigger.
  */
-import { onBeforeUnmount, onMounted, ref, useId } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 
 export interface ActionMenuItem {
   key: string
@@ -23,7 +29,7 @@ export interface ActionMenuItem {
   separated?: boolean
 }
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /** The trigger's accessible name, e.g. "Actions for Top vendors". */
     label: string
@@ -41,7 +47,44 @@ const emit = defineEmits<{ select: [key: string] }>()
 const open = ref(false)
 const root = ref<HTMLElement | null>(null)
 const trigger = ref<HTMLButtonElement | null>(null)
+const panel = ref<HTMLElement | null>(null)
 const panelId = useId()
+
+const GAP = 4
+const EDGE = 8
+const place = ref<{ style: Record<string, string>; above: boolean }>({ style: {}, above: false })
+
+/** Where the panel goes, from the trigger's place on screen and the panel's own height. */
+function position() {
+  const t = trigger.value?.getBoundingClientRect()
+  if (!t) return
+  const height = panel.value?.scrollHeight ?? 0
+  const below = window.innerHeight - t.bottom - GAP - EDGE
+  const aboveSpace = t.top - GAP - EDGE
+  const above = height > below && aboveSpace > below
+  const room = Math.max(120, above ? aboveSpace : below)
+  const style: Record<string, string> = { maxHeight: `${room}px` }
+  if (above) style.bottom = `${window.innerHeight - t.top + GAP}px`
+  else style.top = `${t.bottom + GAP}px`
+  if (props.align === 'right') style.right = `${Math.max(EDGE, window.innerWidth - t.right)}px`
+  else style.left = `${Math.max(EDGE, t.left)}px`
+  place.value = { style, above }
+}
+
+watch(open, async (isOpen) => {
+  if (!isOpen) return
+  position()
+  await nextTick()
+  position()
+})
+
+function onWindowScroll(event: Event) {
+  if (open.value && !(panel.value && event.target instanceof Node && panel.value.contains(event.target))) open.value = false
+}
+
+function onResize() {
+  open.value = false
+}
 
 function choose(item: ActionMenuItem) {
   if (item.disabled) return
@@ -68,11 +111,15 @@ function onFocusOut(event: FocusEvent) {
 onMounted(() => {
   document.addEventListener('pointerdown', onDocumentPointerDown)
   document.addEventListener('keydown', onKeydown)
+  window.addEventListener('scroll', onWindowScroll, true)
+  window.addEventListener('resize', onResize)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocumentPointerDown)
   document.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('scroll', onWindowScroll, true)
+  window.removeEventListener('resize', onResize)
 })
 
 defineExpose({ close: () => (open.value = false) })
@@ -100,8 +147,10 @@ defineExpose({ close: () => (open.value = false) })
     <div
       v-if="open"
       :id="panelId"
-      class="absolute top-full z-30 mt-1 min-w-48 overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--c-surface)] py-1 shadow-[var(--shadow-md)] transition-[opacity,scale] duration-(--duration-popover) ease-out starting:opacity-0 motion-safe:starting:scale-[0.97]"
-      :class="align === 'right' ? 'right-0 origin-top-right' : 'left-0 origin-top-left'"
+      ref="panel"
+      class="fixed z-30 min-w-48 overflow-y-auto overscroll-contain rounded-[var(--radius-lg)] border bg-[var(--c-surface)] py-1 shadow-[var(--shadow-md)] transition-[opacity,scale] duration-(--duration-popover) ease-out starting:opacity-0 motion-safe:starting:scale-[0.97]"
+      :class="place.above ? (align === 'right' ? 'origin-bottom-right' : 'origin-bottom-left') : align === 'right' ? 'origin-top-right' : 'origin-top-left'"
+      :style="place.style"
     >
       <template v-for="item in items" :key="item.key">
         <div v-if="item.separated" class="my-1 border-t" role="separator" />
