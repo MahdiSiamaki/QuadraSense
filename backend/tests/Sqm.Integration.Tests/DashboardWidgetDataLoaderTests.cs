@@ -128,12 +128,17 @@ public sealed class DashboardWidgetDataLoaderTests
     [Fact]
     public async Task SIM_change_evidence_of_one_series_is_the_visible_rows_with_that_series_only()
     {
-        var loader = Loader(risk: Published(), simDays: [new(new DateOnly(2026, 9, 29), 100, 10, 5), new(new DateOnly(2026, 9, 30), 120, 12, 6)]);
+        // Inside the last 7 days of the context's data (to 2026-03-08), and one day outside it.
+        var loader = Loader(risk: Published(), simDays:
+        [
+            new(new DateOnly(2026, 2, 20), 90, 9, 4), new(new DateOnly(2026, 3, 7), 100, 10, 5), new(new DateOnly(2026, 3, 8), 120, 12, 6),
+        ]);
         var result = await LoadAsync(loader, "risk.simChangeEvidence", """{"series":["changes"],"showFlagged":false}""", new DashboardLens(Range: "last7"));
 
         Assert.Equal("ok", result.Status);
         Assert.Equal("visible", result.Table!.Scope);
         Assert.Equal(["Day", "Numbers whose SIM changed"], result.Table.Headers);
+        Assert.Equal([["2026-03-07", 100L], ["2026-03-08", 120L]], result.Table.Rows.Select(r => r.ToArray()));
         EveryRowFitsTheHeadings(result.Table);
     }
 
