@@ -93,7 +93,13 @@ export const useDashboardDraft = defineStore('dashboardDraft', () => {
     return true
   }
 
-  function addWidget(type: string, config: WidgetConfig, title: string | null = null, overrides: DashboardLens = {}): string | null {
+  function addWidget(
+    type: string,
+    config: WidgetConfig,
+    title: string | null = null,
+    overrides: DashboardLens = {},
+    subtitle: string | null = null,
+  ): string | null {
     const spec = typeSpec(type)
     if (!spec || !current.value) return null
     const id = uniqueId(current.value.definition)
@@ -104,7 +110,7 @@ export const useDashboardDraft = defineStore('dashboardDraft', () => {
         type,
         configVersion: spec.configVersion,
         title,
-        subtitle: null,
+        subtitle,
         config: cloneConfig(config),
         overrides: { ...overrides },
         layout,
@@ -170,27 +176,20 @@ export const useDashboardDraft = defineStore('dashboardDraft', () => {
     })
   }
 
-  function setDefaults(defaults: DashboardLens) {
-    apply('Change default view', (draft) => {
-      draft.definition.defaults = { ...defaults }
+  /** The settings dialog's three values as one change: one Apply, one undo. */
+  function setSettings(next: { description: string; refreshMinutes: RefreshMinutes; defaults: DashboardLens }) {
+    apply('Change settings', (draft) => {
+      draft.description = next.description
+      draft.definition.refreshMinutes = next.refreshMinutes
+      draft.definition.defaults = { ...next.defaults }
     })
   }
 
-  function setRefresh(minutes: RefreshMinutes) {
-    apply('Change refresh', (draft) => {
-      draft.definition.refreshMinutes = minutes
-    })
-  }
-
-  function rename(next: string) {
+  /** The rename dialog's name, and its description when it shows one: one Rename, one undo. */
+  function rename(next: string, description?: string) {
     apply('Rename', (draft) => {
       draft.name = next
-    })
-  }
-
-  function setDescription(next: string) {
-    apply('Change description', (draft) => {
-      draft.description = next
+      if (description !== undefined) draft.description = description
     })
   }
 
@@ -263,10 +262,8 @@ export const useDashboardDraft = defineStore('dashboardDraft', () => {
     commitLayout,
     moveWidget,
     resizeWidget,
-    setDefaults,
-    setRefresh,
+    setSettings,
     rename,
-    setDescription,
     undo,
     redo,
     discard,

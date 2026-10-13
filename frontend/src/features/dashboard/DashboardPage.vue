@@ -104,7 +104,9 @@ const mode = computed<WidgetMode>(() => (editing.value ? 'edit' : 'view'))
 const name = computed(() =>
   editing.value ? draft.name : (detail.data.value?.name ?? template.value?.name ?? (target.value ? '' : 'Dashboard')),
 )
-const description = computed(() => detail.data.value?.description ?? template.value?.description ?? '')
+const description = computed(() =>
+  editing.value ? draft.description : (detail.data.value?.description ?? template.value?.description ?? ''),
+)
 const access = computed(() => detail.data.value?.access ?? null)
 const notFound = computed(() => detail.isError.value && detail.error.value instanceof ApiError && detail.error.value.status === 404)
 
@@ -395,8 +397,7 @@ async function onName(value: { name: string; description: string }) {
     } else if (nameDialog.value === 'rename') {
       // The dialog shows the description, so what is typed there is saved with the name.
       if (editing.value) {
-        draft.rename(value.name)
-        if (value.description !== draft.description) draft.setDescription(value.description)
+        draft.rename(value.name, value.description)
         nameDialog.value = null
       } else if (detail.data.value && savedDefinition.value) {
         await update.mutateAsync({
@@ -474,8 +475,7 @@ function onWizard(result: WizardResult) {
   if (result.id) {
     draft.updateWidget(result.id, { config: result.config, title: result.title, subtitle: result.subtitle, overrides: result.overrides }, 'Configure widget')
   } else {
-    const id = draft.addWidget(result.type, result.config, result.title, result.overrides)
-    if (id && result.subtitle) draft.updateWidget(id, { subtitle: result.subtitle }, 'Add widget')
+    draft.addWidget(result.type, result.config, result.title, result.overrides, result.subtitle)
   }
   wizard.value = { open: false, widget: null }
 }
@@ -488,9 +488,7 @@ function openExport(kind: ExportKind, widgetIds: string[] | null = null) {
 
 const settings = ref(false)
 function onSettings(value: { description: string; refreshMinutes: 0 | 5 | 15 | 30; defaults: DashboardLens }) {
-  if (value.description !== draft.description) draft.setDescription(value.description)
-  if (value.refreshMinutes !== draft.definition?.refreshMinutes) draft.setRefresh(value.refreshMinutes)
-  if (JSON.stringify(value.defaults) !== JSON.stringify(draft.definition?.defaults ?? {})) draft.setDefaults(value.defaults)
+  draft.setSettings(value)
   settings.value = false
 }
 

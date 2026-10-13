@@ -124,6 +124,36 @@ describe('the dashboard draft', () => {
     expect(store.revision).toBeNull()
   })
 
+  it('adds a widget with its subtitle as one step: one undo removes it', () => {
+    const store = draft()
+    const id = store.addWidget('metric.kpi', defaultConfig('metric.kpi'), 'Extra', {}, 'Since Monday')!
+    expect(store.widget(id)!.subtitle).toBe('Since Monday')
+    store.undo()
+    expect(store.widget(id)).toBeUndefined()
+    expect(store.isDirty).toBe(false)
+  })
+
+  it("applies the settings dialog's three values as one step", () => {
+    const store = draft()
+    store.setSettings({ description: 'For the night shift', refreshMinutes: 15, defaults: { countBy: 'handsets' } })
+    expect(store.description).toBe('For the night shift')
+    expect(store.definition!.refreshMinutes).toBe(15)
+    expect(store.definition!.defaults).toEqual({ countBy: 'handsets' })
+    store.undo()
+    expect(store.isDirty).toBe(false)
+    expect(store.canUndo).toBe(false)
+  })
+
+  it('renames with the description the dialog showed as one step', () => {
+    const store = draft()
+    store.rename('Night shift', 'What the night shift watches')
+    expect(store.name).toBe('Night shift')
+    expect(store.description).toBe('What the night shift watches')
+    store.undo()
+    expect(store.isDirty).toBe(false)
+    expect(store.canUndo).toBe(false)
+  })
+
   it('takes settings straight from a reactive form, arrays included, and keeps a copy of its own', () => {
     // What the Add widget dialog hands over: its form is reactive, and every list in it a proxy.
     const form = reactive({ config: defaultConfig('change.daily') })
