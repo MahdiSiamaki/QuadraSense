@@ -4,6 +4,8 @@ import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { api } from '@/api/client'
 import AddWidgetDialog from '@/features/dashboard/components/AddWidgetDialog.vue'
 import ConfigForm from '@/features/dashboard/components/ConfigForm.vue'
+import { getWidget } from '@/features/dashboard/registry'
+import { CONTRACT } from '@/features/dashboard/registry/contract'
 
 /*
   Add widget: what the form starts from, what the preview runs with, and what may be added. Signed in
@@ -44,6 +46,9 @@ function form(w: VueWrapper) {
   return w.findComponent(ConfigForm)
 }
 
+function addButton(w: VueWrapper) {
+  return w.findAll('button').find((b) => b.text() === 'Add to dashboard')!
+}
 
 describe('the add widget dialog', () => {
   beforeEach(() => {
@@ -89,5 +94,30 @@ describe('the add widget dialog', () => {
 
     // No timer has run since: the preview already belongs to this preset.
     expect(form(w).props('instance').config.rule).toBe('RepeatedSimChange7')
+  })
+
+  it("refuses a widget's own TAC that is not eight digits, as Save would", async () => {
+    const w = await openDialog()
+    await configure(w, getWidget('device.top')!.name)
+    const tac = form(w).findAll('label').find((l) => l.text() === 'TAC')!
+    const input = form(w).get(`#${tac.attributes('for')}`)
+
+    await input.setValue('3500000')
+    expect(form(w).text()).toContain('Eight digits.')
+    expect(addButton(w).attributes('disabled')).toBeDefined()
+
+    await input.setValue('35000000')
+    expect(form(w).text()).not.toContain('Eight digits.')
+    expect(addButton(w).attributes('disabled')).toBeUndefined()
+  })
+
+  it(`refuses a vendor longer than ${CONTRACT.lens.textFilterMaxLength} characters`, async () => {
+    const w = await openDialog()
+    await configure(w, getWidget('device.top')!.name)
+    const vendor = form(w).findAll('label').find((l) => l.text() === 'Vendor')!
+    await form(w).get(`#${vendor.attributes('for')}`).setValue('S'.repeat(CONTRACT.lens.textFilterMaxLength + 1))
+
+    expect(form(w).text()).toContain(`At most ${CONTRACT.lens.textFilterMaxLength} characters.`)
+    expect(addButton(w).attributes('disabled')).toBeDefined()
   })
 })

@@ -122,7 +122,11 @@ export function validateConfig(type: string, config: WidgetConfig): FieldError[]
   return errors
 }
 
-function lensErrors(lens: DashboardLens, path: string, type?: string): FieldError[] {
+/**
+ * What is wrong with a view - a dashboard's defaults, or the settings one widget overrides - field by
+ * field, as `<path>.<key>`. With a type, also whether that widget can take each setting at all.
+ */
+export function validateLens(lens: DashboardLens, path: string, type?: string): FieldError[] {
   const spec = type ? typeSpec(type) : undefined
   const errors: FieldError[] = []
   for (const [key, value] of Object.entries(lens)) {
@@ -154,7 +158,16 @@ function lensErrors(lens: DashboardLens, path: string, type?: string): FieldErro
             : key === 'tac'
               ? typeof value === 'string' && new RegExp(CONTRACT.lens.tacPattern).test(value)
               : typeof value === 'string' && value.trim() !== '' && value.trim().length <= CONTRACT.lens.textFilterMaxLength
-    if (!ok) errors.push({ field, message: 'Not a value this setting takes.' })
+    if (!ok)
+      errors.push({
+        field,
+        message:
+          key === 'tac'
+            ? 'Eight digits.'
+            : key === 'vendor' || key === 'deviceType' || key === 'operatingSystem'
+              ? `At most ${CONTRACT.lens.textFilterMaxLength} characters.`
+              : 'Not a value this setting takes.',
+      })
   }
   return errors
 }
@@ -173,7 +186,7 @@ export function validateInstance(instance: WidgetInstance): FieldError[] {
     errors.push({ field: 'subtitle', message: `At most ${CONTRACT.limits.subtitleMaxLength} characters.` })
 
   errors.push(...validateConfig(instance.type, instance.config).map((e) => ({ ...e, field: `config.${e.field}` })))
-  errors.push(...lensErrors(instance.overrides ?? {}, 'overrides', instance.type))
+  errors.push(...validateLens(instance.overrides ?? {}, 'overrides', instance.type))
 
   const { x, y, w, h } = instance.layout
   const columns = CONTRACT.limits.gridColumns
@@ -198,7 +211,7 @@ export function validateDefinition(definition: DashboardDefinition, limits: Defi
   if (definition.schemaVersion !== 1) errors.push({ field: 'schemaVersion', message: 'Saved by a newer version.' })
   if (!CONTRACT.lens.refreshMinutes.includes(definition.refreshMinutes))
     errors.push({ field: 'refreshMinutes', message: 'Not an allowed interval.' })
-  errors.push(...lensErrors(definition.defaults ?? {}, 'defaults'))
+  errors.push(...validateLens(definition.defaults ?? {}, 'defaults'))
   if (definition.widgets.length > limits.maxWidgets)
     errors.push({ field: 'widgets', message: `A dashboard holds at most ${limits.maxWidgets} widgets.` })
 

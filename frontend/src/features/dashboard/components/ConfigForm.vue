@@ -335,6 +335,7 @@ function onOverrideSelect(key: 'countBy' | 'range' | 'includeUnknownDevice', raw
             :label="FILTER_LABELS[key]"
             :placeholder="dashboardView[key] ? `The dashboard's (${dashboardView[key]})` : 'The dashboard\'s (none)'"
             :hint="key === 'tac' ? 'Eight digits - a device model, never a person.' : undefined"
+            :error="errorFor(`overrides.${key}`)"
             @update:model-value="setOverride(key, $event.trim() || undefined)"
           />
         </div>

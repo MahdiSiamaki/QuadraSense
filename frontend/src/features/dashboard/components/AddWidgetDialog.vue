@@ -24,7 +24,7 @@ import SegmentedControl from '@/design-system/SegmentedControl.vue'
 import { useAuth } from '@/features/auth/useAuth'
 import { catalogEntries, catalogGroups, getWidget, type CatalogEntry } from '../registry'
 import { CONTRACT, requiredPermissions, typeSpec } from '../registry/contract'
-import { normalizeConfig, validateConfig } from '../registry/validate'
+import { normalizeConfig, validateConfig, validateLens } from '../registry/validate'
 import { effectiveLens, supportsCountBy, supportsRange } from '../composables/lens'
 import { cloneConfig, type DashboardLens, type WidgetConfig, type WidgetInstance } from '../types/definition'
 import type { WidgetGroupId } from '../registry/contract'
@@ -208,9 +208,11 @@ function focusFirstField() {
 
 const definition = computed(() => (form.value ? getWidget(form.value.type) : undefined))
 const errors = computed(() => (form.value ? validateConfig(form.value.type, form.value.config) : []))
+/** The view this widget sets for itself, checked as Save checks it: a TAC is eight digits, a filter at most 120 characters. */
+const overrideErrors = computed(() => (form.value ? validateLens(form.value.overrides, 'overrides', form.value.type) : []))
 const titleTooLong = computed(() => (form.value?.title.length ?? 0) > CONTRACT.limits.titleMaxLength || (form.value?.subtitle.length ?? 0) > CONTRACT.limits.subtitleMaxLength)
 const semanticErrors = computed(() => (form.value && definition.value?.validate ? definition.value.validate(form.value.config) : []))
-const allErrors = computed(() => [...errors.value, ...semanticErrors.value])
+const allErrors = computed(() => [...errors.value, ...overrideErrors.value, ...semanticErrors.value])
 const valid = computed(() => !!form.value && allErrors.value.length === 0 && !titleTooLong.value)
 const dirty = computed(() => JSON.stringify(form.value) !== initial.value)
 
@@ -231,7 +233,7 @@ const appliedOverrides = ref<DashboardLens>({})
 let debounce: ReturnType<typeof setTimeout> | null = null
 
 function applyNow(): boolean {
-  if (!form.value || errors.value.length) return false
+  if (!form.value || errors.value.length || overrideErrors.value.length) return false
   appliedData.value = cloneConfig(dataPart(form.value.config))
   appliedOverrides.value = { ...form.value.overrides }
   return true
@@ -500,7 +502,7 @@ function requestClose() {
                 </WidgetErrorBoundary>
               </WidgetFrame>
             </div>
-            <p v-if="errors.length" class="mt-2 text-xs text-[var(--c-warning-text)]">
+            <p v-if="errors.length || overrideErrors.length" class="mt-2 text-xs text-[var(--c-warning-text)]">
               The preview shows the last valid settings until these are fixed.
             </p>
           </div>
