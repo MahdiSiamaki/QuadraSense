@@ -26,7 +26,7 @@ import { catalogEntries, catalogGroups, getWidget, type CatalogEntry } from '../
 import { CONTRACT, requiredPermissions, typeSpec } from '../registry/contract'
 import { normalizeConfig, validateConfig } from '../registry/validate'
 import { effectiveLens, supportsCountBy, supportsRange } from '../composables/lens'
-import type { DashboardLens, WidgetConfig, WidgetInstance } from '../types/definition'
+import { cloneConfig, type DashboardLens, type WidgetConfig, type WidgetInstance } from '../types/definition'
 import type { WidgetGroupId } from '../registry/contract'
 import ConfigForm from './ConfigForm.vue'
 import WidgetFrame from './WidgetFrame.vue'
@@ -65,6 +65,11 @@ const query = ref('')
 const selectedKey = ref<string | null>(null)
 
 const form = ref<{ type: string; config: WidgetConfig; title: string; subtitle: string; overrides: DashboardLens } | null>(null)
+/**
+ * The catalogue entry the form was made from. Back, then Continue on the same entry, keeps what was
+ * typed; another entry - a different preset of the same type included - starts from its own settings.
+ */
+const formKey = ref<string | null>(null)
 const initial = ref('')
 const confirmingClose = ref(false)
 const keepEditing = ref<InstanceType<typeof Button> | null>(null)
@@ -115,13 +120,16 @@ watch(
         overrides: { ...(w.overrides ?? {}) },
       }
       selectedKey.value = w.type
+      formKey.value = null
       step.value = 'configure'
     } else {
       form.value = null
       selectedKey.value = null
+      formKey.value = null
       step.value = 'select'
     }
     initial.value = JSON.stringify(form.value)
+    resetPreview()
     await nextTick()
     if (step.value === 'select') searchInput.value?.focus()
     else focusFirstField()
@@ -173,8 +181,7 @@ function describeFilters(type: string): string {
 function goConfigure() {
   const entry = selected.value
   if (!entry || selectedMissing.value.length || full.value) return
-  const keep = form.value && form.value.type === entry.type && selectedKey.value === entry.key
-  if (!keep) {
+  if (form.value === null || formKey.value !== entry.key) {
     form.value = {
       type: entry.type,
       config: normalizeConfig(entry.type, structuredClone(startingConfig(entry))),
@@ -182,7 +189,9 @@ function goConfigure() {
       subtitle: '',
       overrides: {},
     }
+    formKey.value = entry.key
     initial.value = JSON.stringify({ type: entry.type })
+    resetPreview()
   }
   step.value = 'configure'
   mobileTab.value = 'settings'
@@ -221,22 +230,34 @@ const appliedData = ref<WidgetConfig>({})
 const appliedOverrides = ref<DashboardLens>({})
 let debounce: ReturnType<typeof setTimeout> | null = null
 
+function applyNow(): boolean {
+  if (!form.value || errors.value.length) return false
+  appliedData.value = cloneConfig(dataPart(form.value.config))
+  appliedOverrides.value = { ...form.value.overrides }
+  return true
+}
+
+/**
+ * A new form's preview starts from that form's settings at once. Waiting for the debounce showed the
+ * last form's data settings on the new widget for half a second - another type's metric included.
+ */
+function resetPreview() {
+  if (debounce) clearTimeout(debounce)
+  debounce = null
+  if (!applyNow()) {
+    appliedData.value = {}
+    appliedOverrides.value = {}
+  }
+}
+
+// Later edits to the same form wait for a pause in typing.
 watch(
   () => (form.value ? JSON.stringify([dataPart(form.value.config), form.value.overrides]) : ''),
-  (now, before) => {
+  () => {
     if (!form.value) return
     if (debounce) clearTimeout(debounce)
-    const apply = () => {
-      if (!form.value || errors.value.length) return
-      appliedData.value = structuredClone(dataPart(form.value.config))
-      appliedOverrides.value = { ...form.value.overrides }
-    }
-    // The first valid config of a new type applies at once; later edits wait.
-    if (!before) apply()
-    else debounce = setTimeout(apply, 500)
-    void now
+    debounce = setTimeout(applyNow, 500)
   },
-  { immediate: true },
 )
 
 const previewInstance = computed<WidgetInstance | null>(() => {
