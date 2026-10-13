@@ -91,7 +91,7 @@ function select(value: string) {
         <BarChart
           :data="sorted"
           :unit="countUnit(countBy)"
-          height="100%"
+          height="auto"
           :show-values="config.showValues"
           :show-percent="config.showPercent"
           :selectable="drillable"

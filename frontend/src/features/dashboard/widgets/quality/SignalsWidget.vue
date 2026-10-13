@@ -71,7 +71,7 @@ const bars = computed(() =>
         {{ data.reason }}
       </p>
       <div v-else-if="config.display === 'bar'" class="relative min-h-0 flex-1">
-        <BarChart :data="bars" :unit="UNIT_WORDS[config.unit].toLowerCase()" height="100%" :selectable="false" />
+        <BarChart :data="bars" :unit="UNIT_WORDS[config.unit].toLowerCase()" height="auto" :selectable="false" />
       </div>
       <div v-else class="min-h-0 flex-1 overflow-auto overscroll-contain">
         <table class="w-full text-xs">

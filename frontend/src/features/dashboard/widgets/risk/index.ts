@@ -65,6 +65,7 @@ export const definitions = [
       display: { label: 'Show as', section: 'display', options: { table: 'Table with levels', bar: 'Bar chart' }, visual: true },
     },
     exports: { csv: true, image: true },
+    height: 'content',
   }),
 
   defineWidget<RiskDistributionConfig>({
@@ -110,6 +111,7 @@ export const definitions = [
       display: { label: 'Show as', section: 'display', options: { table: 'Table', bar: 'Bar chart' }, visual: true },
     },
     exports: { csv: true, image: true },
+    height: 'content',
   }),
 
   defineWidget<SimChangeEvidenceConfig>({

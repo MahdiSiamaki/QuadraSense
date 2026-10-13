@@ -54,7 +54,7 @@ const rows = computed(() => {
       @retry="status.isError.value ? status.refetch() : types.refetch()"
     >
       <div v-if="instance.config.display === 'bar'" class="relative min-h-0 flex-1">
-        <BarChart :data="rows" :unit="unit" height="100%" show-percent :selectable="false" />
+        <BarChart :data="rows" :unit="unit" height="auto" show-percent :selectable="false" />
       </div>
       <div v-else class="min-h-0 flex-1 overflow-auto overscroll-contain">
         <DimensionTable :rows="rows" header="Device type" :unit="unit" :selectable="false" />

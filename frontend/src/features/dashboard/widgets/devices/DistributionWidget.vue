@@ -69,7 +69,7 @@ const header = computed(() => (config.value.dimension === 'deviceType' ? 'Device
         <BarChart
           :data="shown"
           :unit="countUnit(countBy)"
-          height="100%"
+          height="auto"
           :show-percent="config.showPercent"
           :selectable="drillable"
           @select="(v) => drill(config.dimension, v, config.clickToFilter)"

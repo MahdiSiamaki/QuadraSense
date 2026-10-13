@@ -57,7 +57,7 @@ const bars = computed(() => {
       @retry="status.isError.value ? status.refetch() : overview.refetch()"
     >
       <div v-if="instance.config.display === 'bar'" class="relative min-h-0 flex-1">
-        <BarChart :data="bars" unit="entities listed" height="100%" :selectable="false" />
+        <BarChart :data="bars" unit="entities listed" height="auto" :selectable="false" />
       </div>
       <div v-else class="min-h-0 flex-1 overflow-auto overscroll-contain">
         <table class="w-full text-xs">

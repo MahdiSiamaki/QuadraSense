@@ -136,7 +136,7 @@ const scope = computed(() => {
 
     <AsyncBoundary v-if="result || run.isPending.value" class="min-h-0 flex-1" :is-loading="run.isPending.value && !result" :is-error="false" min-height="6rem" gap="none">
       <div v-if="bars" class="relative min-h-0 flex-1">
-        <BarChart :data="bars.rows" :unit="bars.unit" height="100%" :selectable="false" />
+        <BarChart :data="bars.rows" :unit="bars.unit" height="auto" :selectable="false" />
       </div>
       <div v-else-if="result" class="min-h-0 flex-1 overflow-auto overscroll-contain rounded-[var(--radius-md)] border">
         <table class="w-full text-xs" :aria-busy="run.isPending.value">

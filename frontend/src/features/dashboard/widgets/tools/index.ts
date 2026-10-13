@@ -38,6 +38,7 @@ export const definitions = [
       display: { label: 'Show as', section: 'display', options: { table: 'Table', bar: 'Bar chart (one group, one count)' }, visual: true },
     },
     exports: { csv: false, image: false },
+    height: 'content',
   }),
 
   defineWidget<QuickLookupConfig>({

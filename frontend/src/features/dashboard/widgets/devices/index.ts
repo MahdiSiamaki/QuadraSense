@@ -89,6 +89,7 @@ export const definitions = [
       },
     },
     exports: { csv: true, image: true },
+    height: 'content',
   }),
 
   defineWidget<DistributionConfig>({
@@ -127,6 +128,7 @@ export const definitions = [
       clickToFilter: { label: 'Click to filter the dashboard', section: 'display', visual: true },
     },
     exports: { csv: true, image: true },
+    height: 'content',
   }),
 
   defineWidget<ClassMixConfig>({

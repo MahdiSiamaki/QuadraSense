@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import * as echarts from 'echarts/core'
 import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
@@ -24,6 +24,10 @@ const props = withDefaults(
     data: Array<{ key: string; count: number; percent: number }>
     /** Horizontal bars are correct for ranked categories: labels stay readable. */
     horizontal?: boolean
+    /**
+     * A CSS height, or `auto`: as tall as its bars need, each in a 30px row - an 18px bar and room
+     * between - so ten bars never crowd into whatever height a card had left over.
+     */
     height?: string
     /** What the numbers are, named in the tooltip so a bare figure is never ambiguous. */
     unit?: string
@@ -41,6 +45,15 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{ select: [key: string] }>()
+
+/** One bar's row, and the room the value axis and the chart's own padding take. */
+const ROW = 30
+const AXIS = 40
+
+const size = computed(() => {
+  if (props.height !== 'auto') return { height: props.height }
+  return { height: props.horizontal ? `${Math.max(1, props.data.length) * ROW + AXIS}px` : '18rem' }
+})
 
 const container = ref<HTMLElement | null>(null)
 const chart = shallowRef<echarts.ECharts | null>(null)
@@ -165,5 +178,5 @@ watch(isDark, () => requestAnimationFrame(render))
 </script>
 
 <template>
-  <div ref="container" :style="{ height }" class="w-full" />
+  <div ref="container" :style="size" class="w-full" />
 </template>
