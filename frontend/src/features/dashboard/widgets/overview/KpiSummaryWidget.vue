@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useKpiSummary } from '@/api/dashboard'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import KpiCard from '@/design-system/KpiCard.vue'
@@ -8,6 +8,7 @@ import type { SnapshotData } from '@/features/dashboard/types/snapshot'
 import type { WidgetViewProps } from '@/features/dashboard/types/widget'
 import type { KpiSummaryConfig } from './config'
 import { KPI_METRICS, metricQualifier, metricSpec } from './kpiMetrics'
+import { kpiRowColumns } from './kpiRow'
 import { lensFilters } from './shared/filters'
 import { useKept } from './shared/useKept'
 import { useRefresh } from './shared/useRefresh'
@@ -15,9 +16,10 @@ import { useRefresh } from './shared/useRefresh'
 /**
  * Several headline figures from one /kpi response: the dashboard page's KPI row, as one widget.
  *
- * The widget is a row of cards, so it has no card of its own (chrome `bare`). The grid fits as many
- * columns as the width allows, at least 10rem each, and a row that does not fit wraps; the cards
- * scroll inside the widget rather than overflowing the grid cell.
+ * The widget is a row of cards, so it has no card of its own (chrome `bare`), and it is as tall as
+ * its cards (`height: 'content'`): a figure read at a glance is never behind a scrollbar. The cards
+ * sit in one row when the width allows, otherwise in even rows of three or two - never five and a
+ * stray one (`kpiRow.ts`), as the dashboard page's own KPI row did.
  *
  * The query is the same `/kpi` request, with the same filters, as `metric.kpi`: a summary and single
  * KPIs on one dashboard under one lens are one request.
@@ -50,10 +52,26 @@ const cards = computed(() =>
       }
     }),
 )
+
+/** The row's width decides the columns; it is the widget's, not the window's. */
+const row = ref<HTMLElement | null>(null)
+const width = ref(0)
+let resize: ResizeObserver | null = null
+onMounted(() => {
+  resize = new ResizeObserver(([entry]) => {
+    if (entry) width.value = entry.contentRect.width
+  })
+  if (row.value) resize.observe(row.value)
+})
+onBeforeUnmount(() => resize?.disconnect())
+
+const gridStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${kpiRowColumns(cards.value.length, width.value)}, minmax(0, 1fr))`,
+}))
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col gap-3" :aria-busy="updating">
+  <div ref="row" class="flex h-full min-h-0 flex-col gap-3" :aria-busy="updating">
     <!-- No frame draws a title for a bare widget: its own, when it has one. -->
     <div v-if="instance.title || instance.subtitle" class="shrink-0">
       <p v-if="instance.title" class="text-sm font-semibold">{{ instance.title }}</p>
@@ -70,7 +88,7 @@ const cards = computed(() =>
       @retry="kpi.refetch()"
     >
       <template #skeleton>
-        <div class="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-3">
+        <div class="grid gap-3" :style="gridStyle">
           <div
             v-for="card in cards"
             :key="card.metric"
@@ -79,10 +97,7 @@ const cards = computed(() =>
         </div>
       </template>
 
-      <div
-        class="grid min-h-0 flex-1 grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-3 overflow-y-auto overscroll-contain transition-opacity duration-150"
-        :class="updating ? 'opacity-70' : ''"
-      >
+      <div class="grid gap-3 transition-opacity duration-150" :class="updating ? 'opacity-70' : ''" :style="gridStyle">
         <KpiCard
           v-for="card in cards"
           :key="card.metric"

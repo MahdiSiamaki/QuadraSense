@@ -9,7 +9,7 @@ import type { DashboardTemplate } from './types'
  */
 export const devicePopulation: DashboardTemplate = {
   key: 'device-population',
-  version: 1,
+  version: 2,
   name: 'Device population',
   description: 'Active device–SIM bindings across the network, enriched with GSMA device data.',
   definition: {
@@ -20,24 +20,13 @@ export const devicePopulation: DashboardTemplate = {
       { id: 'w_dpfreshness', type: 'ops.freshness', configVersion: 1, title: 'Data freshness', subtitle: null,
         config: { showPipeline: true, showTac: true }, overrides: {}, layout: { x: 0, y: 0, w: 12, h: 4 } },
 
-      { id: 'w_dpkpibindings', type: 'metric.kpi', configVersion: 1, title: 'Active bindings', subtitle: null,
-        config: { metric: 'activeBindings', numberFormat: 'compact', precision: 1, showDefinition: true, showQualifier: true },
-        overrides: {}, layout: { x: 0, y: 4, w: 2, h: 3 } },
-      { id: 'w_dpkpisubs', type: 'metric.kpi', configVersion: 1, title: 'Subscribers', subtitle: null,
-        config: { metric: 'distinctSubscribers', numberFormat: 'compact', precision: 1, showDefinition: true, showQualifier: true },
-        overrides: {}, layout: { x: 2, y: 4, w: 2, h: 3 } },
-      { id: 'w_dpkpisims', type: 'metric.kpi', configVersion: 1, title: 'SIM cards', subtitle: null,
-        config: { metric: 'distinctSims', numberFormat: 'compact', precision: 1, showDefinition: true, showQualifier: true },
-        overrides: {}, layout: { x: 4, y: 4, w: 2, h: 3 } },
-      { id: 'w_dpkpihandsets', type: 'metric.kpi', configVersion: 1, title: 'Handsets', subtitle: null,
-        config: { metric: 'distinctDevices', numberFormat: 'compact', precision: 1, showDefinition: true, showQualifier: true },
-        overrides: {}, layout: { x: 6, y: 4, w: 2, h: 3 } },
-      { id: 'w_dpkpiunknown', type: 'metric.kpi', configVersion: 1, title: 'Unknown device', subtitle: null,
-        config: { metric: 'unknownDeviceBindings', numberFormat: 'compact', precision: 1, showDefinition: true, showQualifier: true },
-        overrides: {}, layout: { x: 8, y: 4, w: 2, h: 3 } },
-      { id: 'w_dpkpicoverage', type: 'metric.kpi', configVersion: 1, title: 'TAC coverage', subtitle: null,
-        config: { metric: 'tacCoveragePercent', numberFormat: 'compact', precision: 1, showDefinition: true, showQualifier: true },
-        overrides: {}, layout: { x: 10, y: 4, w: 2, h: 3 } },
+      // The page's KPI row: one widget, one menu, the six figures side by side as they always were.
+      { id: 'w_dpkpirow', type: 'metric.kpiSummary', configVersion: 1, title: null, subtitle: null,
+        config: {
+          metrics: ['activeBindings', 'distinctSubscribers', 'distinctSims', 'distinctDevices', 'unknownDeviceBindings', 'tacCoveragePercent'],
+          numberFormat: 'compact', precision: 1, showDefinition: true,
+        },
+        overrides: {}, layout: { x: 0, y: 4, w: 12, h: 3 } },
 
       { id: 'w_dpdailychange', type: 'change.daily', configVersion: 1, title: 'Daily change', subtitle: null,
         config: { series: ['added', 'removed', 'cumulative'], chart: 'bar', showFlagged: true, showMissing: true },

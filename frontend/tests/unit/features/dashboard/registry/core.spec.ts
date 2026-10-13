@@ -114,13 +114,18 @@ describe('templates', () => {
     for (const template of TEMPLATES) expect(validateDefinition(template.definition), template.key).toEqual([])
   })
 
-  it('Device Population is the old page: freshness, six KPIs, then the cards in page order', () => {
-    const titles = [...devicePopulation.definition.widgets]
-      .sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)
-      .map((w) => w.title)
-    expect(titles).toEqual([
+  it('Device Population is the old page: freshness, the KPI row, then the cards in page order', () => {
+    const ordered = [...devicePopulation.definition.widgets].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)
+
+    // The KPI row is one widget, as it was one row: one menu and one export, not six.
+    const row = ordered[1]!
+    expect(row.type).toBe('metric.kpiSummary')
+    expect(row.config.metrics).toEqual(['activeBindings', 'distinctSubscribers', 'distinctSims', 'distinctDevices', 'unknownDeviceBindings', 'tacCoveragePercent'])
+    expect(ordered.filter((w) => w.type === 'metric.kpi')).toEqual([])
+
+    expect(ordered.map((w) => w.title)).toEqual([
       'Data freshness',
-      'Active bindings', 'Subscribers', 'SIM cards', 'Handsets', 'Unknown device', 'TAC coverage',
+      null,
       'Daily change',
       'SIM and handset changes', 'Vendor movement',
       'Device class mix',
