@@ -372,7 +372,7 @@ public sealed partial class DashboardWidgetDataLoader
             Data(("freshness", freshness), ("workerHealth", health), ("tacVersions", tac), ("kpi", kpi)), null, [],
             Table(["Source", "Data through", "Days behind", "Days not delivered", "Failed in 7 days", "Figures pending since"],
                 [.. freshness.Select(f => Row(f.SourceCode, Iso(f.LatestBusinessDate), f.DaysBehind, f.MissingBusinessDates.Distinct().Count(),
-                    f.FailedLast7Days, f.DashboardPendingSince))],
+                    f.FailedLast7Days, Stamp(f.DashboardPendingSince)))],
                 Full, "Every source."));
     }
 
@@ -390,7 +390,7 @@ public sealed partial class DashboardWidgetDataLoader
             Data(("page", page)), null, [],
             Table(["Job", "File", "Source", "Day", "Status", "Rows in", "Imported", "Quarantined", "Finished"],
                 [.. items.Select(j => Row(j.JobId, j.OriginalFileName, j.SourceCode, Iso(j.BusinessDate), j.Status.ToString(),
-                    j.RowsInput, j.RowsInserted, j.RowsInvalid, j.FinishedAt))],
+                    j.RowsInput, j.RowsInserted, j.RowsInvalid, Stamp(j.FinishedAt)))],
                 total > items.Count ? TopN : Full, $"The newest {items.Count} of {total}."));
     }
 
@@ -406,7 +406,7 @@ public sealed partial class DashboardWidgetDataLoader
             [
                 Row("Workers alive", health.ActiveWorkers), Row("Running", health.Running), Row("Queued", health.Queued),
                 Row("Retrying", health.Retrying), Row("Failed in 24 hours", health.FailedLast24Hours),
-                Row("Oldest queued at", health.OldestQueuedAt), Row("Stale leases", health.StaleLeases), Row("Stalled", health.Stalled),
+                Row("Oldest queued at", Stamp(health.OldestQueuedAt)), Row("Stale leases", health.StaleLeases), Row("Stalled", health.Stalled),
             ], Full, "The pipeline now."));
     }
 
@@ -430,7 +430,7 @@ public sealed partial class DashboardWidgetDataLoader
         return Done(
             Data(("tacVersions", versions)), null, ["Activating a version changes the manufacturer and model behind every figure."],
             Table(["Version", "Status", "Dataset date", "TACs", "Activated at"],
-                [.. versions.Select(v => Row(v.VersionLabel, v.Status.ToString(), Iso(v.DatasetDate), v.RowCount, v.ActivatedAt))],
+                [.. versions.Select(v => Row(v.VersionLabel, v.Status.ToString(), Iso(v.DatasetDate), v.RowCount, Stamp(v.ActivatedAt)))],
                 Full, "Every version."));
     }
 

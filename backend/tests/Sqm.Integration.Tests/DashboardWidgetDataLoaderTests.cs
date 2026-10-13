@@ -29,7 +29,7 @@ public sealed class DashboardWidgetDataLoaderTests
     private DashboardWidgetDataLoader Loader(
         IReadOnlyList<DimensionCount>? top = null, IReadOnlyList<DailyChange>? changes = null,
         RiskReadState? risk = null, RiskOptions? riskOptions = null, IReadOnlyList<RiskRuleCount>? counts = null,
-        IReadOnlyList<RiskChangeDay>? simDays = null)
+        IReadOnlyList<RiskChangeDay>? simDays = null, WorkerHealth? health = null)
     {
         var analytics = TestStubs.Create<IDeviceAnalyticsStore>((m, _) => m.Name switch
         {
@@ -52,7 +52,12 @@ public sealed class DashboardWidgetDataLoaderTests
 
         return new DashboardWidgetDataLoader(
             analytics,
-            TestStubs.Create<IImportJobRepository>((m, _) => throw new NotSupportedException(m.Name)),
+            TestStubs.Create<IImportJobRepository>((m, _) => m.Name switch
+            {
+                "GetWorkerHealthAsync" => Task.FromResult(health ?? new WorkerHealth(0, 0, 0, 0, null, 0, 0)),
+                "GetFreshnessAsync" => Task.FromResult<IReadOnlyList<SourceFreshness>>([]),
+                _ => throw new NotSupportedException(m.Name),
+            }),
             reader,
             feed,
             TestStubs.Create<IQualityReader>((m, _) => throw new NotSupportedException(m.Name)),
@@ -90,6 +95,17 @@ public sealed class DashboardWidgetDataLoaderTests
 
     private static void EveryRowFitsTheHeadings(WidgetTable table) =>
         Assert.All(table.Rows, row => Assert.Equal(table.Headers.Count, row.Count));
+
+    [Fact]
+    public async Task A_moment_in_a_CSV_is_ISO_8601_in_UTC_like_the_dates_beside_it()
+    {
+        var queued = new DateTimeOffset(2026, 10, 3, 17, 35, 0, TimeSpan.FromHours(3.5));
+        var loader = Loader(health: new WorkerHealth(1, 0, 0, 0, queued, 1, 0));
+        var result = await LoadAsync(loader, "ops.workerHealth", """{"showPendingRebuild":true}""");
+
+        var row = result.Table!.Rows.Single(r => (string)r[0]! == "Oldest queued at");
+        Assert.Equal("2026-10-03T14:05:00Z", row[1]);
+    }
 
     [Fact]
     public async Task Top_values_sorted_by_name_come_out_in_the_cards_order()

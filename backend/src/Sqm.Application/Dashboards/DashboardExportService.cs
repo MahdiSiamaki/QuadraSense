@@ -137,6 +137,12 @@ public sealed class DashboardExportService
                 return new(DashboardOutcome.Forbidden, Message: only.Reason);
             }
 
+            // Not the caller's mistake: the source is not ready or the load failed on the server.
+            if (only.Status is "error" or "notReady")
+            {
+                return new(DashboardOutcome.Unavailable, Message: only.Reason);
+            }
+
             return Invalid<DashboardCsvExport>("widgetIds", only.Reason ?? "This widget has no rows to export.");
         }
 

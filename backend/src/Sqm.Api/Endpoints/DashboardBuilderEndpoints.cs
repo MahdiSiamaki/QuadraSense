@@ -254,6 +254,8 @@ public static class DashboardBuilderEndpoints
                 }),
             DashboardOutcome.GrantRefused => Results.Problem(
                 statusCode: StatusCodes.Status409Conflict, title: "Cannot share", detail: result.Message),
+            DashboardOutcome.Unavailable => Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable, title: "Not available now", detail: result.Message),
             _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError),
         };
     }

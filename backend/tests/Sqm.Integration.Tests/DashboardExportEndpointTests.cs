@@ -178,6 +178,14 @@ public sealed class DashboardExportEndpointTests : IClassFixture<WebApplicationF
     }
 
     [Fact]
+    public async Task A_CSV_the_server_could_not_prepare_is_503_not_the_callers_mistake()
+    {
+        _loader.FailOn = "device.top";
+        using var response = await SendAsync("exporter", HttpMethod.Post, "/api/v1/dashboards/export/csv", Csv("""["w_top0000001"]"""));
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+    }
+
+    [Fact]
     public async Task A_widget_not_on_the_dashboard_is_refused()
     {
         using var response = await SendAsync("exporter", HttpMethod.Post, "/api/v1/dashboards/export/snapshot", Snapshot("""["w_nothere0001"]"""));

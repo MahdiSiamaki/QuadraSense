@@ -545,6 +545,12 @@ public sealed partial class DashboardWidgetDataLoader : IWidgetDataLoader
 
     private static string? Iso(DateOnly? d) => d?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// A moment as ISO 8601 in UTC, as the dates beside it are ISO: left to the invariant culture it was
+    /// "MM/dd/yyyy HH:mm:ss zzz", which a day-first reader misreads and which sorts by month as text.
+    /// </summary>
+    private static string? Stamp(DateTimeOffset? t) => t?.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+
     /// <summary>Reads a validated config: every field is present, with its default filled in.</summary>
     private readonly struct Config(JsonElement config)
     {
