@@ -58,16 +58,27 @@ const flaggedShown = computed(() => shown.value.filter((r) => feed.flagged.value
 
 const drawsTotal = computed(() => config.value.series.includes('cumulative'))
 const drawsFlow = computed(() => config.value.series.some((s) => s !== 'cumulative'))
+
+/**
+ * One string, not template fragments: the template compiler drops the space that opened each
+ * fragment, which printed "2026-10-06.Bars are the day's flow".
+ */
+const caption = computed(() => {
+  const c = coverage.value
+  const span = c ? `${formatFull(c.days)} ${c.days === 1 ? 'day' : 'days'}, ${c.from} to ${c.to}.` : ''
+  const reading =
+    drawsFlow.value && drawsTotal.value
+      ? `${config.value.chart === 'bar' ? 'Bars are' : 'The thin lines are'} the day's flow; the line is the running total.`
+      : drawsTotal.value
+        ? 'The running total of active bindings.'
+        : "The day's flow of bindings."
+  return [span, reading].filter(Boolean).join(' ')
+})
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col gap-3" :aria-busy="updating">
-    <p v-if="instance.subtitle === null" class="text-xs text-[var(--c-text-muted)]">
-      <template v-if="coverage">{{ formatFull(coverage.days) }} {{ coverage.days === 1 ? 'day' : 'days' }}, {{ coverage.from }} to {{ coverage.to }}.</template>
-      <template v-if="drawsFlow && drawsTotal"> {{ config.chart === 'bar' ? 'Bars are' : 'The thin lines are' }} the day's flow; the line is the running total.</template>
-      <template v-else-if="drawsTotal"> The running total of active bindings.</template>
-      <template v-else> The day's flow of bindings.</template>
-    </p>
+    <p v-if="instance.subtitle === null" class="text-xs text-[var(--c-text-muted)]">{{ caption }}</p>
 
     <AsyncBoundary
       class="min-h-0 flex-1"
