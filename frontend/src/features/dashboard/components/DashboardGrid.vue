@@ -20,7 +20,7 @@ import { GridStack as GridStackView, type GridStackOptions, type GridStackWidget
 import type { GridItemHTMLElement, GridStack } from 'gridstack'
 import 'gridstack/dist/gridstack.css'
 import type { WidgetInstance } from '../types/definition'
-import { typeSpec } from '../registry/contract'
+import { CONTRACT, typeSpec } from '../registry/contract'
 import { deriveLayout, type Columns } from '../composables/layout'
 
 const props = defineProps<{
@@ -108,14 +108,16 @@ function sync() {
       const spec = typeSpec(widget.type)
       const minW = columns.value === 12 ? (spec?.size.minW ?? 1) : 1
       const minH = spec?.size.minH ?? 1
+      // The contract's tallest card: a resize stops there instead of making a height Save refuses.
+      const maxH = CONTRACT.limits.maxWidgetHeight
       const el = existing.get(widget.id)
       if (!el) {
-        g.addWidget({ id: widget.id, ...layout, minW, minH, component: 'Host', props: { id: widget.id } } as GridStackWidget as never)
+        g.addWidget({ id: widget.id, ...layout, minW, minH, maxH, component: 'Host', props: { id: widget.id } } as GridStackWidget as never)
         continue
       }
       const node = el.gridstackNode!
-      if (node.x !== layout.x || node.y !== layout.y || node.w !== layout.w || node.h !== layout.h || node.minW !== minW) {
-        g.update(el as GridItemHTMLElement, { ...layout, minW, minH })
+      if (node.x !== layout.x || node.y !== layout.y || node.w !== layout.w || node.h !== layout.h || node.minW !== minW || node.maxH !== maxH) {
+        g.update(el as GridItemHTMLElement, { ...layout, minW, minH, maxH })
       }
     }
   } finally {

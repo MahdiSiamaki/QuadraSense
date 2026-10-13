@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { MAX_HISTORY, useDashboardDraft } from '@/features/dashboard/composables/useDashboardDraft'
 import { overlaps } from '@/features/dashboard/composables/layout'
 import { normalizeConfig } from '@/features/dashboard/registry/validate'
-import { defaultConfig } from '@/features/dashboard/registry/contract'
+import { CONTRACT, defaultConfig } from '@/features/dashboard/registry/contract'
 import { devicePopulation } from '@/features/dashboard/templates/devicePopulation'
 import type { DashboardDefinition } from '@/features/dashboard/types/definition'
 
@@ -165,5 +165,12 @@ describe('the dashboard draft', () => {
     expect(store.widget(id)!.config.series).toEqual(['net'])
     ;(form.config.series as string[]).push('net')
     expect(store.widget(id)!.config.series).toEqual(['net'])
+  })
+
+  it('never takes a height Save would refuse from a gesture', () => {
+    const store = draft()
+    const w = store.widget('w_dpvendors')!
+    store.commitLayout([{ id: w.id, x: w.layout.x, y: w.layout.y, w: w.layout.w, h: CONTRACT.limits.maxWidgetHeight + 20 }], 'Resize widget')
+    expect(store.widget('w_dpvendors')!.layout.h).toBe(CONTRACT.limits.maxWidgetHeight)
   })
 })

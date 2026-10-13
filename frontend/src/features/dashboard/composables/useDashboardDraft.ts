@@ -9,7 +9,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { cloneConfig, cloneDefinition, newWidgetId, type DashboardDefinition, type DashboardLens, type RefreshMinutes, type WidgetConfig, type WidgetInstance } from '../types/definition'
-import { typeSpec } from '../registry/contract'
+import { CONTRACT, typeSpec } from '../registry/contract'
 import { findSpot, move, resolveCollisions, sizePreset, type MoveTarget, type SizePreset } from './layout'
 
 export const MAX_HISTORY = 100
@@ -155,7 +155,8 @@ export const useDashboardDraft = defineStore('dashboardDraft', () => {
     apply(label, (draft) => {
       for (const p of positions) {
         const widget = draft.definition.widgets.find((w) => w.id === p.id)
-        if (widget) widget.layout = { x: p.x, y: p.y, w: p.w, h: p.h }
+        // Never a height Save would refuse: the grid caps a resize, and this caps anything else.
+        if (widget) widget.layout = { x: p.x, y: p.y, w: p.w, h: Math.min(p.h, CONTRACT.limits.maxWidgetHeight) }
       }
     })
   }
