@@ -116,6 +116,30 @@ captions preserved; `/` opens it until a person chooses another default), **Secu
 **Support**, **Data Operations & Quality**. A template opens read-only; *Copy to my dashboards*
 makes it editable.
 
+## Editing
+
+The draft is in memory (`composables/useDashboardDraft.ts`) until Save; nothing is stored before.
+
+- **Save names the revision the draft was taken from**, never the cached detail's. A refetch while
+  editing - a reconnect, the window regaining focus - moves the cache on to somebody else's newer
+  revision; naming that one overwrote their changes without a conflict. Now it is a 409, and the
+  draft is kept.
+- **One action, one undo step**: adding a widget with its title and subtitle, a configure Apply, the
+  settings dialog, a rename with its description, a finished drag or resize. 100 steps are kept.
+- **Limits are enforced where the action is, not only at Save**: Add and Duplicate stop at the
+  most widgets a dashboard holds (24) and Duplicate's menu item says why; the grid stops a resize at
+  the contract's 40 rows and the draft caps any height a gesture hands it; the configure form
+  refuses a widget's own TAC that is not eight digits and a text filter over 120 characters, as
+  Save would.
+- **Add widget**: another preset of the same type starts from its own settings, and the preview
+  from its own form at once - the previous form's data settings never reach the new card. A list of
+  text (a risk list's device types) is typed as one comma-separated line.
+- **Settings are copied through JSON.** The configure form is reactive, so every list in its
+  settings is a Vue proxy, and `structuredClone` refuses a proxy: copying that way made Add and
+  Apply throw for the ten types whose settings hold a list.
+
+Each of these has a test that fails when the rule is taken out (`tests/unit/features/dashboard/`).
+
 ## Export
 
 `POST /api/v1/dashboards/export/snapshot` and `/export/csv` need `dashboard.view` and

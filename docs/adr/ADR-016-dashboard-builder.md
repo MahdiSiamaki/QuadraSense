@@ -315,3 +315,15 @@ Recorded here rather than silently folded into the sections above.
   identifier stayed in the tab's session history. Nothing of it is in history now.
 - **The Explorer question's form offers no field behind a lookup permission at all**, even to a
   person who holds it, rather than offering them and failing on save: the definition is shared.
+
+## Amendments after review, 2026-10-13
+
+- **`expectedRevision` is the draft's, not the cache's** (§2). The draft records the revision it was
+  taken from and a save moves it on. Reading it from the cached detail at Save looked the same, but
+  TanStack refetches that detail while a person edits, so a save could name the other person's
+  newer revision and overwrite it without the 409 this section promises.
+- **One user action is one history entry** (§6), including the settings dialog and a rename that
+  also changes the description, which had been two or three entries.
+- **The contract's limits hold during editing, not only at Save**: the widget count for Duplicate
+  as for Add, the 40-row height for the grid's resize, and the lens rules for a widget's own
+  overrides in the configure form.
