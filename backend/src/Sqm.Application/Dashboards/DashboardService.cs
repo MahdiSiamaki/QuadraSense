@@ -31,6 +31,9 @@ public enum DashboardOutcome
 
     /// <summary>The grant cannot be made: duplicate, unknown subject, the owner, or past the limit (409/400).</summary>
     GrantRefused,
+
+    /// <summary>The server could not prepare it now: a source not ready or a failed load (503).</summary>
+    Unavailable,
 }
 
 /// <summary>The result of a dashboard operation.</summary>
@@ -66,8 +69,9 @@ public sealed class DashboardService
     /// <summary>The config file format version.</summary>
     public const int ConfigFormatVersion = 1;
 
-    private static readonly Regex TemplateKey = new("^[a-z][a-z0-9-]{1,47}$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
-    private static readonly Regex SourceTemplate = new("^[a-z][a-z0-9-]{1,47}@[0-9]{1,4}$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+    // \z, not $: .NET's $ also matches before a final newline, which PostgreSQL's CHECK does not.
+    private static readonly Regex TemplateKey = new(@"^[a-z][a-z0-9-]{1,47}\z", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+    private static readonly Regex SourceTemplate = new(@"^[a-z][a-z0-9-]{1,47}@[0-9]{1,4}\z", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
 
     private readonly IDashboardStore _store;
     private readonly IDashboardDefinitionValidator _validator;
@@ -598,7 +602,7 @@ public sealed class DashboardService
         return name;
     }
 
-    private static string Truncate(string text, int length) => text.Length <= length ? text : text[..length].TrimEnd();
+    private static string Truncate(string text, int length) => ContractText.Truncate(text, length);
 
     private DefinitionError? Describe(string? name, string? description)
     {
@@ -606,6 +610,16 @@ public sealed class DashboardService
         if (trimmed.Length == 0 || trimmed.Length > _options.MaxNameLength)
         {
             return new DefinitionError("name", $"A name of 1 to {_options.MaxNameLength} characters.");
+        }
+
+        if (!ContractText.Storable(trimmed))
+        {
+            return new DefinitionError("name", "Contains a character that cannot be stored.");
+        }
+
+        if (description is not null && !ContractText.Storable(description))
+        {
+            return new DefinitionError("description", "Contains a character that cannot be stored.");
         }
 
         return (description?.Length ?? 0) > _options.MaxDescriptionLength

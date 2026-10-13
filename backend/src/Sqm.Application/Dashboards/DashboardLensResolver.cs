@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using Sqm.Contracts.Dashboards;
 
 namespace Sqm.Application.Dashboards;
@@ -96,7 +95,7 @@ public static class DashboardLensResolver
             return true;
         }
 
-        return Regex.IsMatch(range, lens.RangePattern, RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100))
+        return ContractText.Matches(range, lens.RangePattern)
                && TryParseExplicit(range, out var from, out var to)
                && from <= to;
     }
@@ -120,7 +119,7 @@ public static class DashboardLensResolver
             Vendor: Text(lens.Vendor, spec),
             DeviceType: Text(lens.DeviceType, spec),
             OperatingSystem: Text(lens.OperatingSystem, spec),
-            Tac: lens.Tac is { } t && Regex.IsMatch(t, spec.TacPattern, RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)) ? t : null);
+            Tac: lens.Tac is { } t && ContractText.Matches(t, spec.TacPattern) ? t : null);
     }
 
     /// <summary>Whether a token is a relative range, and how many days it covers.</summary>

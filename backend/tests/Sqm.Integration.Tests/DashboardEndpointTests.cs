@@ -117,6 +117,14 @@ public sealed class DashboardEndpointTests : IClassFixture<WebApplicationFactory
     }
 
     [Fact]
+    public async Task A_name_PostgreSQL_cannot_store_is_a_400_naming_the_field()
+    {
+        var (status, body) = await SendAsync("owner", HttpMethod.Post, "/api/v1/dashboards", Create("Ops\u0000"));
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(body.GetProperty("errors").TryGetProperty("name", out _));
+    }
+
+    [Fact]
     public async Task Without_dashboard_create_nobody_creates()
     {
         var (status, _) = await SendAsync("viewer", HttpMethod.Post, "/api/v1/dashboards", Create("Mine"));
@@ -325,6 +333,9 @@ public sealed class DashboardEndpointTests : IClassFixture<WebApplicationFactory
             $$"""{"dashboardId":{{id}},"templateKey":null}""")).Status);
         Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync("stranger", HttpMethod.Put, "/api/v1/dashboards/preferences/default",
             """{"dashboardId":null,"templateKey":"../etc"}""")).Status);
+        // .NET's $ also matched before a final newline; PostgreSQL's CHECK then refused it as a 500.
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync("stranger", HttpMethod.Put, "/api/v1/dashboards/preferences/default",
+            """{"dashboardId":null,"templateKey":"security-risk\n"}""")).Status);
         Assert.Equal(HttpStatusCode.NoContent, (await SendAsync("stranger", HttpMethod.Put, "/api/v1/dashboards/preferences/default",
             """{"dashboardId":null,"templateKey":"security-risk"}""")).Status);
 

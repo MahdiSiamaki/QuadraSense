@@ -273,9 +273,39 @@ public sealed class DashboardDefinitionValidatorTests
     }
 
     [Fact]
+    public void Text_PostgreSQL_cannot_store_is_refused_with_its_field()
+    {
+        var nul = Widget("change.daily");
+        nul["title"] = "Daily\u0000change";
+        Refused(Definition(nul), "widgets[0].title");
+
+        var lens = Widget("device.top");
+        lens["overrides"] = new JsonObject { ["vendor"] = "Sam\u0000sung" };
+        Refused(Definition(lens), "widgets[0].overrides.vendor");
+    }
+
+    [Fact]
+    public void Contract_patterns_match_as_the_frontend_and_PostgreSQL_read_them()
+    {
+        // A setting is trimmed before it is checked, so a trailing newline is stored without it.
+        var newline = Widget("tools.modelNetworkAge");
+        newline["config"]!["tac"] = "35000000\n";
+        Assert.Equal("35000000", Valid(Definition(newline)).Widgets[0].Config.GetProperty("tac").GetString());
+
+        var arabic = Widget("tools.modelNetworkAge");
+        arabic["config"]!["tac"] = "\u0663\u0665\u0660\u0660\u0660\u0660\u0660\u0660";
+        Refused(Definition(arabic), "widgets[0].config.tac");
+
+        Refused(Definition(Widget("change.daily", id: "w_test0001\n")), "widgets[0].id");
+    }
+
+    [Fact]
     public void A_layout_must_stay_inside_the_twelve_columns_and_above_the_minimum_size()
     {
         Refused(Definition(Widget("change.daily", x: 1)), "widgets[0].layout.x");
+
+        // x + w would wrap negative in int arithmetic and pass.
+        Refused(Definition(Widget("change.daily", x: int.MaxValue)), "widgets[0].layout.x");
 
         var narrow = Widget("change.daily");
         narrow["layout"]!["w"] = 3;

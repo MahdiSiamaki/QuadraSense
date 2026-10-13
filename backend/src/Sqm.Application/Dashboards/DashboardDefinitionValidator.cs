@@ -40,7 +40,7 @@ public sealed class DashboardDefinitionValidator : IDashboardDefinitionValidator
     /// <summary>Errors reported at most; past that, the first fifty are enough to fix.</summary>
     public const int MaxErrors = 50;
 
-    private static readonly Regex InstanceId = new("^w_[a-z0-9]{6,32}$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+    private static readonly Regex InstanceId = new(@"^w_[a-z0-9]{6,32}\z", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
 
     private static readonly string[] RootKeys = ["schemaVersion", "defaults", "refreshMinutes", "widgets"];
     private static readonly string[] WidgetKeys = ["id", "type", "configVersion", "title", "subtitle", "config", "overrides", "layout"];
@@ -232,6 +232,12 @@ public sealed class DashboardDefinitionValidator : IDashboardDefinitionValidator
             return null;
         }
 
+        if (!ContractText.Storable(text))
+        {
+            errors.Add($"{path}.{name}", "Contains a character that cannot be stored.");
+            return null;
+        }
+
         return text.Length == 0 ? null : text;
     }
 
@@ -274,7 +280,8 @@ public sealed class DashboardDefinitionValidator : IDashboardDefinitionValidator
         if (y < 0 || y > _contract.Limits.MaxRows) Refuse("y", $"Between row 0 and row {_contract.Limits.MaxRows}.");
         if (w < spec.Size.MinW || w > columns) Refuse("w", $"Between {spec.Size.MinW} and {columns} columns wide.");
         if (h < spec.Size.MinH || h > _contract.Limits.MaxWidgetHeight) Refuse("h", $"Between {spec.Size.MinH} and {_contract.Limits.MaxWidgetHeight} rows tall.");
-        if (x + w > columns) Refuse("x", $"The widget runs past column {columns}.");
+        // Never x + w: an x near int.MaxValue wrapped negative and passed. w is within [minW, columns] here.
+        if (x > columns - w) Refuse("x", $"The widget runs past column {columns}.");
 
         return fits ? new WidgetLayout(x.Value, y.Value, w.Value, h.Value) : null;
     }
@@ -434,14 +441,19 @@ public sealed class DashboardDefinitionValidator : IDashboardDefinitionValidator
                     return null;
                 }
 
+                if (!ContractText.Storable(text))
+                {
+                    errors.Add(path, "Contains a character that cannot be stored.");
+                    return null;
+                }
+
                 if (field.Required && text.Length == 0)
                 {
                     errors.Add(path, "Required.");
                     return null;
                 }
 
-                if (text.Length > 0 && field.Pattern is { } pattern
-                    && !Regex.IsMatch(text, pattern, RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)))
+                if (text.Length > 0 && field.Pattern is { } pattern && !ContractText.Matches(text, pattern))
                 {
                     errors.Add(path, "Not in the expected format.");
                     return null;
@@ -462,7 +474,7 @@ public sealed class DashboardDefinitionValidator : IDashboardDefinitionValidator
                 foreach (var item in value.EnumerateArray())
                 {
                     var text = item.ValueKind == JsonValueKind.String ? item.GetString()!.Trim() : null;
-                    if (string.IsNullOrEmpty(text) || (field.MaxLength is { } max && text.Length > max))
+                    if (string.IsNullOrEmpty(text) || (field.MaxLength is { } max && text.Length > max) || !ContractText.Storable(text))
                     {
                         errors.Add(path, $"Each item is text of 1 to {field.MaxLength ?? 100} characters.");
                         return null;
@@ -640,14 +652,14 @@ public sealed class DashboardDefinitionValidator : IDashboardDefinitionValidator
                 case "range" when value.ValueKind == JsonValueKind.String && DashboardLensResolver.IsValidRange(value.GetString(), _contract.Lens):
                     range = value.GetString();
                     break;
-                case "tac" when value.ValueKind == JsonValueKind.String
-                                && Regex.IsMatch(value.GetString()!, _contract.Lens.TacPattern, RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)):
+                case "tac" when value.ValueKind == JsonValueKind.String && ContractText.Matches(value.GetString()!, _contract.Lens.TacPattern):
                     tac = value.GetString();
                     break;
                 case "vendor" or "deviceType" or "operatingSystem"
                     when value.ValueKind == JsonValueKind.String
                          && value.GetString()!.Trim() is { Length: > 0 } trimmed
-                         && trimmed.Length <= _contract.Lens.TextFilterMaxLength:
+                         && trimmed.Length <= _contract.Lens.TextFilterMaxLength
+                         && ContractText.Storable(trimmed):
                     text[property.Name] = trimmed;
                     break;
                 default:
