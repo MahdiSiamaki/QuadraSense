@@ -125,7 +125,14 @@ function onRange(event: Event) {
         </button>
       </template>
       <Button v-if="chips.some((c) => !c.fromDefaults)" variant="ghost" size="sm" @click="emit('clearFilters')">Clear all</Button>
-      <span class="text-2xs text-[var(--c-text-muted)]">· filtered views query raw data and take a few seconds</span>
+      <!--
+        What is measured, not "raw data": one filter's totals are a finished row (65-185 ms); combined
+        filters, and breakdowns counted by subscribers or handsets, merge per-model counts (2-5 s,
+        2026-10-19). ADR-017.
+      -->
+      <span class="text-2xs text-[var(--c-text-muted)]">
+        · combined filters, and breakdowns by subscribers or handsets, take a few seconds
+      </span>
     </div>
   </div>
 </template>

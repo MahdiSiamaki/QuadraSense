@@ -210,6 +210,8 @@ internal sealed partial class MartRefresh(
     [
         ("agg_device_daily", "tac, active"),
         ("agg_device_model", "tac"),
+        ("agg_tac_population", "tac"),
+        ("agg_filter_population", "dimension, value"),
         ("agg_kpi_daily", "seq"),
         ("agg_device_class_daily", "measure, device_class"),
         ("agg_capability_daily", "measure, capability"),
