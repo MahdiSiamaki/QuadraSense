@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, watch } from 'vue'
 import Card from '@/design-system/Card.vue'
-import Button from '@/design-system/Button.vue'
 import { useRelationshipExplorer, type RelatedNode } from '@/api/relationships'
 import { ApiError } from '@/api/client'
 import { formatDate, formatFull, formatImei, formatMsisdn } from '@/lib/format'
-import { takePrefill } from '@/lib/prefill'
 
 /**
  * Explore what one identifier is connected to, and step from any of them to the next.
@@ -16,31 +14,25 @@ import { takePrefill } from '@/lib/prefill'
  * to hold, and let them keep going.
  *
  * The one exception is the paired-handset section, which is derived and says so.
+ *
+ * Was the Relationship explorer page; it is the Explorer's Relationships view now. The identifier
+ * comes from the Explorer's search box, and a click on a neighbour asks the Explorer to open it,
+ * so the details and the history follow it too.
  */
-const input = ref('')
+const props = defineProps<{ identifier: string }>()
+const emit = defineEmits<{ explore: [identifier: string] }>()
+
 const explorer = useRelationshipExplorer()
 const graph = computed(() => explorer.data.value ?? null)
 
 /** Without identifier.reveal the neighbours arrive redacted, and a redacted value cannot be explored. */
 const masked = computed(() => graph.value?.identifiers === 'Masked')
 
-/** Length alone decides, matching the server; the three lengths do not overlap in this feed. */
-const KINDS: Record<number, string> = { 10: 'phone number', 14: 'handset', 15: 'SIM' }
+watch(() => props.identifier, (identifier) => explorer.mutate(identifier), { immediate: true })
 
-const digits = computed(() => input.value.replace(/\D/g, ''))
-const detected = computed(() => KINDS[digits.value.length] ?? null)
-
-function explore(value?: string) {
-  if (value) input.value = value
-  const term = (value ?? input.value).replace(/\D/g, '')
-  if (term) explorer.mutate(term)
+function explore(value: string) {
+  emit('explore', value)
 }
-
-// An identifier handed over by a dashboard's quick lookup: in memory, never the URL or history.
-onMounted(() => {
-  const prefill = takePrefill('relationships')
-  if (prefill !== null) explore(prefill)
-})
 
 function labelFor(node: RelatedNode): string {
   if (node.kind === 'Msisdn') return formatMsisdn(node.value)
@@ -85,58 +77,9 @@ function isWithheld(key: string): boolean {
 
 <template>
   <div class="space-y-5">
-    <header>
-      <h1 class="text-xl font-semibold tracking-tight">Relationship explorer</h1>
-      <p class="mt-0.5 text-xs text-[var(--c-text-muted)]">
-        Start from a phone number, a SIM or a handset and follow the links between them.
-      </p>
-      <p class="mt-1 text-2xs text-[var(--c-text-muted)]">
-        A <strong>binding</strong> is one number + SIM + handset together, so these connections are
-        recorded facts, not inferences &mdash; with one labelled exception below.
-      </p>
-    </header>
-
-    <Card>
-      <form @submit.prevent="explore()">
-        <div class="flex flex-wrap items-end gap-3">
-          <div class="min-w-[min(18rem,100%)] flex-1">
-            <label
-              for="identifier"
-              class="block text-xs font-medium text-[var(--c-text-secondary)]"
-            >
-              Phone number, SIM or handset
-            </label>
-            <input
-              id="identifier"
-              v-model="input"
-              inputmode="numeric"
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="0913 123 4567 · 43211… · 35004012…"
-              aria-describedby="identifier-help"
-              class="tabular mt-1.5 w-full rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-3 py-2 font-mono text-sm placeholder:font-sans placeholder:text-[var(--c-text-muted)]"
-            />
-          </div>
-          <Button type="submit" variant="primary" :disabled="!digits" :pending="explorer.isPending.value">
-            Explore
-          </Button>
-        </div>
-
-        <p id="identifier-help" class="mt-1.5 text-2xs text-[var(--c-text-muted)]">
-          <template v-if="detected">
-            {{ digits.length }} digits &mdash; read as a <strong>{{ detected }}</strong>.
-          </template>
-          <template v-else-if="digits.length">
-            {{ digits.length }} digits. Expecting 10 (number), 14 (handset) or 15 (SIM).
-          </template>
-          <template v-else>
-            10 digits is a number, 14 a handset, 15 a SIM. Length alone decides, because the three
-            do not overlap in this feed. Lookups are audited and the value is sent in the request
-            body, never in the URL.
-          </template>
-        </p>
-      </form>
-    </Card>
+    <p v-if="explorer.isPending.value && !graph" class="text-sm text-[var(--c-text-muted)]" role="status">
+      Following the links…
+    </p>
 
     <div
       v-if="errorMessage"

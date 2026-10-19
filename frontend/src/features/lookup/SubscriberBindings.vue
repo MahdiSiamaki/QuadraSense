@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import Button from '@/design-system/Button.vue'
+import { ref, watch } from 'vue'
 import { lookupMsisdn, type LookupResult } from '@/api/dashboard'
 import { ApiError } from '@/api/client'
 import Card from '@/design-system/Card.vue'
 import { formatDate, formatImei, formatMsisdn } from '@/lib/format'
-import { takePrefill } from '@/lib/prefill'
 
-const input = ref('')
+/**
+ * Every device-SIM binding for one subscriber number, active and historical.
+ *
+ * Was the Subscriber lookup page; it is the Explorer's details for a number now, and the number
+ * comes from the Explorer's search box. The request is the same audited lookup, sent in the body,
+ * once each time the number changes.
+ */
+const props = defineProps<{ msisdn: string }>()
+
 const result = ref<LookupResult | null>(null)
 const error = ref<unknown>(null)
 const isLoading = ref(false)
@@ -15,10 +21,7 @@ const isLoading = ref(false)
 /** Cancels an in-flight lookup when a new one starts. */
 let controller: AbortController | null = null
 
-async function search() {
-  const value = input.value.trim()
-  if (!value) return
-
+async function search(value: string) {
   controller?.abort()
   controller = new AbortController()
 
@@ -36,13 +39,7 @@ async function search() {
   }
 }
 
-// A number handed over by a dashboard's quick lookup: in memory, never the URL or history (lib/prefill.ts).
-onMounted(() => {
-  const prefill = takePrefill('lookup')
-  if (prefill === null) return
-  input.value = prefill
-  void search()
-})
+watch(() => props.msisdn, (value) => void search(value), { immediate: true })
 
 function errorMessage(e: unknown): string {
   if (e instanceof ApiError) {
@@ -59,70 +56,8 @@ function correlationId(e: unknown): string | null {
 </script>
 
 <template>
-  <!--
-    The common page frame: left-aligned and full width like every other page. Centred and capped,
-    this page's heading started 332px right of every other page's at 1900px, and moved sideways
-    when switching to the IMSI tab.
-  -->
   <div class="flex flex-col gap-5">
-    <header>
-      <h1 class="text-xl font-semibold tracking-tight">Subscriber lookup</h1>
-      <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
-        Every device–SIM binding for one subscriber number, active and historical.
-      </p>
-    </header>
-
-    <Card class="max-w-4xl">
-      <form @submit.prevent="search">
-        <!--
-          The help text is a sibling of this row, not a child of the field.
-
-          It used to sit inside the flex item, and `items-end` then aligned the button with
-          the bottom of the whole column - which is the bottom of the help paragraph, not of
-          the input. Measured against this stylesheet, the button sat 26px low. A row that
-          contains only the things that should line up is what keeps them lined up.
-        -->
-        <div class="flex flex-wrap items-end gap-3">
-          <div class="min-w-[min(16rem,100%)] flex-1">
-            <label for="msisdn" class="block text-xs font-medium text-[var(--c-text-secondary)]">
-              Subscriber number
-            </label>
-            <input
-              id="msisdn"
-              v-model="input"
-              inputmode="tel"
-              autocomplete="off"
-              placeholder="0913 123 4567"
-              aria-describedby="msisdn-formats"
-              class="mt-1.5 w-full rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-3 py-2 font-mono text-sm tabular placeholder:text-[var(--c-text-muted)]"
-            />
-          </div>
-          <Button type="submit" variant="primary" size="lg" :disabled="!input.trim()" :pending="isLoading">
-            {{ isLoading ? 'Searching…' : 'Search' }}
-          </Button>
-        </div>
-
-        <!--
-          The accepted forms are stated rather than left to be discovered. An operator pastes
-          whatever they were given - a spreadsheet cell, a ticket, a chat message - and the one
-          thing they should not have to do is convert it by hand for a number they are about to
-          investigate.
-        -->
-        <p id="msisdn-formats" class="mt-1.5 text-2xs text-[var(--c-text-muted)]">
-          National or international, with or without separators —
-          <code class="font-mono">0913…</code>,
-          <code class="font-mono">913…</code>,
-          <code class="font-mono">+98 913…</code>,
-          <code class="font-mono">0098913…</code>
-          all find the same subscriber.
-        </p>
-      </form>
-
-      <p class="mt-3 text-2xs text-[var(--c-text-muted)]">
-        Lookups are audited. The number is sent in the request body, never in the URL, so it does not
-        reach server access logs or browser history.
-      </p>
-    </Card>
+    <p v-if="isLoading && !result" class="text-sm text-[var(--c-text-muted)]" role="status">Looking up…</p>
 
     <div
       v-if="error"

@@ -36,19 +36,16 @@ const nav = computed(() =>
   [
     { to: '/', label: 'Dashboard', show: can(Permission.DashboardView) },
     { to: '/devices', label: 'Devices', show: can(Permission.DeviceView) },
-    { to: '/explorer', label: 'Explorer', show: can(Permission.ExplorerQuery) },
+    // Simple mode for anybody who can look up any one of the three identifiers; the server decides
+    // per lookup what they get back. It replaced the Lookup, IMSI and Relationships entries.
+    {
+      to: '/explorer',
+      label: 'Explorer',
+      show: canAny(Permission.ExplorerQuery, Permission.LookupSubscriber, Permission.LookupImsi, Permission.LookupImei),
+    },
     { to: '/risk', label: 'Risk signals', show: can(Permission.RiskView) },
     { to: '/imports', label: 'Imports', show: can(Permission.ImportView) },
     { to: '/quality', label: 'Data quality', show: can(Permission.ImportView) },
-    { to: '/lookup', label: 'Lookup', show: can(Permission.LookupSubscriber) },
-    { to: '/lookup/imsi', label: 'IMSI', show: can(Permission.LookupImsi) },
-    // Reachable by anybody who can look up any one of the three; the server decides per centre
-    // which sections they actually get back.
-    {
-      to: '/relationships',
-      label: 'Relationships',
-      show: canAny(Permission.LookupSubscriber, Permission.LookupImsi, Permission.LookupImei),
-    },
     // Users, roles, the audit log and device image review moved to Settings (the gear): they
     // configure the system, and this bar is for the work done in it.
   ].filter((item) => item.show),
@@ -56,8 +53,6 @@ const nav = computed(() =>
 
 function isCurrent(to: string): boolean {
   if (to === '/') return route.path === '/'
-  // /lookup must not claim /lookup/imsi, which is its own destination.
-  if (to === '/lookup') return route.path === '/lookup'
   return route.path.startsWith(to)
 }
 

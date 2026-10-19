@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Card from '@/design-system/Card.vue'
-import Button from '@/design-system/Button.vue'
 import Pagination from '@/design-system/Pagination.vue'
 import ImsiSummaryCard from './ImsiSummaryCard.vue'
 import ImsiHistoryPanel from './ImsiHistoryPanel.vue'
@@ -17,7 +16,6 @@ import {
 import { useTopDimension, useDistribution } from '@/api/dashboard'
 import { ApiError } from '@/api/client'
 import { formatDate, formatFull } from '@/lib/format'
-import { takePrefill } from '@/lib/prefill'
 
 /**
  * Search by IMSI.
@@ -34,8 +32,14 @@ import { takePrefill } from '@/lib/prefill'
  * Every search is audited server-side. The IMSI is not recorded - only who searched, how many
  * digits they gave, and how many rows came back. An audit log full of SIM identities would be a
  * second copy of the data it exists to protect.
+ *
+ * Was the IMSI search page; it is the Explorer's details for a SIM now, and the term comes from
+ * the Explorer's search box. A complete IMSI opens its history here, as before. A prefix lists
+ * the SIMs it covers, and choosing one asks the Explorer to open that SIM.
  */
-const raw = ref('')
+const props = defineProps<{ term: string }>()
+const emit = defineEmits<{ select: [imsi: string] }>()
+
 const activeOnly = ref(false)
 const deviceType = ref('')
 const manufacturer = ref('')
@@ -50,7 +54,7 @@ const result = computed(() => search.data.value ?? null)
 const deviceTypes = useDistribution('deviceType', () => ({}), 'bindings')
 const vendors = useTopDimension('vendorCanonical', () => ({}), 12, 'bindings')
 
-const term = computed(() => describeTerm(raw.value))
+const term = computed(() => describeTerm(props.term))
 const breadth = computed(() => prefixBreadth(term.value.digits.length))
 
 const problem = computed(() => {
@@ -91,13 +95,7 @@ function run(toPage = 1) {
   })
 }
 
-// An IMSI or prefix handed over by a dashboard's quick lookup: in memory, never the URL or history.
-onMounted(() => {
-  const prefill = takePrefill('imsi-search')
-  if (prefill === null) return
-  raw.value = prefill
-  run()
-})
+watch(() => props.term, () => run(1), { immediate: true })
 
 // Re-running on a filter change rather than making the user press the button again: they have
 // already asked for this term, and the filters only narrow it.
@@ -115,7 +113,12 @@ watch(result, (value) => {
 
 function openHistory(match: ImsiMatch) {
   // Only possible on a complete, unmasked IMSI: a masked one cannot be sent back to the server.
-  opened.value = match.imsi.length === IMSI_LENGTH && /^\d+$/.test(match.imsi) ? match.imsi : null
+  const complete = match.imsi.length === IMSI_LENGTH && /^\d+$/.test(match.imsi)
+  if (complete && !result.value?.isExact) {
+    emit('select', match.imsi)
+    return
+  }
+  opened.value = complete ? match.imsi : null
 }
 
 const masked = computed(() => result.value?.identifiers === 'Masked')
@@ -123,44 +126,8 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
 
 <template>
   <div class="flex flex-col gap-5">
-    <header>
-      <h1 class="text-xl font-semibold tracking-tight">IMSI search</h1>
-      <p class="mt-0.5 text-sm text-[var(--c-text-secondary)]">
-        Find the numbers and handsets bound to a SIM, by full IMSI or by prefix.
-      </p>
-    </header>
-
     <Card>
       <form class="flex flex-col gap-3" @submit.prevent="run(1)">
-        <div class="flex flex-wrap items-start gap-3">
-          <div class="min-w-0 flex-1">
-            <label
-              for="imsi-input"
-              class="mb-1 block text-xs font-medium text-[var(--c-text-secondary)]"
-            >
-              IMSI or prefix
-            </label>
-            <input
-              id="imsi-input"
-              v-model="raw"
-              inputmode="numeric"
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="432 11 3991761332"
-              class="tabular w-full rounded-[var(--radius-md)] border bg-[var(--c-surface)] px-3 py-2 font-mono text-base tracking-wide placeholder:font-sans placeholder:tracking-normal placeholder:text-[var(--c-text-muted)]"
-              :style="problem ? { borderColor: 'var(--c-danger)' } : undefined"
-              :aria-invalid="problem ? 'true' : undefined"
-              aria-describedby="imsi-help"
-            />
-          </div>
-
-          <div class="pt-[1.55rem]">
-            <Button type="submit" variant="primary" :disabled="!term.ok" :pending="search.isPending.value">
-              Search
-            </Button>
-          </div>
-        </div>
-
         <!--
           The one line that teaches the data. It counts digits as they are typed and names what
           the term would match, so the minimum reads as a consequence of the network's numbering

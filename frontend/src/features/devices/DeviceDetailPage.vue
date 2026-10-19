@@ -419,7 +419,7 @@ const bandsOpen = ref(false)
               <Card title="Related">
                 <ul class="flex flex-col gap-1.5 text-sm">
                   <li v-if="can(Permission.LookupImsi)">
-                    <RouterLink to="/lookup/imsi" class="text-[var(--c-accent)] hover:underline">
+                    <RouterLink to="/explorer?kind=imsi" class="text-[var(--c-accent)] hover:underline">
                       Search by IMSI
                     </RouterLink>
                     <span class="text-2xs text-[var(--c-text-muted)]">
@@ -427,7 +427,7 @@ const bandsOpen = ref(false)
                     </span>
                   </li>
                   <li v-if="can(Permission.LookupSubscriber)">
-                    <RouterLink to="/lookup" class="text-[var(--c-accent)] hover:underline">
+                    <RouterLink to="/explorer?kind=msisdn" class="text-[var(--c-accent)] hover:underline">
                       Subscriber lookup
                     </RouterLink>
                     <span class="text-2xs text-[var(--c-text-muted)]">
