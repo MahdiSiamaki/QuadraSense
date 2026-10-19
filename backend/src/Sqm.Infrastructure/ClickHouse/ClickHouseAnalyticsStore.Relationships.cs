@@ -134,7 +134,11 @@ public sealed partial class ClickHouseAnalyticsStore
             _ => handsets.Remove(identifier),
         };
 
-        var paired = allowed.Handsets && handsets.Count > 0
+        // A handset centre has no other handsets - every row is its own IMEI, just removed above -
+        // and it is the one centre whose pair is asked about most. Gating on neighbours alone meant
+        // a search by IMEI never looked: Galaxy A51 35446411748626 showed no pair until 2026-10-19,
+        // while a search by its own number found 35446511748626.
+        var paired = allowed.Handsets && (handsets.Count > 0 || kind == RelatedKind.Imei)
             ? await FindPairedHandsetsAsync(kind, identifier, handsets.Keys, rows, ct)
                 .ConfigureAwait(false)
             : [];
