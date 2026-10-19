@@ -5,6 +5,9 @@
 present on 6 October**; nothing in the pipeline introduced it and nothing here repairs it.
 **Read with:** `docs/architecture/15-feed-quality.md`, which first described the shifted IMEIs on
 data through 26 September. This report finds what they are, and corrects one conclusion there.
+`05-shifted-imei-verification.md` (2026-10-19) states the rule exactly, traces one shifted row end to
+end, and finds the shape was already present before 15 September - on `01…` handsets, as the
+subscriber's own.
 
 ---
 

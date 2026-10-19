@@ -609,7 +609,9 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             // The day's counts. The shifted-IMEI test is the one measured on the real files: a
             // 14-digit IMEI whose TAC GSMA does not know, ending in 0, that becomes a GSMA TAC
             // with one digit put back in front. 99.6% of the unknown IMEIs on 20 September pass
-            // it; by chance about 2.7% would, which is part of the ordinary days' reference.
+            // it. Not "2.7% by chance", as this said: ordinary days pass ~5,000 rows, almost all
+            // 01... handsets re-encoded the same way, 91.5% the number's own handset
+            // (docs/discovery/05-shifted-imei-verification.md). They are the reference.
             $$"""
             INSERT INTO {{_database}}.dq_daily
                 (data_date, rows_total, sims_total, unknown_device_rows, malformed_imei_rows,
