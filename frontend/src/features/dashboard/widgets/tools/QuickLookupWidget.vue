@@ -8,27 +8,32 @@ import { handOver } from '@/lib/prefill'
 import type { QuickLookupConfig } from './config'
 
 /**
- * A lookup box on the dashboard that opens the real lookup page with the value already in it.
+ * A lookup box on the dashboard that opens the Explorer's search with the value already in it.
  *
  * What is typed never leaves this card except to that page, and never through a URL: numbers, SIMs
  * and handsets are handed over in memory (`lib/prefill.ts`), are not stored in the dashboard and are
  * not shared with it. The lookup itself is the page's own audited request. A TAC is a model code, so
  * it opens the device page by its path like everywhere else.
+ *
+ * The three identifier targets opened three pages until the Explorer's Simple mode replaced them.
+ * A saved dashboard keeps its target; it now names the identifier type the search starts with, and
+ * the relationships target still lands on the relationships.
  */
 const props = defineProps<WidgetViewProps<QuickLookupConfig>>()
 const router = useRouter()
 
 const TARGETS = {
-  msisdn: { label: 'Subscriber number', placeholder: 'e.g. 9121234567', route: 'lookup', pattern: /^\d{10,12}$/, hint: 'A 10-digit number.' },
-  imsi: { label: 'IMSI or prefix', placeholder: '15 digits, or the first few', route: 'imsi-search', pattern: /^\d{5,15}$/, hint: 'Five to fifteen digits.' },
+  msisdn: { label: 'Subscriber number', placeholder: 'e.g. 9121234567', handTo: 'explorer', kind: 'msisdn', pattern: /^\d{10,12}$/, hint: 'A 10-digit number.' },
+  imsi: { label: 'IMSI or prefix', placeholder: '15 digits, or the first few', handTo: 'explorer', kind: 'imsi', pattern: /^\d{5,15}$/, hint: 'Five to fifteen digits.' },
   relationships: {
     label: 'Number, SIM or handset',
     placeholder: '10, 14 or 15 digits',
-    route: 'relationships',
+    handTo: 'explorer:relationships',
+    kind: undefined,
     pattern: /^(\d{10}|\d{14}|\d{15})$/,
     hint: 'A number (10 digits), a handset (14) or a SIM (15).',
   },
-  tac: { label: 'TAC', placeholder: '8 digits', route: 'device-detail', pattern: /^\d{8}$/, hint: 'The first 8 digits of an IMEI.' },
+  tac: { label: 'TAC', placeholder: '8 digits', handTo: null, kind: undefined, pattern: /^\d{8}$/, hint: 'The first 8 digits of an IMEI.' },
 } as const
 
 const target = computed(() => TARGETS[props.instance.config.target])
@@ -40,10 +45,11 @@ const id = computed(() => `quick-lookup-${props.instance.id}`)
 
 function open() {
   if (!valid.value || !live.value) return
-  if (props.instance.config.target === 'tac') void router.push({ name: 'device-detail', params: { tac: digits.value } })
+  const { handTo, kind } = target.value
+  if (handTo === null) void router.push({ name: 'device-detail', params: { tac: digits.value } })
   else {
-    handOver(target.value.route, digits.value)
-    void router.push({ name: target.value.route })
+    handOver(handTo, digits.value)
+    void router.push({ name: 'explorer', query: { kind } })
   }
 }
 </script>
@@ -70,7 +76,7 @@ function open() {
       <template v-if="!live">Works on the dashboard; not in a preview.</template>
       <template v-else-if="value !== '' && !valid">{{ target.hint }}</template>
       <template v-else-if="instance.config.target === 'tac'">Opens the device page.</template>
-      <template v-else>Opens the lookup with this filled in. Not saved with the dashboard.</template>
+      <template v-else>Opens the Explorer with this filled in. Not saved with the dashboard.</template>
     </p>
   </form>
 </template>

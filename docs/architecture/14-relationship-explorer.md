@@ -10,6 +10,9 @@
 Start from a phone number, a SIM or a handset; see everything connected to it; click any of them
 to move there. `POST /api/v1/relationships/explore`, and a page at `/relationships`.
 
+> **Since 2026-10-19 the page is the Explorer's Relationships view** (`18-explorer-modes.md`);
+> `/relationships` redirects there. The endpoint, its permissions and its audit are unchanged.
+
 Length alone decides what was typed — 10 digits a number, 14 a handset, 15 a SIM — using the same
 `DeviceSearchTerm` the Devices search uses, so an identifier cannot mean one thing on one page and
 something else on another.
@@ -69,6 +72,13 @@ It was caught by the product owner asking a question with a known answer: two of
 in one phone. The data showed both on Galaxy A51 IMEIs `35446411748626` and `35446511748626` —
 identical six-digit serials, TACs a hundred apart. The rule that missed it looked correct and had
 evidence behind it. The evidence was from the wrong vendor.
+
+**And it was checked from one end only.** The case was found from the owner's *numbers*, and a search
+from either *handset* never showed the pair - until 2026-10-19, when the Explorer's Simple mode put a
+handset search in front of the pair section. The pair search ran only when the graph had other
+handsets in it, and a handset centre has none: every row is its own IMEI, removed as the centre. The
+rule was right; the call to it never happened. `RelationshipPairRealDataTests` now holds the pair from
+both IMEIs and from the shared number, and fails on the old gate.
 
 ## Why it will not show every real pair
 

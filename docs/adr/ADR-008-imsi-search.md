@@ -2,6 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-14
+- **Note (2026-10-19):** the IMSI search page is now the Explorer's Simple mode with IMSI chosen
+  (`docs/architecture/18-explorer-modes.md`); `/lookup/imsi` redirects there. The endpoints, the
+  ten-digit minimum, the filters and the audit are unchanged.
 
 ---
 

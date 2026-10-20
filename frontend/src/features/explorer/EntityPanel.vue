@@ -33,8 +33,10 @@ const props = withDefaults(
     canOpenDevice: boolean
     /** False where no query builder is beside the panel to take "List its bindings". */
     canExplore?: boolean
+    /** False where the panel is the page's content rather than a side panel that can be put away. */
+    closable?: boolean
   }>(),
-  { canExplore: true },
+  { canExplore: true, closable: true },
 )
 
 const { can } = useAuth()
@@ -128,6 +130,7 @@ function history() {
       <div class="flex items-center gap-1">
         <Button v-if="depth > 1" size="sm" variant="ghost" @click="emit('back')">← Back</Button>
         <button
+          v-if="closable"
           type="button"
           class="grid size-7 place-items-center rounded-[var(--radius-md)] text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
           aria-label="Close summary"

@@ -18,7 +18,14 @@ import TimelineChart, { type ChartRow } from './TimelineChart.vue'
  * matters: "active" is "not yet removed by the feed", the dump is a month not a moment, and an
  * IMEI is one radio, not a phone.
  */
-const props = defineProps<{ identifier: string }>()
+const props = withDefaults(
+  defineProps<{
+    identifier: string
+    /** False where the timeline is the page's content rather than a panel that can be put away. */
+    closable?: boolean
+  }>(),
+  { closable: true },
+)
 const emit = defineEmits<{ drill: [identifier: string]; close: [] }>()
 
 const timeline = useTimeline()
@@ -143,6 +150,7 @@ const centreText = computed(() => {
           label="Show"
         />
         <button
+          v-if="closable"
           type="button"
           class="grid size-7 place-items-center rounded-[var(--radius-md)] text-[var(--c-text-muted)] hover:bg-[var(--c-surface-hover)] hover:text-[var(--c-text)]"
           aria-label="Close timeline"

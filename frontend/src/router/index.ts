@@ -83,11 +83,16 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Device', permission: Permission.DeviceView },
   },
   {
-    // No identifiers in this route, by design: queries are POSTed, and drill-down is a panel.
+    // No identifiers in this route, by design: lookups and queries are POSTed, and drill-down is
+    // page state. Only the mode (?mode=advanced) and the identifier type (?kind=…) are in it.
+    // Simple mode is open to anyone who may look anything up; Advanced needs explorer.query.
     path: '/explorer',
     name: 'explorer',
     component: () => import('@/features/explorer/ExplorerPage.vue'),
-    meta: { title: 'Explorer', permission: Permission.ExplorerQuery },
+    meta: {
+      title: 'Explorer',
+      anyPermission: [Permission.ExplorerQuery, Permission.LookupSubscriber, Permission.LookupImsi, Permission.LookupImei],
+    },
   },
   {
     // No identifiers in this route either: lists are POSTed, and drill-down is a panel.
@@ -103,26 +108,13 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/features/quality/DataQualityPage.vue'),
     meta: { title: 'Data quality', permission: Permission.ImportView },
   },
-  {
-    path: '/lookup',
-    name: 'lookup',
-    component: () => import('@/features/lookup/LookupPage.vue'),
-    meta: { title: 'Subscriber lookup', permission: Permission.LookupSubscriber },
-  },
-  {
-    path: '/lookup/imsi',
-    name: 'imsi-search',
-    component: () => import('@/features/lookup/ImsiSearchPage.vue'),
-    meta: { title: 'IMSI search', permission: Permission.LookupImsi },
-  },
-  {
-    path: '/relationships',
-    name: 'relationships',
-    component: () => import('@/features/lookup/RelationshipExplorerPage.vue'),
-    // The centre's own kind decides the real permission, checked server-side. This gate only
-    // keeps the page out of the navigation for somebody who can look nothing up at all.
-    meta: { title: 'Relationship explorer', permission: Permission.LookupSubscriber },
-  },
+  /*
+    The three lookup pages the Explorer's Simple mode replaced. Their addresses and route names stay,
+    as redirects with the identifier type preselected, so bookmarks and links keep working.
+  */
+  { path: '/lookup', name: 'lookup', redirect: { name: 'explorer', query: { kind: 'msisdn' } } },
+  { path: '/lookup/imsi', name: 'imsi-search', redirect: { name: 'explorer', query: { kind: 'imsi' } } },
+  { path: '/relationships', name: 'relationships', redirect: { name: 'explorer' } },
   {
     path: '/profile',
     name: 'profile',
@@ -285,6 +277,12 @@ router.beforeEach(async (to) => {
     // Not a silent redirect to the dashboard: a user sent somewhere they did not ask for, with
     // no explanation, reasonably concludes the link is broken.
     return { name: 'no-access', query: { permission: required, from: to.fullPath } }
+  }
+
+  // A page that several permissions open, each for its own part (the Explorer's two modes).
+  const anyOf = to.meta['anyPermission'] as readonly string[] | undefined
+  if (anyOf && !anyOf.some((p) => user.permissions.includes(p))) {
+    return { name: 'no-access', query: { permission: anyOf.join(' or '), from: to.fullPath } }
   }
 
   return true
