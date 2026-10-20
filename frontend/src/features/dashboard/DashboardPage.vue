@@ -49,6 +49,7 @@ import { conflictOf, problemText } from './components/apiProblem'
 import { useDashboardDraft } from './composables/useDashboardDraft'
 import { useDashboardLens, type LensFilterKey } from './composables/useDashboardLens'
 import { canMove, readingOrder, type Columns, type MoveTarget, type SizePreset } from './composables/layout'
+import { refreshDashboard } from './composables/refresh'
 import { migrateDefinition } from './registry/migrations'
 import { validateDefinition } from './registry/validate'
 import { DEFAULT_TEMPLATE_KEY, getTemplate, instantiateTemplate, templateReference, visibleTemplateDefinition } from './templates'
@@ -157,16 +158,9 @@ provide(DASHBOARD_CONTEXT, {
   snapshot: ref(null),
 })
 
-/** The aggregate queries a refresh may repeat. Audited lists and queries are mutations: never these. */
-const REFRESHABLE = new Set([
-  'kpi', 'top', 'distribution', 'device-class-mix', 'capabilities', 'daily-changes', 'daily-churn', 'vendor-movement',
-  'feed-quality', 'quality-signals', 'model-arrivals', 'risk', 'imports', 'tac-versions', 'device',
-])
-
 function refresh() {
-  refreshToken.value += 1
   refreshedAt.value = new Date()
-  void queryClient.invalidateQueries({ predicate: (q) => REFRESHABLE.has(String(q.queryKey[0])) })
+  void refreshDashboard(queryClient, refreshToken)
 }
 
 let timer: ReturnType<typeof setInterval> | null = null

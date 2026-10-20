@@ -40,6 +40,14 @@ The test used everywhere is that one: 14 digits, TAC unknown to GSMA, ending in 
 by one leading digit. The ~7,000 rows a day that pass it before 15 September are the part of ordinary
 unknown IMEIs that pass by chance, and they are part of the reference.
 
+> **SUPERSEDED (2026-10-19)** — two statements above. *"By chance about 2.7% would"*: measured on real
+> unknown IMEIs that do **not** end in `0`, one leading digit makes a GSMA TAC for 26–45% of them, not
+> 2.7% - unknown IMEIs are not random digits. *"The part … that pass by chance"*: the passes before
+> 15 September are almost all `01…` handsets restored by a leading `0`, and for 91.5% of them the
+> restored IMEI is **the same number's own handset** - a standing re-encoding, not chance. They still
+> form the reference, and the day-level rule is unaffected. Evidence, the exact rule and a worked
+> example: `docs/discovery/05-shifted-imei-verification.md`.
+
 ### Whose handset it is (added 2026-10-08)
 
 The digits restore; the binding does not. Of the numbers given a shifted IMEI on 24 September (1%

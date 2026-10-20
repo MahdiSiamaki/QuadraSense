@@ -82,6 +82,23 @@ internal static class AnalyticsSchema
     };
 
     /// <summary>
+    /// Aggregate expression over <c>agg_tac_population</c> (alias <c>b</c>), used when a filter is
+    /// applied: the raw fallback's measure, read from per-model rows.
+    /// </summary>
+    /// <remarks>
+    /// Bindings add up across models. Subscribers and handsets are kept as uniq() states, and
+    /// merging them is uniq() over the union - the raw fallback's estimator, so a person who holds
+    /// two models is still one subscriber.
+    /// </remarks>
+    public static string TacMartMeasureFor(CountBy countBy) => countBy switch
+    {
+        CountBy.Bindings => "sum(b.bindings)",
+        CountBy.Subscribers => "uniqMerge(b.subscribers)",
+        CountBy.Handsets => "uniqMerge(b.handsets)",
+        _ => throw new ArgumentOutOfRangeException(nameof(countBy), countBy, "Unmapped measure."),
+    };
+
+    /// <summary>
     /// Column in <c>agg_kpi_daily</c> holding the population total for this measure.
     /// </summary>
     /// <remarks>

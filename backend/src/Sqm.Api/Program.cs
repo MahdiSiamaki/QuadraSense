@@ -65,7 +65,10 @@ builder.Services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName, client =
         // decompression enabled. Without this every query fails with
         // "server returned compressed result but HttpClient did not decompress it".
         AutomaticDecompression = System.Net.DecompressionMethods.All,
-    });
+    })
+    // A query the API stops waiting for is killed rather than left to run (AbandonedQueryCanceller):
+    // abandoned dashboard reads ran on for minutes and slowed every read after them.
+    .AddHttpMessageHandler(() => new AbandonedQueryCanceller());
 
 builder.Services.AddSingleton<IDeviceAnalyticsStore, ClickHouseAnalyticsStore>();
 
@@ -255,6 +258,8 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = null);
 
 builder.Services.AddProblemDetails();
+// A store timeout is a 504 that says so (StoreTimeoutExceptionHandler); everything else stays a 500.
+builder.Services.AddExceptionHandler<Sqm.Api.Infrastructure.StoreTimeoutExceptionHandler>();
 builder.Services.AddOpenApi();
 
 // CORS is restricted to the known frontend origin. No wildcard: the API will

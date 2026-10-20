@@ -185,6 +185,12 @@ Measured or observed on 2026-10-09; each says what was and was not checked.
   the marts. Every KPI card, the KPI summary and the enrichment breakdown wait on it once a filter
   is applied. The path predates the builder (`ClickHouseAnalyticsStore` falls back to the raw table);
   it needs its own measurement and probably a mart, recorded as a separate task.
+
+  > **SUPERSEDED (2026-10-19)** by ADR-017. It got worse before it was fixed - 183 s and a 500 for
+  > `?deviceType=Smartphone`, retried while ClickHouse ran the abandoned query on. One filter on its
+  > own now reads a finished row (65–185 ms); a combination merges per-model counts (2.6 s). What
+  > remains slow is a breakdown counted by subscribers or handsets under a filter: 2.4 s alone, up to
+  > 12 s with three such widgets loading together.
 - **Negative numbers in CSV read as text.** `CsvExport` neutralises any cell starting with `-`, a
   number included, so `-1234` is written `'-1234`. Safe, but a spreadsheet will not sum it. The same
   holds for every CSV the product writes; changing it changes them all, so it is left for a decision.

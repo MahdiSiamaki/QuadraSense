@@ -35,6 +35,8 @@
 ALTER TABLE sqm.agg_device_daily DROP PARTITION {seq:UInt16};
 ALTER TABLE sqm.agg_kpi_daily    DROP PARTITION {seq:UInt16};
 ALTER TABLE sqm.agg_device_model DROP PARTITION {seq:UInt16};
+ALTER TABLE sqm.agg_tac_population DROP PARTITION {seq:UInt16};
+ALTER TABLE sqm.agg_filter_population DROP PARTITION {seq:UInt16};
 
 -- --------------------------------------------------------------------------
 -- 1. Device rollup: one row per (seq, tac, active).
@@ -72,22 +74,166 @@ GROUP BY tac, active;
 --     first_seen / last_seen are NULL when no daily file has ever named a
 --     binding of this model: min() and max() skip NULLs, and a model present
 --     only in the initial dump has nothing but NULLs to skip.
+--
+--     The pass keeps the distinct counts as uniq() STATES first, in
+--     agg_tac_population (migration 027), and agg_device_model is finalised from
+--     them: finalizeAggregation(uniqState(x)) is uniq(x), so its numbers are the
+--     ones it always had, from the same single read of binding_current. The
+--     states are what a filtered dashboard view merges - every dashboard filter
+--     is a property of the TAC - instead of reading binding_current FINAL, which
+--     took 100 s alone and 183 s on the dashboard on 2026-10-19.
+--
+--     Written in blocks of 8,192 rows, not the default ~1M. The default gathers
+--     every model's states into one block before writing - all 158,002 rows of a
+--     delivery fit - so all the states are in memory at once, and at the
+--     refresh's own limits (one thread, 1.2 GiB) that failed twice on
+--     2026-10-19, at 1.20 GiB, merging the spilled aggregation back. Finished
+--     numbers, as this pass wrote before, are small enough that it never showed.
+--     In small blocks: 842 s, 368 MiB peak, 158,002 rows (delivery 246).
 -- --------------------------------------------------------------------------
+INSERT INTO sqm.agg_tac_population
+    (seq, tac, bindings, unknown_device, malformed_imei, subscribers, sims, handsets, first_seen, last_seen)
+SELECT
+    {seq:UInt16}  AS seq,
+    tac,
+    count()                                             AS bindings,
+    countIf(imei = '000000')                            AS unknown_device,
+    countIf(length(imei) != 14 AND imei != '000000')    AS malformed_imei,
+    uniqState(msisdn)                                   AS subscribers,
+    uniqState(imsi)                                     AS sims,
+    uniqStateIf(imei, length(imei) = 14)                AS handsets,
+    min(last_change_date)                               AS first_seen,
+    max(last_change_date)                               AS last_seen
+FROM sqm.binding_current FINAL
+WHERE active = 1
+GROUP BY tac
+SETTINGS min_insert_block_size_rows = 8192, min_insert_block_size_bytes = 0;
+
 INSERT INTO sqm.agg_device_model
     (seq, data_date, tac, bindings, handsets, sims, subscribers, first_seen, last_seen)
 SELECT
-    {seq:UInt16}  AS seq,
-    NULL          AS data_date,
+    seq,
+    NULL                            AS data_date,
     tac,
-    count()                             AS bindings,
-    uniqIf(imei, length(imei) = 14)     AS handsets,
-    uniq(imsi)                          AS sims,
-    uniq(msisdn)                        AS subscribers,
-    min(last_change_date)               AS first_seen,
-    max(last_change_date)               AS last_seen
-FROM sqm.binding_current FINAL
-WHERE active = 1
-GROUP BY tac;
+    bindings,
+    finalizeAggregation(handsets)   AS handsets,
+    finalizeAggregation(sims)       AS sims,
+    finalizeAggregation(subscribers) AS subscribers,
+    first_seen,
+    last_seen
+FROM sqm.agg_tac_population
+WHERE seq = {seq:UInt16};
+
+-- --------------------------------------------------------------------------
+-- 1c. One filter's population, finished: a row per (dimension, value).
+--
+--     What a dashboard filtered by one thing reads (migration 028) - one row,
+--     instead of merging the states of every model it matches, which took
+--     2.5-3.4 s for a device type, a vendor or an OS on 2026-10-19.
+--
+--     Merged from the states just written, never from binding_current: no
+--     second pass over the table. Each key is the filter's own comparison
+--     (FilterBuilder.ForCurrentState), so a value the filter treats as one is
+--     one row. An empty value is never a filter, and is left out.
+--
+--     One statement per dimension: each groups its own values, and the largest
+--     - 3,020 vendors - stays a separate, smaller hash table.
+-- --------------------------------------------------------------------------
+INSERT INTO sqm.agg_filter_population
+    (seq, dimension, value, models, bindings, unknown_device, malformed_imei, tac_matched, subscribers, sims, handsets)
+SELECT
+    {seq:UInt16}                        AS seq,
+    'deviceType'                        AS dimension,
+    t.deviceType                        AS value,
+    count()                             AS models,
+    sum(b.bindings)                     AS bindings,
+    sum(b.unknown_device)               AS unknown_device,
+    sum(b.malformed_imei)               AS malformed_imei,
+    sumIf(b.bindings, t.tac != '')      AS tac_matched,
+    uniqMerge(b.subscribers)            AS subscribers,
+    uniqMerge(b.sims)                   AS sims,
+    uniqMerge(b.handsets)               AS handsets
+FROM sqm.agg_tac_population AS b
+LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+WHERE b.seq = {seq:UInt16} AND value != ''
+GROUP BY value;
+
+INSERT INTO sqm.agg_filter_population
+    (seq, dimension, value, models, bindings, unknown_device, malformed_imei, tac_matched, subscribers, sims, handsets)
+SELECT
+    {seq:UInt16}                        AS seq,
+    'operatingSystem'                   AS dimension,
+    trim(t.operatingSystem)             AS value,
+    count()                             AS models,
+    sum(b.bindings)                     AS bindings,
+    sum(b.unknown_device)               AS unknown_device,
+    sum(b.malformed_imei)               AS malformed_imei,
+    sumIf(b.bindings, t.tac != '')      AS tac_matched,
+    uniqMerge(b.subscribers)            AS subscribers,
+    uniqMerge(b.sims)                   AS sims,
+    uniqMerge(b.handsets)               AS handsets
+FROM sqm.agg_tac_population AS b
+LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+WHERE b.seq = {seq:UInt16} AND value != ''
+GROUP BY value;
+
+INSERT INTO sqm.agg_filter_population
+    (seq, dimension, value, models, bindings, unknown_device, malformed_imei, tac_matched, subscribers, sims, handsets)
+SELECT
+    {seq:UInt16}                        AS seq,
+    'manufacturer'                      AS dimension,
+    t.manufacturer                      AS value,
+    count()                             AS models,
+    sum(b.bindings)                     AS bindings,
+    sum(b.unknown_device)               AS unknown_device,
+    sum(b.malformed_imei)               AS malformed_imei,
+    sumIf(b.bindings, t.tac != '')      AS tac_matched,
+    uniqMerge(b.subscribers)            AS subscribers,
+    uniqMerge(b.sims)                   AS sims,
+    uniqMerge(b.handsets)               AS handsets
+FROM sqm.agg_tac_population AS b
+LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+WHERE b.seq = {seq:UInt16} AND value != ''
+GROUP BY value;
+
+INSERT INTO sqm.agg_filter_population
+    (seq, dimension, value, models, bindings, unknown_device, malformed_imei, tac_matched, subscribers, sims, handsets)
+SELECT
+    {seq:UInt16}                        AS seq,
+    'vendor'                            AS dimension,
+    coalesce(nullIf(v.vendor_canonical, ''), t.manufacturer) AS value,
+    count()                             AS models,
+    sum(b.bindings)                     AS bindings,
+    sum(b.unknown_device)               AS unknown_device,
+    sum(b.malformed_imei)               AS malformed_imei,
+    sumIf(b.bindings, t.tac != '')      AS tac_matched,
+    uniqMerge(b.subscribers)            AS subscribers,
+    uniqMerge(b.sims)                   AS sims,
+    uniqMerge(b.handsets)               AS handsets
+FROM sqm.agg_tac_population AS b
+LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
+WHERE b.seq = {seq:UInt16} AND value != ''
+GROUP BY value;
+
+INSERT INTO sqm.agg_filter_population
+    (seq, dimension, value, models, bindings, unknown_device, malformed_imei, tac_matched, subscribers, sims, handsets)
+SELECT
+    {seq:UInt16}                        AS seq,
+    'knownDevice'                       AS dimension,
+    ''                                  AS value,
+    count()                             AS models,
+    sum(b.bindings)                     AS bindings,
+    sum(b.unknown_device)               AS unknown_device,
+    sum(b.malformed_imei)               AS malformed_imei,
+    sumIf(b.bindings, t.tac != '')      AS tac_matched,
+    uniqMerge(b.subscribers)            AS subscribers,
+    uniqMerge(b.sims)                   AS sims,
+    uniqMerge(b.handsets)               AS handsets
+FROM sqm.agg_tac_population AS b
+LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+WHERE b.seq = {seq:UInt16} AND b.tac != ''
+GROUP BY value;
 
 -- --------------------------------------------------------------------------
 -- 2. Headline counters, including the distinct counts that cannot be derived

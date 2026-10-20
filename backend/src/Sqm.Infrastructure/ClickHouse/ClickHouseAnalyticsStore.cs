@@ -128,8 +128,22 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
             string.IsNullOrWhiteSpace(filter.OperatingSystem) &&
             string.IsNullOrWhiteSpace(filter.Tac);
 
-        return unfiltered
-            ? await GetKpiFromMartAsync(ct).ConfigureAwait(false)
+        if (unfiltered)
+        {
+            return await GetKpiFromMartAsync(ct).ConfigureAwait(false);
+        }
+
+        // Every lens filter is a property of the model. One on its own is one finished row
+        // (agg_filter_population, migration 028); a combination merges the per-model states
+        // (ClickHouseAnalyticsStore.TacMart.cs). The raw path stays for what neither can say - an
+        // MSISDN prefix - and for a delivery refreshed before they existed.
+        if (MartRouting.SingleFilter(filter) is { } single && await FilterMartReadyAsync(ct).ConfigureAwait(false))
+        {
+            return await GetKpiFromFilterMartAsync(single.Dimension, single.Value, ct).ConfigureAwait(false);
+        }
+
+        return MartRouting.CanUseMart(filter) && await TacMartReadyAsync(ct).ConfigureAwait(false)
+            ? await GetKpiFromTacMartAsync(filter, ct).ConfigureAwait(false)
             : await GetKpiFromRawAsync(filter, ct).ConfigureAwait(false);
     }
 
@@ -197,7 +211,11 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
     private static DateOnly? GetDateOrNull(DbDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : DateOnly.FromDateTime(reader.GetDateTime(ordinal));
 
-    /// <summary>Filtered KPIs, which must scan the raw table. Measured at ~6 s.</summary>
+    /// <summary>
+    /// Filtered KPIs from the raw table: an MSISDN prefix, or a delivery the per-model mart does not
+    /// hold yet. Measured at ~6 s when binding_current held one version per binding; 100 s alone on
+    /// 2026-10-19, when it held 817 million versions for 120 million bindings.
+    /// </summary>
     private async Task<KpiSummary> GetKpiFromRawAsync(DashboardFilter filter, CancellationToken ct)
     {
         var f = FilterBuilder.ForCurrentState(filter);
@@ -261,9 +279,15 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
     {
         ArgumentNullException.ThrowIfNull(filter);
 
-        return MartRouting.CanUseMart(filter) && !HasDimensionFilter(filter)
-            ? await TopFromMartAsync(dimension, limit, countBy, filter.IncludeUnknownDevice, ct)
-                .ConfigureAwait(false)
+        if (MartRouting.CanUseMart(filter) && !HasDimensionFilter(filter))
+        {
+            return await TopFromMartAsync(dimension, limit, countBy, filter.IncludeUnknownDevice, ct)
+                .ConfigureAwait(false);
+        }
+
+        // Filtered: the per-model mart, as for the KPI row; the raw path only where it cannot answer.
+        return MartRouting.CanUseMart(filter) && await TacMartReadyAsync(ct).ConfigureAwait(false)
+            ? await TopFromTacMartAsync(dimension, filter, limit, countBy, ct).ConfigureAwait(false)
             : await TopFromRawAsync(dimension, filter, limit, countBy, ct).ConfigureAwait(false);
     }
 
@@ -318,7 +342,10 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         return await ReadDimensionCountsAsync(command, ct).ConfigureAwait(false);
     }
 
-    /// <summary>Filtered breakdown. Scans the raw table; measured at several seconds.</summary>
+    /// <summary>
+    /// Filtered breakdown from the raw table: an MSISDN prefix, or a delivery the per-model mart
+    /// does not hold yet. Measured at several seconds once; a full FINAL read on 2026-10-19.
+    /// </summary>
     private async Task<IReadOnlyList<DimensionCount>> TopFromRawAsync(
         AnalyticsDimension dimension, DashboardFilter filter, int limit, CountBy countBy,
         CancellationToken ct)

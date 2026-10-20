@@ -38,4 +38,40 @@ internal static class MartRouting
 
         return true;
     }
+
+    /// <summary>
+    /// The one row of <c>agg_filter_population</c> that answers this filter, when one does: a single
+    /// device type, OS, manufacturer or vendor, or "exclude unknown devices" alone.
+    /// </summary>
+    /// <remarks>
+    /// The value is trimmed, as <see cref="FilterBuilder"/> trims it, and the dimensions are keyed by
+    /// the comparisons it makes, so this row is the population the raw filter would select. Two
+    /// filters together are not one row - distinct counts do not combine - and neither is a TAC,
+    /// which the per-model mart answers in one row already.
+    /// The unknown-device switch does not change a catalogue filter: a model the catalogue
+    /// describes is never the <c>''</c> model the switch removes.
+    /// </remarks>
+    public static (string Dimension, string Value)? SingleFilter(DashboardFilter filter)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+
+        if (!CanUseMart(filter) || !string.IsNullOrWhiteSpace(filter.Tac)) return null;
+
+        (string, string?)[] catalogue =
+        [
+            ("deviceType", filter.DeviceType),
+            ("operatingSystem", filter.OperatingSystem),
+            ("manufacturer", filter.Manufacturer),
+            ("vendor", filter.VendorCanonical),
+        ];
+
+        var set = catalogue.Where(c => !string.IsNullOrWhiteSpace(c.Item2)).ToList();
+
+        return set.Count switch
+        {
+            1 => (set[0].Item1, set[0].Item2!.Trim()),
+            0 when !filter.IncludeUnknownDevice => ("knownDevice", string.Empty),
+            _ => null,
+        };
+    }
 }
