@@ -402,7 +402,12 @@ function requestClose() {
                 <WidgetIcon :name="entry.icon" class="mt-0.5 text-[var(--c-text-secondary)]" />
                 <span class="min-w-0 flex-1">
                   <span class="block text-sm font-medium">{{ entry.name }}</span>
-                  <span class="mt-0.5 line-clamp-2 block text-xs text-[var(--c-text-muted)]">{{ entry.description }}</span>
+                  <!--
+                    Two lines on every card; the whole text is in the panel beside the list. No
+                    `block` here: it also sets display, comes later in the stylesheet, and switched
+                    the clamp off - the KPI cards printed their full definitions (2026-10-20).
+                  -->
+                  <span class="mt-0.5 line-clamp-2 text-xs text-[var(--c-text-muted)]">{{ entry.description }}</span>
                   <span v-if="missingFor(entry).length" class="mt-1 block text-2xs text-[var(--c-warning-text)]">
                     Needs {{ missingFor(entry).join(', ') }}
                   </span>
