@@ -10,6 +10,21 @@ Where information is missing, ambiguous, or where an architectural decision woul
 the product owner's answer, **ask**. A plausible assumption that turns out wrong costs more here
 than a question does. This rule outranks the impulse to appear decisive.
 
+The same goes for *how*. When a request names a method and a better or more standard one exists,
+say so with the trade-off, recommend one, and ask - the product owner has asked for this.
+
+## Laptop now, dedicated hardware later
+
+The whole stack runs on the product owner's laptop, under hard limits (a 6 GiB ClickHouse
+container, one thread per heavy statement, merges capped at 2 GiB, originals on a removable USB
+disk). It will move to dedicated hardware. Every setting or design chosen *because of the laptop*
+is listed in `docs/operations/dedicated-hardware.md` - add its row in the same change.
+
+## Suggestions not built
+
+An improvement suggested and not built - for tokens, priority or a pending decision - goes into
+`docs/backlog.md` with its evidence and cost, so it is not lost between sessions.
+
 ## Prove it, never assert it
 
 **"This is faster" is not a finding. A measurement is.** Every performance claim in this
@@ -55,7 +70,7 @@ Do not re-open these without asking:
 Professional, modern, enterprise-grade, responsive and accessible. Design tokens live in
 `frontend/src/design-system/`; use them rather than literal colours.
 
-Six traps that have already cost time, all still live:
+Eight traps that have already cost time, all still live:
 
 - **zrender cannot parse `oklch()`.** Passing a token straight to ECharts yields `undefined` and
   the series disappears on hover. Resolve through `frontend/src/lib/chart-colors.ts`.
@@ -76,6 +91,13 @@ Six traps that have already cost time, all still live:
   `--animate-<name>`, in `tokens.css`.
 - **ECharts' tooltip ignores `animation: false`**: it glides for 0.4s by default. Every chart
   spreads `tooltipBounds` from `frontend/src/lib/chart-tooltip.ts`, which sets it to 0.
+- **`line-clamp-N` with a display utility does nothing.** The clamp needs `display: -webkit-box`;
+  `block`, `flex`, `grid` in the same class list come later in the stylesheet and win. The Add
+  widget catalogue printed full paragraphs until 2026-10-20; `tests/unit/lib/classConflicts.spec.ts`
+  now fails on the pair.
+- **A self-sizing chart must not sit in a shrinkable box.** `BarChart height="auto"` sets its own
+  height; inside `min-h-0 flex-1` the box shrinks, the canvas does not, and the next element is
+  drawn over it - the note under every bar chart in the Add widget preview, 2026-10-20.
 
 The UI conventions these and the layout review settled are in
 `docs/architecture/16-ui-design-system.md`.
@@ -98,6 +120,9 @@ every Samsung, which is how the second was found.
 
 Small, logical commits with messages that explain *why*. No generated files, no dataset files, no
 credentials. `.gitignore` excludes `*.csv` deliberately: the dumps are gigabytes of real PII.
+
+When the work is committed, push the branch - on the laptop as in the cloud. Never force-push,
+never push to `main`, never merge unasked.
 
 ## Environment
 

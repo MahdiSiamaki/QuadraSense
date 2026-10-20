@@ -119,6 +119,21 @@ Explorer's results and entity panel, the Risk page's lists and entity card.
   (`alignMinLabel: 'left'`, `alignMaxLabel: 'right'`) — centred on the end tick, the last date ran
   16px off the canvas.
 - Colours only through `lib/chart-colors.ts`.
+- **A self-sizing bar chart is not in a shrinkable box.** `BarChart height="auto"` gives every bar
+  30px and sets its own height; its wrapper and the `AsyncBoundary` around it are `shrink-0` in bar
+  mode, so a container of fixed height (the Add widget preview, a narrow screen) scrolls instead of
+  squeezing the box and drawing the chart over the note below it. Measured before the fix: the note
+  started 107px inside the chart; after, 12px below it, in all six bar-chart widgets.
+
+## Tables
+
+- **Headings are two-tier when the label has a window or a unit.** The measure on one unwrapped
+  line, the window or unit beneath it, smaller; the row top-aligned so every title sits on one line.
+  `features/risk/ColumnHeading.vue` splits a server label at its first comma or its parenthesis
+  ("Days with a SIM change, 7 days" → "Days with a SIM change" over "7 days"); the whole label stays
+  the tooltip, and the CSV export keeps it whole. Shown whole, the risk lists' headings wrapped to
+  one, two or three lines at random column widths.
+- Number columns are right-aligned, heading and figures alike.
 
 ## The binding timeline's axis
 
