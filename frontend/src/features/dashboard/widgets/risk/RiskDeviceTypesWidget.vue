@@ -43,7 +43,7 @@ const rows = computed(() => {
     <RiskNotice :status="status.data.value" />
     <AsyncBoundary
       v-if="!status.data.value || ready"
-      class="min-h-0 flex-1"
+      :class="instance.config.display === 'bar' ? 'shrink-0' : 'min-h-0 flex-1'"
       :is-loading="status.isPending.value || loading"
       :is-error="status.isError.value || types.isError.value"
       :error="status.error.value ?? types.error.value"
@@ -53,7 +53,7 @@ const rows = computed(() => {
       gap="none"
       @retry="status.isError.value ? status.refetch() : types.refetch()"
     >
-      <div v-if="instance.config.display === 'bar'" class="relative min-h-0 flex-1">
+      <div v-if="instance.config.display === 'bar'" class="relative">
         <BarChart :data="rows" :unit="unit" height="auto" show-percent :selectable="false" />
       </div>
       <div v-else class="min-h-0 flex-1 overflow-auto overscroll-contain">

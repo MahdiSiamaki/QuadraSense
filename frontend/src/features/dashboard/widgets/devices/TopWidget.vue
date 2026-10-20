@@ -78,7 +78,7 @@ function select(value: string) {
     <p v-if="instance.subtitle === null" class="text-xs text-[var(--c-text-muted)]">{{ caption }}</p>
 
     <AsyncBoundary
-      class="min-h-0 flex-1"
+      :class="config.display === 'bar' ? 'shrink-0' : 'min-h-0 flex-1'"
       :is-loading="loading"
       :is-error="data.isError.value"
       :error="data.error.value"
@@ -87,7 +87,7 @@ function select(value: string) {
       gap="none"
       @retry="data.refetch()"
     >
-      <div v-if="config.display === 'bar'" class="relative min-h-0 flex-1">
+      <div v-if="config.display === 'bar'" class="relative">
         <BarChart
           :data="sorted"
           :unit="countUnit(countBy)"
