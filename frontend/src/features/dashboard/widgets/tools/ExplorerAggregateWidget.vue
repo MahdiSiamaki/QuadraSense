@@ -134,8 +134,8 @@ const scope = computed(() => {
       Runs only when you press Run: each run is audited and counts against the Explorer’s budget.
     </p>
 
-    <AsyncBoundary v-if="result || run.isPending.value" class="min-h-0 flex-1" :is-loading="run.isPending.value && !result" :is-error="false" min-height="6rem" gap="none">
-      <div v-if="bars" class="relative min-h-0 flex-1">
+    <AsyncBoundary v-if="result || run.isPending.value" :class="bars ? 'shrink-0' : 'min-h-0 flex-1'" :is-loading="run.isPending.value && !result" :is-error="false" min-height="6rem" gap="none">
+      <div v-if="bars" class="relative">
         <BarChart :data="bars.rows" :unit="bars.unit" height="auto" :selectable="false" />
       </div>
       <div v-else-if="result" class="min-h-0 flex-1 overflow-auto overscroll-contain rounded-[var(--radius-md)] border">

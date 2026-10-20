@@ -166,8 +166,9 @@ function resetPaging() {
             <p class="mt-0.5 text-lg font-semibold tracking-tight">
               {{ formatDate(row.latestBusinessDate) }}
             </p>
+            <!-- A snapshot's date is its dataset's, from the file name: not a day of data. -->
             <p class="text-xs text-[var(--c-text-secondary)]">
-              latest day imported<template v-if="row.latestImportedAt">
+              {{ row.isSnapshot ? 'dataset date of the newest snapshot' : 'latest day imported' }}<template v-if="row.latestImportedAt">
                 · loaded
                 <span :title="formatDateTime(row.latestImportedAt)">
                   {{ formatRelative(row.latestImportedAt) }}
@@ -189,7 +190,7 @@ function resetPaging() {
                       : 'var(--c-text-secondary)',
               }"
             >
-              {{ row.daysBehind }} days behind
+              {{ row.daysBehind }} {{ row.isSnapshot ? 'days old' : 'days behind' }}
             </p>
             <p
               v-if="row.missingBusinessDates.length"

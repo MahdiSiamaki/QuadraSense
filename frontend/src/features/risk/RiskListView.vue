@@ -15,6 +15,7 @@ import Button from '@/design-system/Button.vue'
 import Pagination from '@/design-system/Pagination.vue'
 import { control, miniLabel } from '@/features/explorer/ui'
 import { formatDate, formatFull } from '@/lib/format'
+import ColumnHeading from './ColumnHeading.vue'
 import RiskLevelBadge from './RiskLevelBadge.vue'
 import RiskDistributionChart from './RiskDistributionChart.vue'
 import RiskDailyChart from './RiskDailyChart.vue'
@@ -340,10 +341,11 @@ const kindLabel = computed(() =>
     <div v-else class="overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--c-surface)]">
       <div class="overflow-x-auto">
         <table class="w-full text-xs" :aria-busy="list.isPending.value">
-          <thead class="bg-[var(--c-surface-sunken)] text-left text-2xs text-[var(--c-text-muted)]">
+          <!-- Top-aligned, one line per part: every title on the first row, its window beneath. -->
+          <thead class="bg-[var(--c-surface-sunken)] text-left align-top text-2xs text-[var(--c-text-muted)]">
             <tr>
               <th scope="col" class="px-3 py-2 font-medium">{{ view === 'risk' ? 'Level' : 'Status' }}</th>
-              <th scope="col" class="px-3 py-2 font-medium">{{ kindLabel }}</th>
+              <th scope="col" class="px-3 py-2 font-medium"><ColumnHeading :label="kindLabel" /></th>
               <th
                 v-for="c in result?.columns ?? []"
                 :key="c.name"
@@ -351,7 +353,7 @@ const kindLabel = computed(() =>
                 class="px-3 py-2 font-medium"
                 :class="c.type === 'Number' ? 'text-right' : ''"
               >
-                {{ c.label }}
+                <ColumnHeading :label="c.label" />
               </th>
               <th scope="col" class="min-w-[28rem] px-3 py-2 font-medium">Reasons</th>
             </tr>

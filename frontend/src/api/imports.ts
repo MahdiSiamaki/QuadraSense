@@ -164,6 +164,11 @@ export interface SourceFreshness {
    * end of it. The data is current throughout; only the figures wait.
    */
   dashboardPendingSince: string | null
+  /**
+   * Each file is a whole dataset (the GSMA TAC database), not a day: `latestBusinessDate` is then
+   * the newest imported dataset's own date, read from its file name, and no day can be missing.
+   */
+  isSnapshot: boolean
 }
 
 export interface WorkerHealth {

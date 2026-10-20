@@ -46,7 +46,7 @@ const header = computed(() => (config.value.dimension === 'deviceType' ? 'Device
   <div class="flex h-full min-h-0 flex-col gap-3" :aria-busy="updating">
     <p v-if="instance.subtitle === null" class="text-xs text-[var(--c-text-muted)]">{{ caption }}</p>
     <AsyncBoundary
-      class="min-h-0 flex-1"
+      :class="config.display !== 'table' ? 'shrink-0' : 'min-h-0 flex-1'"
       :is-loading="loading"
       :is-error="data.isError.value"
       :error="data.error.value"
@@ -65,7 +65,7 @@ const header = computed(() => (config.value.dimension === 'deviceType' ? 'Device
           @select="(v) => drill(config.dimension, v, config.clickToFilter)"
         />
       </div>
-      <div v-else class="relative min-h-0 flex-1">
+      <div v-else class="relative">
         <BarChart
           :data="shown"
           :unit="countUnit(countBy)"

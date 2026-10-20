@@ -9,6 +9,7 @@ import { Permission, useAuth } from '@/features/auth/useAuth'
 import EntityPanel from '@/features/explorer/EntityPanel.vue'
 import TimelineView from '@/features/timeline/TimelineView.vue'
 import { formatDate, formatDateTime, formatFull } from '@/lib/format'
+import ColumnHeading from './ColumnHeading.vue'
 import RiskLevelBadge from './RiskLevelBadge.vue'
 import RiskListView from './RiskListView.vue'
 import RiskDailyChart from './RiskDailyChart.vue'
@@ -209,11 +210,11 @@ function drill(identifier: string) {
             <Card v-else flush>
               <div class="overflow-x-auto">
                 <table class="w-full text-xs">
-                  <thead class="bg-[var(--c-surface-sunken)] text-left text-2xs text-[var(--c-text-muted)]">
+                  <thead class="bg-[var(--c-surface-sunken)] text-left align-top text-2xs text-[var(--c-text-muted)]">
                     <tr>
                       <th scope="col" class="px-3 py-2 font-medium">Rule</th>
                       <th scope="col" class="px-3 py-2 font-medium">Window</th>
-                      <th scope="col" class="px-3 py-2 text-right font-medium">Threshold (more than)</th>
+                      <th scope="col" class="px-3 py-2 text-right font-medium"><ColumnHeading label="Threshold (more than)" /></th>
                       <th scope="col" class="px-3 py-2 text-right font-medium">Stored from</th>
                       <th scope="col" class="px-3 py-2 font-medium">At most</th>
                       <th scope="col" class="px-3 py-2 font-medium">Held at anomaly by</th>

@@ -860,6 +860,104 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
         }
     }
 
+    /// <summary>
+    /// A snapshot source is as fresh as its newest dataset, dated from its version.
+    /// </summary>
+    /// <remarks>
+    /// The Import Center's TAC card showed no date and no load time (2026-10-20). A snapshot job has
+    /// no business date - its date is the dataset's, read from the file name onto its version - and
+    /// TAC's first version, adopted by baseline, was COMPLETED with no finish time: PostgreSQL sorts
+    /// NULL first in a descending order, so that job was "the latest" for ever. This is that state.
+    /// </remarks>
+    [Fact]
+    public async Task A_snapshot_source_is_dated_by_its_newest_dataset()
+    {
+        if (!fixture.IsAvailable)
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+        }
+
+        const string Snapshot = "ITSNAP";
+        var ct = TestContext.Current.CancellationToken;
+
+        await using var connection = new Npgsql.NpgsqlConnection(ImportQueueFixture.ConnectionString);
+        await connection.OpenAsync(ct);
+
+        async Task ExecAsync(string sql, params (string Name, object Value)[] parameters)
+        {
+            await using var command = new Npgsql.NpgsqlCommand(sql, connection);
+            foreach (var (name, value) in parameters)
+            {
+                command.Parameters.AddWithValue(name, value);
+            }
+
+            await command.ExecuteNonQueryAsync(ct);
+        }
+
+        async Task<long> ImportedAsync(string fileName, DateOnly? dataset)
+        {
+            var file = await fixture.Repository.RegisterFileAsync(
+                Snapshot, fileName, Stored(Hash($"snapshot-{fileName}")), "tester", ct);
+            var job = await fixture.Repository.EnqueueAsync(Snapshot, file.FileId, null, "tester", ct: ct);
+            Assert.Equal(job, (await fixture.Repository.ClaimNextAsync("worker-snapshot", TimeSpan.FromMinutes(5), ct))?.JobId);
+            await fixture.Repository.CompleteAsync(
+                job, ImportJobStatus.PartiallyCompleted, new ImportCounters(RowsInserted: 1),
+                makeEffective: true, businessDate: null, workerId: null, ct);
+
+            if (dataset is { } date)
+            {
+                await ExecAsync(
+                    "INSERT INTO imports.tac_version (job_id, version_label, dataset_date, status) "
+                    + "VALUES (@job, @label, @date, 'READY')",
+                    ("job", job), ("label", $"itest-{Hash(fileName)[..12]}"), ("date", date));
+            }
+
+            return job;
+        }
+
+        await ExecAsync(
+            "INSERT INTO imports.data_source (code, display_name, description, business_date_source, revision_strategy) "
+            + "VALUES (@code, 'Integration test snapshot', 'Created by a test.', 'filename', 'snapshot_version') "
+            + "ON CONFLICT (code) DO NOTHING",
+            ("code", Snapshot));
+
+        try
+        {
+            // Adopted by baseline: completed, never finished, undated.
+            var adopted = await ImportedAsync("adopted.csv", null);
+            await ExecAsync("UPDATE imports.import_job SET status = 'COMPLETED', finished_at = NULL WHERE id = @id", ("id", adopted));
+
+            // A file whose name gives no date: still imported, and the card must say when.
+            await ImportedAsync("DeviceDatabase_latest.csv", null);
+            var undated = Assert.Single(
+                await fixture.Repository.GetFreshnessAsync(new DateOnly(2026, 10, 20), ct), f => f.SourceCode == Snapshot);
+            Assert.Null(undated.LatestBusinessDate);
+            Assert.NotNull(undated.LatestImportedAt);
+
+            await ImportedAsync("DeviceDatabase_TAC16Sep2026.csv", new DateOnly(2026, 9, 16));
+            await ImportedAsync("DeviceDatabase_TAC4Oct2026.csv", new DateOnly(2026, 10, 4));
+            // An older dataset imported again, last: the newest dataset still counts.
+            await ImportedAsync("DeviceDatabase_TAC1Sep2026.csv", new DateOnly(2026, 9, 1));
+
+            var freshness = await fixture.Repository.GetFreshnessAsync(new DateOnly(2026, 10, 20), ct);
+            var row = Assert.Single(freshness, f => f.SourceCode == Snapshot);
+
+            Assert.True(row.IsSnapshot);
+            Assert.Equal(new DateOnly(2026, 10, 4), row.LatestBusinessDate);
+            Assert.Equal(16, row.DaysBehind);
+            Assert.NotNull(row.LatestImportedAt);
+            Assert.Empty(row.MissingBusinessDates);
+            Assert.False(Assert.Single(freshness, f => f.SourceCode == "SQM").IsSnapshot);
+        }
+        finally
+        {
+            await ExecAsync(
+                "DELETE FROM imports.tac_version WHERE job_id IN (SELECT id FROM imports.import_job WHERE source_code = @code)",
+                ("code", Snapshot));
+            await fixture.CleanupAsync(Snapshot);
+        }
+    }
+
     private static async Task ExpireLeaseAsync(long jobId)
     {
         await using var connection = new Npgsql.NpgsqlConnection(ImportQueueFixture.ConnectionString);

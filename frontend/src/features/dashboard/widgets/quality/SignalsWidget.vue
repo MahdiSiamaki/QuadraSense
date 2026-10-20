@@ -55,7 +55,7 @@ const bars = computed(() =>
         - data through {{ formatDate(data.asOf) }}</template>. Nothing here is evidence about a subscriber.
     </p>
     <AsyncBoundary
-      class="min-h-0 flex-1"
+      :class="config.display === 'bar' ? 'shrink-0' : 'min-h-0 flex-1'"
       :is-loading="loading"
       :is-error="signals.isError.value"
       :error="signals.error.value"
@@ -70,7 +70,7 @@ const bars = computed(() =>
       >
         {{ data.reason }}
       </p>
-      <div v-else-if="config.display === 'bar'" class="relative min-h-0 flex-1">
+      <div v-else-if="config.display === 'bar'" class="relative">
         <BarChart :data="bars" :unit="UNIT_WORDS[config.unit].toLowerCase()" height="auto" :selectable="false" />
       </div>
       <div v-else class="min-h-0 flex-1 overflow-auto overscroll-contain">
