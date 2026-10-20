@@ -253,7 +253,11 @@ public sealed record TacVersion(
 
 /// <summary>How current a data source is.</summary>
 /// <param name="SourceCode">Data source.</param>
-/// <param name="LatestBusinessDate">Newest business date that imported successfully.</param>
+/// <param name="LatestBusinessDate">
+/// Newest business date that imported successfully. For a snapshot source (the GSMA TAC database),
+/// which has no business date, the newest imported dataset's own date - read from the file's name
+/// when it was imported, and kept on its version.
+/// </param>
 /// <param name="LatestImportedAt">When that import finished.</param>
 /// <param name="DaysBehind">
 /// Days between <paramref name="LatestBusinessDate"/> and today. Measured against the business
@@ -266,6 +270,10 @@ public sealed record TacVersion(
 /// Since when the dashboard's figures have been behind this source's data, while a run of queued
 /// files lands before they are rebuilt once; null when they are current.
 /// </param>
+/// <param name="IsSnapshot">
+/// Each file is a whole dataset superseding the last (<c>snapshot_version</c>), not a day: its date
+/// is the dataset's, and no day can be missing.
+/// </param>
 public sealed record SourceFreshness(
     string SourceCode,
     DateOnly? LatestBusinessDate,
@@ -273,7 +281,8 @@ public sealed record SourceFreshness(
     int? DaysBehind,
     IReadOnlyList<DateOnly> MissingBusinessDates,
     int FailedLast7Days,
-    DateTimeOffset? DashboardPendingSince = null);
+    DateTimeOffset? DashboardPendingSince = null,
+    bool IsSnapshot = false);
 
 /// <summary>Live view of the worker fleet.</summary>
 /// <param name="Queued">Jobs waiting for a worker.</param>

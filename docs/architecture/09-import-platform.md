@@ -484,6 +484,16 @@ Freshness is computed from `max(business_date)`, not from upload time. Those dif
 existing files were delivered roughly **four weeks behind** the data they describe, so upload
 recency would have overstated freshness badly.
 
+**A snapshot source is dated by its dataset (2026-10-20).** A TAC file is a whole database, not a
+day, so its job has no `business_date` - and must not get one: that column orders and replaces the
+daily feed's days. Its date is the dataset's, read from the file name at import
+(`DeviceDatabase_TAC4Oct2026.csv` → 2026-10-04) and kept on its version (`tac_version.dataset_date`).
+`GetFreshnessAsync` reads it from there, takes the newest dataset rather than the latest upload, and
+reports the source as `isSnapshot`, so the Import Center's TAC card shows "Oct 4, 2026 - dataset
+date of the newest snapshot", "16 days old". Until then the card was blank: besides having no date,
+the first TAC version - adopted by baseline, completed with no `finished_at` - sorted first under
+PostgreSQL's NULLS-first descending order and hid the load time too.
+
 **Worker metrics:** queue depth, running jobs, failures, retries, rows/sec, oldest pending job,
 lease expiries.
 

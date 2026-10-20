@@ -283,6 +283,17 @@ public sealed partial class PostgresImportJobRepository
         // Freshness is measured against the business date, not the import time. A file that
         // imported an hour ago and describes last month is stale data however recently it
         // arrived, and an operator reading "imported 1 hour ago" would conclude the opposite.
+        //
+        // A snapshot source (the GSMA TAC database) has no business date: each file is a whole
+        // dataset. Its date is the dataset's, read from the file's name at import and kept on its
+        // version (tac_version.dataset_date) - so the newest dataset is what counts, even when an
+        // older one was re-imported after it. Its jobs never get a business_date of their own: that
+        // column drives the per-day ordering and replacement of the daily feed.
+        //
+        // NULLS LAST on the time as well as the date. TAC's first version was adopted by baseline,
+        // COMPLETED with no finished_at, and PostgreSQL sorts NULL first in a descending order: that
+        // job won every time, and the Import Center's TAC card showed no date and no load time at
+        // all (2026-10-20).
         const string LatestSql = """
             SELECT ds.code AS SourceCode,
                    latest.business_date AS LatestBusinessDate,
@@ -295,14 +306,17 @@ public sealed partial class PostgresImportJobRepository
                        AND j.status = 'FAILED'
                        AND j.finished_at > now() - interval '7 days') AS FailedLast7Days,
                    (SELECT o.owed_since FROM imports.dashboard_refresh_owed o
-                     WHERE o.source_code = ds.code) AS DashboardPendingSince
+                     WHERE o.source_code = ds.code) AS DashboardPendingSince,
+                   ds.revision_strategy = 'snapshot_version' AS IsSnapshot
               FROM imports.data_source ds
               LEFT JOIN LATERAL (
-                    SELECT j.business_date, j.finished_at
+                    SELECT coalesce(j.business_date, v.dataset_date) AS business_date, j.finished_at
                       FROM imports.import_job j
+                      LEFT JOIN imports.tac_version v ON v.job_id = j.id
                      WHERE j.source_code = ds.code
                        AND j.status IN ('COMPLETED', 'PARTIALLY_COMPLETED')
-                     ORDER BY j.business_date DESC NULLS LAST, j.finished_at DESC
+                     ORDER BY coalesce(j.business_date, v.dataset_date) DESC NULLS LAST,
+                              j.finished_at DESC NULLS LAST
                      LIMIT 1
               ) latest ON true
              WHERE ds.is_enabled
@@ -358,7 +372,8 @@ public sealed partial class PostgresImportJobRepository
                 row.LatestBusinessDate is { } date ? today.DayNumber - date.DayNumber : null,
                 [.. missing.Where(m => m.SourceCode == row.SourceCode).Select(m => m.BusinessDate)],
                 row.FailedLast7Days,
-                row.DashboardPendingSince)),
+                row.DashboardPendingSince,
+                row.IsSnapshot)),
         ];
     }
 
@@ -368,7 +383,8 @@ public sealed partial class PostgresImportJobRepository
         DateOnly? LatestBusinessDate,
         DateTimeOffset? LatestImportedAt,
         int FailedLast7Days,
-        DateTimeOffset? DashboardPendingSince);
+        DateTimeOffset? DashboardPendingSince,
+        bool IsSnapshot);
 
     private sealed record MissingRow(string SourceCode, DateOnly BusinessDate);
 
