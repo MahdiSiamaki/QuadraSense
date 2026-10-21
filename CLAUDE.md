@@ -121,8 +121,9 @@ every Samsung, which is how the second was found.
 Small, logical commits with messages that explain *why*. No generated files, no dataset files, no
 credentials. `.gitignore` excludes `*.csv` deliberately: the dumps are gigabytes of real PII.
 
-When the work is committed, push the branch - on the laptop as in the cloud. Never force-push,
-never push to `main`, never merge unasked.
+When the work is committed, push the branch and open its pull request (or let the push update the
+open one) - on the laptop as in the cloud. A branch stacked on another unmerged branch takes that
+branch as its base and says so. Never force-push, never push to `main`, never merge unasked.
 
 ## Environment
 
