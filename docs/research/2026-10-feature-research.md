@@ -199,6 +199,31 @@ the question of AI use is settled; anything heavy before the dedicated hardware.
 
 ---
 
+## 7. The product owner's answers (2026-10-21), and what they change
+
+| Question | Answer | Consequence |
+|---|---|---|
+| Who is it for | **All four**: network planning, marketing, fraud and security, compliance | The first tranche carries one piece for each, on a shared foundation |
+| What it may reach | **A closed network**, with an **internal email server** and an **AI model running inside the network** | X1 alerts and scheduled reports go through the internal email. X5 plain-English questions only on the in-network model - no identifier leaves the network. The GSMA Device Registry and Hamta can arrive only as files: F3, F4 wait for such a file |
+| What more the operator can send | **Nothing for now** | Only A-features. N2 also needs the operator's band list - a short list a person can type in, but still to be supplied |
+| Subscriber lists for campaigns | **Allowed, with controls** | A separate permission, a recorded reason, and a second person's approval above a size threshold (G2, G3) - built before any list export (N1, N3, N4, N6) |
+
+**The first tranche, revised:**
+
+| # | For | What |
+|---|---|---|
+| 0 | Everyone | **Controlled list export** (G2 + G3) - the gate every campaign list passes; **operator defect pack and delivery SLA** (D1 + D2) - the feed itself |
+| 1 | Network planning | **N1 sunset readiness**, with **N3 eSIM readiness** beside it (same capability work) |
+| 2 | Marketing | **N4 handset lifecycle** - device and model age, upgrade cohorts - and its target lists through 0 |
+| 3 | Fraud and security | **F1 swap check** (page, then an internal API) and **F5 case management** |
+| 4 | Compliance | **F2 IMEI compliance status** from today's data: GSMA validity and uniqueness over 30 days; the stolen and registered parts wait for their files |
+| 5 | Everyone | **X1 alerts and scheduled reports** by internal email; **X2 annotations** |
+
+Later: X5 once the in-network model is known (which model, where it runs - likely after the move to
+dedicated hardware); F3 and F4 when their files exist; N2 when the band list arrives.
+
+---
+
 ## Sources
 
 - Pakistan PTA, *DIRBS SOP* - https://dirbs.pta.gov.pk/asset/DIRBS_SOP_29_July_2019.pdf
