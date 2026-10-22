@@ -1,0 +1,37 @@
+# The build context of deploy/images/*/Dockerfile is the repository root. Only what an image is
+# built from is sent: an allow-list would be safer still, but Docker's ignore syntax makes that
+# harder to read than this.
+
+# Never in an image: data, credentials, local state.
+**/*.csv
+**/*.parquet
+**/*.tsv
+**/.env
+**/.env.*
+**/*.pfx
+**/*.key
+**/*.pem
+**/*.crt
+data/
+_discovery/
+deploy/compose/tls/
+
+# Not built from.
+.git/
+.github/
+.claude/
+.vs/
+.idea/
+docs/
+tools/
+infra/
+backend/tests/
+**/bin/
+**/obj/
+**/TestResults/
+**/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/tests/
+frontend/.verify/
+**/__pycache__/

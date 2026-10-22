@@ -16,6 +16,14 @@
 *.vue     text
 *.py      text eol=lf
 
+# What runs on the department VM and OpenShift is LF in every checkout, Windows included. With
+# core.autocrlf a Windows working copy is CRLF, and a deploy folder copied out of it would carry the
+# CR: at the end of a .env line it becomes part of the value, and SQM_TAG names an image that does
+# not exist. (`git archive` is not affected - checked 2026-10-22, it writes LF either way.)
+deploy/**       text eol=lf
+.dockerignore   text eol=lf
+db/operational/grants/*.sql text eol=lf
+
 *.png binary
 *.jpg binary
 *.ico binary

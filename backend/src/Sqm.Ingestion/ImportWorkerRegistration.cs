@@ -110,9 +110,9 @@ public static class ImportWorkerRegistration
 
         // Each day's file measured and judged against the ordinary days; see FeedQualityMonitor.
         // The reader goes through the read-only query path by the API's client name. Hosted in the
-        // API, that client is the API's; in the standalone worker it is the factory's default,
-        // which is enough for a read of one row per day and is not re-registered here because a
-        // second registration of the name would change the API's own handler.
+        // API, that client is the API's. It is not registered here, because a second registration
+        // of the name would change the API's own handler - the standalone host registers it
+        // instead (AddStandaloneQueryClient).
         services.Configure<Sqm.Application.Quality.FeedQualityOptions>(
             configuration.GetSection(Sqm.Application.Quality.FeedQualityOptions.SectionName));
         services.TryAddSingleton<Sqm.Application.Quality.IFeedQualityReader, ClickHouseFeedQualityStore>();
@@ -148,6 +148,46 @@ public static class ImportWorkerRegistration
             ServiceDescriptor.Singleton<IImportProcessor, SqmDailyProcessor>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IImportProcessor, TacSnapshotProcessor>());
+
+        return services;
+    }
+
+    /// <summary>
+    /// The query client (<see cref="ClickHouseAnalyticsStore.HttpClientName"/>) for the worker when
+    /// it is its own process. Never for the API, which registers its own.
+    /// </summary>
+    /// <param name="services">The container.</param>
+    /// <returns>The container, for chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// The TAC version store, the feed-quality reader and the other read paths the pipeline shares
+    /// with the API ask for this name. Inside the API they get the API's client. In the standalone
+    /// worker the name was registered nowhere, so the factory handed out its default handler - which
+    /// does not decompress, while ClickHouse compresses every response. Every such read failed with
+    /// "ClickHouse server returned compressed result but HttpClient did not decompress it": the
+    /// first TAC upload to the containerised worker failed on every attempt (2026-10-22, ADR-007).
+    /// Development never saw it, because there the worker lives in the API.
+    /// </para>
+    /// <para>
+    /// The same settings as the API's client, less its per-request cancellation of abandoned
+    /// queries - nothing abandons the worker's reads.
+    /// </para>
+    /// </remarks>
+    public static IServiceCollection AddStandaloneQueryClient(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddHttpClient(ClickHouseAnalyticsStore.HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(180);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+                PooledConnectionIdleTimeout = TimeSpan.FromSeconds(5),
+                MaxConnectionsPerServer = 8,
+                AutomaticDecompression = System.Net.DecompressionMethods.All,
+            });
 
         return services;
     }

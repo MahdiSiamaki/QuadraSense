@@ -1,0 +1,43 @@
+<clickhouse>
+    <!--
+      Memory for a deployed ClickHouse (department VM, then OpenShift).
+
+      The reasoning behind every number is in infra/clickhouse/memory.xml and
+      docs/architecture/11-clickhouse-memory.md: ClickHouse's default caches are sized for a
+      dedicated server, they count against the memory tracker, and on a container they made the
+      tracker report memory the process was not using and kill queries at random.
+
+      ONE DIFFERENCE FROM THE LAPTOP. There the server ceiling is an absolute 5.2 GiB. Here it is a
+      ratio of what the container is given, because ClickHouse 25.8 reads the cgroup limit:
+      measured 2026-10-22 with a 2 GiB container, the log says "Available RAM: 2.00 GiB" and sets
+      max_server_memory_usage from it. So the limit in compose.yaml (or the pod's memory limit on
+      OpenShift) is the one number to change, and this file follows it.
+
+      The caches are absolute and sized for the 8 GiB container of the department VM (~10% for
+      marks, docs/operations/dedicated-hardware.md section 1). On a larger container they are
+      merely conservative; on a smaller one, lower them.
+    -->
+    <max_server_memory_usage>0</max_server_memory_usage>
+    <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
+
+    <mark_cache_size>805306368</mark_cache_size>
+    <index_mark_cache_size>268435456</index_mark_cache_size>
+    <uncompressed_cache_size>134217728</uncompressed_cache_size>
+
+    <!--
+      The merge cap stays at the laptop's 2 GiB on the VM. The VM's ClickHouse gets 8 GiB against
+      the laptop's 6 - a third more, not the several times more that raising the cap needs: a single
+      merge of a multi-GiB part held ~4 GiB on the laptop, and at startup it merged itself out of
+      memory three times in four minutes (infra/clickhouse/memory.xml). Raise it on hardware that
+      can afford it, one step at a time, watching system.merges - dedicated-hardware.md section 2.
+    -->
+    <merge_tree>
+        <max_bytes_to_merge_at_max_space_in_pool>2147483648</max_bytes_to_merge_at_max_space_in_pool>
+        <number_of_free_entries_in_pool_to_lower_max_size_of_merge>0</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
+        <number_of_free_entries_in_pool_to_execute_mutation>2</number_of_free_entries_in_pool_to_execute_mutation>
+        <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>2</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
+    </merge_tree>
+
+    <background_pool_size>4</background_pool_size>
+    <background_merges_mutations_concurrency_ratio>1</background_merges_mutations_concurrency_ratio>
+</clickhouse>

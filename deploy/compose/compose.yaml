@@ -1,0 +1,240 @@
+# QuadraSense: the whole system as containers.
+#
+# For the department VM (stage 1), and the rehearsal for MCI's OpenShift (stage 2): every service
+# here runs the way OpenShift's restricted-v2 SCC will run it - an arbitrary non-root UID in
+# group 0, a read-only root filesystem, no Linux capabilities, no privilege escalation, no port
+# below 1024 inside a container, resource limits on every one. If it runs here, the same images
+# run there. The runbook is docs/operations/deployment/02-department-vm.md.
+#
+#   cp .env.example .env && chmod 600 .env     # then fill it in
+#   docker compose up -d                       # from this directory
+#
+# This is NOT the development stack. infra/docker-compose.yml is the laptop's: two databases on
+# published ports, the application run with `dotnet run` and `npm run dev`. Nothing here touches
+# its volumes.
+
+name: quadrasense
+
+x-hardened: &hardened
+  # OpenShift assigns a UID from the namespace's range and always group 0. A UID of that shape here
+  # proves no image depends on its own user existing.
+  user: "${SQM_RUN_UID:-1000700000}:0"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "50m", max-file: "5" }
+
+x-app-env: &app-env
+  # Same-origin through the web container, so CORS is unused; the origin is listed anyway, so a
+  # misrouted cross-origin request is refused rather than allowed.
+  Api__CorsOrigins: ${SQM_PUBLIC_ORIGIN:?set SQM_PUBLIC_ORIGIN in .env}
+  ImportStorage__RootPath: /var/lib/quadrasense/uploads
+  # GSS off: Npgsql tries Kerberos encryption first by default, the .NET image carries no Kerberos
+  # library, and every connection then wrote "Cannot load library libgssapi_krb5.so.2" to stderr
+  # before falling back (measured 2026-10-22). Authentication here is by password.
+  Postgres__ConnectionString: "Host=postgres;Port=5432;Database=sqm;Username=sqm_app;Password=${SQM_PG_APP_PASSWORD:?set in .env};GSS Encryption Mode=Disable"
+
+services:
+  # ---------------------------------------------------------------------------- the stores
+  clickhouse:
+    <<: *hardened
+    image: ${CLICKHOUSE_IMAGE:-clickhouse/clickhouse-server:25.8.33.6}
+    environment:
+      # The entrypoint would write a users file into /etc, which is read-only here; users.xml
+      # below does that job (and locks 'default' to loopback).
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+      SQM_CH_MIGRATOR_PASSWORD: ${SQM_CH_MIGRATOR_PASSWORD:?set in .env}
+      SQM_CH_INGEST_PASSWORD: ${SQM_CH_INGEST_PASSWORD:?set in .env}
+      SQM_CH_APP_PASSWORD: ${SQM_CH_APP_PASSWORD:?set in .env}
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/memory.xml:/etc/clickhouse-server/config.d/memory.xml:ro
+      - ./clickhouse/system-logs.xml:/etc/clickhouse-server/config.d/system-logs.xml:ro
+      - ./clickhouse/logging.xml:/etc/clickhouse-server/config.d/logging.xml:ro
+      - ./clickhouse/users.xml:/etc/clickhouse-server/users.d/sqm-users.xml:ro
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    # memory.xml sets the server's ceiling to 80% of this, read from the cgroup.
+    mem_limit: ${CLICKHOUSE_MEMORY:-8g}
+    cpus: ${CLICKHOUSE_CPUS:-6}
+    # An unclean stop leaves a merge backlog that the next start must work through - the laptop's
+    # restart loop (infra/clickhouse/memory.xml). Give it time to stop properly.
+    stop_grace_period: 2m
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  postgres:
+    <<: *hardened
+    image: ${POSTGRES_IMAGE:-postgres:17.11-bookworm}
+    environment:
+      POSTGRES_DB: sqm
+      POSTGRES_USER: sqm
+      POSTGRES_PASSWORD: ${SQM_PG_OWNER_PASSWORD:?set in .env}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale-provider=icu --icu-locale=und-x-icu"
+      # A directory inside the volume, not the volume's root: initdb creates it, so it belongs to
+      # whichever UID runs initdb - the arbitrary one here, the namespace's on OpenShift.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /var/run/postgresql:size=1m,mode=1777
+    shm_size: 256m
+    mem_limit: ${POSTGRES_MEMORY:-1g}
+    cpus: ${POSTGRES_CPUS:-2}
+    stop_grace_period: 1m
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sqm -d sqm"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ----------------------------------------------------------------- one-shot setup jobs
+  # Run on every `up`; each is a no-op when there is nothing to do. The API and the worker start
+  # only after both succeed.
+  migrate:
+    <<: *hardened
+    image: ${SQM_REGISTRY:-quadrasense}/migrator:${SQM_TAG:?set SQM_TAG in .env}
+    restart: "no"
+    depends_on:
+      clickhouse: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+    environment:
+      # The owners: schema change is the migrator's job and nobody else's.
+      SQM_POSTGRES_CONNECTION: "Host=postgres;Port=5432;Database=sqm;Username=sqm;Password=${SQM_PG_OWNER_PASSWORD};GSS Encryption Mode=Disable"
+      SQM_CLICKHOUSE_CONNECTION: "Host=clickhouse;Port=8123;Database=sqm;Username=sqm_migrator;Password=${SQM_CH_MIGRATOR_PASSWORD}"
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        dotnet Sqm.Migrator.dll --target postgres --dir db/operational/migrations &&
+        dotnet Sqm.Migrator.dll --target clickhouse --dir db/analytics/migrations
+    networks: [data]
+
+  # The least-privilege role sqm_app and its grants (db/operational/grants, README step 4). psql,
+  # because the files use its meta-commands; the role's password is read from the environment by
+  # psql itself, so it never appears on a command line.
+  grants:
+    <<: *hardened
+    image: ${POSTGRES_IMAGE:-postgres:17.11-bookworm}
+    restart: "no"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    environment:
+      PGHOST: postgres
+      PGUSER: sqm
+      PGDATABASE: sqm
+      PGPASSWORD: ${SQM_PG_OWNER_PASSWORD}
+      SQM_PG_APP_PASSWORD: ${SQM_PG_APP_PASSWORD}
+    volumes:
+      - ../../db/operational/grants:/grants:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        set -e;
+        for f in /grants/*.sql; do
+          echo "applying $$f";
+          psql -X -q -v ON_ERROR_STOP=1 -c '\getenv app_password SQM_PG_APP_PASSWORD' -f "$$f";
+        done
+    networks: [data]
+
+  # ------------------------------------------------------------------------ the application
+  api:
+    <<: *hardened
+    image: ${SQM_REGISTRY:-quadrasense}/api:${SQM_TAG}
+    depends_on:
+      grants: { condition: service_completed_successfully }
+      clickhouse: { condition: service_healthy }
+    environment:
+      <<: *app-env
+      ASPNETCORE_ENVIRONMENT: Production
+      # Client address and scheme from the web container's X-Forwarded-For / -Proto. Safe only
+      # because nothing else can reach this container: it publishes no port and the web
+      # container overwrites, never appends, the header (deploy/images/web/app.inc). Without it
+      # every request comes from the proxy's address - one login rate limit for everybody, and
+      # the proxy's address in every audit row.
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      ClickHouse__ConnectionString: "Host=clickhouse;Port=8123;Database=sqm;Username=sqm_app;Password=${SQM_CH_APP_PASSWORD}"
+      # The worker is its own container (ADR-007). This is already the default outside
+      # Development; stated so nobody has to know that.
+      Import__RunWorkerInProcess: "false"
+    volumes:
+      - uploads:/var/lib/quadrasense/uploads
+    mem_limit: ${API_MEMORY:-1536m}
+    cpus: ${API_CPUS:-2}
+    networks: [edge, data]
+    healthcheck:
+      # No curl in the image, and none added for this: bash's /dev/tcp speaks enough HTTP.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  worker:
+    <<: *hardened
+    image: ${SQM_REGISTRY:-quadrasense}/worker:${SQM_TAG}
+    depends_on:
+      grants: { condition: service_completed_successfully }
+      clickhouse: { condition: service_healthy }
+    environment:
+      <<: *app-env
+      DOTNET_ENVIRONMENT: Production
+      ClickHouse__ConnectionString: "Host=clickhouse;Port=8123;Database=sqm;Username=sqm_ingest;Password=${SQM_CH_INGEST_PASSWORD}"
+    volumes:
+      - uploads:/var/lib/quadrasense/uploads
+    mem_limit: ${WORKER_MEMORY:-2g}
+    cpus: ${WORKER_CPUS:-2}
+    # ImportWorker:ShutdownGrace is 30 s; a job still running after that is released and resumed.
+    stop_grace_period: 45s
+    networks: [data]
+
+  web:
+    <<: *hardened
+    image: ${SQM_REGISTRY:-quadrasense}/web:${SQM_TAG}
+    depends_on:
+      # restart: nginx resolves 'api' once, at start. When an upgrade recreates the API container
+      # its address can change, and nginx would keep sending to the old one (502). Compose restarts
+      # web whenever it recreates api. (On OpenShift a Service's address does not change.)
+      api: { condition: service_healthy, restart: true }
+    ports:
+      - "${SQM_HTTP_PORT:-80}:8080"
+      - "${SQM_HTTPS_PORT:-443}:8443"
+    volumes:
+      - ./web/server-https.conf:/etc/nginx/sqm/server.conf:ro
+      # tls.crt and tls.key, from MCI's internal CA. Readable by group 0 (chmod 640, owner root).
+      - ${SQM_TLS_DIR:-./tls}:/etc/nginx/tls:ro
+    mem_limit: 256m
+    cpus: 1
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+networks:
+  # The web container and the API. The only network with a published port.
+  edge: {}
+  # Stores, jobs, API and worker. No route out, and nothing on it is reachable from 'edge' except
+  # through the API - the compose form of the NetworkPolicies OpenShift will need (FR-NSM-204/00
+  # 1-4: a service reaches another only on the port it needs).
+  data:
+    internal: true
+
+volumes:
+  # Where these live is Docker's data-root. On the department VM that must be the data disk, not
+  # /var - see docs/operations/deployment/02-department-vm.md, "Disk".
+  clickhouse-data:
+  postgres-data:
+  uploads:

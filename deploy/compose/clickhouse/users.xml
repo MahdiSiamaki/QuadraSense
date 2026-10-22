@@ -1,0 +1,59 @@
+<clickhouse>
+  <!--
+    Users for a deployed QuadraSense. Every password comes from the environment (from_env), so this
+    file is safe to commit and the same file serves the department VM and OpenShift - where the
+    variables come from a Secret.
+
+    The development file (infra/clickhouse/sqm-app-user.xml) carries one hashed development
+    password for both application users. Here each has its own secret.
+
+    'default' is the image's administrative user: no password, reachable from any address, allowed
+    to manage access. The image's entrypoint would normally lock it to loopback by writing a file
+    into /etc/clickhouse-server/users.d - which a read-only root filesystem refuses. So the
+    entrypoint is told to leave users alone (CLICKHOUSE_SKIP_USER_SETUP=1) and the lock is here: the
+    container's own healthcheck and an operator's `docker exec ... clickhouse-client` still work,
+    nothing on the network can use it.
+  -->
+  <users>
+    <default>
+      <networks replace="replace">
+        <ip>::1</ip>
+        <ip>127.0.0.1</ip>
+      </networks>
+      <access_management>0</access_management>
+    </default>
+
+    <!-- Runs the migrations (DDL). Used by the one-shot migrate job only. -->
+    <sqm_migrator>
+      <password from_env="SQM_CH_MIGRATOR_PASSWORD"/>
+      <networks><ip>::/0</ip></networks>
+      <profile>default</profile>
+      <quota>default</quota>
+      <access_management>0</access_management>
+    </sqm_migrator>
+
+    <!-- The import worker: inserts into the event log and alters partitions. -->
+    <sqm_ingest>
+      <password from_env="SQM_CH_INGEST_PASSWORD"/>
+      <networks><ip>::/0</ip></networks>
+      <profile>default</profile>
+      <quota>default</quota>
+      <access_management>0</access_management>
+    </sqm_ingest>
+
+    <!--
+      The API. Like the development user it carries no GRANT list, so it can do what sqm_ingest
+      can: the separation today is two secrets, not two privilege sets. Narrowing it to SELECT plus
+      the marts it writes is a red-line item (least privilege, FR-NSM-204/00 1-4) recorded in
+      docs/operations/deployment/04-security-red-lines.md - to be done with a test that exercises
+      every endpoint as this user, not by guessing the list.
+    -->
+    <sqm_app>
+      <password from_env="SQM_CH_APP_PASSWORD"/>
+      <networks><ip>::/0</ip></networks>
+      <profile>default</profile>
+      <quota>default</quota>
+      <access_management>0</access_management>
+    </sqm_app>
+  </users>
+</clickhouse>

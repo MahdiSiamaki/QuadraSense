@@ -11,6 +11,25 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
   </ItemGroup>
 
+  <!--
+    The reference to Sqm.Ingestion above also carries the WORKER's appsettings.json and
+    appsettings.Development.json into this project's output, under the same names as the API's
+    own. `dotnet publish` refuses two files for one path (NETSDK1152) - found 2026-10-22, the first
+    time the API was published rather than run (ADR-007). Turning the check off would let either
+    file win, and the worker's has no risk thresholds and a 600 s query timeout. So the worker's
+    settings files, and only those, are dropped from what the API publishes.
+  -->
+  <Target Name="DropWorkerSettingsFromPublish" BeforeTargets="_HandleFileConflictsForPublish">
+    <PropertyGroup>
+      <_WorkerProjectDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../Sqm.Ingestion/'))</_WorkerProjectDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+        Condition="$([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').StartsWith('$(_WorkerProjectDir)'))
+                   And $([System.String]::Copy('%(ResolvedFileToPublish.Filename)').StartsWith('appsettings'))" />
+    </ItemGroup>
+  </Target>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>

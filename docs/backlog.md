@@ -37,8 +37,28 @@ of `docs/`. Suggestions made in earlier sessions and never written into `docs/` 
 | **Check the Explorer as a user with only some lookup permissions** | Verified with unit tests and an administrator account only (`18-explorer-modes.md`, "Verified") | Create a test role and user on the local stack | Permission to create a test account |
 | **Negative numbers in CSV exports** | `CsvExport` neutralises any cell starting with `-`, numbers included, so a spreadsheet will not sum them (`17-…`) | Small, but changes every CSV the product writes | Owner's decision |
 | **PNG export of a very tall dashboard** | Pages over 6,500 px are split; the largest template was never exported and timed (`17-…`) | A measurement | Priority |
-| **ADR-007: where the import worker runs** | The worker runs inside the API in Development; production should run it apart. `Program.cs` names ADR-007 as the place for that decision; it is not written | A short ADR | The move to dedicated hardware |
 | **Merge the branch stack** | `feature/dashboard-builder` ← `feature/explorer-simple` ← `fix/ui-review-2026-10-20` are stacked; the longer they live, the harder they merge | Pull requests, review, merge in order | Owner's review |
+
+## Deployment (ADR-007; `docs/operations/deployment/`)
+
+Found while packaging the system for the department VM and MCI's OpenShift, 2026-10-22. The
+decisions some of these wait on are numbered in `docs/operations/deployment/README.md`.
+
+| What | Why, and the evidence | Cost | Waits on |
+|---|---|---|---|
+| **OpenShift manifests** (`deploy/openshift/`, Kustomize: base + dev/uat/prd) | The compose file is their specification (`03-mci-openshift.md` §2); untested manifests would be guesses about storage class names, the registry path and the ingress IP | Days, then a test in the dev namespace | The dev namespace and its delivery e-mail |
+| **A liveness signal for the worker** | It has no HTTP endpoint, so neither compose nor OpenShift can tell a hung worker from a busy one, and nothing restarts it | Small: a heartbeat the lease loop already has a place for, exposed as a file or a tiny endpoint | Priority |
+| **Prometheus metrics** in the API and worker; ClickHouse's own endpoint switched on | The platform collects metrics but there are none of ours to collect (red lines §2-1 row 10; `03-…` §6) | A package and a few counters; one config line for ClickHouse | Priority |
+| **ClickHouse least privilege** - GRANTs per user | `sqm_app` and `sqm_ingest` hold every privilege, as in development: two secrets, one privilege set (red lines §1-4 row 11) | Small to write; the work is a test that runs every endpoint as `sqm_app` | Before the security review |
+| **Synthetic data generator** | The security test bed may not hold real data (red lines §1-3); every test so far used the real dump | A few days: operator-format daily files and a TAC file with the shapes the pipeline depends on (dual-SIM pairs, the 15 September shift, invalid identifiers) | Decision 8 |
+| **Originals in object storage** (an S3 `IImportFileStore`) | Written once, kept for ever, ~400 GiB a year: the shape object storage is for; ClickHouse reads S3 itself | An implementation of `IImportFileStore` and its tests | Stage 2, when the file volume grows |
+| **Secrets as files** (`KeyPerFile` configuration) | Environment variables show in `docker inspect` and the process environment; files mounted from a Secret do not | A package and a line in each `Program.cs` | Priority; the security office's view |
+| **Image scanning and a patch routine** | Every tag is pinned, so nothing updates itself (red lines §1-1 row 5) | A CI step and a monthly rebuild | MCI's GitLab |
+| **Red Hat UBI base images** | The red lines name Red Hat as the OS (§1-1 row 3); UBI's .NET 10 image did not pull from the laptop on 2026-10-22 | A build argument per Dockerfile, then the verification of `01-container-images.md` again | Decision 9 |
+| **Backups, automated, with a restore test** | None exist; the originals are kept but have no copy of their own (`02-…` §6, `03-…` §5) | Scripts or CronJobs; a quarterly restore | A destination; RPO/RTO (decision 14) |
+| **Audit trail to the SOC** | The red lines want every log at the SOC (§2-4); ours is a PostgreSQL table | An export in the SOC's format | The SOC's format |
+| **Captcha on the login page** | Red lines §2-3; conflicts with English-only | Self-hosted; Persian if required | Decision 6 |
+| **High availability: PostgreSQL replication, ClickHouse replication with Keeper, a second site** | Red lines §2-3; `03-…` §5 sizes each | Medium to large; ClickHouse's is a migration of every table | Decision 7 |
 
 ## Identity and access (recorded as not built)
 

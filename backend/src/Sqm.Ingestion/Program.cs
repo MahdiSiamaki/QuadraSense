@@ -23,6 +23,10 @@ builder.Logging.AddJsonConsole(o =>
 var batchMode = args.Any(a => a.StartsWith("--", StringComparison.Ordinal)
     && a is not "--force" and not "--truncate" and not "--pause-merges");
 
+// This process is the worker on its own, so the query client the API would otherwise provide is
+// registered here - see AddStandaloneQueryClient for what failed without it.
+builder.Services.AddStandaloneQueryClient();
+
 if (batchMode)
 {
     builder.Services.AddImportPipeline(builder.Configuration);

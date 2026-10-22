@@ -1,0 +1,26 @@
+<clickhouse>
+    <!--
+      System logs for a deployed ClickHouse.
+
+      The same five are off as on the laptop (infra/clickhouse/system-logs.xml explains the
+      feedback loop that made them cost more than they told): the department VM is still a small
+      container. Turn metric_log and asynchronous_metric_log back on, with a TTL, on hardware that
+      can hold them.
+
+      What the laptop did not need and a server that runs for years does: a TTL on the two that
+      stay. Without one, query_log and part_log grow for as long as the server runs - every
+      dashboard query is a row.
+    -->
+    <asynchronous_metric_log remove="1"/>
+    <metric_log remove="1"/>
+    <text_log remove="1"/>
+    <error_log remove="1"/>
+    <query_metric_log remove="1"/>
+
+    <query_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </query_log>
+    <part_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </part_log>
+</clickhouse>
