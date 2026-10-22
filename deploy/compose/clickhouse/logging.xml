@@ -1,0 +1,20 @@
+<clickhouse>
+    <!--
+      Logs to stdout and nowhere else.
+
+      The image logs to /var/log/clickhouse-server by default. With a read-only root filesystem the
+      server refuses to start - "File is read-only: /var/log/clickhouse-server/clickhouse-server.log",
+      measured 2026-10-22 - and on OpenShift a log file inside the container is a log nobody
+      collects: the platform reads stdout, and the red lines (FR-NSM-204/00 2-4) require logs to
+      reach the SOC collectors through that path.
+
+      "information", not the image's "trace": trace writes a line per part read, which on this
+      data is gigabytes a day of output that nothing reads.
+    -->
+    <logger>
+        <level>information</level>
+        <console>1</console>
+        <log remove="remove"/>
+        <errorlog remove="remove"/>
+    </logger>
+</clickhouse>
