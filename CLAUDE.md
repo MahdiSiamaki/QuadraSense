@@ -20,6 +20,18 @@ container, one thread per heavy statement, merges capped at 2 GiB, originals on 
 disk). It will move to dedicated hardware. Every setting or design chosen *because of the laptop*
 is listed in `docs/operations/dedicated-hardware.md` - add its row in the same change.
 
+## Deployment - the department VM, then MCI's OpenShift
+
+The system ships as containers (`deploy/`, ADR-007) that run the way OpenShift runs them: an
+arbitrary non-root UID in group 0, a read-only root filesystem, no capabilities, no port below 1024.
+Code that writes anywhere but a configured volume or `/tmp`, needs a particular user, or reads a
+file the image does not carry works on the laptop and breaks the deployment. When in doubt, run
+`deploy/compose` - it enforces all of it.
+
+MCI's DevOps guide and its security red lines (`docs/operations/deployment/`) are MCI's internal
+documents, and **this repository is public**: cite them by section, never copy an address,
+hostname, URL, contact or ticket path out of them.
+
 ## Suggestions not built
 
 An improvement suggested and not built - for tokens, priority or a pending decision - goes into

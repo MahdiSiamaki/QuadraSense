@@ -26,6 +26,23 @@ of the merge cap).
 Every performance figure in `docs/` was measured on this machine. They are evidence for the
 decisions taken here, not targets for the new one: **re-measure after the move**.
 
+## The department VM is not yet the dedicated hardware (2026-10-22)
+
+The first move is to a department VM (`docs/operations/deployment/02-department-vm.md`): 8 vCPU,
+15 GiB, 200 GB. It gives ClickHouse **8 GiB against the laptop's 6** - a third more, not the several
+times more that sections 1-4 below assume. So on the VM:
+
+| Row | On the VM | Why |
+|---|---|---|
+| §1 server ceiling | 80% of the container, read from the cgroup (`deploy/compose/clickhouse/memory.xml`) - 6.4 GiB; caches 768 / 256 / 128 MiB | ClickHouse 25.8 reads the container's limit: measured 2026-10-22, a 2 GiB container logs "Available RAM: 2.00 GiB". The ceiling follows `CLICKHOUSE_MEMORY` with no second number to change |
+| §2 merge cap, pool | **unchanged**: 2 GiB, pool 4 | a third more memory does not pay for a 4 GiB merge beside the queries; raise it only on hardware that has the RAM, one step at a time |
+| §3, §4 per-statement limits | unchanged | same |
+| §5 storage | **worse than the laptop**: 200 GB in all, 41.9 GB on `/var` where Docker keeps volumes by default, against 182.5 GiB of ClickHouse and 40.6 GiB of originals today | a 1 TB data disk is the first request to the department (`02-…` §1) |
+| §6 runtime | Linux, Docker Engine, no WSL cap; the worker in its own container (ADR-007); separate secrets per ClickHouse user (`deploy/compose/clickhouse/users.xml`); standard internal ports | closed on the VM by `deploy/compose/` |
+| §6 system logs | the same five off; **TTL of 30 days on `query_log` and `part_log`** (`deploy/compose/clickhouse/system-logs.xml`) | a server that runs for years would otherwise keep every query |
+
+The acceptance checks of `02-…` §7 are the measurements to record here once it runs.
+
 ## What to change
 
 ### 1. ClickHouse server memory and caches
@@ -82,7 +99,7 @@ the merge. On dedicated hardware:
 | Laptop | On dedicated hardware |
 |---|---|
 | Docker Desktop on Windows, inside a WSL VM capped at 7.8 GiB; stale-socket start failures | Linux host; no VM cap |
-| The import worker runs inside the API process (`Import:RunWorkerInProcess`, on in Development) | Separate worker process(es), restarted and scaled on their own - write ADR-007, which `Program.cs` already names as the place for that decision |
+| The import worker runs inside the API process (`Import:RunWorkerInProcess`, on in Development) | Separate worker process, restarted and sized on its own - **decided in ADR-007** (2026-10-22): the `worker` container, one replica |
 | PostgreSQL on port 15432 because another project holds 5432; ClickHouse HTTP on 18123 | Standard internal ports, TLS between services |
 | `sqm_app` and `sqm_ingest` share one development password (`sqm-app-user.xml`) | Separate secrets, from the environment - the file already says so |
 | System-log TTLs and flush settings tuned to stop thousands of tiny parts (`system-logs.xml`, `11-…` §7) | Keep, re-tune retention to the disk |

@@ -67,6 +67,10 @@ layer is therefore **load-bearing architecture, not an optimisation** — see AD
 
 ## Running it
 
+This section is the development setup on the laptop. **Deploying** - the whole system as containers,
+first on the department's VM and then on MCI's OpenShift - is `deploy/compose/compose.yaml`, with
+its runbook and plan in `docs/operations/deployment/` (ADR-007).
+
 ### 1. Infrastructure
 
 ```bash
@@ -296,6 +300,9 @@ db/
     grants/        the least-privilege role, and what makes the audit log append-only
     jobs/          the backfill of the pre-platform load
 infra/             the development environment as a compose file
+deploy/
+  images/          the Dockerfiles: api, worker, migrator (one build) and web (SPA + nginx)
+  compose/         the whole system as containers, run the way OpenShift runs them (ADR-007)
 tools/
   source_device_images.py        proposes device images for review; never writes a live image
   device_image_sources.json      the source allowlist, and why no manufacturer source is in it
@@ -315,7 +322,7 @@ tools/
 | [ADR-004](docs/adr/ADR-004-ingestion-strategy.md) | Ingestion: immutable event log, SHA-256 idempotency, TAC joined at query time | Accepted |
 | [ADR-005](docs/adr/ADR-005-frontend-architecture.md) | Frontend: **Vue 3** + Vite + Tailwind + headless primitives | Accepted |
 | [ADR-006](docs/adr/ADR-006-authentication-and-access-control.md) | Auth: **local accounts, server-side sessions, permission-based RBAC** | Accepted |
-| ADR-007 | Deployment | Pending infrastructure decision |
+| [ADR-007](docs/adr/ADR-007-deployment.md) | Deployment: **containers that run as OpenShift runs them** (non-root, any UID, read-only); the worker on its own; compose on the VM, then OpenShift | Proposed |
 | [ADR-008](docs/adr/ADR-008-imsi-search.md) | IMSI search: a second table ordered by IMSI, and a skip index on the event log | Accepted |
 | [ADR-009](docs/adr/ADR-009-device-module.md) | Devices: a model is a TAC, and an IMEI-ordered table makes it a range | Accepted |
 | [ADR-010](docs/adr/ADR-010-device-images.md) | Device images: keyed by model, sourced from Commons under identity guards | Amended by ADR-011 |
