@@ -8,6 +8,10 @@ rough cost, and what it waits on. When one is built, remove it here and name the
 Items that exist only because of the laptop are in `docs/operations/dedicated-hardware.md`, not
 here.
 
+`docs/research/2026-10-feature-research.md` (2026-10-21) lists some forty further candidates - new
+features and improvements, with international references - awaiting the owner's choice. An item
+moves here once it is chosen or deferred with a reason.
+
 Collected on 2026-10-20 from this session and from the "not built" and "known limitations" sections
 of `docs/`. Suggestions made in earlier sessions and never written into `docs/` may be missing.
 
