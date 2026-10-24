@@ -47,13 +47,16 @@ What that means for QuadraSense - **its builds break this rule today**:
 | QuadraSense needs | Through Nexus? |
 |---|---|
 | Docker Hub images: `node`, `nginx-unprivileged`, `clickhouse-server`, `postgres` | yes - `<nexus-pull>` proxies Docker Hub |
-| Microsoft's .NET images (`mcr.microsoft.com/dotnet/sdk`, `…/aspnet`) | **not in the guide's list** - request 1 (section 8) |
-| npm packages | yes - `<npm-group>` |
-| NuGet packages | **not in the guide's list** - request 1 |
-| apt (the server's own updates) | a proxy exists; its address is to be had from the infrastructure team |
+| Microsoft's .NET images (`mcr.microsoft.com/dotnet/sdk`, `…/aspnet`) | **no** - Nexus's only Docker proxy is Docker Hub's: request 1 (section 8) |
+| npm packages | yes - `<npm-group>`, readable without a login |
+| NuGet packages | **yes**, though the guide does not list it: a `nuget-group` (nuget.org proxy + hosted), readable without a login |
+| apt (the server's own updates) | yes - proxies of Ubuntu's archive and of its security archive |
 
-`update.sh` (section 6) builds on the server straight from MCR, Docker Hub, nuget.org and npmjs. It
-works, and it is exactly what the rule forbids - acceptable only until section 7 exists.
+`update.sh` (section 6) builds on the server. Since 2026-10-24 its NuGet and npm come from Nexus
+(`SQM_NUGET_SOURCE`, `SQM_NPM_REGISTRY` in the server's `.env`) - checked: Nexus's NuGet proxy went
+from 0 packages to 55 in that build, and our npm packages appeared in its npm proxy. Base images still
+come from Docker Hub and MCR directly: Docker Hub's through Nexus needs a `docker login` on the server
+(the owner's), MCR's needs request 1. Until both, the rule is still broken there.
 
 ## 2. Nexus - the endpoints
 
@@ -411,7 +414,7 @@ pipeline or by a person) follows whatever the department's other projects do - q
 
 | # | Item | Recommendation |
 |---|---|---|
-| 1 | **Request to the department: proxies for MCR and NuGet** in Nexus. The rule forbids fetching them directly, and the guide lists neither | Ask first: nothing in section 7 can comply without them |
+| 1 | **Request to the department: a proxy of Microsoft's registry (MCR)** in Nexus, in the docker group. NuGet is there already (found by reading Nexus's repository list); MCR is not, and every .NET build needs the SDK and runtime images | Ask first: no .NET build can comply without it. Stopgap: push the two images once into the hosted repository from a workstation, by whoever holds the push account |
 | 2 | **Where the code lives**: `<gitlab>` as primary, GitHub mirrored or retired | `<gitlab>`: the department runs it, it is private by default - which also ends the public-repository problem - and it rehearses MCI's GitLab (stage 2) |
 | 3 | **Which build runner**: QuadraSense's project inside `<build-group>` (uses its `docker` runner), or a group of its own with its own Group build runner | The department's call: the first is immediate; the second keeps QuadraSense's jobs and variables apart from the other group's |
 | 4 | **Release files**: QuadraSense's `releases/<env>.env` in the group's `<infra-repo>`, or an infrastructure repository of its own; who commits the tag | follow the department's practice; it decides what Nexus keeps |

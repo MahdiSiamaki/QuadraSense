@@ -308,3 +308,9 @@ section 7 that need data, backups, and everything that waits on the data disk.
   passed no traffic for an hour; test with a TCP connect, not the interface state.
 - **The laptop's upload** over that VPN moved the dump at ~200 KB/s - about three hours for its
   2.07 GB compressed. Bulk data is better carried at the office, or from a source the server can reach.
+- **Storage moved** (the owner ran `deploy/host/move-docker-data-root.sh /srv/docker`): Docker's data
+  root, and with it the ClickHouse and PostgreSQL volumes, is now on `/` with 412 GB free; every
+  service came back healthy; `daemon.json` kept its log settings.
+- **Builds through Nexus**: the server's `.env` sets `SQM_NUGET_SOURCE` and `SQM_NPM_REGISTRY` to the
+  department's Nexus; the next `update.sh` restored every NuGet package and every npm package through it
+  (05 section 1). Base images still come from the internet - 05 section 8, request 1.
