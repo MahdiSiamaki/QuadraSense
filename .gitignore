@@ -53,3 +53,8 @@ Thumbs.db
 # The certificate and key a deployment mounts into the web container (deploy/compose/compose.yaml).
 # The key is a credential; the directory sits inside a checkout that update.sh pulls into.
 deploy/compose/tls/
+
+# ---- local, never published ----------------------------------------------------
+# The department's real hostnames, addresses and runner layout (docs/operations/deployment/05-...
+# uses placeholders for them). This repository is public; this directory is not.
+.private/

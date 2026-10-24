@@ -94,6 +94,11 @@ Every deployment after that, including the first:
 application images tagged with the commit (`SQM_TAG`), and `docker compose up -d`. The stores'
 images are pulled from Docker Hub. `.env` and `tls/` sit next to it and are ignored by git.
 
+**It breaks a department rule**, learned after it was built: Nexus is the only permitted source of
+dependencies and no build may reach the internet directly - and `update.sh` builds from MCR, Docker
+Hub, NuGet and npm. It is the interim, until the department pipeline of `05-department-ci-cd.md`
+replaces it; then it stays only as the fallback.
+
 - **When the branch is merged**, switch the checkout to `main` (`git switch main`) - and deploy from
   `main` only, as everything else does.
 - **If the repository becomes private** (README, decision 10), the server needs a read-only deploy
