@@ -20,6 +20,7 @@ The decision behind the shape of it is **ADR-007**.
 | `02-department-vm.md` | Stage 1: what the VM lacks, what to ask the department for, the runbook, the acceptance checks |
 | `03-mci-openshift.md` | Stage 2: how MCI's platform works, QuadraSense as OpenShift objects, traffic flow, storage, HA, backup, monitoring, and the ordered work |
 | `04-security-red-lines.md` | MCI's security red lines (FR-NSM-204/00), row by row, against QuadraSense today |
+| `05-department-ci-cd.md` | The department's infrastructure (Nexus, the server) and the CI/CD pipeline to build on it: today's git routine, credentials, the target pipeline, the decisions it needs |
 
 ## The files
 
@@ -28,6 +29,7 @@ The decision behind the shape of it is **ADR-007**.
 | `deploy/images/backend/Dockerfile` | `api`, `worker`, `migrator` - one build, three targets |
 | `deploy/images/web/` | `web`: the SPA in unprivileged nginx, and its configuration |
 | `deploy/compose/compose.yaml` | the whole system; `.env.example` lists every variable |
+| `deploy/compose/update.sh` | every deployment on a server: pull from GitHub, build there, restart (`02-…` §3) |
 | `deploy/compose/clickhouse/` | ClickHouse's users (passwords from the environment), memory, system logs, logging |
 | `deploy/compose/web/server-https.conf` | the HTTPS server block mounted into `web` |
 | `.dockerignore` | what never enters an image - data, credentials, `.claude/`, tests |

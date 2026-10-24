@@ -7,7 +7,11 @@
 # run there. The runbook is docs/operations/deployment/02-department-vm.md.
 #
 #   cp .env.example .env && chmod 600 .env     # then fill it in
-#   docker compose up -d                       # from this directory
+#   ./update.sh                                # pull, build here, start - every deployment
+#
+# The four application images are built from this checkout (`build:` below, tagged with the commit
+# by update.sh); the two stores are pulled. A machine without internet loads saved images instead
+# (docs/operations/deployment/02-department-vm.md section 3).
 #
 # This is NOT the development stack. infra/docker-compose.yml is the laptop's: two databases on
 # published ports, the application run with `dotnet run` and `npm run dev`. Nothing here touches
@@ -106,6 +110,14 @@ services:
   migrate:
     <<: *hardened
     image: ${SQM_REGISTRY:-quadrasense}/migrator:${SQM_TAG:?set SQM_TAG in .env}
+    build:
+      context: ../..
+      dockerfile: deploy/images/backend/Dockerfile
+      target: migrator
+      args: &backend-build-args
+        SDK_IMAGE: ${SQM_SDK_IMAGE:-}
+        RUNTIME_IMAGE: ${SQM_RUNTIME_IMAGE:-}
+        NUGET_SOURCE: ${SQM_NUGET_SOURCE:-}
     restart: "no"
     depends_on:
       clickhouse: { condition: service_healthy }
@@ -152,6 +164,11 @@ services:
   api:
     <<: *hardened
     image: ${SQM_REGISTRY:-quadrasense}/api:${SQM_TAG}
+    build:
+      context: ../..
+      dockerfile: deploy/images/backend/Dockerfile
+      target: api
+      args: *backend-build-args
     depends_on:
       grants: { condition: service_completed_successfully }
       clickhouse: { condition: service_healthy }
@@ -184,6 +201,11 @@ services:
   worker:
     <<: *hardened
     image: ${SQM_REGISTRY:-quadrasense}/worker:${SQM_TAG}
+    build:
+      context: ../..
+      dockerfile: deploy/images/backend/Dockerfile
+      target: worker
+      args: *backend-build-args
     depends_on:
       grants: { condition: service_completed_successfully }
       clickhouse: { condition: service_healthy }
@@ -202,6 +224,13 @@ services:
   web:
     <<: *hardened
     image: ${SQM_REGISTRY:-quadrasense}/web:${SQM_TAG}
+    build:
+      context: ../..
+      dockerfile: deploy/images/web/Dockerfile
+      args:
+        NODE_IMAGE: ${SQM_NODE_IMAGE:-}
+        NGINX_IMAGE: ${SQM_NGINX_IMAGE:-}
+        NPM_REGISTRY: ${SQM_NPM_REGISTRY:-}
     depends_on:
       # restart: nginx resolves 'api' once, at start. When an upgrade recreates the API container
       # its address can change, and nginx would keep sending to the old one (502). Compose restarts
