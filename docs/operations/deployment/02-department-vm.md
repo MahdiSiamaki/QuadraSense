@@ -1,8 +1,8 @@
 # Stage 1 - QuadraSense on the department VM
 
-**Status:** runbook, written 2026-10-22. **Running on the VM since 2026-10-24, empty** - no real
-data until the data disk and the data decision (section 9 records that first deployment and what
-it changed in this runbook).
+**Status:** runbook, written 2026-10-22. **Running on the VM since 2026-10-24**, from
+`/opt/quadrasense`, with the one-month dump loaded; no daily files and no GSMA TAC version yet
+(section 9 records each session on the VM and what it changed in this runbook).
 
 **Purpose of this stage.** Run the real system away from the laptop, on infrastructure the department
 operates, and find what breaks: the images, the configuration, the operating routine (upgrades,
@@ -77,22 +77,41 @@ competes with a desktop.
 pulls them and builds the images itself, from its own checkout. It needs the internet for that -
 GitHub, Docker Hub, Microsoft's registry, NuGet and npm - which this VM has (section 9).
 
-Once, as the operator, a checkout of the branch being deployed:
+**Where everything lives on the server** - under `/opt/quadrasense`, never the operator's home:
+`/home` is a 4.9 GB volume of its own, and `/` has the ~400 GB (section 9, third session).
+
+| Path | What |
+|---|---|
+| `/opt/quadrasense/config/` | `.env` and `tls/` - the server's one configuration, read by `update.sh` and by the deploy runner (05 §7); never in git |
+| `/opt/quadrasense/repo/` | the checkout `update.sh` deploys from; its `deploy/compose/.env` and `tls` are links into `config/` |
+| `/opt/quadrasense/releases/<commit>/`, `current` | what the CD job deploys (05 §7) |
+| `/opt/quadrasense/incoming/` | files carried to the server for the worker by hand - the dump |
+| `/opt/quadrasense/logs/` | the output of runs by hand: `update.sh`, `--load-dump` |
+| `/srv/docker` (Docker's data root) | the volumes: ClickHouse, PostgreSQL, the uploaded originals |
+
+`/opt/quadrasense` is `root:deploy`, mode 2770 (`deploy/host/install-deploy-runner.sh` creates it):
+nobody outside root and the `deploy` group can enter it, and what is created inside belongs to the
+group. The operator joins the group once - `sudo usermod -aG deploy <operator>`, then a new login.
+
+Once, as the operator, a checkout of the branch being deployed, with its configuration linked in:
 
 ```bash
 git clone --branch deploy/containers-and-openshift \
-  https://github.com/MahdiSiamaki/QuadraSense.git ~/quadrasense/repo
+  https://github.com/MahdiSiamaki/QuadraSense.git /opt/quadrasense/repo
+cd /opt/quadrasense/repo/deploy/compose
+ln -s /opt/quadrasense/config/.env .env && ln -s /opt/quadrasense/config/tls tls
 ```
 
 Every deployment after that, including the first:
 
 ```bash
-~/quadrasense/repo/deploy/compose/update.sh
+/opt/quadrasense/repo/deploy/compose/update.sh
 ```
 
-`update.sh` refuses a checkout with local edits, pulls (fast-forward only), builds the four
-application images tagged with the commit (`SQM_TAG`), and `docker compose up -d`. The stores'
-images are pulled from Docker Hub. `.env` and `tls/` sit next to it and are ignored by git.
+`update.sh` refuses a checkout with local edits, pulls (fast-forward only) and then runs the
+`update.sh` it pulled, from the top - so a change to the script applies on the run that brings it.
+It builds the four application images tagged with the commit (`SQM_TAG`), writes that tag into
+`.env` through the link, and `docker compose up -d`. The stores' images are pulled from Docker Hub.
 
 **It breaks a department rule**, learned after it was built: Nexus is the only permitted source of
 dependencies and no build may reach the internet directly - and `update.sh` builds from MCR, Docker
@@ -131,11 +150,13 @@ with `SQM_TAG` set in `.env`.
 ## 4. First start
 
 ```bash
-cd ~/quadrasense/repo/deploy/compose
-cp .env.example .env && chmod 600 .env
+cd /opt/quadrasense/repo/deploy/compose       # the checkout and its links (section 3)
+cp .env.example /opt/quadrasense/config/.env && chmod 640 /opt/quadrasense/config/.env
 # fill in: five passwords (openssl rand -hex 24), SQM_PUBLIC_ORIGIN. SQM_TAG is set by update.sh.
-mkdir tls && cp /path/to/tls.crt /path/to/tls.key tls/
-chown root:root tls/* && chmod 640 tls/*      # the containers run in group 0 (no root: section 9)
+mkdir /opt/quadrasense/config/tls
+cp /path/to/tls.crt /path/to/tls.key /opt/quadrasense/config/tls/
+chmod 644 /opt/quadrasense/config/tls/*       # the containers' UID reads them through the bind mount;
+                                              # /opt/quadrasense (2770) keeps everyone else out
 
 ./update.sh
 docker compose logs migrate grants           # both must end with exit code 0
@@ -182,9 +203,14 @@ The Import Center takes daily files only: the dump's name is a range, not a day,
 The worker loads it, once, into an empty store - `DumpLoad`, added 2026-10-24 when this VM was the
 first machine that had to start without it:
 
+**First, a GSMA TAC version** - uploaded through the Import Center and activated, before the dump.
+The dump's device models are written as it loads and leave out shifted IMEIs, which only the TAC
+table can recognise: loaded without one, every shifted IMEI is counted as a handset, and the models
+have to be written again (section 9, third session).
+
 ```bash
-# the dump next to the deployment, compressed or not (a .gz is read as it is)
-docker compose run --rm -v ~/quadrasense/incoming:/import:ro worker \
+# the dump in /opt/quadrasense/incoming, compressed or not (a .gz is read as it is)
+docker compose run --rm -v /opt/quadrasense/incoming:/import:ro worker \
   --load-dump /import/dump_subs_device_sim_info_20251227_20260125.csv.gz
 ```
 
@@ -314,3 +340,39 @@ section 7 that need data, backups, and everything that waits on the data disk.
 - **Builds through Nexus**: the server's `.env` sets `SQM_NUGET_SOURCE` and `SQM_NPM_REGISTRY` to the
   department's Nexus; the next `update.sh` restored every NuGet package and every npm package through it
   (05 section 1). Base images still come from the internet - 05 section 8, request 1.
+
+**2026-10-24, third session.**
+
+- **The dump loaded** (`--load-dump`, section 5) from the 2.07 GB `.gz`, in 20 min 46 s end to end:
+  125,939,523 rows into `binding_snapshot` (56 s), current state seeded from it (275 s), and all four
+  tables reconciled to the file's row count; then the history (5.2 min, the dump's bindings 313 s,
+  compacted and reconciled) and the dump's device models.
+- **Those models came out wrong** - more than the laptop's, from the same file:
+
+  | Dump's models | Models | Handsets | SIMs |
+  |---|---|---|---|
+  | Laptop | 94,330 | 88,491,721 | 113,118,115 |
+  | VM | 95,571 | 88,561,455 | 113,188,719 |
+  | Difference | 1,241 | 69,734 | 70,604 |
+  | What the shifted-IMEI test removes from the dump, measured on the laptop | 1,241 | 69,734 | 70,604 |
+
+  The VM has no GSMA TAC version yet (`sqm.tac` is empty), and a shifted IMEI is recognised only through
+  it - a TAC GSMA does not know, which one restored leading digit turns into one it does
+  (`Countable()`, `ClickHouseIngestionStore.RiskSnapshot.cs`). With no TAC table nothing is shifted, so
+  the shifted IMEIs were counted. The last row is that test run against the laptop's copy of the dump;
+  it matches the difference exactly. Section 5 now loads a TAC version first. **To repair the VM:**
+  upload the laptop's active version (`DeviceDatabase_TAC4Oct2026.csv`, v2026.10.04, 271,830 TACs)
+  through the Import Center, activate it, then
+  `docker compose run --rm worker --refresh-tac-days --force` writes the dump's models again.
+- **Moved to `/opt/quadrasense`** (section 3). `/home` is a 4.9 GB volume of its own and the checkout,
+  the dump and the logs had it at 47%; `/`, with `/opt` on it, has 394 GB free. Copied, checked (`cmp`
+  on the dump, `diff` on `.env` and `tls/`), redeployed from the new place - every bind mount now comes
+  from `/opt/quadrasense/repo`, HTTPS from the laptop answers 200 in 0.24 s, the row counts are
+  unchanged - and only then the old copy deleted: `/home` is at 5%.
+- **`update.sh` ran the script from before its own pull.** The redeploy pulled the fix that writes
+  `SQM_TAG` through the `.env` link (`sed --follow-symlinks`) and still replaced the link with a copy:
+  bash goes on reading the file it opened, and `git pull` had put a new one in its place. `update.sh`
+  now pulls and then `exec`s the script it pulled. Proven in a scratch repository on the VM, with
+  `docker` stubbed: upstream adds a line to `update.sh`, the clone runs its own copy - the new script
+  prints that line, the one from before the fix does not. The link was put back by hand; nothing
+  restarted.
