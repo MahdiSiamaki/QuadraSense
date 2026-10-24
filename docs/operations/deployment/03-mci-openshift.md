@@ -91,13 +91,13 @@ isolates by network, not by port.)
 
 Measured on the laptop, 2026-10-22: ClickHouse **182.5 GiB** (event log 53.6, three history tables
 71.7, current-state tables 51.3), growing ~20 GiB a month at the September/October feed; uploaded
-originals 40.6 GiB, ~1.1 GB per daily file; PostgreSQL 332 MB.
+originals 40.6 GiB, ~350 MB per daily file on average; PostgreSQL 332 MB.
 
 | Data | Class | Size to request (first year) | Why |
 |---|---|---|---|
 | ClickHouse | block (RWO) | **600 GiB**, expandable | 183 now + ~240 a year + headroom for merges (a merge writes the new part before dropping the old) |
 | PostgreSQL | block | 20 GiB | Small; WAL and growth |
-| Uploaded originals | file (RWX) - or object | **500 GiB**, growing ~400 GiB a year | Kept for ever (CLAUDE.md, retention): they are the backup every table can be rebuilt from |
+| Uploaded originals | file (RWX) - or object | **250 GiB**, growing ~130 GiB a year | Kept for ever (CLAUDE.md, retention): they are the backup every table can be rebuilt from |
 | Backups | object (S3) | sized to the backup design | Section 5 |
 
 **Originals in object storage** is the better fit for data that is written once and kept for

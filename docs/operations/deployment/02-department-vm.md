@@ -1,8 +1,8 @@
 # Stage 1 - QuadraSense on the department VM
 
-**Status:** runbook, written 2026-10-22. The compose stack it deploys was run end to end on the
-laptop (`01-container-images.md`, "Verified"); **nothing has run on the VM yet** - its Docker access
-has not been confirmed.
+**Status:** runbook, written 2026-10-22. **Running on the VM since 2026-10-24, empty** - no real
+data until the data disk and the data decision (section 9 records that first deployment and what
+it changed in this runbook).
 
 **Purpose of this stage.** Run the real system away from the laptop, on infrastructure the department
 operates, and find what breaks: the images, the configuration, the operating routine (upgrades,
@@ -17,7 +17,7 @@ OpenShift - the containers run here exactly as OpenShift will run them.
 |---|---|---|---|
 | CPU | 8 vCPU, Xeon Gold 6148 | 6 for ClickHouse at peak, 2 each for API and worker; limits, not reservations | enough |
 | Memory | 15 GiB usable, 2 GiB swap | 12.75 GiB of container limits (below), ~2 GiB for the host | enough, barely |
-| Disk | 200 GB in total: `/` 110 GB, `/var` 41.9 GB, the rest small | **~225 GiB today** (ClickHouse 182.5 + originals 40.6), **+~50 GiB a month** | **not enough** |
+| Disk | 200 GB in total: `/` 110 GB, `/var` 41.9 GB, the rest small | **~225 GiB today** (ClickHouse 182.5 + originals 40.6), **+~30 GiB a month** | **not enough** |
 | OS | Ubuntu 26.04.1 LTS | Docker Engine with the compose plugin; nothing else | fine (but see red lines §1-1, row 3) |
 | Containers | Docker CLI and socket present, access not verified | Someone who can run `docker` | unknown |
 
@@ -28,14 +28,14 @@ Measured on the laptop on 2026-10-22, with data through 10 October:
 | | Size | Growth |
 |---|---|---|
 | ClickHouse | 182.5 GiB | event log ~290 MiB a day (10 M events), history tables ~3.5 GiB a month each, ×3: **~20 GiB a month** |
-| Uploaded originals | 40.6 GiB (118 files) | ~1.1 GB per daily file: **~33 GB a month** |
+| Uploaded originals | 40.6 GiB (118 files) | ~350 MB per daily file on average, the largest ~1.1 GB: **~10.5 GB a month** (corrected 2026-10-24 from the files themselves; this page first said 33) |
 | PostgreSQL | 332 MB | negligible |
 | Images | ~2 GB | per release |
 
 Docker keeps its volumes under `/var/lib/docker` by default - the 41.9 GB `/var`. Even moved to `/`
-(110 GB) the data does not fit, and a year from now it is ~800 GiB.
+(110 GB) the data does not fit, and a year from now it is ~600 GiB.
 
-**What to ask the department for:** a separate data disk of **1 TB** (2 TB to last two years),
+**What to ask the department for:** a separate data disk of **1 TB** (about two years at the current feed),
 as its own logical volume mounted at `/srv/quadrasense`, `noexec,nodev,nosuid`, with Docker's
 `data-root` moved onto it. Without it, stage 1 can run only on a sample of the data - which tests the
 deployment but not the system, and makes every timing meaningless.
@@ -133,8 +133,8 @@ Then `https://<the VM's name>/` and sign in.
 | Way | How | Time | Use it for |
 |---|---|---|---|
 | **A. Copy the stores** | ClickHouse: stop it on the laptop, archive the `bench_chdata` volume, restore it as `quadrasense_clickhouse-data` (same 25.8 version, so the files are compatible); or `BACKUP`/`RESTORE` to a disk. PostgreSQL: `pg_dump -Fc` / `pg_restore` | the time to move ~185 GiB | **the first load** - exact, fastest |
-| B. Replay the originals | Upload every file through the Import Center, oldest first; the pipeline rebuilds everything | measured on the laptop: a delivery's mart refresh alone 63 min; ~250 deliveries | proving the archive restores the system - once, later |
-| C. A sample | A few days | minutes | testing the deployment, nothing else - the counts are wrong |
+| B. Replay the originals | Load the dump, then upload every daily file through the Import Center, oldest first. **The dump has no supported path in** (found 2026-10-24): the Import Center rejects a file whose name is not one day, and on the laptop it was loaded by hand with SQL. See the backlog | measured on the laptop: a delivery's mart refresh alone 63 min; ~250 deliveries | proving the archive restores the system - once, later |
+| C. A sample | The dump and the first days or weeks after it (a sample without the dump is wrong from the first remove) | minutes to hours | testing the deployment and the pipeline; every count is of the sample only |
 
 Recommended: **A**, then daily files through the Import Center as they arrive.
 
@@ -207,3 +207,43 @@ Each is a measurement to record in `docs/operations/dedicated-hardware.md` besid
 | 8 | Backups off the VM, and one restore test | T, R | 7, a destination |
 | 9 | Run it daily for a few weeks: imports, upgrades, a restart; write down what breaks | T | 7 |
 | 10 | What stage 1 taught goes into `03-mci-openshift.md` before any ticket is filed | A | 9 |
+
+## 9. First deployment - 2026-10-24
+
+The empty system, commit `d16ce7c9a1cc`, brought up on the VM over SSH from the laptop.
+
+**What the VM turned out to be**, against what sections 1-3 assumed:
+
+| | Assumed | Found |
+|---|---|---|
+| Docker | Docker's own packages, to be installed | Ubuntu's `docker.io` 29.1.3 and Compose 2.40.3, already running; data-root `/var/lib/docker`; cgroup v2 |
+| Operator access | to be arranged | the operator account was added to the `docker` group by the department (root-equivalent - section 2 row 4) |
+| Internet | possibly none | **available**: the VM pulled ClickHouse and PostgreSQL from Docker Hub in 34 s (~14 MB/s) |
+| Laptop to VM | - | **~340 KB/s**: the full image bundle (512 MB) did not finish in 15 minutes |
+| `/tmp` | a disk | a 7.6 GB **tmpfs** - memory, not a place for a bundle |
+| Home directory | - | 4.9 GB, mode 750 |
+
+**What that changed in the procedure:**
+
+- **Only the four application images travel** - `docker save` of `quadrasense/*` is 127 MB and copied
+  in 5.5 minutes; the VM pulls the two store images itself (`docker compose pull clickhouse postgres`).
+- **The TLS key without root.** Section 4's `chown root:root` needs root. Instead the key is mode
+  644 inside `tls/` under the operator's home: the containers' UID can read it through the bind
+  mount, and nobody else on the host can reach it, because the home directory is 750.
+- **A temporary self-signed certificate** (90 days, for the VM's address and hostname) until the
+  internal CA's arrives; browsers warn until then.
+- **Passwords generated on the VM** with `openssl rand -hex 24` straight into `.env` (mode 600);
+  they never existed anywhere else.
+
+**What was checked** (section 7):
+
+| # | Check | Result |
+|---|---|---|
+| 1 | `docker compose up -d` | all healthy in 33 s; migrate applied 16 + 27 migrations, grants all 4 files, both exit 0 |
+| 2 | `id`, `touch /etc/x` in every service | `uid=1000700000 gid=0`, read-only root, in all five |
+| 3 | From the laptop, HTTPS on the VM's address | 200 in 0.35 s - the firewall admits 443; HTTP answers 308 to HTTPS; `/api/v1/auth/me` without a session 401 |
+| - | Idle memory | ClickHouse 215 MiB of 8 GiB; API, worker, PostgreSQL under 50 MiB; web 8 MiB |
+| - | Disk | `/var` 2.5 GB used of 42 |
+
+Not yet done: the first administrator (the owner's, with the owner's password), checks 3-10 of
+section 7 that need data, backups, and everything that waits on the data disk.
