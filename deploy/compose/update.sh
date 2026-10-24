@@ -36,7 +36,10 @@ docker compose build
 
 # Recorded in .env once the build has succeeded, so every later command by hand (ps, logs,
 # run --load-dump) addresses the build that is running, not whatever .env said before.
-sed -i "s/^SQM_TAG=.*/SQM_TAG=${SQM_TAG}/" .env
+# --follow-symlinks: on a server .env is a link to the one configuration in /opt/quadrasense/config,
+# which the deploy runner reads too; plain `sed -i` would replace the link with a copy, and the two
+# would drift apart without a word.
+sed -i --follow-symlinks "s/^SQM_TAG=.*/SQM_TAG=${SQM_TAG}/" .env
 
 docker compose up -d
 docker compose ps --format '  {{.Service}}\t{{.State}}\t{{.Health}}'
