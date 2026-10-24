@@ -289,3 +289,17 @@ The empty system, commit `d16ce7c9a1cc`, brought up on the VM over SSH from the 
 
 Not yet done: the first administrator (the owner's, with the owner's password), checks 3-10 of
 section 7 that need data, backups, and everything that waits on the data disk.
+
+**2026-10-24, second session.**
+
+- **Disk.** Grown to 500 GB - all of it into `/` (440 GB, 413 GB free); `/var` is still 42 GB and the
+  volume group has nothing left. Docker kept its volumes on `/var`, so the space was out of its reach.
+  `deploy/host/move-docker-data-root.sh /srv/docker` moves Docker's data root - the volumes, i.e. the
+  databases - onto `/`, keeping everything; it needs root, so the owner runs it. Images stay on `/var`:
+  Docker 29 keeps them in containerd's store (`/var/lib/containerd`), a few GB, pruned by hand.
+- **Deployment by git** (section 3) replaced carried images: the first `update.sh` pulled from GitHub,
+  built all four images on the server and restarted the system in 4 min 21 s.
+- **Access** from outside the office is the department's WireGuard VPN. A tunnel Windows shows as "Up"
+  passed no traffic for an hour; test with a TCP connect, not the interface state.
+- **The laptop's upload** over that VPN moved the dump at ~200 KB/s - about three hours for its
+  2.07 GB compressed. Bulk data is better carried at the office, or from a source the server can reach.
