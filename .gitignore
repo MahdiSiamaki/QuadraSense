@@ -51,8 +51,10 @@ Thumbs.db
 
 # ---- deployment ----------------------------------------------------------
 # The certificate and key a deployment mounts into the web container (deploy/compose/compose.yaml).
-# The key is a credential; the directory sits inside a checkout that update.sh pulls into.
-deploy/compose/tls/
+# The key is a credential; the directory sits inside a checkout that update.sh pulls into. No
+# trailing slash: on a server it is a link to /opt/quadrasense/config/tls, and `tls/` matches
+# directories only.
+deploy/compose/tls
 
 # ---- local, never published ----------------------------------------------------
 # The department's real hostnames, addresses and runner layout (docs/operations/deployment/05-...

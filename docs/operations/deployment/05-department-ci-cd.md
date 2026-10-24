@@ -322,7 +322,7 @@ change both Nexus passwords.
 The product owner's routine: changes are pushed to GitHub; the server pulls and builds.
 
 ```bash
-~/quadrasense/repo/deploy/compose/update.sh
+/opt/quadrasense/repo/deploy/compose/update.sh
 ```
 
 It pulls the branch, builds the four application images on the server tagged with the commit,
