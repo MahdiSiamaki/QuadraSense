@@ -183,6 +183,28 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             ["input_format_allow_errors_num"] = "0",
         };
 
+        var body = onBytesRead is null ? csv : new CountingStream(csv, onBytesRead);
+        var started = System.Diagnostics.Stopwatch.StartNew();
+
+        var rows = await InsertCsvAsync(query, body, date, ct).ConfigureAwait(false);
+
+        started.Stop();
+        LogLoaded(rows, businessDate, sequence, started.ElapsedMilliseconds);
+        return rows;
+    }
+
+    /// <summary>
+    /// Streams a CSV body into one INSERT, the statement and its settings travelling as query
+    /// parameters (see <see cref="ExecuteHttpAsync"/> for why).
+    /// </summary>
+    /// <param name="query">The statement (<c>query</c>) and its settings.</param>
+    /// <param name="body">The CSV, header included.</param>
+    /// <param name="what">What is being inserted, for the error message.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Rows the server reports written.</returns>
+    private async Task<long> InsertCsvAsync(
+        IReadOnlyDictionary<string, string> query, Stream body, string what, CancellationToken ct)
+    {
         var url = new UriBuilder(_httpEndpoint)
         {
             Query = string.Join('&', query.Select(kv =>
@@ -195,12 +217,10 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             request.Headers.Authorization = _authentication;
         }
 
-        var body = onBytesRead is null ? csv : new CountingStream(csv, onBytesRead);
         request.Content = new StreamContent(body, bufferSize: 1 << 20);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
 
         var client = _httpClientFactory.CreateClient(HttpClientName);
-        var started = System.Diagnostics.Stopwatch.StartNew();
 
         using var response = await client
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
@@ -210,14 +230,10 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
         {
             var detail = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             throw new InvalidOperationException(
-                $"ClickHouse rejected the insert for {date}: {FirstLine(detail)}");
+                $"ClickHouse rejected the insert for {what}: {FirstLine(detail)}");
         }
 
-        started.Stop();
-
-        var rows = ReadWrittenRows(response);
-        LogLoaded(rows, businessDate, sequence, started.ElapsedMilliseconds);
-        return rows;
+        return ReadWrittenRows(response);
     }
 
     /// <summary>
