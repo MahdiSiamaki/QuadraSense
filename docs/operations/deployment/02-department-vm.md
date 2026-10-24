@@ -133,7 +133,7 @@ Then `https://<the VM's name>/` and sign in.
 | Way | How | Time | Use it for |
 |---|---|---|---|
 | **A. Copy the stores** | ClickHouse: stop it on the laptop, archive the `bench_chdata` volume, restore it as `quadrasense_clickhouse-data` (same 25.8 version, so the files are compatible); or `BACKUP`/`RESTORE` to a disk. PostgreSQL: `pg_dump -Fc` / `pg_restore` | the time to move ~185 GiB | **the first load** - exact, fastest |
-| B. Replay the originals | Load the dump, then upload every daily file through the Import Center, oldest first. **The dump has no supported path in** (found 2026-10-24): the Import Center rejects a file whose name is not one day, and on the laptop it was loaded by hand with SQL. See the backlog | measured on the laptop: a delivery's mart refresh alone 63 min; ~250 deliveries | proving the archive restores the system - once, later |
+| B. Replay the originals | Load the dump (`--load-dump`, below), then upload every daily file through the Import Center, oldest first | measured on the laptop: a delivery's mart refresh alone 63 min; ~250 deliveries | proving the archive restores the system - once, later |
 | C. A sample | The dump and the first days or weeks after it (a sample without the dump is wrong from the first remove) | minutes to hours | testing the deployment and the pipeline; every count is of the sample only |
 
 Recommended: **A**, then daily files through the Import Center as they arrive.
@@ -148,6 +148,26 @@ Two things about copying ClickHouse's volume:
   users and passwords apply as soon as it starts.
 
 Caveat for A: the copy moves real subscriber data off the laptop - point 9 of section 2 first.
+
+### Loading the dump (B and C)
+
+The Import Center takes daily files only: the dump's name is a range, not a day, and it is refused.
+The worker loads it, once, into an empty store - `DumpLoad`, added 2026-10-24 when this VM was the
+first machine that had to start without it:
+
+```bash
+# the dump next to the deployment, compressed or not (a .gz is read as it is)
+docker compose run --rm -v ~/quadrasense/incoming:/import:ro worker \
+  --load-dump /import/dump_subs_device_sim_info_20251227_20260125.csv.gz
+```
+
+It refuses a store that already holds bindings; pauses merges; streams every row into
+`binding_snapshot` exactly as the first machine loaded it (no row filtered, columns by header name);
+seeds current state from it (active, change sequence 0, no change date), whose IMSI and IMEI copies
+fill through their views; and checks that all four tables hold exactly the file's row count -
+anything else, or any failure, empties them again. Then it writes the dump's bindings into the history
+and its device models, the two steps the existing backfills already had for it. Daily files follow
+through the Import Center, from `2026-01-26` on.
 
 ## 6. Operating it
 

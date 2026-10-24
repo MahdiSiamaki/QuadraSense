@@ -132,6 +132,37 @@ if (args.Contains("--refresh-marts"))
         .ConfigureAwait(false);
 }
 
+// Load the operator's initial dump into an empty store - once per environment, before the first
+// daily file. Then the two things derived from the dump: its bindings in the history, and its
+// device models. See DumpLoad.
+//
+//   dotnet Sqm.Ingestion.dll --load-dump <dump_subs_device_sim_info_*.csv[.gz]>
+if (args.Contains("--load-dump"))
+{
+    var index = Array.IndexOf(args, "--load-dump");
+    if (index + 1 >= args.Length)
+    {
+        Console.Error.WriteLine("usage: --load-dump <file>");
+        return 2;
+    }
+
+    var analytics = host.Services.GetRequiredService<IAnalyticsIngestionStore>();
+
+    var loaded = await DumpLoad.RunAsync(analytics, args[index + 1], CancellationToken.None).ConfigureAwait(false);
+    if (loaded != 0)
+    {
+        return loaded;
+    }
+
+    var history = await HistoryBackfill.RunAsync(analytics, null, null, false, CancellationToken.None).ConfigureAwait(false);
+    if (history != 0)
+    {
+        return history;
+    }
+
+    return await TacDayBackfill.RunAsync(analytics, null, null, false, CancellationToken.None).ConfigureAwait(false);
+}
+
 // Measure feed quality for days imported before it existed, or again after a new GSMA version.
 //
 //   dotnet run --project backend/src/Sqm.Ingestion -- --refresh-quality [--from d] [--to d] [--force]

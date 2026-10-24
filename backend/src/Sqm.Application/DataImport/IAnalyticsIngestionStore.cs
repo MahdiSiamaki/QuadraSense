@@ -161,6 +161,32 @@ public interface IAnalyticsIngestionStore
     Task<long> RebuildHistoryDumpAsync(CancellationToken ct);
 
     /// <summary>
+    /// Streams the operator's initial dump (<c>dump_subs_device_sim_info_*.csv</c>: imei, imsi,
+    /// msisdn, by header name) into <c>binding_snapshot</c>, every row, typed and nothing else -
+    /// as it was loaded on the first machine, so every environment starts from the same baseline.
+    /// </summary>
+    /// <param name="csv">The file's bytes, header included.</param>
+    /// <param name="onBytesRead">Progress, in bytes of <paramref name="csv"/> read.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Rows the server reports written.</returns>
+    Task<long> LoadDumpAsync(Stream csv, Action<long>? onBytesRead, CancellationToken ct);
+
+    /// <summary>
+    /// Seeds current state from <c>binding_snapshot</c>: every dump binding active, change sequence
+    /// 0, no change date - the state every daily file folds onto. The IMSI- and IMEI-ordered copies
+    /// fill from it through their materialized views.
+    /// </summary>
+    /// <returns>Rows in <c>binding_current</c> afterwards.</returns>
+    Task<long> SeedCurrentFromDumpAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Empties the dump and everything seeded from it: <c>binding_snapshot</c>,
+    /// <c>binding_current</c> and its two ordered copies. For undoing a dump load that failed or
+    /// did not reconcile, on a store that held nothing before it.
+    /// </summary>
+    Task ClearDumpAsync(CancellationToken ct);
+
+    /// <summary>
     /// Confirms the analytics schema is the one this code requires.
     /// </summary>
     /// <remarks>
