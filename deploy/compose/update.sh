@@ -2,12 +2,13 @@
 #
 # Deploys the newest commit of this checkout's branch on this machine: pull, build, restart.
 #
-#   ~/quadrasense/repo/deploy/compose/update.sh
+#   /opt/quadrasense/repo/deploy/compose/update.sh
 #
 # The deployment routine the product owner set (2026-10-24): changes are pushed to GitHub, and the
 # server takes them from there. The images are built here, from the checkout, and tagged with its
-# commit - so `docker compose ps` says exactly which code is running. .env and tls/ live next to this
-# file and are ignored by git; nothing here touches them.
+# commit - so `docker compose ps` says exactly which code is running. .env and tls/ sit next to this
+# file - on the server as links into /opt/quadrasense/config - and are ignored by git; apart from
+# SQM_TAG, nothing here touches them.
 #
 # The migrate and grants jobs run on every `up` and are no-ops when nothing changed. A migration that
 # fails stops the API and worker from being replaced: the old ones keep running.
