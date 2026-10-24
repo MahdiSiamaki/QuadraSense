@@ -7,7 +7,7 @@ MCI's OpenShift, and write down every step and what each stage needs.
 | | Where | Runs as | State |
 |---|---|---|---|
 | Today | the owner's laptop | `infra/docker-compose.yml` for the stores; `dotnet run`, `npm run dev` | in use |
-| **Stage 1** | the department VM (8 vCPU, 15 GiB, 200 GB, Ubuntu 26.04) | `deploy/compose/compose.yaml` | built; run end to end on the laptop; **waits on a data disk** |
+| **Stage 1** | the department VM (8 vCPU, 15 GiB, 200 GB, Ubuntu 26.04) | `deploy/compose/compose.yaml` | **running, empty, since 2026-10-24** (`02-…` §9); real data waits on a data disk |
 | **Stage 2** | MCI's OpenShift - dev, uat, prd namespaces | the same images, as Kubernetes objects through ArgoCD | planned |
 
 The decision behind the shape of it is **ADR-007**.

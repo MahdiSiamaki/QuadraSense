@@ -1,8 +1,8 @@
 # Stage 1 - QuadraSense on the department VM
 
-**Status:** runbook, written 2026-10-22. The compose stack it deploys was run end to end on the
-laptop (`01-container-images.md`, "Verified"); **nothing has run on the VM yet** - its Docker access
-has not been confirmed.
+**Status:** runbook, written 2026-10-22. **Running on the VM since 2026-10-24, empty** - no real
+data until the data disk and the data decision (section 9 records that first deployment and what
+it changed in this runbook).
 
 **Purpose of this stage.** Run the real system away from the laptop, on infrastructure the department
 operates, and find what breaks: the images, the configuration, the operating routine (upgrades,
@@ -207,3 +207,43 @@ Each is a measurement to record in `docs/operations/dedicated-hardware.md` besid
 | 8 | Backups off the VM, and one restore test | T, R | 7, a destination |
 | 9 | Run it daily for a few weeks: imports, upgrades, a restart; write down what breaks | T | 7 |
 | 10 | What stage 1 taught goes into `03-mci-openshift.md` before any ticket is filed | A | 9 |
+
+## 9. First deployment - 2026-10-24
+
+The empty system, commit `d16ce7c9a1cc`, brought up on the VM over SSH from the laptop.
+
+**What the VM turned out to be**, against what sections 1-3 assumed:
+
+| | Assumed | Found |
+|---|---|---|
+| Docker | Docker's own packages, to be installed | Ubuntu's `docker.io` 29.1.3 and Compose 2.40.3, already running; data-root `/var/lib/docker`; cgroup v2 |
+| Operator access | to be arranged | the operator account was added to the `docker` group by the department (root-equivalent - section 2 row 4) |
+| Internet | possibly none | **available**: the VM pulled ClickHouse and PostgreSQL from Docker Hub in 34 s (~14 MB/s) |
+| Laptop to VM | - | **~340 KB/s**: the full image bundle (512 MB) did not finish in 15 minutes |
+| `/tmp` | a disk | a 7.6 GB **tmpfs** - memory, not a place for a bundle |
+| Home directory | - | 4.9 GB, mode 750 |
+
+**What that changed in the procedure:**
+
+- **Only the four application images travel** - `docker save` of `quadrasense/*` is 127 MB and copied
+  in 5.5 minutes; the VM pulls the two store images itself (`docker compose pull clickhouse postgres`).
+- **The TLS key without root.** Section 4's `chown root:root` needs root. Instead the key is mode
+  644 inside `tls/` under the operator's home: the containers' UID can read it through the bind
+  mount, and nobody else on the host can reach it, because the home directory is 750.
+- **A temporary self-signed certificate** (90 days, for the VM's address and hostname) until the
+  internal CA's arrives; browsers warn until then.
+- **Passwords generated on the VM** with `openssl rand -hex 24` straight into `.env` (mode 600);
+  they never existed anywhere else.
+
+**What was checked** (section 7):
+
+| # | Check | Result |
+|---|---|---|
+| 1 | `docker compose up -d` | all healthy in 33 s; migrate applied 16 + 27 migrations, grants all 4 files, both exit 0 |
+| 2 | `id`, `touch /etc/x` in every service | `uid=1000700000 gid=0`, read-only root, in all five |
+| 3 | From the laptop, HTTPS on the VM's address | 200 in 0.35 s - the firewall admits 443; HTTP answers 308 to HTTPS; `/api/v1/auth/me` without a session 401 |
+| - | Idle memory | ClickHouse 215 MiB of 8 GiB; API, worker, PostgreSQL under 50 MiB; web 8 MiB |
+| - | Disk | `/var` 2.5 GB used of 42 |
+
+Not yet done: the first administrator (the owner's, with the owner's password), checks 3-10 of
+section 7 that need data, backups, and everything that waits on the data disk.
