@@ -18,11 +18,14 @@
 
 # The SDK is pinned to global.json's version exactly. A different feature band ships different
 # analyzers, and with TreatWarningsAsErrors a different verdict (CLAUDE.md, "Cloud sessions").
-ARG SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0.400
-ARG RUNTIME_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0.11
+#
+# Empty means the default after ':-' below - so compose can pass a value from .env, or nothing, and
+# the default lives in this file only. A mirror (the department's Nexus) is a value here.
+ARG SDK_IMAGE
+ARG RUNTIME_IMAGE
 
 # ------------------------------------------------------------------------------------- build
-FROM ${SDK_IMAGE} AS build
+FROM ${SDK_IMAGE:-mcr.microsoft.com/dotnet/sdk:10.0.400} AS build
 
 # In MCI's network NuGet comes through the Nexus proxy, not nuget.org (FR-NSM-204/00 2-1).
 # Empty means the SDK's default feed.
@@ -60,7 +63,7 @@ RUN set -eu; \
     cp -r db/analytics/migrations   /out/migrator/db/analytics/
 
 # ------------------------------------------------------------------------------------ runtime
-FROM ${RUNTIME_IMAGE} AS runtime
+FROM ${RUNTIME_IMAGE:-mcr.microsoft.com/dotnet/aspnet:10.0.11} AS runtime
 
 # Any non-zero UID. OpenShift replaces it with one from the namespace's range; compose sets one
 # explicitly (deploy/compose/compose.yaml) to prove nothing depends on it.

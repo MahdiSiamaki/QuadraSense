@@ -114,6 +114,10 @@ services:
       context: ../..
       dockerfile: deploy/images/backend/Dockerfile
       target: migrator
+      args: &backend-build-args
+        SDK_IMAGE: ${SQM_SDK_IMAGE:-}
+        RUNTIME_IMAGE: ${SQM_RUNTIME_IMAGE:-}
+        NUGET_SOURCE: ${SQM_NUGET_SOURCE:-}
     restart: "no"
     depends_on:
       clickhouse: { condition: service_healthy }
@@ -164,6 +168,7 @@ services:
       context: ../..
       dockerfile: deploy/images/backend/Dockerfile
       target: api
+      args: *backend-build-args
     depends_on:
       grants: { condition: service_completed_successfully }
       clickhouse: { condition: service_healthy }
@@ -200,6 +205,7 @@ services:
       context: ../..
       dockerfile: deploy/images/backend/Dockerfile
       target: worker
+      args: *backend-build-args
     depends_on:
       grants: { condition: service_completed_successfully }
       clickhouse: { condition: service_healthy }
@@ -221,6 +227,10 @@ services:
     build:
       context: ../..
       dockerfile: deploy/images/web/Dockerfile
+      args:
+        NODE_IMAGE: ${SQM_NODE_IMAGE:-}
+        NGINX_IMAGE: ${SQM_NGINX_IMAGE:-}
+        NPM_REGISTRY: ${SQM_NPM_REGISTRY:-}
     depends_on:
       # restart: nginx resolves 'api' once, at start. When an upgrade recreates the API container
       # its address can change, and nginx would keep sending to the old one (502). Compose restarts

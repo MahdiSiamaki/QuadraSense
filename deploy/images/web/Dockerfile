@@ -12,11 +12,12 @@
 # which a non-root process cannot bind. The image's user is non-root and any UID works - see
 # docs/operations/deployment/01-container-images.md.
 
-ARG NODE_IMAGE=node:24.19.0-alpine
-ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.28-alpine
+# Empty means the default after ':-' below (see deploy/images/backend/Dockerfile).
+ARG NODE_IMAGE
+ARG NGINX_IMAGE
 
 # ------------------------------------------------------------------------------------- build
-FROM ${NODE_IMAGE} AS build
+FROM ${NODE_IMAGE:-node:24.19.0-alpine} AS build
 
 # In MCI's network npm comes through the Nexus proxy, not registry.npmjs.org (FR-NSM-204/00 2-1).
 ARG NPM_REGISTRY=
@@ -32,7 +33,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ------------------------------------------------------------------------------------ runtime
-FROM ${NGINX_IMAGE} AS web
+FROM ${NGINX_IMAGE:-nginxinc/nginx-unprivileged:1.28-alpine} AS web
 
 # Owned by root and only readable: the process, whatever its UID, cannot change its own config.
 # The directory first: COPY --chmod would create it with the files' 0644, and a directory without
