@@ -1,0 +1,82 @@
+# QuadraSense on the department's GitLab - docs/operations/deployment/05-department-ci-cd.md.
+#
+#   test    backend and frontend tests                        instance runner  (docker-global)
+#   build   the four images, kaniko, pushed to Nexus           instance runner  (docker-global)
+#   deploy  the server pulls those images and starts them     the group's shell runner (quadrasense-deploy)
+#
+# The instance runner has no Docker socket - deliberately, by the department's runner guide - so
+# images are built with kaniko, not `docker build`. Deploys happen only from the default branch,
+# on a Protected runner that sits on the server it deploys to.
+#
+# Addresses and credentials are CI/CD variables of the QuadraSense group (05, section 7), not
+# written here: this file is also in a public mirror.
+
+stages: [test, build, deploy]
+
+variables:
+  IMAGE_PREFIX: quadrasense
+  # global.json's SDK, exactly (CLAUDE.md). Microsoft's registry has no Nexus proxy yet; when it has,
+  # a group variable of the same name points this through Nexus.
+  DOTNET_SDK_IMAGE: mcr.microsoft.com/dotnet/sdk:10.0.400
+  KANIKO_IMAGE: martizih/kaniko:v1.28.6-debug
+
+default:
+  tags: [docker-global]
+
+# Run it once by hand: what the instance runner can and cannot do, before anything relies on it.
+probe:runner:
+  stage: test
+  when: manual
+  allow_failure: true
+  image: $REGISTRY_PULL/library/node:24.19.0-alpine
+  script:
+    - id
+    - grep -E '^Cap(Eff|Bnd)' /proc/self/status
+    - ls -l /var/run/docker.sock 2>/dev/null || echo "no Docker socket - as the department's guide says"
+    - for u in "https://$REGISTRY_PULL/v2/" "$NUGET_SOURCE" "$NPM_REGISTRY" https://mcr.microsoft.com/v2/ https://registry-1.docker.io/v2/; do
+        if wget -q -T 15 -O /dev/null "$u" 2>/dev/null; then echo "reachable  $u"; else echo "refused or 4xx/none  $u"; fi;
+      done
+
+test:backend:
+  stage: test
+  image: $DOTNET_SDK_IMAGE
+  script:
+    - dotnet restore backend/Sqm.slnx --source "$NUGET_SOURCE"
+    # No database here: the integration tests skip, and say so. A skip is not a pass (CLAUDE.md).
+    - dotnet test backend/Sqm.slnx --no-restore
+
+test:frontend:
+  stage: test
+  image: $REGISTRY_PULL/library/node:24.19.0-alpine
+  script:
+    - cd frontend
+    - npm ci --no-audit --no-fund --registry "$NPM_REGISTRY"
+    - npm test
+    - npm run build
+
+build:
+  stage: build
+  image:
+    name: $REGISTRY_PULL/$KANIKO_IMAGE
+    entrypoint: [""]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  parallel:
+    matrix:
+      - COMPONENT: [api, worker, migrator, web]
+  script:
+    - sh deploy/ci/kaniko-build.sh "$COMPONENT"
+
+deploy:
+  stage: deploy
+  tags: [quadrasense-deploy]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  resource_group: department-vm
+  environment:
+    name: department-vm
+  before_script:
+    # The pull credential only: the push one belongs to build jobs (the department's Nexus rules).
+    - echo "$NEXUS_PULL_PASS" | docker login "$REGISTRY_PULL" -u "$NEXUS_PULL_USER" --password-stdin
+  script:
+    - SQM_REGISTRY="$REGISTRY_PULL/$IMAGE_PREFIX" bash deploy/compose/deploy-release.sh "$CI_COMMIT_SHORT_SHA"

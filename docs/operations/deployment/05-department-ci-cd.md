@@ -331,104 +331,86 @@ reach the internet directly, and nothing tests a commit before it runs. It stays
 
 ## 7. QuadraSense on the department's pipeline
 
+**Decided by the product owner (2026-10-24):** CI on the department's **instance runner**
+(`docker-global`); CD on **a new Group runner of QuadraSense's own, shell executor, with its own tag**,
+for deploying only. The repository is `quadrasense/quadrasense` on `<gitlab>`.
+
 ```
-push to <gitlab> ─> build + push  (a Group build runner with the socket)  ─> <nexus-push>
-               └──> test          (docker-global: no socket needed)
-                                                                              │
-                     deploy (shell runner on <server>, Protected) <───────────┘
-                       pulls <nexus-pull>/<project>/<image>:<sha>; docker compose up -d
-```
-
-| Piece | QuadraSense |
-|---|---|
-| Repository | on `<gitlab>`. Developers push there; GitHub is mirrored or retired (decision 2) |
-| **Build runner** | **must be a Group build runner with the Docker socket** - `docker-global` has none. Either QuadraSense's project lives in `<build-group>` and uses its `docker` runner, or the department gives QuadraSense's own group a build runner (decision 3) |
-| Test runner | `docker-global` can run `dotnet test` and the frontend's tests: they need an image, not a daemon |
-| Base images | the Dockerfiles' `SDK_IMAGE`, `RUNTIME_IMAGE`, `NODE_IMAGE`, `NGINX_IMAGE` arguments (`01-container-images.md`) pointed at `<nexus-pull>`; the .NET two need an MCR proxy (request 1) |
-| Packages | `NPM_REGISTRY` → `<npm-group>`, its credential as a BuildKit secret (the web Dockerfile needs that mount - backlog); `NUGET_SOURCE` → a NuGet proxy (request 1) |
-| Tests | `dotnet test backend/Sqm.slnx`, the frontend's `npm test` and `npm run build`. Without a database the integration tests skip - the job says how many, and a skip is not a pass (CLAUDE.md) |
-| Push | `<nexus-push>/<project>/{api,worker,migrator,web}:<short-sha>`, by the build job only |
-| Release file | the tag each environment runs, in `releases/<env>.env` of an infrastructure repository - **or Nexus's cleanup deletes the image after 30 days** |
-| Deploy runner | a **shell** runner **on `<server>`**, Protected, tagged for QuadraSense; `gitlab-runner` in `docker` and `deploy`; the deployment directory `/opt/quadrasense/compose` (`.env`, `tls/`) instead of an operator's home |
-| Deploy job | reads the release file, sets `SQM_REGISTRY=<nexus-pull>/<project>` and `SQM_TAG`, `docker compose pull && docker compose up -d`. Pull credential only - never the push one |
-| Stores | `CLICKHOUSE_IMAGE`, `POSTGRES_IMAGE` in `.env` through `<nexus-pull>` |
-
-The pipeline this implies - **a design, not run**. It is written as a file once the project, its
-group, its runners and variables exist on `<gitlab>` (backlog):
-
-```yaml
-stages: [build, test, deploy]
-
-variables:
-  REGISTRY_PULL: <nexus-pull>
-  REGISTRY_PUSH: <nexus-push>
-  IMAGE_PREFIX: <project>
-
-build:
-  stage: build
-  tags: [docker]                      # the Group build runner - not docker-global
-  image: <nexus-pull>/library/docker:29-cli
-  rules: [{ if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH' }]
-  before_script:
-    - echo "$NEXUS_PULL_PASS" | docker login "$REGISTRY_PULL" -u "$NEXUS_PULL_USER" --password-stdin
-    - echo "$NEXUS_PUSH_PASS" | docker login "$REGISTRY_PUSH" -u "$NEXUS_PUSH_USER" --password-stdin
-  script:
-    - |
-      for t in api worker migrator; do
-        docker build -f deploy/images/backend/Dockerfile --target $t \
-          --build-arg SDK_IMAGE=<via nexus> --build-arg RUNTIME_IMAGE=<via nexus> \
-          --build-arg NUGET_SOURCE=<nuget proxy> \
-          -t "$REGISTRY_PUSH/$IMAGE_PREFIX/$t:$CI_COMMIT_SHORT_SHA" .
-      done
-      docker build -f deploy/images/web/Dockerfile \
-        --build-arg NODE_IMAGE=<via nexus> --build-arg NGINX_IMAGE=<via nexus> \
-        --secret id=npmrc,src="$NPMRC_FILE" \
-        -t "$REGISTRY_PUSH/$IMAGE_PREFIX/web:$CI_COMMIT_SHORT_SHA" .
-      for t in api worker migrator web; do
-        docker push "$REGISTRY_PUSH/$IMAGE_PREFIX/$t:$CI_COMMIT_SHORT_SHA"
-      done
-
-test:
-  stage: test
-  tags: [docker-global]
-  image: <nexus-pull>/<mcr proxy path>/dotnet/sdk:10.0.400     # global.json's SDK, exactly
-  script:
-    - dotnet test backend/Sqm.slnx
-
-deploy:
-  stage: deploy
-  tags: [<quadrasense deploy tag>]    # shell runner on <server>, Protected
-  rules: [{ if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH' }]
-  before_script:
-    - echo "$NEXUS_PULL_PASS" | docker login "$REGISTRY_PULL" -u "$NEXUS_PULL_USER" --password-stdin
-  script:
-    - cd /opt/quadrasense/compose
-    - export SQM_REGISTRY="$REGISTRY_PULL/$IMAGE_PREFIX" SQM_TAG="$CI_COMMIT_SHORT_SHA"
-    - docker compose pull && docker compose up -d
+push to the default branch of <gitlab>
+   test     dotnet test, npm test + build          docker-global
+   build    4 images with kaniko -> <nexus-push>   docker-global
+   deploy   pull those tags, docker compose up     group runner `quadrasense-deploy`, shell, on <server>
 ```
 
-How the deployed tag gets into `releases/<env>.env` (a commit to the infrastructure repository, by the
-pipeline or by a person) follows whatever the department's other projects do - question 4 below.
+| Piece | How | Files |
+|---|---|---|
+| **Build without a socket** | `docker-global` has no Docker socket (section 3), so `docker build` cannot run there. kaniko builds the same Dockerfiles in user space inside the job's container and pushes the image itself. Base images from Docker Hub come through `<nexus-pull>` (`--registry-mirror`) | `deploy/ci/kaniko-build.sh`; image `martizih/kaniko:v1.28.6-debug` (Docker Hub, so through Nexus) |
+| Tests | `dotnet restore` from Nexus's NuGet group, `dotnet test`; the frontend's `npm ci` from Nexus's npm group, `npm test`, `npm run build` | `.gitlab-ci.yml` |
+| Images | `<nexus-push>/quadrasense/{api,worker,migrator,web}:<short sha>` - default branch only | |
+| **Deploy runner** | shell executor on `<server>`, Group runner of the QuadraSense group, tag `quadrasense-deploy`, Protected; `gitlab-runner` in `docker` and `deploy` | `deploy/host/install-deploy-runner.sh` |
+| Deploy | each commit gets `/opt/quadrasense/releases/<sha>` (its compose files and grants), `.env` and `tls/` linked from `/opt/quadrasense/config`; pull the four images by tag, `docker compose up -d --no-build`; `current` points at the running one; five releases kept | `deploy/compose/deploy-release.sh` |
+| Rollback | re-run the deploy job of an older pipeline (the images are in Nexus) | |
+| Probe | a manual job that reports what `docker-global` really allows: user, capabilities, socket, which of Nexus / MCR / Docker Hub it reaches | `probe:runner` in `.gitlab-ci.yml` |
+
+**Checked before committing** (2026-10-24): the pipeline file parses, and each job lands on the runner
+intended; `deploy-release.sh` run on `<server>` against a scratch directory with a stand-in `docker`
+asked only for `compose pull` of the four application images and `compose up -d --no-build`, kept the
+five newest of six releases, linked `.env` and `tls/` and copied the grants; the runner install's
+checksum step, run against the real release files, refused a truncated download. **Not yet run: any
+of it on `<gitlab>`** - that waits on the steps below.
+
+### CI/CD variables - on the QuadraSense group (Settings → CI/CD → Variables)
+
+| Variable | Value | Flags |
+|---|---|---|
+| `REGISTRY_PULL` | `<nexus-pull>` | - |
+| `REGISTRY_PUSH` | `<nexus-push>` | - |
+| `NUGET_SOURCE` | `<nexus>/repository/nuget-group/index.json` | - |
+| `NPM_REGISTRY` | `<npm-group>` | - |
+| `NODE_IMAGE` | `<nexus-pull>/library/node:24.19.0-alpine` | - |
+| `NGINX_IMAGE` | `<nexus-pull>/nginxinc/nginx-unprivileged:1.28-alpine` | - |
+| `NEXUS_PULL_USER`, `NEXUS_PULL_PASS` | `<pull-user>` and its password | Protected, Masked |
+| `NEXUS_PUSH_USER`, `NEXUS_PUSH_PASS` | `<push-user>` and its password | Protected, Masked |
+| `DOCKER_AUTH_CONFIG` | only if `docker-global` cannot pull job images from `<nexus-pull>` by itself - Docker's `config.json` with the pull account | Protected |
+| `DOTNET_SDK_IMAGE`, `SDK_IMAGE`, `RUNTIME_IMAGE` | through Nexus once it proxies Microsoft's registry (request 1); until then unset - the defaults in the files | - |
+
+Protected variables reach only protected branches: the default branch is protected by GitLab already;
+a test pipeline on another branch gets empty credentials - `username is empty` (section 2).
+
+### What the owner does (credentials, root)
+
+1. **Push the code to `<gitlab>`** - the first push, with the owner's own credentials (a *new* token:
+   the one sent in a chat is to be revoked). Git's credential manager on the laptop stores it; after
+   that, pushes need no one. From the laptop over the VPN only HTTPS reaches `<gitlab>`.
+2. **The variables above**, in the group's settings.
+3. **The deploy runner**: create it in the group (Settings → CI/CD → Runners → New group runner: tag
+   `quadrasense-deploy`, not untagged, Protected), then on `<server>`:
+   `sudo GITLAB_URL=https://<gitlab>/ CONFIG_FROM=~siamaki/quadrasense/repo/deploy/compose bash deploy/host/install-deploy-runner.sh`
+   - it asks for the token at a hidden prompt. It downloads the runner (142 MB; ~17 minutes at the
+   server's 135 KB/s to that host, measured).
+4. **Run `probe:runner` once** from the first pipeline, and send its output: it decides whether
+   `docker-global` can pull job images, reach Nexus, and whether the .NET images can come from MCR
+   directly until the proxy exists.
 
 ## 8. Requests and decisions
 
-| # | Item | Recommendation |
+| # | Item | State |
 |---|---|---|
-| 1 | **Request to the department: a proxy of Microsoft's registry (MCR)** in Nexus, in the docker group. NuGet is there already (found by reading Nexus's repository list); MCR is not, and every .NET build needs the SDK and runtime images | Ask first: no .NET build can comply without it. Stopgap: push the two images once into the hosted repository from a workstation, by whoever holds the push account |
-| 2 | **Where the code lives**: `<gitlab>` as primary, GitHub mirrored or retired | `<gitlab>`: the department runs it, it is private by default - which also ends the public-repository problem - and it rehearses MCI's GitLab (stage 2) |
-| 3 | **Which build runner**: QuadraSense's project inside `<build-group>` (uses its `docker` runner), or a group of its own with its own Group build runner | The department's call: the first is immediate; the second keeps QuadraSense's jobs and variables apart from the other group's |
-| 4 | **Release files**: QuadraSense's `releases/<env>.env` in the group's `<infra-repo>`, or an infrastructure repository of its own; who commits the tag | follow the department's practice; it decides what Nexus keeps |
-| 5 | **A deploy runner on `<server>`**: shell, Protected, registered with a `glrt-…` token by someone with access - never sent in a chat | yes; it needs `sudo` on `<server>` (install, groups `docker` and `deploy`, `/opt/quadrasense`) - the owner or the department |
-| 6 | **Which branch deploys** | the default branch, protected |
+| 1 | **Request to the department: a proxy of Microsoft's registry (MCR)** in Nexus, in the docker group. NuGet is there already; MCR is not, and every .NET build and test needs the SDK and runtime images | **open** - until then the .NET images come from MCR directly, if `docker-global` reaches it (the probe says), which the "Nexus only" rule does not allow |
+| 2 | Where the code lives | **decided**: `quadrasense/quadrasense` on `<gitlab>`. GitHub (public) remains the mirror for now; making it private, or retiring it, is still recommended |
+| 3 | Which runner builds | **decided**: the instance runner, `docker-global`, with kaniko (it has no socket) |
+| 4 | **Release files** - where the deployed tag of each environment is recorded, and so what Nexus's cleanup keeps (section 2: images in no `releases/*.env`, older than 30 days, are deleted) | **open**: ask the department how its cleanup reads them; until then the server records the running tag in `/opt/quadrasense/current.sha` |
+| 5 | The deploy runner | **decided**: a Group runner of QuadraSense's group, shell, tag `quadrasense-deploy`, Protected, on `<server>` |
+| 6 | Which branch deploys | the default branch, protected |
 
 ## 9. Order of work
 
 | # | Step | Kind | Waits on |
 |---|---|---|---|
 | 1 | Revoke the GitLab token and change both Nexus passwords (they went through a chat) | R | the owner |
-| 2 | Request 1 to the department (MCR and NuGet proxies); decisions 2-4 | R | the owner, the department |
-| 3 | On `<server>`: `registry-mirrors` and `docker login <nexus-pull>` (owner); `.env`'s store images through Nexus | T | 1 |
-| 4 | The repository and its group on `<gitlab>`; protect the default branch; CI/CD variables (section 2) | T | 2 |
-| 5 | Deploy runner on `<server>`; `/opt/quadrasense/compose` with `.env` and `tls/` moved there | T | 4; `sudo` |
-| 6 | The web Dockerfile takes the npm credential as a BuildKit secret; `.gitlab-ci.yml` from section 7 | P | 2, 4 |
-| 7 | First pipeline end to end; the tag in a release file; `update.sh` becomes the fallback | T | 5, 6 |
+| 2 | First push to `<gitlab>` (section 7, step 1) | R | 1 |
+| 3 | Group CI/CD variables (section 7) | R | 1 |
+| 4 | Deploy runner on `<server>` (section 7, step 3) | R, T | `sudo`, a runner token |
+| 5 | First pipeline; run `probe:runner`; fix what it shows | T | 2-4 |
+| 6 | Request 1 (MCR) and decision 4 (release files) with the department | R | - |
+| 7 | When the pipeline deploys, `update.sh` becomes the fallback only | T | 5 |
