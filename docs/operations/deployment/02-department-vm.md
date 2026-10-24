@@ -17,7 +17,7 @@ OpenShift - the containers run here exactly as OpenShift will run them.
 |---|---|---|---|
 | CPU | 8 vCPU, Xeon Gold 6148 | 6 for ClickHouse at peak, 2 each for API and worker; limits, not reservations | enough |
 | Memory | 15 GiB usable, 2 GiB swap | 12.75 GiB of container limits (below), ~2 GiB for the host | enough, barely |
-| Disk | 200 GB in total: `/` 110 GB, `/var` 41.9 GB, the rest small | **~225 GiB today** (ClickHouse 182.5 + originals 40.6), **+~50 GiB a month** | **not enough** |
+| Disk | 200 GB in total: `/` 110 GB, `/var` 41.9 GB, the rest small | **~225 GiB today** (ClickHouse 182.5 + originals 40.6), **+~30 GiB a month** | **not enough** |
 | OS | Ubuntu 26.04.1 LTS | Docker Engine with the compose plugin; nothing else | fine (but see red lines §1-1, row 3) |
 | Containers | Docker CLI and socket present, access not verified | Someone who can run `docker` | unknown |
 
@@ -28,14 +28,14 @@ Measured on the laptop on 2026-10-22, with data through 10 October:
 | | Size | Growth |
 |---|---|---|
 | ClickHouse | 182.5 GiB | event log ~290 MiB a day (10 M events), history tables ~3.5 GiB a month each, ×3: **~20 GiB a month** |
-| Uploaded originals | 40.6 GiB (118 files) | ~1.1 GB per daily file: **~33 GB a month** |
+| Uploaded originals | 40.6 GiB (118 files) | ~350 MB per daily file on average, the largest ~1.1 GB: **~10.5 GB a month** (corrected 2026-10-24 from the files themselves; this page first said 33) |
 | PostgreSQL | 332 MB | negligible |
 | Images | ~2 GB | per release |
 
 Docker keeps its volumes under `/var/lib/docker` by default - the 41.9 GB `/var`. Even moved to `/`
-(110 GB) the data does not fit, and a year from now it is ~800 GiB.
+(110 GB) the data does not fit, and a year from now it is ~600 GiB.
 
-**What to ask the department for:** a separate data disk of **1 TB** (2 TB to last two years),
+**What to ask the department for:** a separate data disk of **1 TB** (about two years at the current feed),
 as its own logical volume mounted at `/srv/quadrasense`, `noexec,nodev,nosuid`, with Docker's
 `data-root` moved onto it. Without it, stage 1 can run only on a sample of the data - which tests the
 deployment but not the system, and makes every timing meaningless.
@@ -133,8 +133,8 @@ Then `https://<the VM's name>/` and sign in.
 | Way | How | Time | Use it for |
 |---|---|---|---|
 | **A. Copy the stores** | ClickHouse: stop it on the laptop, archive the `bench_chdata` volume, restore it as `quadrasense_clickhouse-data` (same 25.8 version, so the files are compatible); or `BACKUP`/`RESTORE` to a disk. PostgreSQL: `pg_dump -Fc` / `pg_restore` | the time to move ~185 GiB | **the first load** - exact, fastest |
-| B. Replay the originals | Upload every file through the Import Center, oldest first; the pipeline rebuilds everything | measured on the laptop: a delivery's mart refresh alone 63 min; ~250 deliveries | proving the archive restores the system - once, later |
-| C. A sample | A few days | minutes | testing the deployment, nothing else - the counts are wrong |
+| B. Replay the originals | Load the dump, then upload every daily file through the Import Center, oldest first. **The dump has no supported path in** (found 2026-10-24): the Import Center rejects a file whose name is not one day, and on the laptop it was loaded by hand with SQL. See the backlog | measured on the laptop: a delivery's mart refresh alone 63 min; ~250 deliveries | proving the archive restores the system - once, later |
+| C. A sample | The dump and the first days or weeks after it (a sample without the dump is wrong from the first remove) | minutes to hours | testing the deployment and the pipeline; every count is of the sample only |
 
 Recommended: **A**, then daily files through the Import Center as they arrive.
 

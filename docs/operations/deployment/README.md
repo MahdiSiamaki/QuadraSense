@@ -46,7 +46,7 @@ Each blocks something; each has a recommendation. Numbers are referred to from t
 
 | # | Decision | Blocks | Recommendation |
 |---|---|---|---|
-| 1 | **The VM's disk.** 200 GB cannot hold 182.5 GiB of ClickHouse plus 40.6 GiB of originals, growing ~50 GiB a month (`02-…` §1) | stage 1 with real data | Ask the department for a **1 TB** data disk (2 TB for two years) as its own volume |
+| 1 | **The VM's disk.** 200 GB cannot hold 182.5 GiB of ClickHouse plus 40.6 GiB of originals, growing ~30 GiB a month (`02-…` §1) | stage 1 with real data | Ask the department for a **1 TB** data disk (2 TB for two years) as its own volume |
 | 2 | **Real subscriber data on the VM** - who may reach it, and how the data gets there (the red lines forbid copying between servers over SSH) | loading data | Agree it with the department in writing before copying |
 | 3 | **Does the red line against Docker on standalone servers (§1-1) cover the department VM?** | stage 1 at all | Ask the department; if it does, stage 1 runs only as an exception |
 | 4 | **Who runs `docker` on the VM** - the `docker` group is root on that machine | stage 1 | One named operator with `sudo` for `docker` |
