@@ -48,3 +48,8 @@ __pycache__/
 Thumbs.db
 *.swp
 .idea/
+
+# ---- deployment ----------------------------------------------------------
+# The certificate and key a deployment mounts into the web container (deploy/compose/compose.yaml).
+# The key is a credential; the directory sits inside a checkout that update.sh pulls into.
+deploy/compose/tls/

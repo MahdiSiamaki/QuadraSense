@@ -28,6 +28,7 @@ The decision behind the shape of it is **ADR-007**.
 | `deploy/images/backend/Dockerfile` | `api`, `worker`, `migrator` - one build, three targets |
 | `deploy/images/web/` | `web`: the SPA in unprivileged nginx, and its configuration |
 | `deploy/compose/compose.yaml` | the whole system; `.env.example` lists every variable |
+| `deploy/compose/update.sh` | every deployment on a server: pull from GitHub, build there, restart (`02-…` §3) |
 | `deploy/compose/clickhouse/` | ClickHouse's users (passwords from the environment), memory, system logs, logging |
 | `deploy/compose/web/server-https.conf` | the HTTPS server block mounted into `web` |
 | `.dockerignore` | what never enters an image - data, credentials, `.claude/`, tests |

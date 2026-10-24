@@ -73,45 +73,67 @@ competes with a desktop.
 
 ## 3. Getting the software onto the VM
 
-The VM may not reach Docker Hub or GitHub. So the images are built elsewhere and carried in.
+**By git - the routine** (the product owner's, 2026-10-24). Changes are pushed to GitHub; the server
+pulls them and builds the images itself, from its own checkout. It needs the internet for that -
+GitHub, Docker Hub, Microsoft's registry, NuGet and npm - which this VM has (section 9).
+
+Once, as the operator, a checkout of the branch being deployed:
 
 ```bash
-# On the laptop (or a build machine), from the repository root:
+git clone --branch deploy/containers-and-openshift \
+  https://github.com/MahdiSiamaki/QuadraSense.git ~/quadrasense/repo
+```
+
+Every deployment after that, including the first:
+
+```bash
+~/quadrasense/repo/deploy/compose/update.sh
+```
+
+`update.sh` refuses a checkout with local edits, pulls (fast-forward only), builds the four
+application images tagged with the commit (`SQM_TAG`), and `docker compose up -d`. The stores'
+images are pulled from Docker Hub. `.env` and `tls/` sit next to it and are ignored by git.
+
+- **When the branch is merged**, switch the checkout to `main` (`git switch main`) - and deploy from
+  `main` only, as everything else does.
+- **If the repository becomes private** (README, decision 10), the server needs a read-only deploy
+  key for it; the operator's own credentials do not belong on a server.
+- **Rollback**: earlier builds' images stay on the machine; `SQM_TAG=<older commit> docker compose up -d`
+  starts them. Migrations are forward-only, so a rollback across a migration is a forward fix instead.
+
+**Without internet** - the fallback. Build and save the images elsewhere and carry them in:
+
+```bash
+# On a machine with internet, from the repository root:
 TAG=$(git rev-parse --short=12 HEAD)
 for target in api worker migrator; do
   docker build -f deploy/images/backend/Dockerfile --target $target -t quadrasense/$target:$TAG .
 done
 docker build -f deploy/images/web/Dockerfile -t quadrasense/web:$TAG .
-
 docker save quadrasense/api:$TAG quadrasense/worker:$TAG quadrasense/migrator:$TAG \
-            quadrasense/web:$TAG \
-            clickhouse/clickhouse-server:25.8.33.6 postgres:17.11-bookworm \
+            quadrasense/web:$TAG clickhouse/clickhouse-server:25.8.33.6 postgres:17.11-bookworm \
   | gzip > quadrasense-images-$TAG.tar.gz
 git archive --format=tar.gz -o quadrasense-$TAG.tar.gz HEAD
 ```
 
-Both files go to the VM by a route the department approves - the red lines forbid moving files
-between servers over SSH (§1-2 row 3), so not `scp` from another server. Then:
+Both files go to the server by a route the department approves - the red lines forbid moving files
+between servers over SSH (section 1-2 row 3). Then `docker load`, unpack, and `docker compose up -d`
+with `SQM_TAG` set in `.env`.
 
-```bash
-docker load < quadrasense-images-$TAG.tar.gz
-mkdir -p /srv/quadrasense/app && tar -xzf quadrasense-$TAG.tar.gz -C /srv/quadrasense/app
-```
-
-**If the VM can reach MCI's Nexus**, the department's alternative: push the images to it from the
-build machine and `docker compose pull` on the VM. Set `SQM_REGISTRY` to the repository path.
+**If the server can reach MCI's Nexus**: push the images there from the build machine and set
+`SQM_REGISTRY` to the repository path; `docker compose pull` replaces the build.
 
 ## 4. First start
 
 ```bash
-cd /srv/quadrasense/app/deploy/compose
+cd ~/quadrasense/repo/deploy/compose
 cp .env.example .env && chmod 600 .env
-# fill in: SQM_TAG, five passwords (openssl rand -hex 24), SQM_PUBLIC_ORIGIN
+# fill in: five passwords (openssl rand -hex 24), SQM_PUBLIC_ORIGIN. SQM_TAG is set by update.sh.
 mkdir tls && cp /path/to/tls.crt /path/to/tls.key tls/
-chown root:root tls/* && chmod 640 tls/*      # the containers run in group 0
+chown root:root tls/* && chmod 640 tls/*      # the containers run in group 0 (no root: section 9)
 
-docker compose up -d
-docker compose logs -f migrate grants        # both must end with exit code 0
+./update.sh
+docker compose logs migrate grants           # both must end with exit code 0
 docker compose ps                            # clickhouse, postgres, api, web healthy; worker up
 ```
 
