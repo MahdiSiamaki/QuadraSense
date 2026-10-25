@@ -222,6 +222,19 @@ anything else, or any failure, empties them again. Then it writes the dump's bin
 and its device models, the two steps the existing backfills already had for it. Daily files follow
 through the Import Center, from `2026-01-26` on.
 
+It also puts the dump in the Import Center, as the first machine has it (since 2026-10-25): the
+original goes into the file store - a `.gz` as it is - and the history gets a completed import with no
+business date, by `operator (--load-dump)`, with its row count and when it ran. A store loaded before
+that (this VM, 2026-10-24) is recorded afterwards, from the same file:
+
+```bash
+docker compose run --rm -v /opt/quadrasense/incoming:/import:ro worker \
+  --record-dump /import/dump_subs_device_sim_info_20251227_20260125.csv.gz
+```
+
+It counts the file's rows first and refuses any file that does not hold exactly what
+`binding_snapshot` holds; recording the same file again changes nothing.
+
 ## 6. Operating it
 
 | Task | How |

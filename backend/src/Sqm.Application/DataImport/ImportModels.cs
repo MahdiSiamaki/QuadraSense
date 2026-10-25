@@ -18,6 +18,11 @@ public sealed record RegisteredFile(
     long? ExistingJobId,
     string? ExistingOriginalName);
 
+/// <summary>A load recorded as a completed import.</summary>
+/// <param name="JobId">Its job.</param>
+/// <param name="Created"><see langword="false"/> when the file already had a job, which is kept.</param>
+public sealed record RecordedLoad(long JobId, bool Created);
+
 /// <summary>A job handed to a worker, with everything needed to process it.</summary>
 /// <param name="JobId">Job primary key.</param>
 /// <param name="SourceCode">Data source, e.g. <c>SQM</c> or <c>TAC</c>.</param>

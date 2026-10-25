@@ -54,6 +54,34 @@ public interface IImportJobRepository
         long? reprocessOfJobId = null,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Records, as a completed import, a file that was loaded without going through the queue.
+    /// </summary>
+    /// <remarks>
+    /// The initial dump: <c>--load-dump</c> writes it straight into the analytics store, because
+    /// the Import Center takes daily files only. Without this record the history shows nothing of
+    /// the baseline every later day is folded onto. No business date - the dump covers a month,
+    /// not a day - and one job per file: a file that already has a job keeps it.
+    /// </remarks>
+    /// <param name="sourceCode">Data source.</param>
+    /// <param name="fileId">The registered file.</param>
+    /// <param name="rows">Rows it put into the store.</param>
+    /// <param name="startedAt">When the load began; <see langword="null"/> when nobody kept it.</param>
+    /// <param name="finishedAt">When it finished; <see langword="null"/> when nobody kept it.</param>
+    /// <param name="createdBy">Who ran it.</param>
+    /// <param name="message">The job's timeline entry: how the data arrived.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The job, and whether this call created it.</returns>
+    Task<RecordedLoad> RecordCompletedLoadAsync(
+        string sourceCode,
+        long fileId,
+        long rows,
+        DateTimeOffset? startedAt,
+        DateTimeOffset? finishedAt,
+        string createdBy,
+        string message,
+        CancellationToken ct);
+
     // -----------------------------------------------------------------------
     // Worker loop
     // -----------------------------------------------------------------------

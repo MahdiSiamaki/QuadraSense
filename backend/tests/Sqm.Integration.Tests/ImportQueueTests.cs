@@ -267,6 +267,65 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
         }
     }
 
+    /// <summary>
+    /// The initial dump, loaded by --load-dump outside the queue, is in the history as the
+    /// completed import it was - once, however often it is recorded.
+    /// </summary>
+    /// <remarks>
+    /// On the department VM the Import Center showed nothing of the 126 million bindings the dump
+    /// had put in (2026-10-24). The detail page reads GetJobAsync, so that is what is checked.
+    /// </remarks>
+    [Fact]
+    public async Task A_load_recorded_outside_the_queue_is_one_completed_import_without_a_day()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+
+        try
+        {
+            var file = await fixture.Repository.RegisterFileAsync(
+                TestSource, "dump_subs_device_sim_info_20251227_20260125.csv.gz",
+                Stored(Hash(nameof(A_load_recorded_outside_the_queue_is_one_completed_import_without_a_day))),
+                "operator (--load-dump)", ct);
+            var started = new DateTimeOffset(2026, 10, 24, 7, 48, 45, TimeSpan.Zero);
+
+            var first = await fixture.Repository.RecordCompletedLoadAsync(
+                TestSource, file.FileId, 125_939_523, started, started.AddSeconds(1246),
+                "operator (--load-dump)", "Initial dump: loaded with --load-dump.", ct);
+            var again = await fixture.Repository.RecordCompletedLoadAsync(
+                TestSource, file.FileId, 125_939_523, null, null,
+                "operator (--load-dump)", "Initial dump: recorded again.", ct);
+
+            Assert.True(first.Created);
+            Assert.False(again.Created);
+            Assert.Equal(first.JobId, again.JobId);
+
+            var job = await fixture.Repository.GetJobAsync(first.JobId, ct);
+            Assert.NotNull(job);
+            Assert.Equal(ImportJobStatus.Completed, job.Summary.Status);
+            Assert.Null(job.Summary.BusinessDate);
+            Assert.True(job.Summary.IsEffective);
+            Assert.Equal(125_939_523, job.Summary.RowsInput);
+            Assert.Equal(125_939_523, job.Summary.RowsInserted);
+            Assert.Equal(1_246_000, job.Summary.DurationMs);
+            Assert.Equal("operator (--load-dump)", job.Summary.CreatedBy);
+            Assert.Equal(["Initial dump: loaded with --load-dump."], job.Events.Select(e => e.Message));
+
+            var jobs = await fixture.Repository.CountJobsAsync(
+                new ImportHistoryFilter { SourceCode = TestSource }, ct);
+            Assert.Equal(1, jobs);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
     [Fact]
     public async Task Two_workers_asking_at_once_never_get_the_same_job()
     {
