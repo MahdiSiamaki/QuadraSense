@@ -167,6 +167,17 @@ On a new machine the migrate job creates both schemas from nothing (16 PostgreSQ
 27 ClickHouse ones, as of 2026-10-22) and the grants job creates `sqm_app`. Every later `up` runs them again; each is a
 no-op when up to date.
 
+**The seeds are not migrations, and nothing applies them.** Once, on a new machine:
+
+```bash
+docker exec -i quadrasense-clickhouse-1 clickhouse-client --multiquery \
+  < /opt/quadrasense/repo/db/analytics/seed/002_vendor_map_seed.sql
+```
+
+Without it the vendor map is empty and every vendor appears under each of its raw GSMA spellings -
+Samsung as six vendors (found on this VM, 2026-10-25). Once only: the map is edited in the product
+afterwards, and a second run would put the seed's rows back over those edits.
+
 **The first administrator** - once; the password is typed, never an argument:
 
 ```bash
