@@ -2,7 +2,7 @@
 import { RouterLink } from 'vue-router'
 import StatusBadge from '@/design-system/StatusBadge.vue'
 import { formatBytes, formatDate, formatDuration, formatFull, formatRelative, formatDateTime } from '@/lib/format'
-import type { ImportJobSummary } from '@/api/imports'
+import { isTerminal, type ImportJobSummary } from '@/api/imports'
 
 /**
  * Import history.
@@ -95,6 +95,15 @@ defineProps<{ rows: ImportJobSummary[] }>()
             :title="formatDateTime(row.finishedAt)"
           >
             {{ formatRelative(row.finishedAt) }}
+          </td>
+          <!-- Finished, with no time kept: the dump and the files loaded before the platform. They
+               read "Not finished" beside a Completed badge until 2026-10-25. -->
+          <td
+            v-else-if="isTerminal(row.status)"
+            class="px-3 py-2 text-right whitespace-nowrap text-[var(--c-text-muted)]"
+            title="Finished; when was not recorded"
+          >
+            —
           </td>
           <td
             v-else
