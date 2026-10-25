@@ -133,28 +133,15 @@ public static class ImportEndpoints
 
         var (originalName, stored) = received;
 
-        var registered = await repository
-            .RegisterFileAsync(source, originalName, stored, actor, ct).ConfigureAwait(false);
+        // Registering, the duplicate rule and the queueing are ImportIntake's: --import-file
+        // follows the same rules for a file already on the server.
+        var intake = await ImportIntake
+            .AcceptAsync(repository, fileStore, source, originalName, stored, actor, http.TraceIdentifier, ct)
+            .ConfigureAwait(false);
+        var registered = intake.File;
 
-        if (!registered.IsNew)
+        if (intake.QueuedJobId is not { } jobId)
         {
-            // The bytes just written duplicate a file already on disk. Removing the copy keeps
-            // storage honest: one content hash, one stored blob.
-            await fileStore.DeleteAsync(stored.StoredPath, ct).ConfigureAwait(false);
-        }
-
-        // A known file with no job is not a duplicate import, it is an unfinished upload: the
-        // file was registered and the request ended - a dropped connection, a database blip -
-        // before its job was queued. Refusing it as a duplicate left that content importable by
-        // no route at all, since reprocessing needs a job to start from. It is queued now, from
-        // the copy already stored.
-        if (!registered.IsNew && registered.ExistingJobId is not null)
-        {
-            await repository.WriteAuditAsync(
-                actor, "import.upload.duplicate", registered.ExistingJobId, registered.FileId,
-                null, http.TraceIdentifier,
-                new { fileName = originalName, sha256 = stored.Sha256 }, ct).ConfigureAwait(false);
-
             // 409, not an error page. A duplicate upload is a normal thing for an operator to do
             // - the same file sent twice, or a retry after a lost connection - and the useful
             // response is "here is the import you already have", not "something went wrong".
@@ -165,30 +152,6 @@ public static class ImportEndpoints
                 stored.Sha256,
                 "This file's content has already been uploaded for this source."));
         }
-
-        // The day this file claims to describe, read from its name and recorded NOW rather than
-        // when the worker gets to it.
-        //
-        // It is what puts the job in the right place in the queue: the claim refuses to run a day
-        // while an earlier day for the same source is still unlanded, and it can only compare
-        // dates that already exist. A job enqueued without one used to sit outside that ordering
-        // entirely - and outside the "effective import for this day" rule, where every dateless
-        // job matched every other one and each new upload demoted the last.
-        //
-        // A hint, not the authority: the processor re-derives it and CompleteAsync records what
-        // was actually imported, so a misnamed file is corrected rather than believed.
-        var declaredDate = DailyFileName.BusinessDateOf(originalName);
-
-        // Not on the request's token. The file is registered by now, and a client that
-        // disconnects at this moment is how a file used to end up with no job.
-        var jobId = await repository
-            .EnqueueAsync(source, registered.FileId, declaredDate, actor, ct: CancellationToken.None)
-            .ConfigureAwait(false);
-
-        await repository.WriteAuditAsync(
-            actor, "import.upload", jobId, registered.FileId, null, http.TraceIdentifier,
-            new { fileName = originalName, bytes = stored.SizeBytes, sha256 = stored.Sha256 },
-            ct).ConfigureAwait(false);
 
         return Results.Created($"/api/v1/imports/{jobId}", new UploadAcceptedResponse(
             jobId, registered.FileId, originalName, stored.SizeBytes, stored.Sha256));

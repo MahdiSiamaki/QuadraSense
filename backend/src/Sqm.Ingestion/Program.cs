@@ -183,6 +183,27 @@ if (args.Contains("--load-dump"))
     return models != 0 ? models : recorded;
 }
 
+// Hands a file already on the server to the Import Center, as an upload would - for files that
+// cannot cross the network in one piece. A .gz is decompressed as it is stored. See ImportFile.
+//
+//   dotnet Sqm.Ingestion.dll --import-file <daily_subs_device_sim_info_YYYY-MM-DD.csv[.gz]> [--source SQM|TAC]
+if (args.Contains("--import-file"))
+{
+    var index = Array.IndexOf(args, "--import-file");
+    if (index + 1 >= args.Length)
+    {
+        Console.Error.WriteLine("usage: --import-file <file> [--source SQM|TAC]");
+        return 2;
+    }
+
+    var sourceAt = Array.IndexOf(args, "--source");
+    return await ImportFile.RunAsync(
+        host.Services.GetRequiredService<IImportJobRepository>(),
+        host.Services.GetRequiredService<IImportFileStore>(),
+        sourceAt >= 0 && sourceAt + 1 < args.Length ? args[sourceAt + 1] : "SQM",
+        args[index + 1], CancellationToken.None).ConfigureAwait(false);
+}
+
 // Records a dump loaded before --load-dump recorded it: its original into the file store, and a
 // completed import in the history. The file must hold exactly as many rows as binding_snapshot.
 // See DumpHistory.
