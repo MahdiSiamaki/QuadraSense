@@ -138,81 +138,97 @@ WHERE seq = {seq:UInt16};
 --
 --     One statement per dimension: each groups its own values, and the largest
 --     - 3,020 vendors - stays a separate, smaller hash table.
+--
+--     No join carries the states. Each model's value is looked up by TAC -
+--     transform() over two arrays read once from sqm.tac - and "matched" is an
+--     IN. A LEFT JOIN of the states to sqm.tac was what this did until
+--     2026-10-25, and ClickHouse 25.8's planner may swap such a join and build
+--     its hash table from the states side: every model's states in memory at
+--     once. On the department VM that took 2.96-3.41 GiB per statement (837 MiB
+--     on the laptop, whose plan did not swap) and failed every rebuild after
+--     the first daily file. The lookup takes 628-702 MiB there and 507-583 MiB
+--     on the laptop, about twice as fast, with every statement's output
+--     identical row for row on both machines' data.
 -- --------------------------------------------------------------------------
 INSERT INTO sqm.agg_filter_population
     (seq, dimension, value, models, bindings, unknown_device, malformed_imei, tac_matched, subscribers, sims, handsets)
+WITH (SELECT (groupArray(tac), groupArray(deviceType)) FROM sqm.tac) AS m
 SELECT
     {seq:UInt16}                        AS seq,
     'deviceType'                        AS dimension,
-    t.deviceType                        AS value,
+    transform(b.tac, m.1, m.2, '')      AS value,
     count()                             AS models,
     sum(b.bindings)                     AS bindings,
     sum(b.unknown_device)               AS unknown_device,
     sum(b.malformed_imei)               AS malformed_imei,
-    sumIf(b.bindings, t.tac != '')      AS tac_matched,
+    sumIf(b.bindings, b.tac IN (SELECT tac FROM sqm.tac)) AS tac_matched,
     uniqMerge(b.subscribers)            AS subscribers,
     uniqMerge(b.sims)                   AS sims,
     uniqMerge(b.handsets)               AS handsets
 FROM sqm.agg_tac_population AS b
-LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 WHERE b.seq = {seq:UInt16} AND value != ''
 GROUP BY value;
 
 INSERT INTO sqm.agg_filter_population
     (seq, dimension, value, models, bindings, unknown_device, malformed_imei, tac_matched, subscribers, sims, handsets)
+WITH (SELECT (groupArray(tac), groupArray(trim(operatingSystem))) FROM sqm.tac) AS m
 SELECT
     {seq:UInt16}                        AS seq,
     'operatingSystem'                   AS dimension,
-    trim(t.operatingSystem)             AS value,
+    transform(b.tac, m.1, m.2, '')      AS value,
     count()                             AS models,
     sum(b.bindings)                     AS bindings,
     sum(b.unknown_device)               AS unknown_device,
     sum(b.malformed_imei)               AS malformed_imei,
-    sumIf(b.bindings, t.tac != '')      AS tac_matched,
+    sumIf(b.bindings, b.tac IN (SELECT tac FROM sqm.tac)) AS tac_matched,
     uniqMerge(b.subscribers)            AS subscribers,
     uniqMerge(b.sims)                   AS sims,
     uniqMerge(b.handsets)               AS handsets
 FROM sqm.agg_tac_population AS b
-LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 WHERE b.seq = {seq:UInt16} AND value != ''
 GROUP BY value;
 
 INSERT INTO sqm.agg_filter_population
     (seq, dimension, value, models, bindings, unknown_device, malformed_imei, tac_matched, subscribers, sims, handsets)
+WITH (SELECT (groupArray(tac), groupArray(manufacturer)) FROM sqm.tac) AS m
 SELECT
     {seq:UInt16}                        AS seq,
     'manufacturer'                      AS dimension,
-    t.manufacturer                      AS value,
+    transform(b.tac, m.1, m.2, '')      AS value,
     count()                             AS models,
     sum(b.bindings)                     AS bindings,
     sum(b.unknown_device)               AS unknown_device,
     sum(b.malformed_imei)               AS malformed_imei,
-    sumIf(b.bindings, t.tac != '')      AS tac_matched,
+    sumIf(b.bindings, b.tac IN (SELECT tac FROM sqm.tac)) AS tac_matched,
     uniqMerge(b.subscribers)            AS subscribers,
     uniqMerge(b.sims)                   AS sims,
     uniqMerge(b.handsets)               AS handsets
 FROM sqm.agg_tac_population AS b
-LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 WHERE b.seq = {seq:UInt16} AND value != ''
 GROUP BY value;
 
+-- The vendor of each TAC is resolved in the lookup itself: a join of sqm.tac
+-- to the vendor map, which carries no states.
 INSERT INTO sqm.agg_filter_population
     (seq, dimension, value, models, bindings, unknown_device, malformed_imei, tac_matched, subscribers, sims, handsets)
+WITH (
+    SELECT (groupArray(t.tac), groupArray(coalesce(nullIf(v.vendor_canonical, ''), t.manufacturer)))
+    FROM sqm.tac AS t
+    LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
+) AS m
 SELECT
     {seq:UInt16}                        AS seq,
     'vendor'                            AS dimension,
-    coalesce(nullIf(v.vendor_canonical, ''), t.manufacturer) AS value,
+    transform(b.tac, m.1, m.2, '')      AS value,
     count()                             AS models,
     sum(b.bindings)                     AS bindings,
     sum(b.unknown_device)               AS unknown_device,
     sum(b.malformed_imei)               AS malformed_imei,
-    sumIf(b.bindings, t.tac != '')      AS tac_matched,
+    sumIf(b.bindings, b.tac IN (SELECT tac FROM sqm.tac)) AS tac_matched,
     uniqMerge(b.subscribers)            AS subscribers,
     uniqMerge(b.sims)                   AS sims,
     uniqMerge(b.handsets)               AS handsets
 FROM sqm.agg_tac_population AS b
-LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
 WHERE b.seq = {seq:UInt16} AND value != ''
 GROUP BY value;
 
@@ -226,12 +242,11 @@ SELECT
     sum(b.bindings)                     AS bindings,
     sum(b.unknown_device)               AS unknown_device,
     sum(b.malformed_imei)               AS malformed_imei,
-    sumIf(b.bindings, t.tac != '')      AS tac_matched,
+    sumIf(b.bindings, b.tac IN (SELECT tac FROM sqm.tac)) AS tac_matched,
     uniqMerge(b.subscribers)            AS subscribers,
     uniqMerge(b.sims)                   AS sims,
     uniqMerge(b.handsets)               AS handsets
 FROM sqm.agg_tac_population AS b
-LEFT JOIN sqm.tac AS t ON t.tac = b.tac
 WHERE b.seq = {seq:UInt16} AND b.tac != ''
 GROUP BY value;
 
