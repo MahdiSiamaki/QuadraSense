@@ -239,7 +239,7 @@ It counts the file's rows first and refuses any file that does not hold exactly 
 
 | Task | How |
 |---|---|
-| **Daily files** | Import Center upload, as on the laptop. Whether the operator's files can reach the VM by SFTP instead is a decision (red lines, SFTP section) |
+| **Daily files** | Import Center upload, as on the laptop - from a network that holds a connection for the upload's whole length. Over the VPN a day does not survive (section 9, fourth session): carry it to `/opt/quadrasense/incoming/days/` in pieces, then `docker compose run --rm -v /opt/quadrasense/incoming/days:/import:ro worker --import-file /import/<day>.csv.gz`, oldest first - the same store, job, queue and processing as an upload. Whether the operator's files can reach the VM by SFTP instead is a decision (red lines, SFTP section) |
 | **Upgrade** | Load the new images; set `SQM_TAG`; `docker compose up -d`. migrate runs first; the API and worker start only after it succeeds. A failed migration leaves the old containers running |
 | **Logs** | `docker compose logs <service>`; JSON from the API, worker and nginx. Rotated by the json-file limits (50 MB × 5 per container) |
 | **Health** | `docker compose ps`; `/health/ready` (inside: `docker compose exec api bash -c ...`, or through the web container) |
@@ -389,3 +389,27 @@ section 7 that need data, backups, and everything that waits on the data disk.
   `docker` stubbed: upstream adds a line to `update.sh`, the clone runs its own copy - the new script
   prints that line, the one from before the fix does not. The link was put back by hand; nothing
   restarted.
+
+**2026-10-25, fourth session.**
+
+- **The GSMA TAC version** (`DeviceDatabase_TAC4Oct2026.csv`, v2026.10.04, the laptop's active one) went
+  in through the Import Center and the owner activated it: 271,830 TACs, as on the laptop. Then
+  `--refresh-tac-days --force` wrote the dump's models again - **94,330 models, 88,491,721 handsets,
+  113,118,115 SIMs, the laptop's figures exactly** (3 min 23 s), against 95,571 / 88,561,455 /
+  113,188,719 without the TAC table.
+- **The dashboard rebuild failed, three passes running**, on two filter-population statements over
+  the 1.2 GB per-statement cap. Measured with the cap lifted: 1.42 and 1.18 GiB (the laptop: 571 and
+  837 MiB). The cap became a setting (`SQM_CH_BOUNDED_MEMORY_BYTES`, 2.5 GB here -
+  `dedicated-hardware.md` §3); the next rebuild ran **31 of 31 statements in 624 s**, the query log
+  showing the cap arrive as 2500000000 and the two statements pass at 1.42 and 1.19 GiB.
+- **The dump in the Import Center**: `--record-dump` (section 5) recorded it as import 2 - completed,
+  no business date, 125,939,523 rows, its 2.07 GB original in the file store - in 53 s.
+- **Device images**, both tables copied from the laptop with `pg_dump --data-only` and restored in one
+  transaction (19 s): 1,761 live images, all verified; 2,619 proposals - 1,773 approved, 842 awaiting
+  review, 4 rejected. Every reference is to user 1, `admin`, on both machines, so uploader and reviewer
+  carried over unchanged; an md5 over every key, status and image hash is identical on both.
+- **Daily files over the VPN do not upload.** A 370 MB day needs ~45 minutes at the ~130 KB/s measured
+  today, and a browser upload cannot resume: two of two attempts broke at 12.6 and 16.5 minutes,
+  each in the minute the tunnel dropped (nginx 400 with the body unbuffered, the API 499). So the days
+  are carried compressed (2.7x) in 5 MB pieces, each retried until it lands, and queued with
+  `--import-file` (section 6).
