@@ -73,9 +73,9 @@ the merge. On dedicated hardware:
 
 | Laptop | Why | On dedicated hardware | Check |
 |---|---|---|---|
-| Day-level folds and the refresh: `max_threads` 1, `max_memory_usage` 1.2 GiB, spill at 300 MB (`ClickHouseIngestionStore.cs`, the bounded execution); day import `max_memory_usage` 3 GB | `max_threads` multiplies hash-table memory - 1.9 GiB where 565 MiB would do (`11-…` §4) | More threads and memory, kept low enough that two jobs and the background merges still fit together | Refresh duration and peak per statement from `system.query_log` |
+| Day-level folds and the refresh: `max_threads` 1, `max_memory_usage` 1.2 GiB, spill at 300 MB (`ClickHouseIngestionStore.cs`, the bounded execution); day import `max_memory_usage` 3 GB | `max_threads` multiplies hash-table memory - 1.9 GiB where 565 MiB would do (`11-…` §4) | More threads and memory, kept low enough that two jobs and the background merges still fit together. The memory cap is a setting since 2026-10-25, `ClickHouse:BoundedMemoryBytes` (`SQM_CH_BOUNDED_MEMORY_BYTES` in compose): the department VM runs 2.5 GB, because two section-1c statements need more than 1.2 there (next row but one) | Refresh duration and peak per statement from `system.query_log` |
 | `agg_tac_population` written in 8,192-row blocks (`refresh_marts.sql` §1b) | Its uniq() states held at once failed twice at the 1.2 GiB limit (ADR-017) | Can return to the default block size once the per-query limit is several GiB | The 1b statement's `memory_usage` in `query_log` |
-| Section 1c peaks at 873 MiB - 73% of the 1.2 GiB limit (ADR-017) | the limit | Headroom comes with the limit | same |
+| Section 1c peaks at 873 MiB - 73% of the 1.2 GiB limit (ADR-017) | the limit | Headroom comes with the limit. **The headroom is the data's, not the statement's:** on the VM's dump-only delivery the vendor and known-device statements need 1.42 and 1.18 GiB (571 and 837 MiB on the laptop's delivery 246, measured 2026-10-25) - the same ~1 GB of per-model states over 95,572 models instead of 158,002. Neither the read block size, the join's sides nor its output block size changes it; only the cap does | same |
 | Refresh cost of the population marts: +160 s (1b) and +92 s (1c) single-threaded | one thread | Parallel passes; re-measure | `MartRefresh` timeline |
 
 ### 4. Limits on the API's own queries
