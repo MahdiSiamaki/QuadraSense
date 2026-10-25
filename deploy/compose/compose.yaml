@@ -213,6 +213,8 @@ services:
       <<: *app-env
       DOTNET_ENVIRONMENT: Production
       ClickHouse__ConnectionString: "Host=clickhouse;Port=8123;Database=sqm;Username=sqm_ingest;Password=${SQM_CH_INGEST_PASSWORD}"
+      # Per-statement memory of imports and the dashboard refresh; .env.example says why it differs.
+      ClickHouse__BoundedMemoryBytes: ${SQM_CH_BOUNDED_MEMORY_BYTES:-1200000000}
     volumes:
       - uploads:/var/lib/quadrasense/uploads
     mem_limit: ${WORKER_MEMORY:-2g}

@@ -746,7 +746,7 @@ public sealed partial class ClickHouseIngestionStore : IAnalyticsIngestionStore
             // ~1.9 GiB at three threads and 565 MiB at one, in 3.9 seconds either way. Three
             // times the memory for no useful speed-up, on a job that runs once a day.
             ["max_threads"] = "1",
-            ["max_memory_usage"] = "1200000000",
+            ["max_memory_usage"] = _options.BoundedMemoryBytes.ToString(CultureInfo.InvariantCulture),
 
             // Spill well before the ceiling, so a heavy GROUP BY writes to disk rather than
             // approaching the limit. The spill count in ProfileEvents is also the proof that

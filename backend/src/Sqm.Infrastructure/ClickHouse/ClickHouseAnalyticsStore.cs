@@ -29,6 +29,19 @@ public sealed class ClickHouseOptions
     public int MaxResultRows { get; set; } = 10_000;
 
     /// <summary>
+    /// <c>max_memory_usage</c> of each import, fold and mart-refresh statement, in bytes.
+    /// </summary>
+    /// <remarks>
+    /// 1.2 GB is the laptop's: two jobs and the background merges must fit in its 6 GiB container
+    /// together (docs/operations/dedicated-hardware.md). It is a statement about the machine, not
+    /// the data, and the data moved past it: the department VM's first dashboard rebuild failed
+    /// three passes running on two of the filter-population merges, which measured 1.42 GiB and
+    /// 1.18 GiB there with the cap lifted - against 571 and 837 MiB for the same statements on the
+    /// laptop's delivery 246 (2026-10-25). A machine with the memory sets more.
+    /// </remarks>
+    public long BoundedMemoryBytes { get; set; } = 1_200_000_000;
+
+    /// <summary>
     /// Bindings re-derived per statement when a late or replaced day is folded from history.
     /// </summary>
     /// <remarks>

@@ -148,10 +148,29 @@ if (args.Contains("--load-dump"))
 
     var analytics = host.Services.GetRequiredService<IAnalyticsIngestionStore>();
 
+    var started = DateTimeOffset.UtcNow;
     var loaded = await DumpLoad.RunAsync(analytics, args[index + 1], CancellationToken.None).ConfigureAwait(false);
     if (loaded != 0)
     {
         return loaded;
+    }
+
+    // In the Import Center, as the load it was. Failing to record it does not undo a reconciled
+    // load: the steps after it still run, and --record-dump records it once the cause is fixed.
+    int recorded;
+    try
+    {
+        recorded = await DumpHistory.RecordAsync(
+            analytics,
+            host.Services.GetRequiredService<IImportJobRepository>(),
+            host.Services.GetRequiredService<IImportFileStore>(),
+            args[index + 1], started, DateTimeOffset.UtcNow, verifyRows: false, CancellationToken.None).ConfigureAwait(false);
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+        Console.Error.WriteLine($"the dump is loaded, but recording it in the Import Center failed: {ex.Message}");
+        Console.Error.WriteLine("once the cause is fixed: --record-dump <file>");
+        recorded = 1;
     }
 
     var history = await HistoryBackfill.RunAsync(analytics, null, null, false, CancellationToken.None).ConfigureAwait(false);
@@ -160,7 +179,50 @@ if (args.Contains("--load-dump"))
         return history;
     }
 
-    return await TacDayBackfill.RunAsync(analytics, null, null, false, CancellationToken.None).ConfigureAwait(false);
+    var models = await TacDayBackfill.RunAsync(analytics, null, null, false, CancellationToken.None).ConfigureAwait(false);
+    return models != 0 ? models : recorded;
+}
+
+// Hands a file already on the server to the Import Center, as an upload would - for files that
+// cannot cross the network in one piece. A .gz is decompressed as it is stored. See ImportFile.
+//
+//   dotnet Sqm.Ingestion.dll --import-file <daily_subs_device_sim_info_YYYY-MM-DD.csv[.gz]> [--source SQM|TAC]
+if (args.Contains("--import-file"))
+{
+    var index = Array.IndexOf(args, "--import-file");
+    if (index + 1 >= args.Length)
+    {
+        Console.Error.WriteLine("usage: --import-file <file> [--source SQM|TAC]");
+        return 2;
+    }
+
+    var sourceAt = Array.IndexOf(args, "--source");
+    return await ImportFile.RunAsync(
+        host.Services.GetRequiredService<IImportJobRepository>(),
+        host.Services.GetRequiredService<IImportFileStore>(),
+        sourceAt >= 0 && sourceAt + 1 < args.Length ? args[sourceAt + 1] : "SQM",
+        args[index + 1], CancellationToken.None).ConfigureAwait(false);
+}
+
+// Records a dump loaded before --load-dump recorded it: its original into the file store, and a
+// completed import in the history. The file must hold exactly as many rows as binding_snapshot.
+// See DumpHistory.
+//
+//   dotnet Sqm.Ingestion.dll --record-dump <dump_subs_device_sim_info_*.csv[.gz]>
+if (args.Contains("--record-dump"))
+{
+    var index = Array.IndexOf(args, "--record-dump");
+    if (index + 1 >= args.Length)
+    {
+        Console.Error.WriteLine("usage: --record-dump <file>");
+        return 2;
+    }
+
+    return await DumpHistory.RecordAsync(
+        host.Services.GetRequiredService<IAnalyticsIngestionStore>(),
+        host.Services.GetRequiredService<IImportJobRepository>(),
+        host.Services.GetRequiredService<IImportFileStore>(),
+        args[index + 1], null, null, verifyRows: true, CancellationToken.None).ConfigureAwait(false);
 }
 
 // Measure feed quality for days imported before it existed, or again after a new GSMA version.

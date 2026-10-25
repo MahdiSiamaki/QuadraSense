@@ -145,6 +145,40 @@ public sealed class DumpLoadStoreTests : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// The per-statement memory cap is the configured one, as the server received it.
+    /// </summary>
+    /// <remarks>
+    /// The department VM's dashboard rebuild needed more than the laptop's 1.2 GB (2026-10-25), so
+    /// the cap became ClickHouse:BoundedMemoryBytes. A setting that never arrives looks exactly like
+    /// a generous one, so this reads it back from the server's own query log.
+    /// </remarks>
+    [Fact]
+    public async Task Statements_run_under_the_configured_memory_cap()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+        }
+
+        var store = Store(boundedMemoryBytes: 1_234_567_890);
+        await store.LoadDumpAsync(Stream(Dump), null, TestContext.Current.CancellationToken);
+        await store.SeedCurrentFromDumpAsync(TestContext.Current.CancellationToken);
+
+        // The query log is flushed every 7.5 s.
+        var cap = string.Empty;
+        for (var attempt = 0; attempt < 20 && cap.Length == 0; attempt++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+            cap = await QueryAsync(
+                "SELECT Settings['max_memory_usage'] FROM system.query_log "
+                + $"WHERE type = 'QueryFinish' AND query LIKE 'INSERT INTO {_database}.binding_current%' "
+                + "AND event_time > now() - INTERVAL 10 MINUTE LIMIT 1");
+        }
+
+        Assert.Equal("1234567890", cap);
+    }
+
     private static MemoryStream Stream(string text) => new(Encoding.UTF8.GetBytes(text));
 
     private sealed class Factory : IHttpClientFactory
@@ -159,11 +193,12 @@ public sealed class DumpLoadStoreTests : IAsyncLifetime
         };
     }
 
-    private ClickHouseIngestionStore Store() => new(
+    private ClickHouseIngestionStore Store(long boundedMemoryBytes = 1_200_000_000) => new(
         Options.Create(new ClickHouseOptions
         {
             ConnectionString =
                 $"Host=localhost;Port=18123;Database={_database};Username={User};Password={Password}",
+            BoundedMemoryBytes = boundedMemoryBytes,
         }),
         new Factory(),
         NullLogger<ClickHouseIngestionStore>.Instance);

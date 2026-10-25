@@ -385,7 +385,8 @@ a test pipeline on another branch gets empty credentials - `username is empty` (
 2. **The variables above**, in the group's settings.
 3. **The deploy runner**: create it in the group (Settings → CI/CD → Runners → New group runner: tag
    `quadrasense-deploy`, not untagged, Protected), then on `<server>`:
-   `sudo GITLAB_URL=https://<gitlab>/ CONFIG_FROM=~siamaki/quadrasense/repo/deploy/compose bash deploy/host/install-deploy-runner.sh`
+   `sudo GITLAB_URL=https://<gitlab>/ bash deploy/host/install-deploy-runner.sh` (the configuration is
+   in `/opt/quadrasense/config` already, so no `CONFIG_FROM`)
    - it asks for the token at a hidden prompt. It downloads the runner (142 MB; ~17 minutes at the
    server's 135 KB/s to that host, measured).
 4. **Run `probe:runner` once** from the first pipeline, and send its output: it decides whether
@@ -402,13 +403,15 @@ a test pipeline on another branch gets empty credentials - `username is empty` (
 | 4 | **Release files** - where the deployed tag of each environment is recorded, and so what Nexus's cleanup keeps (section 2: images in no `releases/*.env`, older than 30 days, are deleted) | **open**: ask the department how its cleanup reads them; until then the server records the running tag in `/opt/quadrasense/current.sha` |
 | 5 | The deploy runner | **decided**: a Group runner of QuadraSense's group, shell, tag `quadrasense-deploy`, Protected, on `<server>` |
 | 6 | Which branch deploys | the default branch, protected |
+| 7 | **How GitHub's `main` reaches `<gitlab>`** after the owner merges a pull request. The owner's routine (2026-10-25): the laptop is current, Claude pushes and opens the pull request, the owner merges, `<gitlab>` follows, the runners build and deploy | **open**. The owner chose a timer on `<server>` pushing to `<gitlab>` over SSH with a write deploy key - and it is not built: the red lines say git over HTTPS, not SSH, and *servers pull* (`04-…`, §2-2 row 2), and section 5 gives a server read-only access only. Compliant ways: **(a)** `<gitlab>`'s own pull mirror from the public GitHub URL (Settings → Repository → Mirroring repositories; a paid GitLab feature, and `<gitlab>` must reach github.com); **(b)** a scheduled pipeline that fetches GitHub and pushes with the job token (the instance runner must reach github.com; the probe says); **(c)** the developer pushes from the laptop, over HTTPS with their own credential - what happens until (a) or (b) exists |
+| 8 | **`<gitlab>`'s `main` held only GitLab's template README** (`Initial commit`, by the project's creator, 2026-10-24), with no history in common with the code | The owner approved replacing it once with GitHub's `main` (2026-10-25). Refused: `main` is protected against force pushes. The owner allows force pushes for Maintainers on `main` once, Claude pushes, the owner switches it back. Nothing else on `<gitlab>` is lost by it - checked 2026-10-25: of its commits, only that README and six on two `wip/` branches are missing from GitHub, and the six are already on GitHub's `main` as the same changes (`git cherry`) and on the laptop's branches |
 
 ## 9. Order of work
 
 | # | Step | Kind | Waits on |
 |---|---|---|---|
 | 1 | Revoke the GitLab token and change both Nexus passwords (they went through a chat) | R | the owner |
-| 2 | First push to `<gitlab>` (section 7, step 1) | R | 1 |
+| 2 | First push to `<gitlab>` (section 7, step 1) - replaces the template README on `main` (section 8, item 8) | R | 1; force pushes allowed on `main` once |
 | 3 | Group CI/CD variables (section 7) | R | 1 |
 | 4 | Deploy runner on `<server>` (section 7, step 3) | R, T | `sudo`, a runner token |
 | 5 | First pipeline; run `probe:runner`; fix what it shows | T | 2-4 |
