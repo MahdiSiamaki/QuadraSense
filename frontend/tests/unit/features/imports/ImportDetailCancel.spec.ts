@@ -29,6 +29,7 @@ vi.mock('@/features/imports/useImportQueries', () => ({
   }),
   useQuarantineSamples: () => ({ data: ref(null), isPending: ref(false), isError: ref(false) }),
   useImportActions: () => ({ cancel, reprocess }),
+  useStageDurations: () => ({ data: ref([]) }),
 }))
 
 const { default: ImportDetailPage } = await import('@/features/imports/ImportDetailPage.vue')

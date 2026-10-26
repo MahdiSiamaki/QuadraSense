@@ -1,8 +1,18 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import StatusBadge from '@/design-system/StatusBadge.vue'
-import { formatBytes, formatDate, formatDuration, formatFull, formatRelative, formatDateTime } from '@/lib/format'
-import { isTerminal, type ImportJobSummary } from '@/api/imports'
+import {
+  formatBytes,
+  formatDate,
+  formatDuration,
+  formatFull,
+  formatRelative,
+  formatDateTime,
+  formatTimeLeft,
+} from '@/lib/format'
+import { isRunning, isTerminal, type ImportJobSummary, type StageDuration } from '@/api/imports'
+import { estimateImport } from '@/lib/import-estimate'
 
 /**
  * Import history.
@@ -15,7 +25,25 @@ import { isTerminal, type ImportJobSummary } from '@/api/imports'
  * A superseded row is dimmed rather than hidden. A day that was imported twice is a fact worth
  * being able to see; hiding the earlier attempt would make the history disagree with itself.
  */
-defineProps<{ rows: ImportJobSummary[] }>()
+const props = defineProps<{
+  rows: ImportJobSummary[]
+  /** Each source's usual stage times; a running row's Finished cell says roughly when. */
+  typicals?: Record<string, StageDuration[] | undefined>
+}>()
+
+// Coarse on purpose: a list read at a glance needs the minute, not the second.
+const now = ref(Date.now())
+let timer: ReturnType<typeof setInterval> | undefined
+onMounted(() => (timer = setInterval(() => (now.value = Date.now()), 15_000)))
+onBeforeUnmount(() => clearInterval(timer))
+
+/** "about 12 min left" for a running row, or null when there is nothing to estimate from. */
+function timeLeft(row: ImportJobSummary): string | null {
+  if (!isRunning(row.status)) return null
+  const estimate = estimateImport(row, null, props.typicals?.[row.sourceCode], now.value)
+  if (!estimate) return null
+  return estimate.overdue ? 'taking longer than usual' : formatTimeLeft(estimate.msLeft)
+}
 </script>
 
 <template>
@@ -110,7 +138,7 @@ defineProps<{ rows: ImportJobSummary[] }>()
             class="px-3 py-2 text-right whitespace-nowrap text-[var(--c-text-muted)]"
             :title="`Uploaded ${formatDateTime(row.createdAt)}`"
           >
-            Not finished
+            {{ timeLeft(row) ?? 'Not finished' }}
           </td>
         </tr>
       </tbody>
