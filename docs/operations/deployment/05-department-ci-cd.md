@@ -292,6 +292,7 @@ No restart is needed; the config file is re-read by itself.
 | Runner shown offline | `sudo systemctl status gitlab-runner`, `sudo gitlab-runner verify`, `sudo journalctl -u gitlab-runner -n 50` |
 | Deploy job fails on file permissions | `gitlab-runner` must be in `docker` and `deploy`: `id gitlab-runner`; then `sudo -u gitlab-runner bash -c 'touch /opt/<project>/compose/.probe && rm /opt/<project>/compose/.probe && docker ps >/dev/null && echo OK'` |
 | A group change has no effect | the runner process keeps its group memberships from start-up: after `usermod`, `sudo systemctl restart gitlab-runner` |
+| A shell runner fails every job at `prepare environment: exit status 1` | the runner user's `~/.bash_logout`: Ubuntu's skeleton runs `clear_console`, which fails without a terminal. `sudo rm ~gitlab-runner/.bash_logout` (GitLab's documented fix); `install-deploy-runner.sh` does it since 2026-10-26, after the first deploy failed on it (pipeline 369) |
 
 **The department's runner rules:** deploy runners have only the shell executor, and each sits only on
 its own target server; the production runner is always Protected; the Docker socket is given only to

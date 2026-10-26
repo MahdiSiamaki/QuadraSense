@@ -53,6 +53,10 @@ gitlab-runner --version | head -1
 
 echo "== user and groups"
 id gitlab-runner >/dev/null 2>&1 || useradd --system --create-home --shell /bin/bash gitlab-runner
+# Ubuntu's skeleton .bash_logout runs clear_console, which fails without a terminal, and the shell
+# executor then fails every job at "prepare environment: exit status 1" - the first deploy did,
+# 2026-10-26 (pipeline 369). GitLab's documented fix is to remove the file.
+rm -f ~gitlab-runner/.bash_logout
 getent group deploy >/dev/null || groupadd --system deploy
 usermod -aG docker,deploy gitlab-runner
 id gitlab-runner
