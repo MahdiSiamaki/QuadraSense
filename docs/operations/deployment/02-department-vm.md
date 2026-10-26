@@ -451,8 +451,8 @@ section 7 that need data, backups, and everything that waits on the data disk.
 - **Against the laptop, day by day, 2026-01-26 to 02-19:** events, device models, feed quality,
   multi-number SIMs and SIM changes identical on 22 of 25 days (unknown-TAC rows apart by 1-4 on some
   days: the laptop counted under an older TAC version). The other three, 02-03, 02-10 and 02-15, the
-  VM holds in full and **the laptop does not** - its bulk load lost 27-45% of them, and of 03-24 too
-  (backlog). Risk published as of 02-19; the dashboard, risk, data-quality, devices and image-review
+  VM holds in full and **the laptop did not** - its bulk load lost 27-45% of them, and of 03-24 too;
+  re-imported on the laptop 2026-10-26, all four now match their files. Risk published as of 02-19; the dashboard, risk, data-quality, devices and image-review
   pages all read the VM's data.
 
 **2026-10-26, sixth session.**

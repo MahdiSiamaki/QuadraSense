@@ -39,15 +39,18 @@ from the GSMA TAC database, and answers:
 
 ## Scale (measured, not estimated)
 
-On the laptop, which holds the whole history, 2026-10-26:
+On the laptop, which holds the whole history, 2026-10-26 - after re-importing the four days its bulk
+load had cut short (02-03, 02-10, 02-15 and 03-24 had lost 27-61% of their rows, 14.6 million events
+in all, removals among them). The last two came back after these figures were first measured that
+morning: 7,219,972 more events since, and current state about 2 million active bindings lower:
 
 | | |
 |---|---:|
 | Initial dump | **125,939,523** bindings (4.86 GiB, 2025-12-27 → 2026-01-25) |
-| Daily change history | **1,954,057,764** events over **247 days** (2026-01-26 → 2026-10-10) |
+| Daily change history | **1,961,277,736** events over **247 days** (2026-01-26 → 2026-10-10) |
 | Days absent from the files received | **11** (7 in May, 3 in July, 1 in August) |
-| Daily volume | 6.2M – 11.3M events a day (5th–95th percentile; median 7.7M) |
-| Current state | **120,354,456** active bindings — 75.8M subscribers, 77.0M SIMs, 83.9M handsets (estimated) |
+| Daily volume | 6.3M – 11.3M events a day (5th–95th percentile; median 7.7M) |
+| Current state | **118,393,683** active bindings — 75.7M subscribers, 76.8M SIMs, 83.4M handsets (estimated) |
 | Device reference data | 271,830 TACs (GSMA version v2026.10.04, activated 2026-10-05) |
 | TAC enrichment coverage | **93.9%** of active bindings |
 
@@ -306,8 +309,8 @@ reconciled to the row. See `docs/adr/ADR-009-device-module.md`.
 ### 7. Tests
 
 ```bash
-dotnet test backend/Sqm.slnx                   # 710: Domain 189, Ingestion 125, Application 101, Integration 295
-cd frontend && npm test                        # 187, in 25 files
+dotnet test backend/Sqm.slnx                   # 726: Domain 189, Ingestion 136, Application 101, Integration 300
+cd frontend && npm test                        # 216, in 31 files
 python tools/test_device_image_pipeline.py     # 46 checks, no network, no database
 python tools/test_device_image_package.py      # 111 checks, no network, no database
 ```
