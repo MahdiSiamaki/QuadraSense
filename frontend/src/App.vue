@@ -6,6 +6,7 @@ import { formatDate } from '@/lib/format'
 import { useAuth, Permission } from '@/features/auth/useAuth'
 import { useLogout } from '@/api/auth'
 import UserMenu from '@/features/auth/UserMenu.vue'
+import UploadIndicator from '@/features/imports/UploadIndicator.vue'
 import BrandMark from '@/design-system/BrandMark.vue'
 import ThemeToggle from '@/design-system/ThemeToggle.vue'
 
@@ -108,6 +109,8 @@ async function signOut() {
         </nav>
 
         <div class="ml-auto flex items-center gap-3">
+          <UploadIndicator />
+
           <RouterLink
             v-if="sqm?.latestBusinessDate"
             to="/imports"
