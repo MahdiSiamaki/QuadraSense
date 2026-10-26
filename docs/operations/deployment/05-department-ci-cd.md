@@ -315,6 +315,7 @@ And on 2026-10-26, from the first pipelines (349 on a branch, 366 on `main`) and
 | From inside a job | Nexus's NuGet and npm groups reachable; **MCR reachable directly** - the backend test pulled `dotnet/sdk:10.0.400` from it (request 1 is still open: the rule says Nexus only) |
 | Tests (366) | `test:backend` 580 passed, 130 skipped - the integration tests that need a database, which CI has not (Domain 189, Ingestion 125, Application 101, Integration 165 of 295); `test:frontend` 187 in 25 files and the production build |
 | Builds | stop on the missing passwords. Before 2026-10-26 the build script went on into kaniko and failed with an authentication warning that hid the cause; it now stops at once and names the empty variables |
+| Builds with the passwords (368) | web in 58 s - all its images through Nexus. **Two of the three backend builds failed on transfers from MCR**: the worker lost the .NET SDK after 12 minutes (`stream error ... CANCEL; received from peer`); the api, which got the SDK in 13 minutes, failed after 18 pushing to Nexus, because kaniko streams the runtime's base layers from MCR again while it pushes. Hence `mirror:dotnet` (section 7) and the retry on builds |
 
 ## 5. Credentials - where each one lives
 
@@ -362,6 +363,8 @@ push to the default branch of <gitlab>
 | **Deploy runner** | shell executor on `<server>`, Group runner of the QuadraSense group, tag `quadrasense-deploy`, Protected; `gitlab-runner` in `docker` and `deploy` | `deploy/host/install-deploy-runner.sh` |
 | Deploy | each commit gets `/opt/quadrasense/releases/<sha>` (its compose files and grants), `.env` and `tls/` linked from `/opt/quadrasense/config`; pull the four images by tag; wait while an import is being processed (up to 90 minutes - the job's timeout is 2 h); point `current` at the release and `docker compose up -d --no-build` **from `current`**, back to the previous release if that fails; wait for the API and web to report healthy (5 minutes, else the job fails); record the tag in `.env`; five releases kept | `deploy/compose/deploy-release.sh` |
 | Why from `current` | ClickHouse mounts its config files by relative path, and Compose hashes the resolved path: from each release's own directory every deploy would have recreated ClickHouse. Measured on `<server>` 2026-10-26 - the hash differed for every directory and stayed the same through a symlink, whatever it pointed at; Postgres mounts no files and was never affected. The first pipeline deploy recreates ClickHouse once (from the checkout's directory to `current`), never again | |
+| **.NET base images through Nexus** | `mirror:dotnet` copies `dotnet/sdk` and `dotnet/aspnet` (linux/amd64 only) from MCR to `<nexus-push>/quadrasense/dotnet/…` with regctl, on every pipeline of `main`, before the tests. It copies only what Nexus lacks - after the first run, two manifest checks - and so also puts the copies back if the 30-day cleanup removes them. The builds take them from `<nexus-pull>` (`SDK_IMAGE`, `RUNTIME_IMAGE`). Allowed to fail, so an unreachable MCR stops nothing once the copies exist. Checked on the laptop against a local registry: the first copy moved the layers and left a single-platform manifest; the second moved nothing. A stopgap for request 1 (section 8): it still reaches MCR itself | `.gitlab-ci.yml`; image `regclient/regctl:v0.11.6-alpine` (Docker Hub, so through Nexus) |
+| Retry | a build that fails is tried twice more: builds run after the tests pass, so a failure is almost always a transfer | `.gitlab-ci.yml` |
 | Rollback | re-run the deploy job of an older pipeline (the images are in Nexus) | |
 | Probe | a manual job that reports what `docker-global` really allows: user, capabilities, socket, which of Nexus / MCR / Docker Hub it reaches | `probe:runner` in `.gitlab-ci.yml` |
 
@@ -380,7 +383,7 @@ build script's new check, under dash and busybox `sh`: two passwords missing - i
 stops; all four present - it goes on. **Not yet run on `<gitlab>`: the build and deploy jobs** - they
 wait on the two passwords below.
 
-### CI/CD variables - on the QuadraSense group (Settings → CI/CD → Variables)
+### CI/CD variables - on the QuadraSense group (Settings → CI/CD → Variables); the two passwords on the project
 
 | Variable | Value | Flags |
 |---|---|---|
@@ -393,7 +396,7 @@ wait on the two passwords below.
 | `NEXUS_PULL_USER`, `NEXUS_PULL_PASS` | `<pull-user>` and its password | Protected; the password also Masked and hidden (a name under 8 characters cannot be masked, and is not a secret) |
 | `NEXUS_PUSH_USER`, `NEXUS_PUSH_PASS` | `<push-user>` and its password | Protected; the password also Masked and hidden |
 | `DOCKER_AUTH_CONFIG` | **not needed** - `docker-global` pulls job images from `<nexus-pull>` with its host's own login (section 4) | - |
-| `DOTNET_SDK_IMAGE`, `SDK_IMAGE`, `RUNTIME_IMAGE` | through Nexus once it proxies Microsoft's registry (request 1); until then unset - the defaults in the files | - |
+| `DOTNET_SDK_VERSION`, `ASPNET_VERSION`, `SDK_IMAGE`, `RUNTIME_IMAGE`, `DOTNET_SDK_IMAGE` | **in `.gitlab-ci.yml`, not here**: the image builds take the .NET base images from QuadraSense's copies in Nexus (`mirror:dotnet`, below); the test job's image still from MCR, pulled by the runner's daemon. All point at Nexus's proxy once request 1 is met | - |
 
 Protected variables reach only protected branches: the default branch is protected by GitLab already;
 a test pipeline on another branch gets empty credentials - `username is empty` (section 2).
@@ -402,10 +405,10 @@ a test pipeline on another branch gets empty credentials - `username is empty` (
 
 1. **Push the code to `<gitlab>`** - done 2026-10-26: `main` replaced the template (section 8, item 8);
    pushes since need no one.
-2. **The variables above** - set 2026-10-26, all but `NEXUS_PULL_PASS` and `NEXUS_PUSH_PASS`, which
-   only the owner enters: **Add variable** in the group's settings, *Masked and hidden*, *Protect
-   variable* ticked. The next push of `main` then builds and deploys; or Build → Pipelines → New
-   pipeline on `main`.
+2. **The variables above** - set 2026-10-26: eight on the group; the two passwords, `NEXUS_PULL_PASS`
+   and `NEXUS_PUSH_PASS`, entered by the owner on the **project** (Settings → CI/CD → Variables),
+   *Masked and hidden*, *Protected*. A project inherits its group's variables, so the jobs see all
+   ten. Pipeline 368 was the first to run with them.
 3. **The deploy runner** - done 2026-10-24: runner #28, tag `quadrasense-deploy`, online. How it was
    made: create it in the group (Settings → CI/CD → Runners → New group runner: tag
    `quadrasense-deploy`, not untagged, Protected), then on `<server>`
@@ -418,7 +421,7 @@ a test pipeline on another branch gets empty credentials - `username is empty` (
 
 | # | Item | State |
 |---|---|---|
-| 1 | **Request to the department: a proxy of Microsoft's registry (MCR)** in Nexus, in the docker group. NuGet is there already; MCR is not, and every .NET build and test needs the SDK and runtime images | **open** - until then the .NET images come from MCR directly, if `docker-global` reaches it (the probe says), which the "Nexus only" rule does not allow |
+| 1 | **Request to the department: a proxy of Microsoft's registry (MCR)** in Nexus, in the docker group. NuGet is there already; MCR is not, and every .NET build and test needs the SDK and runtime images | **open, and now with evidence**: from this network MCR transfers are cut (pipeline 368, section 4). Until the proxy exists, `mirror:dotnet` copies the two images into QuadraSense's space in Nexus, and the test job's image still comes from MCR through the runner's daemon - both still reach MCR, which the "Nexus only" rule does not allow |
 | 2 | Where the code lives | **decided**: `quadrasense/quadrasense` on `<gitlab>`. GitHub (public) remains the mirror for now; making it private, or retiring it, is still recommended |
 | 3 | Which runner builds | **decided**: the instance runner, `docker-global`, with kaniko (it has no socket) |
 | 4 | **Release files** - where the deployed tag of each environment is recorded, and so what Nexus's cleanup keeps (section 2: images in no `releases/*.env`, older than 30 days, are deleted) | **open**: ask the department how its cleanup reads them; until then the server records the running tag in `/opt/quadrasense/current.sha` |
@@ -433,7 +436,7 @@ a test pipeline on another branch gets empty credentials - `username is empty` (
 |---|---|---|---|
 | 1 | Revoke the GitLab token and change both Nexus passwords (they went through a chat) | R | the owner |
 | 2 | ~~First push to `<gitlab>`~~ - done 2026-10-26 | R | - |
-| 3 | Group CI/CD variables - done 2026-10-26 but for **the two Nexus passwords** | R | 1 |
+| 3 | ~~CI/CD variables~~ - done 2026-10-26, the passwords by the owner on the project | R | - |
 | 4 | ~~Deploy runner on `<server>`~~ - done 2026-10-24 | R, T | - |
 | 5 | ~~First pipeline; `probe:runner`~~ - 366, 2026-10-26; the first build and deploy follow the passwords | T | 3 |
 | 6 | Request 1 (MCR) and decision 4 (release files) with the department | R | - |
