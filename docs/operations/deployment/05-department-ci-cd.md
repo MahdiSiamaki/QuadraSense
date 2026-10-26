@@ -3,10 +3,10 @@
 **Status:** written 2026-10-24 from the department's own guides - "Nexus Repository" and "GitLab
 Runner", usage guides from its Confluence, provided by the product owner - and from measurements on
 the QuadraSense server the same day. The git routine of section 6 runs today, and breaks one of the
-department's rules (section 1). **The pipeline of section 7 ran on `main` on 2026-10-26** (pipeline
-366): tests pass on the instance runner; the builds wait on the two Nexus passwords, the last thing
-the owner sets (section 7). From then on it deploys every push of `main`, with no one asked - the
-product owner's decision of 2026-10-26.
+department's rules (section 1) - since 2026-10-26 it is the fallback only. **The pipeline of section 7
+deploys**: pipeline 370, 2026-10-26, tested, built and deployed `5ea39f54` to `<server>` with no one
+involved, the first to do so (section 4). Every push of `main` now does the same, with no one asked -
+the product owner's decision of 2026-10-26.
 
 **Read with:** `02-department-vm.md` (the server), `03-mci-openshift.md` §3 (MCI's own pipeline, which
 this one rehearses: GitLab, runners, a hosted registry), ADR-007.
@@ -317,6 +317,10 @@ And on 2026-10-26, from the first pipelines (349 on a branch, 366 on `main`) and
 | Tests (366) | `test:backend` 580 passed, 130 skipped - the integration tests that need a database, which CI has not (Domain 189, Ingestion 125, Application 101, Integration 165 of 295); `test:frontend` 187 in 25 files and the production build |
 | Builds | stop on the missing passwords. Before 2026-10-26 the build script went on into kaniko and failed with an authentication warning that hid the cause; it now stops at once and names the empty variables |
 | Builds with the passwords (368) | web in 58 s - all its images through Nexus. **Two of the three backend builds failed on transfers from MCR**: the worker lost the .NET SDK after 12 minutes (`stream error ... CANCEL; received from peer`); the api, which got the SDK in 13 minutes, failed after 18 pushing to Nexus, because kaniko streams the runtime's base layers from MCR again while it pushes. Hence `mirror:dotnet` (section 7) and the retry on builds |
+| `mirror:dotnet`'s first run (369) | the first attempt was cut after 3 min 28 s - on a 493-byte layer, so it is not the length of a transfer that gets it cut; the automatic retry copied both images in 6 min 53 s. In 370, with the copies in place: 6 s |
+| Builds from the copies (369) | api and worker 2 min 18 s each, web 47 s - against 13 to 18 minutes, and failures, from MCR |
+| The first deploy (369) | failed before its script ran: `prepare environment: exit status 1`, the runner user's `.bash_logout` (section 3, "When runners go wrong"); the owner removed it |
+| **The first deploy that ran (370)** | `5ea39f54` on `<server>`: `current` → `releases/5ea39f54`; API, web and worker from `<nexus-pull>`; API and web healthy; the tag and registry recorded in `.env`; ClickHouse recreated once, as predicted for the move to `current`, and Postgres untouched; the data intact - 288,618,519 events through 2026-02-28, the same 35 completed imports |
 
 ## 5. Credentials - where each one lives
 
@@ -381,8 +385,8 @@ that never turns healthy fails the job; two imports in progress, then one, then 
 waited twice and went on; Postgres unreachable - no wait; the tag and registry written through the
 `.env` link without replacing it; the wait's query run against the server's real Postgres. The
 build script's new check, under dash and busybox `sh`: two passwords missing - it names both and
-stops; all four present - it goes on. **Not yet run on `<gitlab>`: the build and deploy jobs** - they
-wait on the two passwords below.
+stops; all four present - it goes on. **On `<gitlab>`**, pipeline 370 ran all of it end to end
+(section 4).
 
 ### CI/CD variables - on the QuadraSense group (Settings → CI/CD → Variables); the two passwords on the project
 
@@ -439,6 +443,6 @@ a test pipeline on another branch gets empty credentials - `username is empty` (
 | 2 | ~~First push to `<gitlab>`~~ - done 2026-10-26 | R | - |
 | 3 | ~~CI/CD variables~~ - done 2026-10-26, the passwords by the owner on the project | R | - |
 | 4 | ~~Deploy runner on `<server>`~~ - done 2026-10-24 | R, T | - |
-| 5 | ~~First pipeline; `probe:runner`~~ - 366, 2026-10-26; the first build and deploy follow the passwords | T | 3 |
+| 5 | ~~First pipeline; `probe:runner`; the first build and deploy~~ - 366 to 370, 2026-10-26 | T | - |
 | 6 | Request 1 (MCR) and decision 4 (release files) with the department | R | - |
-| 7 | When the pipeline deploys, `update.sh` becomes the fallback only | T | 5 |
+| 7 | ~~When the pipeline deploys, `update.sh` becomes the fallback only~~ - since pipeline 370 | T | - |

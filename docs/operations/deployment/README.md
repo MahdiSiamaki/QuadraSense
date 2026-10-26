@@ -7,7 +7,7 @@ MCI's OpenShift, and write down every step and what each stage needs.
 | | Where | Runs as | State |
 |---|---|---|---|
 | Today | the owner's laptop | `infra/docker-compose.yml` for the stores; `dotnet run`, `npm run dev` | in use |
-| **Stage 1** | the department VM (8 vCPU, 15 GiB, 200 GB, Ubuntu 26.04) | `deploy/compose/compose.yaml` | **running since 2026-10-24** (`02-…` §9): the dump, GSMA v2026.10.04 and the daily files to 2026-02-28; the full history waits on a data disk. Deployed by the department pipeline once its two Nexus passwords are set (`05-…` §7), `update.sh` until then |
+| **Stage 1** | the department VM (8 vCPU, 15 GiB, 200 GB, Ubuntu 26.04) | `deploy/compose/compose.yaml` | **running since 2026-10-24** (`02-…` §9): the dump, GSMA v2026.10.04 and the daily files to 2026-02-28; the full history waits on a data disk. Deployed by the department pipeline on every push of `main` since 2026-10-26 (`05-…` §7); `update.sh` is the fallback |
 | **Stage 2** | MCI's OpenShift - dev, uat, prd namespaces | the same images, as Kubernetes objects through ArgoCD | planned |
 
 The decision behind the shape of it is **ADR-007**.
