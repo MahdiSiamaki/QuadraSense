@@ -143,7 +143,9 @@ branch that lasts, on GitHub, on the laptop and on the department's GitLab. Once
 branch on GitHub and locally with its worktree, bring the laptop's `main` up to date, and push `main`
 to the `gitlab` remote over HTTPS. The laptop pushes because the red lines let developers push and
 servers only pull (`docs/operations/deployment/04-security-red-lines.md` §2-2): no server mirrors
-another. A branch left open - waiting on a decision, or work the owner asked to see first - says why
+another. **That push deploys**: the department pipeline tests, builds and deploys `main` to the
+department VM (`05-department-ci-cd.md` §7) - the owner's decision of 2026-10-26 is that no one is
+asked, so merge only what is verified, and watch the pipeline the push starts. A branch left open - waiting on a decision, or work the owner asked to see first - says why
 in its pull request. Unmerged work worth keeping becomes a tag, `archive/<name>`, before its branch
 is deleted.
 

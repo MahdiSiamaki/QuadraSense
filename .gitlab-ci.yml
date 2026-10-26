@@ -73,6 +73,9 @@ deploy:
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   resource_group: department-vm
+  # deploy-release.sh waits up to 90 minutes for an import in progress to finish; GitLab's default
+  # job timeout is one hour.
+  timeout: 2h
   environment:
     name: department-vm
   before_script:
