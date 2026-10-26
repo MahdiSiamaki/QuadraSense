@@ -109,6 +109,21 @@ export function useBlockages(options: { enabled?: MaybeRefOrGetter<boolean> } = 
 }
 
 /**
+ * How long each stage usually takes for a source - what the time left is estimated from.
+ *
+ * Changes only when an import finishes, so it is fetched once and kept for a few minutes: an
+ * estimate from the last ten imports does not need the eleventh within seconds.
+ */
+export function useStageDurations(source: MaybeRefOrGetter<string | null | undefined>) {
+  return useQuery({
+    queryKey: ['imports', 'stage-durations', source],
+    queryFn: ({ signal }) => importsApi.stageDurations(toValue(source)!, signal),
+    staleTime: 5 * 60_000,
+    enabled: computed(() => !!toValue(source)),
+  })
+}
+
+/**
  * Cancel and reprocess.
  *
  * Both invalidate the import queries rather than patching the cache by hand. The server

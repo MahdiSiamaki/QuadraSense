@@ -433,7 +433,10 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
     {
         await using var connection = await OpenAsync(ct).ConfigureAwait(false);
 
+        // The progress row is cleared with it. It used to outlive its stage, so a stage that reports
+        // nothing - DEDUPLICATING, AGGREGATING - showed the last stage's percentage under its own name.
         const string Sql = """
+            WITH cleared AS (DELETE FROM imports.import_progress WHERE job_id = @job)
             UPDATE imports.import_job
                SET status           = @status::imports.job_status,
                    current_stage    = @stage,
@@ -455,17 +458,22 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
         // statements one waits for the other: a cancel that committed first makes this match no
         // row; one that comes after finds cancellable false and is refused.
         const string Sql = """
-            UPDATE imports.import_job
-               SET status           = @status::imports.job_status,
-                   current_stage    = @stage,
-                   stage_started_at = now(),
-                   cancellable      = false
-             WHERE id = @job
-               AND NOT cancel_requested
+            WITH moved AS (
+                UPDATE imports.import_job
+                   SET status           = @status::imports.job_status,
+                       current_stage    = @stage,
+                       stage_started_at = now(),
+                       cancellable      = false
+                 WHERE id = @job
+                   AND NOT cancel_requested
+                RETURNING id),
+            cleared AS (
+                DELETE FROM imports.import_progress p USING moved WHERE p.job_id = moved.id)
+            SELECT count(*) FROM moved
             """;
 
         var label = status.ToDatabaseValue();
-        var rows = await connection.ExecuteAsync(
+        var rows = await connection.ExecuteScalarAsync<long>(
             Command(Sql, new { job = jobId, status = label, stage = label }, ct)).ConfigureAwait(false);
         return rows == 1;
     }
@@ -533,7 +541,10 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                    bytes_processed = EXCLUDED.bytes_processed,
                    bytes_expected  = EXCLUDED.bytes_expected,
                    percent        = EXCLUDED.percent,
-                   updated_at     = EXCLUDED.updated_at
+                   updated_at     = EXCLUDED.updated_at,
+                   step           = NULL,
+                   step_index     = NULL,
+                   step_count     = NULL
             """;
 
         await connection.ExecuteAsync(Command(Sql, new
@@ -542,6 +553,41 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
             stage,
             processed = bytesProcessed,
             expected = bytesExpected,
+        }, ct)).ConfigureAwait(false);
+    }
+
+    public async Task ReportStepAsync(
+        long jobId, string stage, string stepName, int stepIndex, int stepCount, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+
+        // Percent is the steps already done, so step 3 of 7 starting reads 28.6%: the bar moves
+        // when a step ends, not when it begins. No bytes: this stage reads no file.
+        const string Sql = """
+            INSERT INTO imports.import_progress
+                (job_id, stage, bytes_processed, bytes_expected, percent, updated_at,
+                 step, step_index, step_count)
+            VALUES (@job, @stage, 0, NULL,
+                    ROUND((@index - 1)::numeric * 100 / GREATEST(@count, 1), 2),
+                    now(), @step, @index, @count)
+            ON CONFLICT (job_id) DO UPDATE
+               SET stage           = EXCLUDED.stage,
+                   bytes_processed = 0,
+                   bytes_expected  = NULL,
+                   percent         = EXCLUDED.percent,
+                   updated_at      = EXCLUDED.updated_at,
+                   step            = EXCLUDED.step,
+                   step_index      = EXCLUDED.step_index,
+                   step_count      = EXCLUDED.step_count
+            """;
+
+        await connection.ExecuteAsync(Command(Sql, new
+        {
+            job = jobId,
+            stage,
+            step = stepName,
+            index = (short)stepIndex,
+            count = (short)stepCount,
         }, ct)).ConfigureAwait(false);
     }
 

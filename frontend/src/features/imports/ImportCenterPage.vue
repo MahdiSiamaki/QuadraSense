@@ -7,7 +7,13 @@ import UploadDropzone from './UploadDropzone.vue'
 import ImportHistoryTable from './ImportHistoryTable.vue'
 import TacVersionPanel from './TacVersionPanel.vue'
 import { RouterLink } from 'vue-router'
-import { useBlockages, useImportHistory, useWorkerHealth, useFreshness } from './useImportQueries'
+import {
+  useBlockages,
+  useImportHistory,
+  useWorkerHealth,
+  useFreshness,
+  useStageDurations,
+} from './useImportQueries'
 import { formatDate, formatRelative, formatDateTime } from '@/lib/format'
 import type { ImportHistoryQuery } from '@/api/imports'
 
@@ -33,6 +39,8 @@ const query = computed<ImportHistoryQuery>(() => ({
 }))
 
 const history = useImportHistory(query)
+const sqmTypicals = useStageDurations('SQM')
+const tacTypicals = useStageDurations('TAC')
 const health = useWorkerHealth()
 const blockages = useBlockages()
 const freshness = useFreshness()
@@ -253,7 +261,10 @@ function resetPaging() {
           min-height="20rem"
           @retry="history.refetch()"
         >
-          <ImportHistoryTable :rows="history.data.value?.items ?? []" />
+          <ImportHistoryTable
+            :rows="history.data.value?.items ?? []"
+            :typicals="{ SQM: sqmTypicals.data.value, TAC: tacTypicals.data.value }"
+          />
           <!-- The shared pager: the same range, keys and press as every other list. -->
           <Pagination
             v-if="history.data.value"

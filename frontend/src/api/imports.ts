@@ -139,6 +139,19 @@ export interface ImportProgress {
   bytesExpected: number | null
   percent: number | null
   updatedAt: string
+  /** For a stage that reads no file (AGGREGATING): the step now running, and where it is in the list. */
+  step: string | null
+  stepIndex: number | null
+  stepCount: number | null
+}
+
+/** How long a stage usually takes for a source: the median over its recent first attempts. */
+export interface StageDuration {
+  /** The database's spelling, as `currentStage` has it: "AGGREGATING". */
+  stage: string
+  typicalMs: number
+  /** How many imports the median is taken over. */
+  jobs: number
 }
 
 export interface ImportJobDetail {
@@ -241,6 +254,9 @@ export const importsApi = {
 
   blockages: (signal?: AbortSignal) =>
     api.get<QueueBlockage[]>('/api/v1/imports/blockages', undefined, signal),
+
+  stageDurations: (source: string, signal?: AbortSignal) =>
+    api.get<StageDuration[]>('/api/v1/imports/stage-durations', { source }, signal),
 
   cancel: (jobId: number) => api.post<void>(`/api/v1/imports/${jobId}/cancel`, {}),
 

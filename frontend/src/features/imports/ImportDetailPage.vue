@@ -6,10 +6,15 @@ import Card from '@/design-system/Card.vue'
 import Modal from '@/design-system/Modal.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import StatusBadge from '@/design-system/StatusBadge.vue'
-import ProgressBar from '@/design-system/ProgressBar.vue'
+import ImportProgressPanel from './ImportProgressPanel.vue'
 import EventTimeline from '@/design-system/EventTimeline.vue'
 import FilePreview from './FilePreview.vue'
-import { useImportDetail, useQuarantineSamples, useImportActions } from './useImportQueries'
+import {
+  useImportDetail,
+  useQuarantineSamples,
+  useImportActions,
+  useStageDurations,
+} from './useImportQueries'
 import { isTerminal, isRunning } from '@/api/imports'
 import { ApiError } from '@/api/client'
 import {
@@ -46,6 +51,7 @@ const showPreview = ref(false)
 const samples = useQuarantineSamples(jobId, openRule)
 
 const summary = computed(() => detail.data.value?.summary)
+const typicals = useStageDurations(() => summary.value?.sourceCode)
 
 /** "SQM · Oct 3, 2026 · 337.0 MB". A file with no business day leaves the day out, not a dash. */
 const facts = computed(() => {
@@ -220,15 +226,11 @@ function toggleRule(summaryId: number) {
 
         <!-- Live progress. Only while something is actually happening; a finished job showing a
              full progress bar adds nothing the status badge has not already said. -->
-        <Card v-if="running && detail.data.value.progress">
-          <ProgressBar
-            :percent="detail.data.value.progress.percent"
-            :label="detail.data.value.progress.stage.toLowerCase()"
-            :detail="`${formatBytes(detail.data.value.progress.bytesProcessed)} of ${
-              detail.data.value.progress.bytesExpected
-                ? formatBytes(detail.data.value.progress.bytesExpected)
-                : 'unknown'
-            } read`"
+        <Card v-if="running">
+          <ImportProgressPanel
+            :summary="summary"
+            :progress="detail.data.value.progress"
+            :typicals="typicals.data.value"
           />
         </Card>
 

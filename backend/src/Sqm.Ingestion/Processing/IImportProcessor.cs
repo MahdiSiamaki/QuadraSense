@@ -51,6 +51,12 @@ public interface IImportContext
     /// <summary>Reports progress within the current stage.</summary>
     Task ReportProgressAsync(long bytesProcessed, long? bytesExpected, CancellationToken ct);
 
+    /// <summary>
+    /// Reports which step of a stage that reads no file is starting - "3 of 7: updating the binding
+    /// history" - so the page says what is happening instead of sweeping for half an hour.
+    /// </summary>
+    Task ReportStepAsync(string stepName, int stepIndex, int stepCount, CancellationToken ct);
+
     /// <summary>Adds a line to the job's timeline.</summary>
     Task NoteAsync(string severity, string message, object? detail, CancellationToken ct);
 

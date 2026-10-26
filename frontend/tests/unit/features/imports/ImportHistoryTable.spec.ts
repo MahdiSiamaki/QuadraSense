@@ -57,4 +57,28 @@ describe('the import history', () => {
   it('shows when a job finished, when it is known', () => {
     expect(finishedCell('Completed', '2026-10-25T08:00:52Z').text()).not.toBe('—')
   })
+
+  it("gives a running job roughly how long it has left, from its source's usual stage times", () => {
+    const running = {
+      ...row('Aggregating', null),
+      currentStage: 'AGGREGATING',
+      stageStartedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+    }
+    const cell = mount(ImportHistoryTable, {
+      props: {
+        rows: [running],
+        typicals: {
+          SQM: [
+            { stage: 'AGGREGATING', typicalMs: 28 * 60_000, jobs: 10 },
+            { stage: 'FINALIZING', typicalMs: 0, jobs: 10 },
+          ],
+        },
+      },
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+      .findAll('tbody td')
+      .at(-1)!
+
+    expect(cell.text()).toBe('about 18 min left')
+  })
 })

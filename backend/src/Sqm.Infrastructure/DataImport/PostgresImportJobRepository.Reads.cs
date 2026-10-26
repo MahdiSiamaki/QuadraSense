@@ -218,7 +218,8 @@ public sealed partial class PostgresImportJobRepository
 
         const string ProgressSql = """
             SELECT stage AS Stage, bytes_processed AS BytesProcessed, bytes_expected AS BytesExpected,
-                   percent AS Percent, updated_at AS UpdatedAt
+                   percent AS Percent, updated_at AS UpdatedAt,
+                   step AS Step, step_index::int AS StepIndex, step_count::int AS StepCount
               FROM imports.import_progress
              WHERE job_id = @job
             """;
@@ -440,6 +441,49 @@ public sealed partial class PostgresImportJobRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<StageDuration>> GetStageDurationsAsync(
+        string sourceCode, CancellationToken ct)
+    {
+        // A stage starts at its first event - entering it writes one - and ends where the next
+        // stage starts, the last one where the job finished. Ordered by when each stage usually
+        // starts, so the list is the order a job goes through them.
+        const string Sql = """
+            WITH recent AS (
+                SELECT id, finished_at
+                  FROM imports.import_job
+                 WHERE source_code = @source
+                   AND status IN ('COMPLETED', 'PARTIALLY_COMPLETED')
+                   AND attempt = 1
+                   AND finished_at IS NOT NULL
+                 ORDER BY finished_at DESC
+                 LIMIT 10),
+            entered AS (
+                SELECT e.job_id, e.stage, min(e.occurred_at) AS started
+                  FROM imports.import_event e
+                  JOIN recent r ON r.id = e.job_id
+                 WHERE e.stage IS NOT NULL
+                 GROUP BY e.job_id, e.stage),
+            spans AS (
+                SELECT n.stage,
+                       EXTRACT(EPOCH FROM COALESCE(lead(n.started) OVER w, r.finished_at) - n.started)
+                           * 1000 AS ms,
+                       EXTRACT(EPOCH FROM n.started - first_value(n.started) OVER w) AS offset_s
+                  FROM entered n
+                  JOIN recent r ON r.id = n.job_id
+                WINDOW w AS (PARTITION BY n.job_id ORDER BY n.started))
+            SELECT stage AS Stage,
+                   round(percentile_cont(0.5) WITHIN GROUP (ORDER BY ms))::bigint AS TypicalMs,
+                   count(*)::int AS Jobs
+              FROM spans
+             GROUP BY stage
+             ORDER BY percentile_cont(0.5) WITHIN GROUP (ORDER BY offset_s)
+            """;
+
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        return [.. await connection.QueryAsync<StageDuration>(
+            Command(Sql, new { source = sourceCode.ToUpperInvariant() }, ct)).ConfigureAwait(false)];
+    }
+
     public async Task<IReadOnlyList<QueueBlockage>> GetBlockagesAsync(CancellationToken ct)
     {
         // The claim's own rule, asked the other way round: an earlier day with no landed job holds
