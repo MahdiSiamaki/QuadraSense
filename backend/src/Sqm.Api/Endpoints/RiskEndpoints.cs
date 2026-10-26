@@ -186,16 +186,23 @@ public static class RiskEndpoints
 
         // Every row paging can reach, in one statement: the same rows, masked the same way.
         var page = await reader.ListAsync(list.Run, list.Query with { Page = 1, PageSize = MaxReachable }, ct).ConfigureAwait(false);
-        var rows = page.Rows.Select(r => Row(r, list)).ToList();
+        var rows = page.Rows.Select(r => (Entity: r, Row: Row(r, list))).ToList();
         var columns = Columns(RiskEvaluation.ListOf(list.Query.Rule));
 
+        // A list of SIMs carries each SIM's ICCID beside its IMSI: derived (Iccid), so headed as such,
+        // and masked as the IMSI is, since it gives the IMSI away.
+        var family = RiskRules.Spec(list.Query.Rule).Family;
+        var sims = family == RiskFamily.Sim;
+
         var csv = CsvExport.Write(
-            [Kind(RiskRules.Spec(list.Query.Rule).Family), "Level", "Assessable", .. columns.Select(c => c.Label), "Reasons", "As of", "Rules"],
-            rows.Select(r => (IReadOnlyList<object?>)
+            [Kind(family), .. (sims ? IccidHeading : []), "Level", "Assessable", .. columns.Select(c => c.Label), "Reasons", "As of", "Rules"],
+            rows.Select(x => (IReadOnlyList<object?>)
             [
-                r.Key, r.Level, r.Assessable,
-                .. columns.Select(c => Cell(r.Values.GetValueOrDefault(c.Name))),
-                string.Join(" | ", r.Reasons.Select(x => x.Text)),
+                x.Row.Key,
+                .. (sims ? new object?[] { DerivedIccid(x.Entity.Key, list.Reveal) } : []),
+                x.Row.Level, x.Row.Assessable,
+                .. columns.Select(c => Cell(x.Row.Values.GetValueOrDefault(c.Name))),
+                string.Join(" | ", x.Row.Reasons.Select(r => r.Text)),
                 Iso(list.Run.AsOf), list.Context.Settings.Version,
             ]));
 
@@ -442,6 +449,12 @@ public static class RiskEndpoints
             [.. assessment.Reasons.Select(Reason)],
             Values(entity));
     }
+
+    private static readonly string[] IccidHeading = ["ICCID (derived from IMSI)"];
+
+    /// <summary>A SIM's ICCID for the export, from its IMSI before masking; masked as the IMSI would be.</summary>
+    internal static string? DerivedIccid(string imsi, bool reveal) =>
+        Iccid.FromImsi(imsi) is { } iccid ? (reveal ? iccid : IdentifierMask.Iccid(iccid)) : null;
 
     /// <summary>A value as one CSV cell: a list of tags joined by spaces.</summary>
     private static object? Cell(object? value) =>

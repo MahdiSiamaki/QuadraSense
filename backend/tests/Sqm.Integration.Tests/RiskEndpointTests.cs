@@ -350,7 +350,8 @@ public sealed class RiskEndpointTests : IClassFixture<WebApplicationFactory<Prog
         _held = [.. _held, Permissions.DataExport, Permissions.IdentifierReveal];
         var (ok, _, csv) = await SendAsync(HttpMethod.Post, "/api/v1/risk/export", new { rule = "HighDeviceCount30" });
         Assert.Equal(HttpStatusCode.OK, ok);
-        Assert.Contains(Sim + ",RiskSignal,true,40,50", csv, StringComparison.Ordinal);
+        // A list of SIMs carries each one's ICCID, derived from its IMSI, right after it.
+        Assert.Contains(Sim + ",8998110100023456789,RiskSignal,true,40,50", csv, StringComparison.Ordinal);
         Assert.Equal(RiskEndpointsMaxReachable, _lists[^1].PageSize);
     }
 

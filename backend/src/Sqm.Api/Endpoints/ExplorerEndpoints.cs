@@ -172,8 +172,8 @@ public static class ExplorerEndpoints
             var reveal = user.Can(Permissions.IdentifierReveal);
 
             var csv = Infrastructure.CsvExport.Write(
-                [.. query.Columns.Select(c => c.Label)],
-                reveal ? rows.Rows : rows.Rows.Select(r => Mask(r, query.Columns)));
+                ExportHeaders(query.Columns),
+                rows.Rows.Select(r => ExportRow(r, query.Columns, reveal)));
 
             // The export is the act the security model says is always audited: who, what shape,
             // how many rows - and, as everywhere, not the values.
@@ -589,6 +589,37 @@ public static class ExplorerEndpoints
             ExplorerFieldType.Imei => IdentifierMask.Imei(s),
             _ => value,
         } : value)];
+
+    /// <summary>The export's headings: each IMSI column is followed by the ICCID derived from it.</summary>
+    /// <remarks>
+    /// The feed carries no ICCID; the operator's numbering derives it from the IMSI (<see cref="Iccid"/>),
+    /// and the heading says it is derived. The export is where a SIM's identifiers leave the product.
+    /// </remarks>
+    internal static IReadOnlyList<string> ExportHeaders(IReadOnlyList<CheckedColumn> columns) =>
+        [.. columns.SelectMany(c => c.Type == ExplorerFieldType.Imsi
+            ? new[] { c.Label, $"ICCID (derived from {c.Label})" }
+            : [c.Label])];
+
+    /// <summary>
+    /// A row as the export writes it: masked for a caller without identifier.reveal, each IMSI followed by
+    /// its ICCID - derived from the value before masking, then masked as the IMSI is, since it gives the IMSI away.
+    /// </summary>
+    internal static IReadOnlyList<object?> ExportRow(IReadOnlyList<object?> row, IReadOnlyList<CheckedColumn> columns, bool reveal)
+    {
+        var shown = reveal ? row : Mask(row, columns);
+        var cells = new List<object?>(row.Count + 1);
+        for (var i = 0; i < row.Count; i++)
+        {
+            cells.Add(shown[i]);
+            if (columns[i].Type == ExplorerFieldType.Imsi)
+            {
+                var iccid = Iccid.FromImsi(row[i] as string);
+                cells.Add(iccid is null || reveal ? iccid : IdentifierMask.Iccid(iccid));
+            }
+        }
+
+        return cells;
+    }
 
     private static IResult Busy(string message) => Results.Problem(
         statusCode: StatusCodes.Status429TooManyRequests, title: "Busy", detail: message);
