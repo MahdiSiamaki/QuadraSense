@@ -96,6 +96,17 @@ export interface ImportJobSummary {
   durationMs: number | null
   createdBy: string
   errorSummary: string | null
+  /**
+   * Whether a cancel would be taken now. False once finished, and false once a running import is
+   * past the point where stopping would leave work half-done - folding a daily file into the
+   * history and the dashboards.
+   */
+  cancellable: boolean
+  /** A cancel was asked for; a running import is stopping. */
+  cancelRequested: boolean
+  /** The stage a running import is in, in the database's spelling ("AGGREGATING"). */
+  currentStage: string | null
+  stageStartedAt: string | null
 }
 
 export interface ImportEvent {
