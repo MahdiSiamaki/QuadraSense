@@ -75,6 +75,10 @@ internal sealed class ImportContext(
             .ConfigureAwait(false);
     }
 
+    // Not throttled: a stage has a handful of steps, minutes apart.
+    public Task ReportStepAsync(string stepName, int stepIndex, int stepCount, CancellationToken ct) =>
+        repository.ReportStepAsync(job.JobId, _stage, stepName, stepIndex, stepCount, ct);
+
     public Task NoteAsync(string severity, string message, object? detail, CancellationToken ct) =>
         repository.AppendEventAsync(job.JobId, severity, _stage, message, detail, ct);
 

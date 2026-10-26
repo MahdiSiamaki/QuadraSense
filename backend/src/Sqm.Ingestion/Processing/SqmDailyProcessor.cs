@@ -225,6 +225,12 @@ internal sealed partial class SqmDailyProcessor(
             return CancelledWhileLoading(validation, businessDate, existing);
         }
 
+        // Most of a daily import is this stage - 25 of 30 minutes on the department VM - and it
+        // reads no file, so it reports its steps instead of bytes.
+        const int Steps = 7;
+        Task Step(int index, string what) => context.ReportStepAsync(what, index, Steps, ct);
+
+        await Step(1, "Folding the day into current state").ConfigureAwait(false);
         var folded = await analytics.FoldDayAsync(businessDate, ct).ConfigureAwait(false);
 
         await context.NoteAsync(
@@ -235,12 +241,14 @@ internal sealed partial class SqmDailyProcessor(
             + "whole history.",
             new { bindingsTouched = folded }, ct).ConfigureAwait(false);
 
+        await Step(2, "Rebuilding the day's change figures").ConfigureAwait(false);
         await analytics.RefreshChangeMartsForDayAsync(businessDate, sequence, ct)
             .ConfigureAwait(false);
 
         // The binding history - every binding's dated adds and removes, so one number, SIM or
         // handset's whole timeline is a key read (analytics migration 022). A day it has never
         // seen is added; one it has - this file replacing it, or a retry - rebuilds its month.
+        await Step(3, "Updating the binding history").ConfigureAwait(false);
         var history = await analytics.RefreshHistoryForDayAsync(businessDate, ct).ConfigureAwait(false);
 
         await context.NoteAsync(
@@ -260,14 +268,17 @@ internal sealed partial class SqmDailyProcessor(
         // What the file looks like against the ordinary days: shifted IMEIs, SIMs with several
         // numbers, malformed IMEIs. Noted on the job when out of line; never a failure - see
         // FeedQualityMonitor.
+        await Step(4, "Measuring the feed's quality").ConfigureAwait(false);
         await feedQuality.AfterDayAsync(businessDate, context, ct).ConfigureAwait(false);
 
         // The day's SIM changes for the risk pages, screened against the feed-quality rows just
         // written - so this must come after that step. Never a failure; see RiskDayStep.
+        await Step(5, "Recording the day's SIM changes").ConfigureAwait(false);
         await riskDay.AfterDayAsync(businessDate, context, ct).ConfigureAwait(false);
 
         // The day's per-model counts, from which new models and network age are read. Countable
         // IMEIs only, by the same test as above. Never a failure; see TacDayStep.
+        await Step(6, "Counting the day's device models").ConfigureAwait(false);
         await tacDay.AfterDayAsync(businessDate, context, ct).ConfigureAwait(false);
 
         // The dashboard's headline figures come from the seq-partitioned marts, not from the
@@ -275,6 +286,7 @@ internal sealed partial class SqmDailyProcessor(
         // this one, unless the day arrived late or replaced an earlier one. That rebuild is most
         // of an import (~31 of ~34 minutes), so when more files of this source are queued behind
         // this one it is left to the last of them; see DashboardSnapshot.
+        await Step(7, "Rebuilding the dashboard figures").ConfigureAwait(false);
         await dashboard.AfterDayAsync(job, context, ct).ConfigureAwait(false);
 
         // ---------------------------------------------------------------- verify

@@ -165,12 +165,31 @@ public sealed class DailyLoadSafetyTests
         Assert.Contains("the day is empty until a file for it is imported again", outcome.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Aggregating_says_which_of_its_steps_is_running_before_it_runs_it()
+    {
+        // Most of a daily import is AGGREGATING, which reads no file: without its steps the page
+        // could only sweep for half an hour.
+        var run = new Run($"{Header}\n{Row1}\n{Row2}\n");
+
+        await Assert.ThrowsAsync<OperationCanceledException>(run.ProcessAsync); // the stop at the fold
+
+        Assert.Equal(("Folding the day into current state", 1, 7), Assert.Single(run.Steps));
+        Assert.True(run.StepBeforeFold);
+    }
+
     /// <summary>One import of one file against recording stubs.</summary>
     private sealed class Run(string file)
     {
         public List<string> Calls { get; } = [];
 
         public List<string> Loaded { get; } = [];
+
+        /// <summary>The steps the processor reported, in order.</summary>
+        public List<(string Name, int Index, int Count)> Steps { get; } = [];
+
+        /// <summary>Whether a step had been reported by the time the fold began.</summary>
+        public bool StepBeforeFold { get; private set; }
 
         /// <summary>What the store reports holding after the load; by default, what was sent.</summary>
         public long? StoredCount { get; init; }
@@ -220,12 +239,13 @@ public sealed class DailyLoadSafetyTests
                 new TacDayStep(analytics, NullLogger<TacDayStep>.Instance),
                 NullLogger<SqmDailyProcessor>.Instance);
 
-            var context = Stub.Create<IImportContext>((m, _) => m.Name switch
+            var context = Stub.Create<IImportContext>((m, args) => m.Name switch
             {
                 "OpenFileAsync" => Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(file))),
                 "IsCancellationRequestedAsync" => Task.FromResult(false),
                 "EnterStageUnlessCancelledAsync" => Task.FromResult(GateOpen),
                 "get_CancelledByOperator" => CancelledByOperator,
+                "ReportStepAsync" => RecordStep(args),
                 _ => Stub.Default(m),
             });
 
@@ -250,11 +270,19 @@ public sealed class DailyLoadSafetyTests
                     // Before the load: nothing there yet, so nothing to replace.
                     return Task.FromResult(Loaded.Count == 0 ? ExistingBefore : StoredCount ?? _stored);
                 case "FoldDayAsync":
+                    StepBeforeFold = Steps.Count > 0;
+
                     // Stop here: past this point the path under test has been decided.
                     throw new OperationCanceledException("stop after the fold");
                 default:
                     return Stub.Default(method);
             }
+        }
+
+        private Task RecordStep(object?[] args)
+        {
+            Steps.Add(((string)args[0]!, (int)args[1]!, (int)args[2]!));
+            return Task.CompletedTask;
         }
 
         private async Task<long> LoadAsync(Stream csv)
