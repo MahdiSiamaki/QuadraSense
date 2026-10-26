@@ -204,6 +204,26 @@ if (args.Contains("--import-file"))
         args[index + 1], CancellationToken.None).ConfigureAwait(false);
 }
 
+// "Import again" from the shell: queues a finished import's file as its day's next revision.
+// See ReprocessJob.
+//
+//   dotnet Sqm.Ingestion.dll --reprocess <job id>
+if (args.Contains("--reprocess"))
+{
+    var index = Array.IndexOf(args, "--reprocess");
+    if (index + 1 >= args.Length
+        || !long.TryParse(args[index + 1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var jobId))
+    {
+        Console.Error.WriteLine("usage: --reprocess <job id>");
+        return 2;
+    }
+
+    return await ReprocessJob.RunAsync(
+        host.Services.GetRequiredService<IImportJobRepository>(),
+        host.Services.GetRequiredService<IImportFileStore>(),
+        jobId, CancellationToken.None).ConfigureAwait(false);
+}
+
 // Records a dump loaded before --load-dump recorded it: its original into the file store, and a
 // completed import in the history. The file must hold exactly as many rows as binding_snapshot.
 // See DumpHistory.

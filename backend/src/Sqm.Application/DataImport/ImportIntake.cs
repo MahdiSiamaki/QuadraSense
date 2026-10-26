@@ -94,7 +94,78 @@ public static class ImportIntake
 
         return new IntakeResult(registered, jobId);
     }
+
+    /// <summary>"Import again": queues a finished import's file as a new job, its day's next revision.</summary>
+    /// <remarks>
+    /// A new job against the same file, not a reset of the old one. History is a record of what
+    /// happened, and rewriting the failed attempt would erase the evidence of why the reprocess was
+    /// needed. The file must be readable, not only recorded as present: the first machine's 134
+    /// bulk-loaded files are recorded at a drive they have since left (2026-10-26), and a job
+    /// queued against one could only fail.
+    /// </remarks>
+    /// <param name="repository">The Import Center's history and queue.</param>
+    /// <param name="files">The file store the original is read from.</param>
+    /// <param name="jobId">The import to run again.</param>
+    /// <param name="actor">Who asked for it.</param>
+    /// <param name="correlationId">The request's trace identifier, when there is a request.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public static async Task<ReprocessResult> ReprocessAsync(
+        IImportJobRepository repository,
+        IImportFileStore files,
+        long jobId,
+        string actor,
+        string? correlationId,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(repository);
+        ArgumentNullException.ThrowIfNull(files);
+
+        var original = await repository.GetJobAsync(jobId, ct).ConfigureAwait(false);
+        if (original is null)
+        {
+            return new ReprocessResult(ReprocessOutcome.NotFound, null, null);
+        }
+
+        if (!original.IsBlobPresent || !await files.ExistsAsync(original.StoredPath, ct).ConfigureAwait(false))
+        {
+            return new ReprocessResult(ReprocessOutcome.FileGone, null, original.StoredPath);
+        }
+
+        var newJobId = await repository.EnqueueAsync(
+            original.Summary.SourceCode,
+            original.FileId,
+            original.Summary.BusinessDate,
+            actor,
+            priority: 1,
+            reprocessOfJobId: jobId,
+            ct).ConfigureAwait(false);
+
+        await repository.WriteAuditAsync(
+            actor, "import.reprocess", newJobId, null, null, correlationId,
+            new { originalJobId = jobId }, ct).ConfigureAwait(false);
+
+        return new ReprocessResult(ReprocessOutcome.Queued, newJobId, original.StoredPath);
+    }
 }
+
+/// <summary>What became of a request to import a job's file again.</summary>
+public enum ReprocessOutcome
+{
+    /// <summary>Queued as a new job.</summary>
+    Queued,
+
+    /// <summary>There is no such import.</summary>
+    NotFound,
+
+    /// <summary>Its original file cannot be read: deleted, or not where it is recorded.</summary>
+    FileGone,
+}
+
+/// <summary>The outcome of <see cref="ImportIntake.ReprocessAsync"/>.</summary>
+/// <param name="Outcome">What happened.</param>
+/// <param name="QueuedJobId">The new job, when one was queued.</param>
+/// <param name="StoredPath">Where the original was looked for.</param>
+public sealed record ReprocessResult(ReprocessOutcome Outcome, long? QueuedJobId, string? StoredPath);
 
 /// <summary>The outcome of <see cref="ImportIntake.AcceptAsync"/>.</summary>
 /// <param name="File">The registered file - new, or the one these bytes already were.</param>

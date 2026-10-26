@@ -290,43 +290,24 @@ public static class ImportEndpoints
     }
 
     private static async Task<IResult> ReprocessAsync(
-        long jobId, IImportJobRepository repository, HttpContext http, CancellationToken ct)
+        long jobId, IImportJobRepository repository, IImportFileStore fileStore, HttpContext http, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(http);
 
-        var original = await repository.GetJobAsync(jobId, ct).ConfigureAwait(false);
-        if (original is null)
-        {
-            return Results.NotFound();
-        }
+        // The rules are ImportIntake's: --reprocess follows the same ones from the shell.
+        var result = await ImportIntake
+            .ReprocessAsync(repository, fileStore, jobId, CurrentActor(http), http.TraceIdentifier, ct)
+            .ConfigureAwait(false);
 
-        if (!original.IsBlobPresent)
+        return result.Outcome switch
         {
-            return Results.Problem(
+            ReprocessOutcome.NotFound => Results.NotFound(),
+            ReprocessOutcome.FileGone => Results.Problem(
                 title: "Original file is gone",
-                detail: "The stored file has been deleted, so this import cannot be run again.",
-                statusCode: StatusCodes.Status409Conflict);
-        }
-
-        var actor = CurrentActor(http);
-
-        // A new job against the same file, not a reset of the old one. History is a record of
-        // what happened, and rewriting the failed attempt would erase the evidence of why the
-        // reprocess was needed.
-        var newJobId = await repository.EnqueueAsync(
-            original.Summary.SourceCode,
-            original.FileId,
-            original.Summary.BusinessDate,
-            actor,
-            priority: 1,
-            reprocessOfJobId: jobId,
-            ct).ConfigureAwait(false);
-
-        await repository.WriteAuditAsync(
-            actor, "import.reprocess", newJobId, null, null, http.TraceIdentifier,
-            new { originalJobId = jobId }, ct).ConfigureAwait(false);
-
-        return Results.Created($"/api/v1/imports/{newJobId}", new ReprocessResponse(newJobId, jobId));
+                detail: "The stored file has been deleted or is not where it was recorded, so this import cannot be run again.",
+                statusCode: StatusCodes.Status409Conflict),
+            _ => Results.Created($"/api/v1/imports/{result.QueuedJobId}", new ReprocessResponse(result.QueuedJobId!.Value, jobId)),
+        };
     }
 
     private static async Task<IResult> GetFreshnessAsync(
