@@ -124,6 +124,30 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`
 }
 
+/** 4404019 -> "4.2 MB/s". */
+export function formatRate(bytesPerSecond: number): string {
+  return `${formatBytes(Math.round(bytesPerSecond))}/s`
+}
+
+/**
+ * Time still to go, said the way an estimate should be: roughly.
+ *
+ * "about 4 min left", never "3 min 52 s left" - the figure comes from a rate measured over a few
+ * seconds or from past imports, and a precise-looking number would promise more than either
+ * knows. Under a minute it says so rather than counting seconds down.
+ */
+export function formatTimeLeft(ms: number | null): string | null {
+  if (ms === null || !Number.isFinite(ms)) return null
+  if (ms < 60_000) return 'less than a minute left'
+
+  const minutes = Math.round(ms / 60_000)
+  if (minutes < 60) return `about ${minutes} min left`
+
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest ? `about ${hours} h ${rest} min left` : `about ${hours} h left`
+}
+
 /**
  * A duration in words, at one level of precision.
  *
