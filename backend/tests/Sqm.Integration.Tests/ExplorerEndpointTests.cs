@@ -26,6 +26,7 @@ public sealed class ExplorerEndpointTests : IClassFixture<WebApplicationFactory<
     private const string Msisdn = "9121234567";
     private const string Imsi = "432110123456789";
     private const string Imei = "35085748123456";
+    private const string Iccid = "8998110100023456789"; // Imsi's, by the operator's numbering
 
     private readonly WebApplicationFactory<Program> _factory;
     private readonly List<AuditEntry> _audited = [];
@@ -414,10 +415,36 @@ public sealed class ExplorerEndpointTests : IClassFixture<WebApplicationFactory<
         Assert.DoesNotContain(Imei, csv, StringComparison.Ordinal);
         Assert.Contains("Galaxy A32", csv, StringComparison.Ordinal);
 
+        // The ICCID gives the IMSI away, so it is masked with it - present, and only partly.
+        Assert.DoesNotContain(Iccid, csv, StringComparison.Ordinal);
+        Assert.Contains("899811*********6789", csv, StringComparison.Ordinal);
+
         var entry = Assert.Single(_audited);
         Assert.Equal((Permissions.DataExport, AuditOutcome.Success), (entry.Action, entry.Outcome));
         Assert.Equal((1, true), (entry.Detail!["rows"], entry.Detail["masked"]));
         Assert.DoesNotContain(Msisdn, JsonSerializer.Serialize(entry), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Each IMSI column of an export is followed by the ICCID the operator's numbering derives from it.
+    /// </summary>
+    /// <remarks>The feed carries no ICCID (2026-10-26); the heading says the column is derived.</remarks>
+    [Fact]
+    public async Task An_export_carries_each_sims_derived_iccid_beside_its_imsi()
+    {
+        _held = [.. _held, Permissions.DataExport, Permissions.IdentifierReveal];
+
+        var (status, csv, _) = await SendRawAsync(HttpMethod.Post, "/api/v1/explorer/export", new
+        {
+            dataset = "Bindings",
+            where = new { field = "msisdn", @operator = "Equals", values = new[] { Msisdn } },
+            columns = new[] { "msisdn", "imsi", "imei", "model" },
+        });
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        var lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        Assert.Contains("ICCID (derived from", lines[0], StringComparison.Ordinal);
+        Assert.Contains($"{Imsi},{Iccid},{Imei}", lines[1], StringComparison.Ordinal);
     }
 
     [Fact]

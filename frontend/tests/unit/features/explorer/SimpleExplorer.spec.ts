@@ -101,14 +101,28 @@ afterEach(() => {
 })
 
 describe('the Explorer simple search', () => {
-  it('offers only the lookups the user may run, and ICCID as not yet possible', async () => {
+  it('offers only the lookups the user may run', async () => {
     const w = await open(['lookup.subscriber'])
 
     expect(typeOptions(w)).toEqual([
       { label: 'Auto', disabled: false },
       { label: 'MSISDN', disabled: false },
-      { label: 'ICCID', disabled: true },
     ])
+  })
+
+  it('offers ICCID with the IMSI, and searches one as the IMSI it was derived from', async () => {
+    const w = await open(['lookup.imsi'])
+    expect(typeOptions(w)).toEqual([
+      { label: 'Auto', disabled: false },
+      { label: 'IMSI', disabled: false },
+      { label: 'ICCID', disabled: false },
+    ])
+
+    // SIM's ICCID: 8998, its digits 4-7, 000, its last eight.
+    await search(w, '8998113900091761332')
+
+    expect(posted()).toEqual(['/api/v1/lookup/imsi/search'])
+    expect(JSON.stringify(post.mock.calls[0]?.[1])).toContain(SIM)
   })
 
   it('refuses, before sending anything, a lookup the user may not run', async () => {

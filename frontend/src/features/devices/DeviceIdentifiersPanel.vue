@@ -6,6 +6,7 @@ import Pagination from '@/design-system/Pagination.vue'
 import { useDeviceIdentifiers } from '@/api/devices'
 import { ApiError } from '@/api/client'
 import { formatDate, formatFull } from '@/lib/format'
+import DerivedIccid from '@/features/lookup/DerivedIccid.vue'
 
 /**
  * Every IMEI, SIM and number bound to one device model.
@@ -164,7 +165,10 @@ const problem = computed(() => {
               class="border-b last:border-0"
             >
               <td class="tabular px-2 py-1.5">{{ row.imei }}</td>
-              <td class="tabular px-2 py-1.5">{{ row.imsi }}</td>
+              <td class="tabular px-2 py-1.5">
+                {{ row.imsi }}
+                <DerivedIccid :imsi="row.imsi" />
+              </td>
               <td class="tabular px-2 py-1.5">{{ row.msisdn }}</td>
               <td class="px-2 py-1.5">
                 <span

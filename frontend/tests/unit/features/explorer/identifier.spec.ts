@@ -85,8 +85,17 @@ describe('what is not an identifier', () => {
     expect(!r.ok && r.tac).toBe('35004012')
   })
 
-  it('ICCID cannot be searched yet', () => {
-    expect(readIdentifier('8998110000000000000', 'iccid').ok).toBe(false)
+  it('an ICCID is searched as the IMSI it was derived from', () => {
+    // 8998 + IMSI digits 4-7 + 000 + its last eight: the owner's numbering, 2026-10-26.
+    for (const choice of ['iccid', 'auto'] as const) {
+      const r = readIdentifier('8998 1101 000 23456789', choice)
+      expect(r.ok && r.resolved).toEqual({ kind: 'imsi', value: '432110123456789', prefix: false })
+    }
+  })
+
+  it('a 19-digit value that is not of that numbering is refused, not guessed at', () => {
+    expect(readIdentifier('8998110112323456789', 'iccid').ok).toBe(false) // no 000 in digits 9-11
+    expect(readIdentifier('8997110100023456789', 'iccid').ok).toBe(false)
   })
 
   it('letters are a typo, not noise', () => {

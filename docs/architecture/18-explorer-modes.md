@@ -38,9 +38,25 @@ and each endpoint checks the identifier kind's permission and writes the audit e
 | Advanced mode | `explorer.query` |
 
 The search box offers only the types the user may look up. A value Auto reads as a type they may not
-look up is refused in the page, with the permission named, and nothing is sent. ICCID is listed and
-cannot be chosen: the operator's files carry no ICCID (the owner's decision, 2026-10-19, was to show it
-disabled rather than hide it).
+look up is refused in the page, with the permission named, and nothing is sent.
+
+**ICCID** (since 2026-10-26). The operator's files carry no ICCID; the owner gave the operator's
+numbering, which derives it from the IMSI: `8998`, the IMSI's digits 4-7, `000`, its last eight -
+nineteen digits (`Sqm.Domain.Identifiers.Iccid`, mirrored in `frontend/src/api/iccid.ts`). Every IMSI
+in the feed carries MCC+MNC `43211` (312 million bindings, measured that day), so the rule runs
+backwards exactly:
+
+- **Search.** ICCID is offered with the IMSI's permission, and Auto reads 19 digits beginning `8998` as
+  one. It is sent as the IMSI it came from, so the IMSI's permission check and audit apply unchanged.
+  A 19-digit value that is not of that numbering is refused in the page.
+- **Display.** Shown, titled as derived, under every IMSI the Explorer shows - SIM search results and
+  summary, a number's bindings, the Relationships graph, the timeline, the Advanced grid - and on a
+  model's identifiers. An IMSI that is not 15 digits, or arrives masked, shows none.
+- **Exports.** The Explorer's CSV follows each IMSI column with `ICCID (derived from …)`; a risk list of
+  SIMs carries one after the IMSI. Masked with it (`IdentifierMask.Iccid`, keeping `8998`, the MNC and
+  the last four), because the ICCID gives the IMSI away.
+
+It was listed and disabled before (the owner's decision of 2026-10-19: shown rather than hidden).
 
 A user with `explorer.query` and no lookup permission opens straight into Advanced; one with lookup
 permissions and no `explorer.query` sees no mode switch.
@@ -114,15 +130,21 @@ cases fail on an empty pair list.
 
 ## Verified
 
-Frontend unit tests: `identifier.spec.ts` (20 - the server's reading rules, case by case) and
-`SimpleExplorer.spec.ts` (6 - offered types per permission, refusal without a request, one request per
+Frontend unit tests: `identifier.spec.ts` (21 - the server's reading rules, case by case) and
+`SimpleExplorer.spec.ts` (7 - offered types per permission, refusal without a request, one request per
 opened view, follow and Back with no identifier in the address, `?kind=` from an old link, the
-quick-lookup hand-over).
+quick-lookup hand-over, an ICCID searched as its IMSI).
+
+ICCID, 2026-10-26: `iccid.spec.ts` (12) and the server's `IccidTests` hold the rule both ways, the
+inputs that have none, and the mask; `ExplorerEndpointTests` and `RiskEndpointTests` hold the export
+columns, masked and revealed. Each was made to fail first: the rule off by one digit on the server
+(4 failures) and in the page (3), the export's ICCID left unmasked (1).
 
 In the browser, on the real stack, 2026-10-19:
 
 - `/lookup` lands on `/explorer?kind=msisdn` with MSISDN chosen; the navigation shows Explorer and no
-  Lookup, IMSI or Relationships entries; ICCID is shown and cannot be chosen.
+  Lookup, IMSI or Relationships entries; ICCID was shown and could not be chosen (it can since
+  2026-10-26 - "Who sees what").
 - Handset `35446411748626` under Auto: Details is the summary (Galaxy A51, 3 bindings, 2 numbers,
   first seen 2026-02-08); Relationships (95 ms, 427,479 rows read) lists 2 numbers and 3 SIMs and the
   pair `35446511748626`, "2 phone numbers seen on both"; following the pair puts it in the box as an

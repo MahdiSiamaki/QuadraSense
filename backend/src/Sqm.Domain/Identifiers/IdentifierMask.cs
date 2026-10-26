@@ -48,6 +48,13 @@ public static class IdentifierMask
     /// <summary>Masks an IMSI given as digits.</summary>
     public static string Imsi(string digits) => Keep(digits, start: 5, end: 4);
 
+    /// <summary>Masks an ICCID derived from an IMSI, keeping <c>8998</c> and the MNC and the last four.</summary>
+    /// <remarks>
+    /// The ICCID gives its IMSI away (<see cref="Sqm.Domain.Identifiers.Iccid"/>), so it hides what
+    /// the IMSI's mask hides: the same six digits, and the constant <c>000</c> between them.
+    /// </remarks>
+    public static string Iccid(string digits) => Keep(digits, start: 6, end: 4);
+
     /// <summary>Masks a subscriber number, keeping the operator prefix and the last two digits.</summary>
     /// <remarks>
     /// Stored MSISDNs have no leading zero - 9121000002, not 09121000002 - so the operator prefix

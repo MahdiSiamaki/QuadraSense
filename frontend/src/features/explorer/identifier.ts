@@ -1,4 +1,5 @@
 import { describeTerm, IMSI_CONSTANT_PREFIX, IMSI_LENGTH, MIN_IMSI_PREFIX } from '@/api/imsi'
+import { ICCID_LENGTH, imsiFromIccid, looksLikeIccid } from '@/api/iccid'
 import { Permission } from '@/features/auth/useAuth'
 
 /**
@@ -10,7 +11,7 @@ import { Permission } from '@/features/auth/useAuth'
  * closed; it cannot let a request through that the server would not refuse itself.
  */
 
-/** The identifier types the search box offers. ICCID is listed, and cannot be chosen yet. */
+/** The identifier types the search box offers. An ICCID is searched as the IMSI it was derived from. */
 export type IdentifierKind = 'msisdn' | 'imsi' | 'imei' | 'iccid'
 export type KindChoice = 'auto' | IdentifierKind
 
@@ -84,6 +85,20 @@ function asImsi(raw: string): Reading {
   }
 }
 
+/**
+ * An ICCID, searched as the IMSI the operator's numbering derived it from (api/iccid): the same
+ * SIM, under the IMSI's permission and audit. The feed carries no ICCID of its own.
+ */
+function asIccid(digits: string): Reading {
+  const imsi = imsiFromIccid(digits)
+  return imsi
+    ? { ok: true, resolved: { kind: 'imsi', value: imsi, prefix: false }, note: `An ICCID: the SIM with IMSI ${imsi}.` }
+    : {
+        ok: false,
+        problem: `An ICCID here is ${ICCID_LENGTH} digits, beginning 8998, with 000 in digits 9 to 11 - derived from the IMSI.`,
+      }
+}
+
 function asImei(digits: string): Reading {
   return digits.length === IMEI_LENGTH
     ? { ok: true, resolved: { kind: 'imei', value: digits, prefix: false }, note: 'A handset (IMEI).' }
@@ -102,7 +117,7 @@ export function readIdentifier(raw: string, choice: KindChoice): Reading {
   if (text === '') return { ok: false, problem: null }
 
   const digits = text.replace(SEPARATORS, '')
-  if (!/^\d+$/.test(digits)) return { ok: false, problem: 'Digits only: a number, an IMSI or an IMEI.' }
+  if (!/^\d+$/.test(digits)) return { ok: false, problem: 'Digits only: a number, an IMSI, an ICCID or an IMEI.' }
 
   switch (choice) {
     case 'msisdn':
@@ -112,7 +127,7 @@ export function readIdentifier(raw: string, choice: KindChoice): Reading {
     case 'imei':
       return asImei(digits)
     case 'iccid':
-      return { ok: false, problem: 'ICCID is not in the feed yet.' }
+      return asIccid(digits)
   }
 
   // Auto. A dialled form (a plus, or 11-13 digits) is tried as a number first, as the server does;
@@ -122,6 +137,7 @@ export function readIdentifier(raw: string, choice: KindChoice): Reading {
   }
   if (digits.length === MSISDN_LENGTH) return asNumber(digits)
   if (digits.length === IMEI_LENGTH) return asImei(digits)
+  if (looksLikeIccid(digits)) return asIccid(digits)
   if (digits.length >= IMSI_LENGTH) return asImsi(text)
   if (digits.length === TAC_LENGTH) {
     return { ok: false, problem: '8 digits is a model (TAC), not one identifier.', tac: digits }

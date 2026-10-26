@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import Button from '@/design-system/Button.vue'
 import Card from '@/design-system/Card.vue'
 import SegmentedControl, { tabId, type SegmentOption } from '@/design-system/SegmentedControl.vue'
+import { ICCID_NOTE } from '@/api/iccid'
 import { Permission, useAuth } from '@/features/auth/useAuth'
 import ImsiSearchPanel from '@/features/lookup/ImsiSearchPanel.vue'
 import RelationshipGraph from '@/features/lookup/RelationshipGraph.vue'
@@ -35,13 +36,17 @@ type View = 'details' | 'relationships' | 'history'
 
 const permitted = (kind: Resolved['kind']) => can(KIND_PERMISSION[kind])
 
-/** The types offered: only those this user may look up, and ICCID, which nobody can yet. */
+/**
+ * The types offered: only those this user may look up. An ICCID is searched as the IMSI it was
+ * derived from, so it is offered with the IMSI's permission (it was listed and disabled until
+ * 2026-10-26, when the owner gave the operator's numbering).
+ */
 const kinds = computed<SegmentOption<KindChoice>[]>(() => [
   { value: 'auto', label: 'Auto', title: 'Tell the type from the length' },
   ...(permitted('msisdn') ? [{ value: 'msisdn' as const, label: 'MSISDN', title: 'Subscriber number' }] : []),
   ...(permitted('imsi') ? [{ value: 'imsi' as const, label: 'IMSI', title: 'SIM, complete or by prefix' }] : []),
+  ...(permitted('imsi') ? [{ value: 'iccid' as const, label: 'ICCID', title: ICCID_NOTE }] : []),
   ...(permitted('imei') ? [{ value: 'imei' as const, label: 'IMEI', title: 'Handset' }] : []),
-  { value: 'iccid', label: 'ICCID', disabled: "Not in the feed yet: the operator's files carry no ICCID." },
 ])
 
 /** The type named in the address - from an old /lookup link, or this page's own last choice. */
@@ -175,7 +180,7 @@ onMounted(() => {
         <div class="flex flex-wrap items-end gap-3">
           <div class="min-w-[min(18rem,100%)] flex-1">
             <label for="simple-identifier" class="block text-xs font-medium text-[var(--c-text-secondary)]">
-              Subscriber number, IMSI or IMEI
+              Subscriber number, IMSI, ICCID or IMEI
             </label>
             <input
               id="simple-identifier"
@@ -183,7 +188,7 @@ onMounted(() => {
               inputmode="tel"
               autocomplete="off"
               spellcheck="false"
-              placeholder="0913 123 4567 · 43211… · 35004012…"
+              placeholder="0913 123 4567 · 43211… · 8998… · 35004012…"
               aria-describedby="simple-identifier-help"
               :aria-invalid="input.trim() && problem ? 'true' : undefined"
               class="tabular mt-1.5 w-full rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-3 py-2 font-mono text-sm placeholder:font-sans placeholder:text-[var(--c-text-muted)]"
@@ -202,8 +207,9 @@ onMounted(() => {
           <span v-else-if="reading.ok" class="text-[var(--c-text-secondary)]">{{ reading.note }}</span>
           <span v-else class="text-[var(--c-text-muted)]">
             Auto reads the type from the length: 10 digits is a number (also written 0…, +98… or 0098…), 14 a
-            handset, 15 a SIM. To search SIMs by the start of their IMSI, choose IMSI. Lookups are audited, and the
-            value is sent in the request body, never in the URL.
+            handset, 15 a SIM, 19 beginning 8998 a SIM's ICCID - derived from the IMSI, and searched as it. To search
+            SIMs by the start of their IMSI, choose IMSI. Lookups are audited, and the value is sent in the request
+            body, never in the URL.
           </span>
         </p>
       </form>

@@ -5,6 +5,7 @@ import Button from '@/design-system/Button.vue'
 import Pagination from '@/design-system/Pagination.vue'
 import { formatDate, formatFull, formatImei, formatMsisdn } from '@/lib/format'
 import type { SortDraft } from './model'
+import DerivedIccid from '@/features/lookup/DerivedIccid.vue'
 
 /**
  * A page of Explorer results.
@@ -195,6 +196,7 @@ function toggleSort(column: ExplorerColumn) {
                 {{ display(row[c] ?? null, column) }}
               </span>
               <template v-else>{{ display(row[c] ?? null, column) }}</template>
+              <DerivedIccid v-if="column.type === 'Imsi'" :imsi="typeof row[c] === 'string' ? (row[c] as string) : null" />
             </td>
           </tr>
         </tbody>

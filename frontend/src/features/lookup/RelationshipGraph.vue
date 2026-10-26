@@ -4,6 +4,7 @@ import Card from '@/design-system/Card.vue'
 import { useRelationshipExplorer, type RelatedNode } from '@/api/relationships'
 import { ApiError } from '@/api/client'
 import { formatDate, formatFull, formatImei, formatMsisdn } from '@/lib/format'
+import DerivedIccid from './DerivedIccid.vue'
 
 /**
  * Explore what one identifier is connected to, and step from any of them to the next.
@@ -155,6 +156,8 @@ function isWithheld(key: string): boolean {
                 <span class="tabular block font-mono text-sm">
                   {{ labelFor(node) }}
                 </span>
+                <DerivedIccid v-if="node.kind === 'Imsi'" :imsi="node.value" />
+
                 <span class="mt-0.5 block text-2xs text-[var(--c-text-muted)]">
                   <template v-if="node.marketingName">
                     {{ node.brand }} {{ node.marketingName }} ·
