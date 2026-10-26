@@ -660,7 +660,7 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
                 (await fixture.Repository.RegisterFileAsync(TestSource, "c1.csv", Stored(Hash("c1")), "tester", ct)).FileId,
                 new DateOnly(2026, 6, 5), "tester", ct: ct);
             await fixture.Repository.ClaimNextAsync("worker", TimeSpan.FromMinutes(5), ct);
-            Assert.True(await fixture.Repository.RequestCancellationAsync(failing, "tester", ct));
+            Assert.Equal(CancelRequestResult.Accepted, await fixture.Repository.RequestCancellationAsync(failing, "tester", ct));
 
             Assert.False(await fixture.Repository.FailAsync(
                 failing, "ClickHouse was unreachable", isRetryable: true, TimeSpan.FromSeconds(1), "worker", ct));
@@ -671,11 +671,143 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
                 (await fixture.Repository.RegisterFileAsync(TestSource, "c2.csv", Stored(Hash("c2")), "tester", ct)).FileId,
                 new DateOnly(2026, 6, 6), "tester", ct: ct);
             await fixture.Repository.ClaimNextAsync("worker", TimeSpan.FromMinutes(5), ct);
-            Assert.True(await fixture.Repository.RequestCancellationAsync(abandoned, "tester", ct));
+            Assert.Equal(CancelRequestResult.Accepted, await fixture.Repository.RequestCancellationAsync(abandoned, "tester", ct));
             await ExpireLeaseAsync(abandoned);
             await fixture.Repository.RecoverExpiredLeasesAsync(ct);
 
             Assert.Equal(ImportJobStatus.Cancelled, (await fixture.Repository.GetJobAsync(abandoned, ct))!.Summary.Status);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
+    /// <summary>
+    /// A cancel and the point of no return are exclusive, whichever comes first.
+    /// </summary>
+    /// <remarks>
+    /// Until 2026-10-26 a cancel during the load was answered 202 and then ignored: the job
+    /// completed while the screen said it was stopping. Now the job crosses into the stage where
+    /// stopping would leave work half-done with a statement that also checks for a cancel, and the
+    /// cancel request is refused once it has crossed - one of the two always loses.
+    /// </remarks>
+    [Fact]
+    public async Task A_cancel_and_the_point_of_no_return_exclude_each_other()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        try
+        {
+            var ct = TestContext.Current.CancellationToken;
+
+            // The job crossed first: the cancel is refused, and nothing on the job says it was asked.
+            var crossed = await fixture.Repository.EnqueueAsync(TestSource,
+                (await fixture.Repository.RegisterFileAsync(TestSource, "p1.csv", Stored(Hash("p1")), "tester", ct)).FileId,
+                new DateOnly(2026, 6, 7), "tester", ct: ct);
+            await fixture.Repository.ClaimNextAsync("worker", TimeSpan.FromMinutes(5), ct);
+            Assert.True((await fixture.Repository.GetJobAsync(crossed, ct))!.Summary.Cancellable);
+
+            Assert.True(await fixture.Repository.EnterStageUnlessCancelledAsync(crossed, ImportJobStatus.Aggregating, ct));
+            Assert.Equal(CancelRequestResult.PastPointOfNoReturn,
+                await fixture.Repository.RequestCancellationAsync(crossed, "tester", ct));
+
+            var after = (await fixture.Repository.GetJobAsync(crossed, ct))!.Summary;
+            Assert.False(after.Cancellable);
+            Assert.False(after.CancelRequested);
+            Assert.Equal("AGGREGATING", after.CurrentStage);
+            await fixture.Repository.CompleteAsync(
+                crossed, ImportJobStatus.Completed, new ImportCounters(), makeEffective: true,
+                businessDate: new DateOnly(2026, 6, 7), workerId: "worker", ct);
+
+            // The cancel came first: the job may not cross, and stays stopping.
+            var stopped = await fixture.Repository.EnqueueAsync(TestSource,
+                (await fixture.Repository.RegisterFileAsync(TestSource, "p2.csv", Stored(Hash("p2")), "tester", ct)).FileId,
+                new DateOnly(2026, 6, 8), "tester", ct: ct);
+            await fixture.Repository.ClaimNextAsync("worker", TimeSpan.FromMinutes(5), ct);
+            await fixture.Repository.SetStageAsync(stopped, ImportJobStatus.Importing, ct);
+
+            Assert.Equal(CancelRequestResult.Accepted,
+                await fixture.Repository.RequestCancellationAsync(stopped, "tester", ct));
+            Assert.False(await fixture.Repository.EnterStageUnlessCancelledAsync(stopped, ImportJobStatus.Aggregating, ct));
+
+            var refused = (await fixture.Repository.GetJobAsync(stopped, ct))!.Summary;
+            Assert.Equal(ImportJobStatus.Importing, refused.Status);
+            Assert.True(refused.CancelRequested);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
+    /// <summary>A retry starts from the beginning, so it can be cancelled again until it crosses.</summary>
+    [Fact]
+    public async Task A_retry_of_a_job_that_had_crossed_can_be_cancelled_again()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        try
+        {
+            var ct = TestContext.Current.CancellationToken;
+
+            var job = await fixture.Repository.EnqueueAsync(TestSource,
+                (await fixture.Repository.RegisterFileAsync(TestSource, "r1.csv", Stored(Hash("r1")), "tester", ct)).FileId,
+                new DateOnly(2026, 6, 9), "tester", ct: ct);
+            await fixture.Repository.ClaimNextAsync("worker", TimeSpan.FromMinutes(5), ct);
+            Assert.True(await fixture.Repository.EnterStageUnlessCancelledAsync(job, ImportJobStatus.Aggregating, ct));
+
+            // Fails while aggregating, with attempts left: back in the queue, and claimed again.
+            Assert.True(await fixture.Repository.FailAsync(
+                job, "ClickHouse was unreachable", isRetryable: true, TimeSpan.Zero, "worker", ct));
+            Assert.True((await fixture.Repository.GetJobAsync(job, ct))!.Summary.Cancellable);
+            await fixture.Repository.ClaimNextAsync("worker", TimeSpan.FromMinutes(5), ct);
+
+            Assert.Equal(CancelRequestResult.Accepted,
+                await fixture.Repository.RequestCancellationAsync(job, "tester", ct));
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
+    /// <summary>A finished job, or one that does not exist, is not cancelled - and says which.</summary>
+    [Fact]
+    public async Task A_cancel_of_a_finished_or_unknown_job_says_which()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        try
+        {
+            var ct = TestContext.Current.CancellationToken;
+
+            var job = await fixture.Repository.EnqueueAsync(TestSource,
+                (await fixture.Repository.RegisterFileAsync(TestSource, "f1.csv", Stored(Hash("f1")), "tester", ct)).FileId,
+                new DateOnly(2026, 6, 10), "tester", ct: ct);
+            Assert.Equal(CancelRequestResult.Accepted,
+                await fixture.Repository.RequestCancellationAsync(job, "tester", ct));
+
+            var summary = (await fixture.Repository.GetJobAsync(job, ct))!.Summary;
+            Assert.Equal(ImportJobStatus.Cancelled, summary.Status);
+            Assert.False(summary.Cancellable);
+
+            Assert.Equal(CancelRequestResult.AlreadyFinished,
+                await fixture.Repository.RequestCancellationAsync(job, "tester", ct));
+            Assert.Equal(CancelRequestResult.NotFound,
+                await fixture.Repository.RequestCancellationAsync(long.MaxValue, "tester", ct));
         }
         finally
         {

@@ -49,6 +49,9 @@ public sealed class ImportWorkerOptions
     /// <summary>How often to look for jobs whose worker died.</summary>
     public TimeSpan LeaseRecoveryInterval { get; set; } = TimeSpan.FromMinutes(1);
 
+    /// <summary>How often a running job's row is read for an operator's cancel.</summary>
+    public TimeSpan CancelPollInterval { get; set; } = TimeSpan.FromSeconds(2);
+
     /// <summary>
     /// Base delay for retry backoff. Attempt <c>n</c> waits <c>base * 2^(n-1)</c>.
     /// </summary>

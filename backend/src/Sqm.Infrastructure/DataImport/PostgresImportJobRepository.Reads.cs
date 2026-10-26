@@ -32,7 +32,15 @@ public sealed partial class PostgresImportJobRepository
                    j.finished_at        AS FinishedAt,
                    j.duration_ms        AS DurationMs,
                    j.created_by         AS CreatedBy,
-                   j.error_summary      AS ErrorSummary
+                   j.error_summary      AS ErrorSummary,
+                   (j.status IN ('UPLOADED', 'QUEUED', 'RETRYING')
+                    OR (j.cancellable AND j.status NOT IN ('COMPLETED', 'PARTIALLY_COMPLETED',
+                                                           'DUPLICATE', 'FAILED', 'QUARANTINED',
+                                                           'CANCELLED')))
+                                        AS Cancellable,
+                   j.cancel_requested   AS CancelRequested,
+                   j.current_stage      AS CurrentStage,
+                   j.stage_started_at   AS StageStartedAt
         """;
 
     private sealed record JobSummaryRow(
@@ -55,14 +63,19 @@ public sealed partial class PostgresImportJobRepository
         DateTimeOffset? FinishedAt,
         long? DurationMs,
         string CreatedBy,
-        string? ErrorSummary)
+        string? ErrorSummary,
+        bool Cancellable,
+        bool CancelRequested,
+        string? CurrentStage,
+        DateTimeOffset? StageStartedAt)
     {
         public ImportJobSummary ToSummary() => new(
             JobId, SourceCode, OriginalFileName, FileBytes,
             ImportJobStatusExtensions.FromDatabaseValue(StatusText),
             BusinessDate, Revision, IsEffective, Attempt,
             RowsInput, RowsInserted, RowsInvalid, WarningCount, ErrorCount,
-            CreatedAt, StartedAt, FinishedAt, DurationMs, CreatedBy, ErrorSummary);
+            CreatedAt, StartedAt, FinishedAt, DurationMs, CreatedBy, ErrorSummary,
+            Cancellable, CancelRequested, CurrentStage, StageStartedAt);
     }
 
     /// <summary>
@@ -247,6 +260,7 @@ public sealed partial class PostgresImportJobRepository
         long RowsInput, long RowsInserted, long RowsInvalid, int WarningCount, int ErrorCount,
         DateTimeOffset CreatedAt, DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt,
         long? DurationMs, string CreatedBy, string? ErrorSummary,
+        bool Cancellable, bool CancelRequested, string? CurrentStage, DateTimeOffset? StageStartedAt,
         long FileId, string Sha256, string StoredPath, bool IsBlobPresent, string? SchemaVersion,
         long? SupersedesJobId, long? ReprocessOfJobId, long? SupersededByJobId)
     {
@@ -255,7 +269,8 @@ public sealed partial class PostgresImportJobRepository
             ImportJobStatusExtensions.FromDatabaseValue(StatusText),
             BusinessDate, Revision, IsEffective, Attempt,
             RowsInput, RowsInserted, RowsInvalid, WarningCount, ErrorCount,
-            CreatedAt, StartedAt, FinishedAt, DurationMs, CreatedBy, ErrorSummary);
+            CreatedAt, StartedAt, FinishedAt, DurationMs, CreatedBy, ErrorSummary,
+            Cancellable, CancelRequested, CurrentStage, StageStartedAt);
     }
 
     public async Task<IReadOnlyList<QuarantineSample>> GetQuarantineSamplesAsync(

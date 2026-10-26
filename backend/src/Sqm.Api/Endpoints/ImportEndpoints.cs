@@ -278,15 +278,24 @@ public static class ImportEndpoints
     {
         ArgumentNullException.ThrowIfNull(http);
 
-        var accepted = await repository
+        var result = await repository
             .RequestCancellationAsync(jobId, CurrentActor(http), ct).ConfigureAwait(false);
 
-        return accepted
-            ? Results.Accepted($"/api/v1/imports/{jobId}")
-            : Results.Problem(
+        return result switch
+        {
+            CancelRequestResult.Accepted => Results.Accepted($"/api/v1/imports/{jobId}"),
+            CancelRequestResult.NotFound => Results.NotFound(),
+            CancelRequestResult.PastPointOfNoReturn => Results.Problem(
+                title: "Too late to cancel",
+                detail: "The import has loaded its data and is folding it into the history and the "
+                        + "dashboards. Stopping now would leave them half-updated, so it will finish; "
+                        + "the file can be imported again afterwards.",
+                statusCode: StatusCodes.Status409Conflict),
+            _ => Results.Problem(
                 title: "Cannot cancel",
-                detail: "The job has already finished, or does not exist.",
-                statusCode: StatusCodes.Status409Conflict);
+                detail: "The import has already finished.",
+                statusCode: StatusCodes.Status409Conflict),
+        };
     }
 
     private static async Task<IResult> ReprocessAsync(

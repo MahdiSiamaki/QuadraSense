@@ -18,8 +18,10 @@ public interface IImportProcessor
     /// <param name="job">The claimed job.</param>
     /// <param name="context">How to report progress, events and quarantine back to the platform.</param>
     /// <param name="ct">
-    /// Cancelled when the process is shutting down or the worker has lost its lease. A processor
-    /// should observe it at stage boundaries rather than mid-write.
+    /// Cancelled when the process is shutting down, the worker has lost its lease, or an operator
+    /// cancelled the job (<see cref="IImportContext.CancelledByOperator"/> tells which). Only in
+    /// the last case does the processor remove what it had loaded: after a shutdown or a lost
+    /// lease the job runs again, and its next attempt clears the day itself.
     /// </param>
     Task<ImportOutcome> ProcessAsync(ClaimedJob job, IImportContext context, CancellationToken ct);
 }
@@ -29,6 +31,22 @@ public interface IImportContext
 {
     /// <summary>Moves the job to a new stage and records it on the timeline.</summary>
     Task EnterStageAsync(ImportJobStatus stage, string message, CancellationToken ct);
+
+    /// <summary>
+    /// Moves the job into the stage where stopping would leave work half-done - unless a cancel
+    /// came first. From here on a cancel is refused.
+    /// </summary>
+    /// <returns>
+    /// <see langword="false"/> when a cancel came first: the stage is not entered, and the
+    /// processor removes what it loaded and returns <see cref="ImportJobStatus.Cancelled"/>.
+    /// </returns>
+    Task<bool> EnterStageUnlessCancelledAsync(ImportJobStatus stage, string message, CancellationToken ct);
+
+    /// <summary>
+    /// True once an operator's cancel has stopped this job - and only that, not a shutdown or a
+    /// lost lease, after which the job runs again and must find its partial day still there.
+    /// </summary>
+    bool CancelledByOperator { get; }
 
     /// <summary>Reports progress within the current stage.</summary>
     Task ReportProgressAsync(long bytesProcessed, long? bytesExpected, CancellationToken ct);
@@ -40,8 +58,8 @@ public interface IImportContext
     Task QuarantineAsync(IReadOnlyList<QuarantineWrite> groups, CancellationToken ct);
 
     /// <summary>
-    /// True when an operator has asked the job to stop. Checked at stage boundaries, so
-    /// cancelling never leaves a half-written day.
+    /// True when an operator has asked the job to stop. The worker also watches this and cancels
+    /// the processor's token, so it is only worth asking where nothing is running to be cancelled.
     /// </summary>
     Task<bool> IsCancellationRequestedAsync(CancellationToken ct);
 

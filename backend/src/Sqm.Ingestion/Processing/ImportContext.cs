@@ -14,7 +14,8 @@ namespace Sqm.Ingestion.Processing;
 internal sealed class ImportContext(
     IImportJobRepository repository,
     IImportFileStore fileStore,
-    ClaimedJob job) : IImportContext
+    ClaimedJob job,
+    Func<bool> cancelledByOperator) : IImportContext
 {
     private const long ProgressIntervalTicks = TimeSpan.TicksPerSecond;
 
@@ -35,6 +36,23 @@ internal sealed class ImportContext(
         await repository.AppendEventAsync(job.JobId, "info", label, message, null, ct)
             .ConfigureAwait(false);
     }
+
+    public async Task<bool> EnterStageUnlessCancelledAsync(
+        ImportJobStatus stage, string message, CancellationToken ct)
+    {
+        if (!await repository.EnterStageUnlessCancelledAsync(job.JobId, stage, ct).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        var label = stage.ToDatabaseValue();
+        _stage = label;
+        await repository.AppendEventAsync(job.JobId, "info", label, message, null, ct)
+            .ConfigureAwait(false);
+        return true;
+    }
+
+    public bool CancelledByOperator => cancelledByOperator();
 
     public async Task ReportProgressAsync(long bytesProcessed, long? bytesExpected, CancellationToken ct)
     {

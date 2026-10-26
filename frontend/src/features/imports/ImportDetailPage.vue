@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import Button from '@/design-system/Button.vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import Card from '@/design-system/Card.vue'
+import Modal from '@/design-system/Modal.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import StatusBadge from '@/design-system/StatusBadge.vue'
 import ProgressBar from '@/design-system/ProgressBar.vue'
 import EventTimeline from '@/design-system/EventTimeline.vue'
 import FilePreview from './FilePreview.vue'
 import { useImportDetail, useQuarantineSamples, useImportActions } from './useImportQueries'
-import { isTerminal } from '@/api/imports'
+import { isTerminal, isRunning } from '@/api/imports'
+import { ApiError } from '@/api/client'
 import {
   formatBytes,
   formatDate,
@@ -27,6 +29,7 @@ import {
  * property of the data, not of the run.
  */
 const route = useRoute()
+const router = useRouter()
 const jobId = computed(() => Number(route.params['jobId']))
 
 const detail = useImportDetail(jobId)
@@ -53,6 +56,36 @@ const facts = computed(() => {
     .join(' · ')
 })
 const running = computed(() => (summary.value ? !isTerminal(summary.value.status) : false))
+
+/*
+ * Cancel. Offered while the server says it would be taken (`cancellable`), and asked about first:
+ * stopping a running import removes what it loaded, and a file replacing a day already in the
+ * system has removed that day before loading - so the day stays empty until it is imported
+ * again. Past the point where stopping would leave work half-done the button gives way to a line
+ * saying why; a cancel asked for shows as stopping until the worker has acted on it.
+ */
+const confirmingCancel = ref(false)
+const stopping = computed(() => !!summary.value?.cancelRequested && running.value)
+const pastCancelPoint = computed(
+  () => !!summary.value && running.value && !summary.value.cancellable && !stopping.value,
+)
+const waiting = computed(() => !!summary.value && running.value && !isRunning(summary.value.status))
+const cancelError = computed(() => {
+  const error = cancel.error.value
+  if (!error) return null
+  return error instanceof ApiError ? (error.problem?.detail ?? error.message) : 'The cancel was not taken.'
+})
+
+function confirmCancel() {
+  cancel.mutate(jobId.value, { onSettled: () => (confirmingCancel.value = false) })
+}
+
+/** "Import again" opens the import it queued, rather than leaving the reader on the old one. */
+function importAgain() {
+  reprocess.mutate(jobId.value, {
+    onSuccess: (queued) => void router.push(`/imports/${queued.jobId}`),
+  })
+}
 
 /** Row counts, only the ones that carry information for this particular job. */
 const counters = computed(() => {
@@ -121,24 +154,69 @@ function toggleRule(summaryId: number) {
 
           <div class="flex shrink-0 gap-2">
             <Button
-              v-if="running"
+              v-if="running && summary.cancellable && !stopping"
               variant="danger"
               size="sm"
-              :pending="cancel.isPending.value"
-              @click="cancel.mutate(jobId)"
+              @click="confirmingCancel = true"
             >
               Cancel
             </Button>
+            <Button v-if="stopping" variant="danger" size="sm" pending>Stopping…</Button>
             <Button
               v-if="!running && detail.data.value.isBlobPresent"
               size="sm"
               :pending="reprocess.isPending.value"
-              @click="reprocess.mutate(jobId)"
+              @click="importAgain"
             >
               Import again
             </Button>
           </div>
         </header>
+
+        <p
+          v-if="pastCancelPoint"
+          class="rounded-[var(--radius-md)] border px-3 py-2 text-xs text-[var(--c-text-secondary)]"
+        >
+          {{
+            summary.sourceCode === 'TAC'
+              ? 'This import is registering its TAC version, so it can no longer be cancelled. Once it finishes, the version waits for an administrator to activate it - or to leave it inactive.'
+              : 'This import has loaded its data and is folding it into the history and the dashboards, so it can no longer be cancelled: stopping now would leave them half-updated. Once it finishes, the file can be imported again.'
+          }}
+        </p>
+        <p
+          v-if="cancelError"
+          class="rounded-[var(--radius-md)] border border-[var(--c-danger)] bg-[var(--c-danger-subtle)] px-3 py-2 text-xs text-[var(--c-danger-text)]"
+          role="alert"
+        >
+          {{ cancelError }}
+        </p>
+
+        <Modal
+          :open="confirmingCancel"
+          title="Cancel this import?"
+          size="sm"
+          :busy="cancel.isPending.value"
+          @close="confirmingCancel = false"
+        >
+          <p v-if="waiting" class="text-sm">
+            It has not started, so it simply will not run. The file stays stored and can be
+            imported again later.
+          </p>
+          <p v-else class="text-sm">
+            It stops within a few seconds, and whatever it has loaded so far is removed. If this file
+            is replacing a day that was already loaded, that day stays empty until a file for it is
+            imported again.
+          </p>
+
+          <template #actions>
+            <Button :disabled="cancel.isPending.value" @click="confirmingCancel = false">
+              Keep it
+            </Button>
+            <Button variant="danger" :pending="cancel.isPending.value" @click="confirmCancel">
+              Cancel the import
+            </Button>
+          </template>
+        </Modal>
 
         <!-- Live progress. Only while something is actually happening; a finished job showing a
              full progress bar adds nothing the status badge has not already said. -->

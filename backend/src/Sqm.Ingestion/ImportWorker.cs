@@ -191,13 +191,22 @@ public sealed partial class ImportWorker(
     {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-        // Two reasons to stop: the process is shutting down, or this worker lost the lease. The
-        // linked token lets the processor observe either one through the same mechanism.
+        // Three reasons to stop: the process is shutting down, this worker lost the lease, or an
+        // operator cancelled the job. The linked token lets the processor observe all three
+        // through the same mechanism; the context tells it whether it was the last, the only one
+        // after which it removes what it loaded.
         using var leaseLost = new CancellationTokenSource();
+        using var operatorCancel = new CancellationTokenSource();
         using var linked = CancellationTokenSource
-            .CreateLinkedTokenSource(stoppingToken, leaseLost.Token);
+            .CreateLinkedTokenSource(stoppingToken, leaseLost.Token, operatorCancel.Token);
+
+        bool CancelledByOperator() =>
+            operatorCancel.IsCancellationRequested
+            && !leaseLost.IsCancellationRequested
+            && !stoppingToken.IsCancellationRequested;
 
         var renewal = RenewLeaseUntilDoneAsync(job, leaseLost, linked.Token);
+        var watch = WatchForCancelAsync(job, operatorCancel, linked.Token);
 
         try
         {
@@ -211,7 +220,7 @@ public sealed partial class ImportWorker(
                 return;
             }
 
-            var context = new ImportContext(repository, fileStore, job);
+            var context = new ImportContext(repository, fileStore, job, CancelledByOperator);
             var outcome = await processor.ProcessAsync(job, context, linked.Token).ConfigureAwait(false);
 
             await repository.AppendEventAsync(
@@ -247,6 +256,16 @@ public sealed partial class ImportWorker(
         {
             // Shutdown. The lease will expire and the recovery sweep requeues the job.
         }
+        catch (OperationCanceledException) when (CancelledByOperator())
+        {
+            // The cancel stopped it where nothing had been loaded yet - validating, or a TAC
+            // file's structure scan. A processor that had loaded something removes it and returns
+            // a Cancelled outcome rather than throwing.
+            await repository.MarkCancelledAsync(job.JobId, _options.WorkerId, CancellationToken.None)
+                .ConfigureAwait(false);
+            var status = ImportJobStatus.Cancelled.ToDatabaseValue();
+            LogFinished(job.JobId, status, stopwatch.ElapsedMilliseconds);
+        }
         catch (Exception ex)
         {
             LogJobFailed(job.JobId, ex);
@@ -262,6 +281,51 @@ public sealed partial class ImportWorker(
             catch (OperationCanceledException)
             {
                 // Expected: cancelling the renewal loop is how it is stopped.
+            }
+
+            try
+            {
+                await watch.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected, as for the renewal.
+            }
+        }
+    }
+
+    /// <summary>Stops the job within seconds of an operator cancelling it.</summary>
+    /// <remarks>
+    /// The flag was read at one place only - a daily file just after validation, a TAC file
+    /// never - so a cancel during the load was accepted and then ignored: the job completed and
+    /// the screen had said it was stopping. Polling the row is the simplest thing that reaches a
+    /// worker that may be on another machine; once every two seconds is nothing to PostgreSQL.
+    /// Past the point of no return the API refuses a cancel, so this never fires there.
+    /// </remarks>
+    private async Task WatchForCancelAsync(
+        ClaimedJob job, CancellationTokenSource operatorCancel, CancellationToken ct)
+    {
+        while (true)
+        {
+            await Task.Delay(_options.CancelPollInterval, ct).ConfigureAwait(false);
+
+            bool requested;
+            try
+            {
+                requested = await repository.IsCancellationRequestedAsync(job.JobId, ct)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // A failed look is not a cancel, and not a reason to fail the import: the next
+                // look is two seconds away.
+                continue;
+            }
+
+            if (requested)
+            {
+                await operatorCancel.CancelAsync().ConfigureAwait(false);
+                return;
             }
         }
     }

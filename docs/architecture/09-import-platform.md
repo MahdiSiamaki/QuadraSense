@@ -251,10 +251,15 @@ stateDiagram-v2
     RETRYING --> QUEUED
     RETRYING --> FAILED : attempts exhausted
     QUEUED --> CANCELLED : user
-    VALIDATING --> CANCELLED
-    PARSING --> CANCELLED
+    RETRYING --> CANCELLED : user
+    VALIDATING --> CANCELLED : user
+    DEDUPLICATING --> CANCELLED : user, the day removed
+    IMPORTING --> CANCELLED : user, the day removed
     COMPLETED --> [*]
 ```
+
+A cancel is taken until the processor passes its point of no return - entering AGGREGATING for a
+daily file, FINALIZING for a TAC file - and refused after it (D12).
 
 `DUPLICATE` is a **terminal success-ish state**, not a failure: nothing was wrong, the work was
 simply already done. Showing it as a failure would train operators to ignore red.
@@ -816,6 +821,54 @@ Now (`frontend/src/features/imports/uploadQueue.ts`):
 
 Not done, by the owner's choice of 2026-10-26: **resuming a broken upload.** It needs the file sent
 in pieces (`docs/backlog.md`).
+
+**Checked in the browser on the department VM** (build `261140f7`), 2026-10-26, with a synthetic 40 MB
+file whose name carries no date - so had the cancel failed it could neither block nor be blocked by
+a real day (§3): dropped on the SQM zone it showed "5.6 MB of 40.0 MB · 14.0%" and "466.0 KB/s ·
+about 1 min left"; on the dashboard the header read "Uploading 1 file · 35% · less than a minute
+left"; back on the Import Center the same upload was still going, at 46%; Cancel turned it into
+"Cancelled - nothing was kept". On the server the request ended 499 after 38.7 s, no job and no file
+were registered, and no `.partial` was left in the store.
+
+### D12 - Cancel works until loading ends, and is refused after (2026-10-26)
+
+**What was wrong.** A running job was checked for a cancel at one place only - a daily file just
+after validation, a TAC file never. A cancel later than that was answered 202 and then ignored: the
+job completed while the screen had said it was stopping.
+
+**What it does now** - the owner's choice of where the line is:
+
+- **The worker watches** (`ImportWorker.WatchForCancelAsync`): every two seconds it reads the job's
+  flag, and when it is set, cancels the processor's token. The processor is told whether it was the
+  operator (`IImportContext.CancelledByOperator`), because only then does it remove what it loaded:
+  after a shutdown or a lost lease the job runs again, and its next attempt clears the day itself.
+- **Until loading ends, a cancel stops it and cleans up.** A daily file removes the day it was
+  writing; a TAC file drops the version it was loading. Any failure once the cancel has fired counts
+  as the cancel - an insert cut off mid-request surfaces as an I/O error as often as a cancellation.
+  A file that replaces a day already loaded removes that day before loading, so a cancel after that
+  leaves the day empty, and the job's outcome says so in those words.
+- **The point of no return is the processor's, crossed atomically.** A daily file passes it entering
+  AGGREGATING, where the day is folded into the history and the marts and stopping halfway would
+  leave them half-updated; a TAC file only entering FINALIZING, where its version is registered -
+  until then it is a partition nothing reads. The processor crosses with one statement that also
+  checks for a cancel (`EnterStageUnlessCancelledAsync`), which sets `import_job.cancellable` false
+  (migration 017); the cancel request locks the same row and refuses a job past it (409, "Too late to
+  cancel", and why). Whichever comes first wins, so a cancel is never accepted and then ignored.
+  Every attempt starts cancellable; a job waiting in the queue - including one back after failing
+  past the point - can always be cancelled.
+- **On the page** the button asks first and says what stopping does - a waiting import "simply will
+  not run"; a running one stops within seconds and loses what it loaded, and a replaced day stays
+  empty. Past the point the button gives way to a line saying why; a cancel asked for shows as
+  "Stopping…"; a refusal from the server is shown, not swallowed. "Import again" opens the import it
+  queued.
+
+**Proved by failing first**: the daily processor's cleanup removed (3 tests fail), narrowed to
+cancellations only (the I/O case fails), its gate bypassed (1); the TAC processor's cleanup and gate
+(1 each); the worker without its watcher (2) and treating a shutdown as the operator (1); the gate
+not checking the flag, and the cancel not checking the gate (1 each, against the real PostgreSQL);
+the page offering Cancel past the point, and cancelling without asking (1 each). One test found a
+fault before anything shipped: a job back in the queue after failing past the point still carried
+the flag, and would have refused a cancel while merely waiting.
 
 ---
 

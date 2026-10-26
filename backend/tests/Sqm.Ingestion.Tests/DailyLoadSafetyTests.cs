@@ -89,6 +89,82 @@ public sealed class DailyLoadSafetyTests
         Assert.DoesNotContain("FoldDayAsync", run.Calls);
     }
 
+    [Fact]
+    public async Task An_operators_cancel_during_the_load_removes_what_it_wrote_and_ends_cancelled()
+    {
+        var run = new Run($"{Header}\n{Row1}\n{Row2}\n")
+        {
+            StopDuringLoad = true,
+            CancelledByOperator = true,
+        };
+
+        var outcome = await run.ProcessAsync();
+
+        Assert.Equal(ImportJobStatus.Cancelled, outcome!.Status);
+        Assert.Equal("RemoveDayAsync", run.Calls[^1]);
+        Assert.DoesNotContain("FoldDayAsync", run.Calls);
+        Assert.Equal("Cancelled while loading; what it had written was removed.", outcome.Message);
+    }
+
+    [Fact]
+    public async Task A_load_cut_off_by_the_cancel_with_an_IO_error_is_still_the_cancel()
+    {
+        // An insert aborted mid-request surfaces as an I/O error as often as a cancellation.
+        var run = new Run($"{Header}\n{Row1}\n{Row2}\n")
+        {
+            StopDuringLoad = true,
+            LoadThrows = new IOException("request aborted"),
+            CancelledByOperator = true,
+        };
+
+        var outcome = await run.ProcessAsync();
+
+        Assert.Equal(ImportJobStatus.Cancelled, outcome!.Status);
+        Assert.Equal("RemoveDayAsync", run.Calls[^1]);
+    }
+
+    [Fact]
+    public async Task A_shutdown_during_the_load_leaves_the_day_for_the_next_attempt_to_clear()
+    {
+        // Not the operator: the job runs again, and its prepare stage removes the partial day.
+        var run = new Run($"{Header}\n{Row1}\n{Row2}\n")
+        {
+            StopDuringLoad = true,
+        };
+
+        await Assert.ThrowsAsync<OperationCanceledException>(run.ProcessAsync);
+
+        Assert.Equal("LoadDailyEventsAsync", run.Calls[^1]);
+    }
+
+    [Fact]
+    public async Task A_cancel_that_came_before_the_fold_stops_at_the_point_of_no_return()
+    {
+        var run = new Run($"{Header}\n{Row1}\n{Row2}\n") { GateOpen = false };
+
+        var outcome = await run.ProcessAsync();
+
+        Assert.Equal(ImportJobStatus.Cancelled, outcome!.Status);
+        Assert.Equal("RemoveDayAsync", run.Calls[^1]);
+        Assert.DoesNotContain("FoldDayAsync", run.Calls);
+    }
+
+    [Fact]
+    public async Task A_cancel_while_replacing_a_day_says_the_day_is_now_empty()
+    {
+        var run = new Run($"{Header}\n{Row1}\n{Row2}\n")
+        {
+            ExistingBefore = 7_543_114,
+            StopDuringLoad = true,
+            CancelledByOperator = true,
+        };
+
+        var outcome = await run.ProcessAsync();
+
+        Assert.Contains("7,543,114 events from an earlier import", outcome!.Message, StringComparison.Ordinal);
+        Assert.Contains("the day is empty until a file for it is imported again", outcome.Message, StringComparison.Ordinal);
+    }
+
     /// <summary>One import of one file against recording stubs.</summary>
     private sealed class Run(string file)
     {
@@ -101,9 +177,30 @@ public sealed class DailyLoadSafetyTests
 
         public bool LoadFails { get; init; }
 
+        /// <summary>What the load throws, when it should fail some other way than LoadFails.</summary>
+        public Exception? LoadThrows { get; init; }
+
+        /// <summary>
+        /// Cancels the processor's token mid-load and throws, as a shutdown or an operator's cancel
+        /// does (the worker links both into the one token); LoadThrows, if set, is thrown instead.
+        /// </summary>
+        public bool StopDuringLoad { get; init; }
+
+        /// <summary>What the context says about who stopped the job.</summary>
+        public bool CancelledByOperator { get; init; }
+
+        /// <summary>Whether the point of no return lets the job through - false when a cancel came first.</summary>
+        public bool GateOpen { get; init; } = true;
+
+        /// <summary>Events the day held before this file, from an earlier import.</summary>
+        public long ExistingBefore { get; init; }
+
         private long _stored;
 
-        public async Task ProcessAsync()
+        /// <summary>Cancels the token the processor was given; set while ProcessAsync runs.</summary>
+        private Func<Task> _stop = () => Task.CompletedTask;
+
+        public async Task<ImportOutcome?> ProcessAsync()
         {
             var analytics = Stub.Create<IAnalyticsIngestionStore>(Analytics);
             var repository = Stub.Create<IImportJobRepository>((m, _) => m.Name == "ResolveSchemaAsync"
@@ -127,6 +224,8 @@ public sealed class DailyLoadSafetyTests
             {
                 "OpenFileAsync" => Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(file))),
                 "IsCancellationRequestedAsync" => Task.FromResult(false),
+                "EnterStageUnlessCancelledAsync" => Task.FromResult(GateOpen),
+                "get_CancelledByOperator" => CancelledByOperator,
                 _ => Stub.Default(m),
             });
 
@@ -134,7 +233,9 @@ public sealed class DailyLoadSafetyTests
                 1, "SQM", 1, "stored", "daily_subs_device_sim_info_2026-06-15.csv", "sha",
                 file.Length, new DateOnly(2026, 6, 15), 1, 3, 0, null);
 
-            await processor.ProcessAsync(job, context, CancellationToken.None);
+            using var stop = new CancellationTokenSource();
+            _stop = stop.CancelAsync;
+            return await processor.ProcessAsync(job, context, stop.Token);
         }
 
         private object? Analytics(MethodInfo method, object?[] args)
@@ -147,7 +248,7 @@ public sealed class DailyLoadSafetyTests
                     return LoadAsync((Stream)args[2]!);
                 case "CountEventsForDateAsync":
                     // Before the load: nothing there yet, so nothing to replace.
-                    return Task.FromResult(Loaded.Count == 0 ? 0L : StoredCount ?? _stored);
+                    return Task.FromResult(Loaded.Count == 0 ? ExistingBefore : StoredCount ?? _stored);
                 case "FoldDayAsync":
                     // Stop here: past this point the path under test has been decided.
                     throw new OperationCanceledException("stop after the fold");
@@ -161,6 +262,12 @@ public sealed class DailyLoadSafetyTests
             using var reader = new StreamReader(csv, Encoding.UTF8);
             var text = await reader.ReadToEndAsync();
             Loaded.Add(text);
+
+            if (StopDuringLoad)
+            {
+                await _stop();
+                throw LoadThrows ?? new OperationCanceledException("stopped mid-load");
+            }
 
             if (LoadFails)
             {

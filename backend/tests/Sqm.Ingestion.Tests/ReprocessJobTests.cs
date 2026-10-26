@@ -89,7 +89,8 @@ public sealed class ReprocessJobTests
             new ImportJobSummary(
                 41, "SQM", "daily_subs_device_sim_info_2026-02-03.csv", 448_915_891, ImportJobStatus.Completed,
                 new DateOnly(2026, 2, 3), 1, true, 1, 5_564_191, 5_564_191, 0, 0, 0,
-                DateTimeOffset.UnixEpoch, null, null, null, "bulk-load (pre-platform)", null),
+                DateTimeOffset.UnixEpoch, null, null, null, "bulk-load (pre-platform)", null,
+                false, false, null, null),
             7, "828d34", "D:/SQM/New CDR/New CDR/daily_subs_device_sim_info_2026-02-03.csv", true, null, null,
             [], [], null, null, null);
     }

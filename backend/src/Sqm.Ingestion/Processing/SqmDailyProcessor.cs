@@ -108,87 +108,104 @@ internal sealed partial class SqmDailyProcessor(
             return Cancelled(validation);
         }
 
-        // ---------------------------------------------------------------- prepare
-        await context.EnterStageAsync(
-            ImportJobStatus.Deduplicating,
-            $"Checking whether {businessDate:yyyy-MM-dd} is already loaded", ct).ConfigureAwait(false);
-
-        var existing = await analytics.CountEventsForDateAsync(businessDate, ct).ConfigureAwait(false);
-        var sequence = await ResolveSequenceAsync(businessDate, ct).ConfigureAwait(false);
-
-        if (existing > 0)
-        {
-            // This is what makes the import idempotent, and it is also how a corrected file for
-            // an already-imported day replaces it. Removing the day first means re-running any
-            // import is safe; appending would double it, silently, exactly as an early version of
-            // the mart refresh did before it was made to drop and rebuild.
-            await context.NoteAsync(
-                "warning",
-                $"{existing:N0} events already exist for {businessDate:yyyy-MM-dd}; removing them "
-                + "so this file replaces that day rather than adding to it",
-                new { existingEvents = existing, businessDate = businessDate.ToString("yyyy-MM-dd") },
-                ct).ConfigureAwait(false);
-
-            await analytics.RemoveDayAsync(businessDate, ct).ConfigureAwait(false);
-        }
-
-        // ---------------------------------------------------------------- import
-        await context.EnterStageAsync(
-            ImportJobStatus.Importing,
-            $"Writing {validation.AcceptedRows:N0} rows as day {sequence}", ct).ConfigureAwait(false);
-
+        // From here to the fold an operator's cancel stops the load where it is: what was written
+        // is removed, and the job ends Cancelled (ImportWorker.WatchForCancelAsync). A shutdown or
+        // a lost lease is not caught here - the job runs again and its next attempt clears the day.
+        long existing = 0;
+        int sequence;
         long written;
+        long stored;
 
         try
         {
-            if (validation.RejectedRows == 0 && !validation.NeedsRewrite)
+            // ---------------------------------------------------------------- prepare
+            await context.EnterStageAsync(
+                ImportJobStatus.Deduplicating,
+                $"Checking whether {businessDate:yyyy-MM-dd} is already loaded", ct).ConfigureAwait(false);
+
+            existing = await analytics.CountEventsForDateAsync(businessDate, ct).ConfigureAwait(false);
+            sequence = await ResolveSequenceAsync(businessDate, ct).ConfigureAwait(false);
+
+            if (existing > 0)
             {
-                await using var raw = await context.OpenFileAsync(ct).ConfigureAwait(false);
-                written = await analytics.LoadDailyEventsAsync(
-                    businessDate, sequence, raw,
-                    bytes => ReportBytes(context, bytes, job.FileBytes, ct),
-                    ct).ConfigureAwait(false);
-            }
-            else
-            {
+                // This is what makes the import idempotent, and it is also how a corrected file for
+                // an already-imported day replaces it. Removing the day first means re-running any
+                // import is safe; appending would double it, silently, exactly as an early version of
+                // the mart refresh did before it was made to drop and rebuild.
                 await context.NoteAsync(
                     "warning",
-                    validation.RejectedRows > 0
-                        ? $"{validation.RejectedRows:N0} rows will be excluded; the file is being "
-                          + "rewritten row by row rather than streamed directly, which is slower"
-                        : "The file has blank lines or bare-CR line endings, which ClickHouse "
-                          + "cannot stream; it is being rewritten row by row, which is slower",
-                    null, ct).ConfigureAwait(false);
+                    $"{existing:N0} events already exist for {businessDate:yyyy-MM-dd}; removing them "
+                    + "so this file replaces that day rather than adding to it",
+                    new { existingEvents = existing, businessDate = businessDate.ToString("yyyy-MM-dd") },
+                    ct).ConfigureAwait(false);
 
-                await using var filtered = await OpenFilteredAsync(context, ct).ConfigureAwait(false);
-                written = await analytics.LoadDailyEventsAsync(
-                    businessDate, sequence, filtered, null, ct).ConfigureAwait(false);
+                await analytics.RemoveDayAsync(businessDate, ct).ConfigureAwait(false);
+            }
+
+            // ---------------------------------------------------------------- import
+            await context.EnterStageAsync(
+                ImportJobStatus.Importing,
+                $"Writing {validation.AcceptedRows:N0} rows as day {sequence}", ct).ConfigureAwait(false);
+
+            try
+            {
+                if (validation.RejectedRows == 0 && !validation.NeedsRewrite)
+                {
+                    await using var raw = await context.OpenFileAsync(ct).ConfigureAwait(false);
+                    written = await analytics.LoadDailyEventsAsync(
+                        businessDate, sequence, raw,
+                        bytes => ReportBytes(context, bytes, job.FileBytes, ct),
+                        ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    await context.NoteAsync(
+                        "warning",
+                        validation.RejectedRows > 0
+                            ? $"{validation.RejectedRows:N0} rows will be excluded; the file is being "
+                              + "rewritten row by row rather than streamed directly, which is slower"
+                            : "The file has blank lines or bare-CR line endings, which ClickHouse "
+                              + "cannot stream; it is being rewritten row by row, which is slower",
+                        null, ct).ConfigureAwait(false);
+
+                    await using var filtered = await OpenFilteredAsync(context, ct).ConfigureAwait(false);
+                    written = await analytics.LoadDailyEventsAsync(
+                        businessDate, sequence, filtered, null, ct).ConfigureAwait(false);
+                }
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                // An insert that fails partway is not atomic: the blocks before the failure stay.
+                // Left there, they are a partial day that nothing would ever fold or finish. The day
+                // goes, and the retry starts from nothing.
+                await analytics.RemoveDayAsync(businessDate, CancellationToken.None).ConfigureAwait(false);
+                throw;
+            }
+
+            // Checked now, before anything is derived from the day. It used to run at the end, after
+            // the fold and both mart rebuilds had published whatever landed - so a file ClickHouse
+            // read differently from the validator (an unclosed quote swallows the next line) put its
+            // garbage into current state and the dashboard before the job failed, and the failure
+            // removed nothing.
+            stored = await analytics.CountEventsForDateAsync(businessDate, ct).ConfigureAwait(false);
+
+            if (stored != validation.AcceptedRows)
+            {
+                await analytics.RemoveDayAsync(businessDate, CancellationToken.None).ConfigureAwait(false);
+
+                throw new InvalidOperationException(
+                    $"Row count mismatch for {businessDate:yyyy-MM-dd}: expected "
+                    + $"{validation.AcceptedRows:N0} accepted rows, the store holds {stored:N0}. The "
+                    + "day was removed rather than kept half-written.");
             }
         }
-        catch (Exception) when (!ct.IsCancellationRequested)
+        catch (Exception) when (context.CancelledByOperator)
         {
-            // An insert that fails partway is not atomic: the blocks before the failure stay.
-            // Left there, they are a partial day that nothing would ever fold or finish. The day
-            // goes, and the retry starts from nothing.
+            // Any failure once the cancel has fired is the cancel's doing - an insert cut off
+            // mid-request surfaces as an I/O error as often as a cancellation - so it is handled
+            // as one, rather than as a failure that would leave the partial day behind.
             await analytics.RemoveDayAsync(businessDate, CancellationToken.None).ConfigureAwait(false);
-            throw;
-        }
-
-        // Checked now, before anything is derived from the day. It used to run at the end, after
-        // the fold and both mart rebuilds had published whatever landed - so a file ClickHouse
-        // read differently from the validator (an unclosed quote swallows the next line) put its
-        // garbage into current state and the dashboard before the job failed, and the failure
-        // removed nothing.
-        var stored = await analytics.CountEventsForDateAsync(businessDate, ct).ConfigureAwait(false);
-
-        if (stored != validation.AcceptedRows)
-        {
-            await analytics.RemoveDayAsync(businessDate, CancellationToken.None).ConfigureAwait(false);
-
-            throw new InvalidOperationException(
-                $"Row count mismatch for {businessDate:yyyy-MM-dd}: expected "
-                + $"{validation.AcceptedRows:N0} accepted rows, the store holds {stored:N0}. The "
-                + "day was removed rather than kept half-written.");
+            return CancelledWhileLoading(validation, businessDate, existing);
         }
 
         // ---------------------------------------------------------------- fold
@@ -196,9 +213,17 @@ internal sealed partial class SqmDailyProcessor(
         // from the event log, and until they are rebuilt the dashboard is showing yesterday while
         // the event log holds today - the most confusing state the system can be in, because
         // nothing on screen says so.
-        await context.EnterStageAsync(
-            ImportJobStatus.Aggregating,
-            $"Folding {businessDate:yyyy-MM-dd} into current state", ct).ConfigureAwait(false);
+        //
+        // The point of no return: folding, the marts and the history are derived from the day, and
+        // stopping among them would leave them half-updated. Entered only if no cancel came first;
+        // after it, a cancel is refused (EnterStageUnlessCancelledAsync).
+        if (!await context.EnterStageUnlessCancelledAsync(
+                ImportJobStatus.Aggregating,
+                $"Folding {businessDate:yyyy-MM-dd} into current state", ct).ConfigureAwait(false))
+        {
+            await analytics.RemoveDayAsync(businessDate, CancellationToken.None).ConfigureAwait(false);
+            return CancelledWhileLoading(validation, businessDate, existing);
+        }
 
         var folded = await analytics.FoldDayAsync(businessDate, ct).ConfigureAwait(false);
 
@@ -314,6 +339,23 @@ internal sealed partial class SqmDailyProcessor(
         new ImportCounters(RowsInput: validation.TotalRows),
         MakeEffective: false,
         "Cancelled after validation, before anything was written.");
+
+    /// <summary>Cancelled while loading: what was written is gone, and the day says so.</summary>
+    /// <remarks>
+    /// A file that replaces a day already loaded removes that day before it loads (the prepare
+    /// stage), so a cancel after that point leaves the day empty - which the outcome says rather
+    /// than leave the operator to discover it on the dashboard.
+    /// </remarks>
+    private static ImportOutcome CancelledWhileLoading(
+        ValidationResult validation, DateOnly businessDate, long previouslyLoaded) => new(
+        ImportJobStatus.Cancelled,
+        new ImportCounters(RowsInput: validation.TotalRows),
+        MakeEffective: false,
+        previouslyLoaded > 0
+            ? $"Cancelled while loading; what it had written was removed. {businessDate:yyyy-MM-dd} "
+              + $"held {previouslyLoaded:N0} events from an earlier import, removed before this one "
+              + "began loading - the day is empty until a file for it is imported again."
+            : "Cancelled while loading; what it had written was removed.");
 
     /// <summary>
     /// Decides which day number this file is; see

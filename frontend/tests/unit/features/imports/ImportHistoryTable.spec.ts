@@ -25,6 +25,10 @@ function row(status: ImportStatus, finishedAt: string | null): ImportJobSummary 
     durationMs: null,
     createdBy: 'operator (--load-dump)',
     errorSummary: null,
+    cancellable: false,
+    cancelRequested: false,
+    currentStage: null,
+    stageStartedAt: null,
   }
 }
 
