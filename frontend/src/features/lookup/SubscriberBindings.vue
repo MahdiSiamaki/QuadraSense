@@ -4,6 +4,7 @@ import { lookupMsisdn, type LookupResult } from '@/api/dashboard'
 import { ApiError } from '@/api/client'
 import Card from '@/design-system/Card.vue'
 import { formatDate, formatImei, formatMsisdn } from '@/lib/format'
+import DerivedIccid from './DerivedIccid.vue'
 
 /**
  * Every device-SIM binding for one subscriber number, active and historical.
@@ -151,6 +152,7 @@ function correlationId(e: unknown): string | null {
               <td class="px-4 py-2.5 text-[var(--c-text-secondary)]">{{ b.deviceType ?? '—' }}</td>
               <td class="px-4 py-2.5 font-mono text-xs tabular text-[var(--c-text-secondary)]">
                 {{ b.imsi }}
+                <DerivedIccid :imsi="b.imsi" />
               </td>
             </tr>
           </tbody>

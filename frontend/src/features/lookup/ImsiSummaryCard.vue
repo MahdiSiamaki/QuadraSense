@@ -4,6 +4,7 @@ import Card from '@/design-system/Card.vue'
 import type { ImsiSummary } from '@/api/imsi'
 import { formatDate } from '@/lib/format'
 import { INITIAL_DUMP } from '@/lib/initial-dump'
+import DerivedIccid from './DerivedIccid.vue'
 
 /**
  * What is known about one SIM.
@@ -32,6 +33,7 @@ const renumbered = computed(() => props.summary.distinctSubscribers > 1)
         <p class="tabular font-mono text-lg font-semibold tracking-tight">
           {{ imsi }}
         </p>
+        <DerivedIccid :imsi="imsi" />
       </div>
 
       <dl class="tabular flex flex-wrap gap-x-8 gap-y-3">

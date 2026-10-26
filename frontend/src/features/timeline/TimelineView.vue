@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ApiError } from '@/api/client'
+import { iccidFromImsi } from '@/api/iccid'
 import { KIND_LABEL, useTimeline, type Timeline, type TimelineKind, type TimelinePeriod } from '@/api/timeline'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import Button from '@/design-system/Button.vue'
@@ -94,10 +95,12 @@ const allRows = computed<ChartRow[]>(() => {
     const parts = (['msisdn', 'imsi', 'imei'] as TimelineKind[])
       .filter((k) => k !== t.kind)
       .map((k) => shown(k, k === 'msisdn' ? b.msisdn : k === 'imsi' ? b.imsi : b.imei))
+    // The SIM's ICCID, derived from its IMSI, rides in the second line, where there is room.
+    const iccid = t.kind === 'imsi' ? null : iccidFromImsi(b.imsi)
     return {
       id: `b${i}`,
       label: parts[0] ?? '',
-      sublabel: [parts[1], b.model].filter(Boolean).join(' · '),
+      sublabel: [parts[1], iccid ? `ICCID ${iccid}` : null, b.model].filter(Boolean).join(' · '),
       drill: null,
       active: b.active,
       periods: b.periods,
@@ -135,7 +138,8 @@ const problem = computed(() => {
 const centreText = computed(() => {
   const t = data.value
   if (!t) return props.identifier
-  return shown(t.kind, t.identifier)
+  const iccid = t.kind === 'imsi' ? iccidFromImsi(t.identifier) : null
+  return iccid ? `${shown(t.kind, t.identifier)} · ICCID ${iccid} (derived)` : shown(t.kind, t.identifier)
 })
 </script>
 

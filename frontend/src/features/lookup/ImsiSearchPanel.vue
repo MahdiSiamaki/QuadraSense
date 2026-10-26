@@ -4,6 +4,7 @@ import Card from '@/design-system/Card.vue'
 import Pagination from '@/design-system/Pagination.vue'
 import ImsiSummaryCard from './ImsiSummaryCard.vue'
 import ImsiHistoryPanel from './ImsiHistoryPanel.vue'
+import DerivedIccid from './DerivedIccid.vue'
 import {
   describeTerm,
   prefixBreadth,
@@ -318,6 +319,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
                     {{ match.imsi }}
                   </button>
                   <span v-else>{{ match.imsi }}</span>
+                  <DerivedIccid :imsi="match.imsi" />
                 </td>
 
                 <td class="tabular px-4 py-2 font-mono text-xs">
