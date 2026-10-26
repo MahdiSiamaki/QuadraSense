@@ -41,7 +41,7 @@ of `docs/`. Suggestions made in earlier sessions and never written into `docs/` 
 | **Check the Explorer as a user with only some lookup permissions** | Verified with unit tests and an administrator account only (`18-explorer-modes.md`, "Verified") | Create a test role and user on the local stack | Permission to create a test account |
 | **Negative numbers in CSV exports** | `CsvExport` neutralises any cell starting with `-`, numbers included, so a spreadsheet will not sum them (`17-…`) | Small, but changes every CSV the product writes | Owner's decision |
 | **PNG export of a very tall dashboard** | Pages over 6,500 px are split; the largest template was never exported and timed (`17-…`) | A measurement | Priority |
-| **Merge the branch stack** | `feature/dashboard-builder` ← `feature/explorer-simple` ← `fix/ui-review-2026-10-20` are stacked; the longer they live, the harder they merge | Pull requests, review, merge in order | Owner's review |
+| **Measure the suite again with no database** | CLAUDE.md's breakdown - 190 passed, 34 skipped of 224 - was measured with the stack down on 2026-09-24; the suite is 710 tests now (`README.md`, Tests), so what a green cloud run proves is not known to the test | One run with the stores stopped, or the test fixtures pointed at a closed port | A time when the laptop's stack may stop |
 
 ## Deployment (ADR-007; `docs/operations/deployment/`)
 

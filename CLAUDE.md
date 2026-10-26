@@ -135,7 +135,19 @@ credentials. `.gitignore` excludes `*.csv` deliberately: the dumps are gigabytes
 
 When the work is committed, push the branch and open its pull request (or let the push update the
 open one) - on the laptop as in the cloud. A branch stacked on another unmerged branch takes that
-branch as its base and says so. Never force-push, never push to `main`, never merge unasked.
+branch as its base and says so.
+
+**On the laptop, then merge it** - the product owner's rule since 2026-10-26: `main` is the only
+branch that lasts, on GitHub, on the laptop and on the department's GitLab. Once the work is verified
+(tests green; a database-backed claim proven on the real stack), merge the pull request, delete the
+branch on GitHub and locally with its worktree, bring the laptop's `main` up to date, and push `main`
+to the `gitlab` remote over HTTPS. The laptop pushes because the red lines let developers push and
+servers only pull (`docs/operations/deployment/04-security-red-lines.md` §2-2): no server mirrors
+another. A branch left open - waiting on a decision, or work the owner asked to see first - says why
+in its pull request. Unmerged work worth keeping becomes a tag, `archive/<name>`, before its branch
+is deleted.
+
+Never force-push, and never push to `main` directly: it changes only through a merged pull request.
 
 ## Environment
 
@@ -162,7 +174,7 @@ skipped — say which ones skipped and why.
 What does work anywhere, given the toolchain below: `dotnet build backend/Sqm.slnx`,
 `dotnet test backend/Sqm.slnx`, `cd frontend && npm ci && npm run build` (`vue-tsc -b && vite
 build`), and `pip install -r tools/requirements.txt && python tools/test_device_image_pipeline.py`
-(40 checks, no network, no database). `TreatWarningsAsErrors` is on for the backend: a warning is
+(46 checks, no network, no database). `TreatWarningsAsErrors` is on for the backend: a warning is
 a failure.
 
 ## Cloud sessions
@@ -193,7 +205,9 @@ is a different set of warnings, and with warnings as errors, a different verdict
 cloud and red on the laptop is exactly the drift the two places must not have.
 
 Work on a branch and open a pull request. `main` changes only through a merged PR, from either
-place, so the laptop and the cloud can never both be ahead.
+place, so the laptop and the cloud can never both be ahead. **A cloud session does not merge:** what
+it cannot prove without the real data is proven on the laptop first, and the laptop session that
+does so merges it (Git, above). The cloud cannot reach the department's GitLab either.
 
 **Every change made in a cloud session ends committed and pushed.** The product owner tests cloud
 work on the laptop, against the real stack and the real data the cloud does not have, and the
