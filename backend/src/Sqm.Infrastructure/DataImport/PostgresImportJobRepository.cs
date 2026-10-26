@@ -361,7 +361,10 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                    lease_expires_at = now() + @lease,
                    attempt          = j.attempt + 1,
                    started_at       = COALESCE(j.started_at, now()),
-                   stage_started_at = now()
+                   stage_started_at = now(),
+                   -- Every attempt starts from the beginning, so it can be cancelled until its
+                   -- processor passes the point of no return again.
+                   cancellable      = true
               FROM claimed c, imports.import_file f
              WHERE j.id = c.id
                AND f.id = j.file_id
@@ -441,6 +444,30 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
         var label = status.ToDatabaseValue();
         await connection.ExecuteAsync(
             Command(Sql, new { job = jobId, status = label, stage = label }, ct)).ConfigureAwait(false);
+    }
+
+    public async Task<bool> EnterStageUnlessCancelledAsync(
+        long jobId, ImportJobStatus status, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+
+        // The row lock this takes is the one RequestCancellationAsync takes too, so of the two
+        // statements one waits for the other: a cancel that committed first makes this match no
+        // row; one that comes after finds cancellable false and is refused.
+        const string Sql = """
+            UPDATE imports.import_job
+               SET status           = @status::imports.job_status,
+                   current_stage    = @stage,
+                   stage_started_at = now(),
+                   cancellable      = false
+             WHERE id = @job
+               AND NOT cancel_requested
+            """;
+
+        var label = status.ToDatabaseValue();
+        var rows = await connection.ExecuteAsync(
+            Command(Sql, new { job = jobId, status = label, stage = label }, ct)).ConfigureAwait(false);
+        return rows == 1;
     }
 
     public async Task RecordHeartbeatAsync(
@@ -868,7 +895,7 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
         }
         await AppendEventCoreAsync(
             connection, transaction, jobId, "warning", null,
-            "Cancelled at a stage boundary; nothing partial was left behind", null, ct)
+            "Cancelled; nothing it had loaded was kept", null, ct)
             .ConfigureAwait(false);
 
         await transaction.CommitAsync(ct).ConfigureAwait(false);
@@ -932,14 +959,44 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
     // Operator actions
     // =======================================================================
 
-    public async Task<bool> RequestCancellationAsync(long jobId, string actor, CancellationToken ct)
+    public async Task<CancelRequestResult> RequestCancellationAsync(
+        long jobId, string actor, CancellationToken ct)
     {
         await using var connection = await OpenAsync(ct).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
 
-        // A queued job is cancelled outright - no worker holds it, so there is nothing to ask.
-        // A running job only gets the flag set; the worker acts on it at the next stage boundary,
-        // which is what keeps a cancellation from tearing a write in half.
+        // Locked, then decided: the worker passes the point of no return with an UPDATE of this
+        // same row (EnterStageUnlessCancelledAsync), so one of the two waits for the other and a
+        // cancel is never accepted for a job that has already gone past it.
+        var current = await connection.QuerySingleOrDefaultAsync<CancelState>(
+            Command(
+                """
+                SELECT status::text AS Status, cancellable AS Cancellable
+                  FROM imports.import_job WHERE id = @job FOR UPDATE
+                """,
+                new { job = jobId }, ct, transaction)).ConfigureAwait(false);
+
+        var refusal = current switch
+        {
+            null => CancelRequestResult.NotFound,
+            { Status: "COMPLETED" or "PARTIALLY_COMPLETED" or "DUPLICATE" or "FAILED"
+                or "QUARANTINED" or "CANCELLED" } => CancelRequestResult.AlreadyFinished,
+            // Only while running: a job back in the queue after a failure past the point still
+            // carries the flag from that attempt, and waiting it can always be cancelled.
+            { Cancellable: false, Status: not ("QUEUED" or "RETRYING" or "UPLOADED") }
+                => CancelRequestResult.PastPointOfNoReturn,
+            _ => (CancelRequestResult?)null,
+        };
+
+        if (refusal is { } refused)
+        {
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
+            return refused;
+        }
+
+        // A waiting job is cancelled outright - no worker holds it, so there is nothing to ask.
+        // A running one gets the flag; its worker sees it within seconds, stops, and removes what
+        // it had loaded (ImportWorker, the processors).
         const string Sql = """
             UPDATE imports.import_job
                SET cancel_requested = true,
@@ -948,19 +1005,10 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                    finished_at = CASE WHEN status IN ('QUEUED', 'RETRYING', 'UPLOADED')
                                       THEN now() ELSE finished_at END
              WHERE id = @job
-               AND status NOT IN ('COMPLETED', 'PARTIALLY_COMPLETED', 'DUPLICATE',
-                                  'FAILED', 'QUARANTINED', 'CANCELLED')
-            RETURNING id
             """;
 
-        var affected = await connection.ExecuteScalarAsync<long?>(
-            Command(Sql, new { job = jobId }, ct, transaction)).ConfigureAwait(false);
-
-        if (affected is null)
-        {
-            await transaction.RollbackAsync(ct).ConfigureAwait(false);
-            return false;
-        }
+        await connection.ExecuteAsync(Command(Sql, new { job = jobId }, ct, transaction))
+            .ConfigureAwait(false);
 
         await AppendEventCoreAsync(
             connection, transaction, jobId, "warning", null,
@@ -971,8 +1019,10 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
             .ConfigureAwait(false);
 
         await transaction.CommitAsync(ct).ConfigureAwait(false);
-        return true;
+        return CancelRequestResult.Accepted;
     }
+
+    private sealed record CancelState(string Status, bool Cancellable);
 
     public async Task WriteAuditAsync(
         string actor,

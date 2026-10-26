@@ -108,6 +108,17 @@ public interface IImportJobRepository
     /// <summary>Moves a job to a new stage.</summary>
     Task SetStageAsync(long jobId, ImportJobStatus status, CancellationToken ct);
 
+    /// <summary>
+    /// Moves a job past the point where it can be cancelled - unless a cancel has been asked for.
+    /// </summary>
+    /// <remarks>
+    /// One statement does both, which is what makes a cancel and this point exclusive: the cancel
+    /// either landed first and this refuses, or this landed first and the cancel is refused
+    /// (<see cref="RequestCancellationAsync"/>). Never a cancel accepted and then ignored.
+    /// </remarks>
+    /// <returns><see langword="false"/> when a cancel was asked for; the stage is not entered.</returns>
+    Task<bool> EnterStageUnlessCancelledAsync(long jobId, ImportJobStatus status, CancellationToken ct);
+
     /// <summary>Records that this worker is alive and polling.</summary>
     /// <param name="workerId">Stable per worker, so a restart replaces its row.</param>
     /// <param name="hostname">Where it runs.</param>
@@ -283,10 +294,11 @@ public interface IImportJobRepository
     // -----------------------------------------------------------------------
 
     /// <summary>
-    /// Asks a running job to stop. Does not stop it directly: the worker checks the flag at
-    /// stage boundaries, so a cancellation never interrupts a write halfway through.
+    /// Asks a job to stop. A job not yet running is cancelled outright; a running one gets the
+    /// flag, which its worker sees within seconds - it stops, and removes what it had loaded.
+    /// A job past the point where stopping would leave work half-done is refused.
     /// </summary>
-    Task<bool> RequestCancellationAsync(long jobId, string actor, CancellationToken ct);
+    Task<CancelRequestResult> RequestCancellationAsync(long jobId, string actor, CancellationToken ct);
 
     // -----------------------------------------------------------------------
     // TAC versions

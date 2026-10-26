@@ -137,6 +137,13 @@ public sealed record ImportProgress(
 /// <param name="DurationMs">Wall-clock duration, when finished.</param>
 /// <param name="CreatedBy">Who uploaded it.</param>
 /// <param name="ErrorSummary">First line of the failure, when it failed.</param>
+/// <param name="Cancellable">
+/// Whether a cancel would be accepted now: false once it has finished, and false once the running
+/// attempt is past the point where stopping would leave work half-done.
+/// </param>
+/// <param name="CancelRequested">A cancel was asked for; a running job is stopping.</param>
+/// <param name="CurrentStage">The stage a running attempt is in.</param>
+/// <param name="StageStartedAt">When it entered that stage.</param>
 public sealed record ImportJobSummary(
     long JobId,
     string SourceCode,
@@ -157,7 +164,11 @@ public sealed record ImportJobSummary(
     DateTimeOffset? FinishedAt,
     long? DurationMs,
     string CreatedBy,
-    string? ErrorSummary);
+    string? ErrorSummary,
+    bool Cancellable,
+    bool CancelRequested,
+    string? CurrentStage,
+    DateTimeOffset? StageStartedAt);
 
 /// <summary>Everything the detail page shows about one job.</summary>
 /// <param name="Summary">The history-row fields.</param>
@@ -185,6 +196,25 @@ public sealed record ImportJobDetail(
     long? SupersededByJobId,
     long? SupersedesJobId,
     long? ReprocessOfJobId);
+
+/// <summary>What became of a request to cancel a job.</summary>
+public enum CancelRequestResult
+{
+    /// <summary>Taken: a waiting job is cancelled, a running one is stopping.</summary>
+    Accepted,
+
+    /// <summary>No such job.</summary>
+    NotFound,
+
+    /// <summary>It has already finished, one way or another.</summary>
+    AlreadyFinished,
+
+    /// <summary>
+    /// Past the point where stopping would leave work half-done - for a daily file, folding the day
+    /// into the history and the marts. It finishes, and can be imported again afterwards.
+    /// </summary>
+    PastPointOfNoReturn,
+}
 
 /// <summary>Filters for the import history list.</summary>
 /// <param name="SourceCode">Restrict to one data source.</param>
