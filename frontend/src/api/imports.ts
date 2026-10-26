@@ -301,6 +301,13 @@ export async function uploadImportFile(
   )
 
   return new Promise((resolve, reject) => {
+    // A cancel that came while the preflight was answering has already fired its event, so the
+    // listener added below would never hear it and the whole file would go anyway.
+    if (signal?.aborted) {
+      reject(new DOMException('Upload cancelled', 'AbortError'))
+      return
+    }
+
     const form = new FormData()
     form.append('file', file)
 
