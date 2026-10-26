@@ -1,8 +1,9 @@
 # Stage 1 - QuadraSense on the department VM
 
 **Status:** runbook, written 2026-10-22. **Running on the VM since 2026-10-24**, from
-`/opt/quadrasense`, with the one-month dump loaded; no daily files and no GSMA TAC version yet
-(section 9 records each session on the VM and what it changed in this runbook).
+`/opt/quadrasense`: the one-month dump, GSMA TAC version v2026.10.04 and the daily files to 2026-02-19,
+27 imports (section 9 records each session on the VM and what it changed in this runbook). The full
+history waits on the data disk (section 1).
 
 **Purpose of this stage.** Run the real system away from the laptop, on infrastructure the department
 operates, and find what breaks: the images, the configuration, the operating routine (upgrades,
