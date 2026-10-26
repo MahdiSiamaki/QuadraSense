@@ -1,9 +1,9 @@
 # Stage 1 - QuadraSense on the department VM
 
 **Status:** runbook, written 2026-10-22. **Running on the VM since 2026-10-24**, from
-`/opt/quadrasense`: the one-month dump, GSMA TAC version v2026.10.04 and the daily files to 2026-02-19,
-27 imports (section 9 records each session on the VM and what it changed in this runbook). The full
-history waits on the data disk (section 1).
+`/opt/quadrasense`: the one-month dump, GSMA TAC version v2026.10.04 and the daily files to 2026-02-28,
+36 imports; build `654018b9` (ICCID) since 2026-10-26 (section 9 records each session on the VM and
+what it changed in this runbook). The full history waits on the data disk (section 1).
 
 **Purpose of this stage.** Run the real system away from the laptop, on infrastructure the department
 operates, and find what breaks: the images, the configuration, the operating routine (upgrades,
@@ -119,8 +119,15 @@ dependencies and no build may reach the internet directly - and `update.sh` buil
 Hub, NuGet and npm. It is the interim, until the department pipeline of `05-department-ci-cd.md`
 replaces it; then it stays only as the fallback.
 
-- **When the branch is merged**, switch the checkout to `main` (`git switch main`) - and deploy from
-  `main` only, as everything else does.
+**Once the pipeline deploys** (`05-…` §7 - it waits on the two Nexus passwords), nobody runs anything
+here: each push of `main` to the department's GitLab is tested, built in CI and deployed by the
+runner on this server, with no one asked. Each commit gets `/opt/quadrasense/releases/<sha>`, and
+`/opt/quadrasense/current` points at the one running. **Commands by hand then run from
+`/opt/quadrasense/current/deploy/compose`**, not from the checkout: Compose recreates ClickHouse
+whenever the directory it runs from changes (its config files are mounted by relative path; measured
+2026-10-26), so `update.sh` after that point recreates ClickHouse once - use it only as the fallback.
+
+- **The checkout follows `main`** since 2026-10-26 - deploy from `main` only, as everything else does.
 - **If the repository becomes private** (README, decision 10), the server needs a read-only deploy
   key for it; the operator's own credentials do not belong on a server.
 - **Rollback**: earlier builds' images stay on the machine; `SQM_TAG=<older commit> docker compose up -d`
@@ -447,3 +454,19 @@ section 7 that need data, backups, and everything that waits on the data disk.
   VM holds in full and **the laptop does not** - its bulk load lost 27-45% of them, and of 03-24 too
   (backlog). Risk published as of 02-19; the dashboard, risk, data-quality, devices and image-review
   pages all read the VM's data.
+
+**2026-10-26, sixth session.**
+
+- **The owner uploaded 02-20 to 02-28** through the Import Center: imports 28-36, all completed. A
+  day now takes 27 to 32 minutes of processing, against 16 to 19 for the last days of January
+  (imports 8-12): the history each day is folded into grows.
+- **ICCID deployed** with `update.sh` once the queue had been idle for three hours (build `654018b9`;
+  the API, web and worker replaced, the stores untouched), and checked in the browser on this
+  server's data (`docs/architecture/18-explorer-modes.md`, Verified).
+- **The department pipeline, first run on `main`** (pipeline 366): the group's variables except the
+  two Nexus passwords set; the deploy runner, registered by the owner on 2026-10-24, online; the tests
+  pass on the instance runner, which pulls its job images from Nexus with its host's own login; the
+  builds stop on the missing passwords, so nothing was deployed by it (`05-…` §7).
+- **A defect found before the pipeline deployed anything**: from a new directory for each release,
+  Compose would have recreated ClickHouse on every deploy. `deploy-release.sh` now runs Compose from
+  `current` (section 3).

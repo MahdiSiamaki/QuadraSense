@@ -3,8 +3,10 @@
 **Status:** written 2026-10-24 from the department's own guides - "Nexus Repository" and "GitLab
 Runner", usage guides from its Confluence, provided by the product owner - and from measurements on
 the QuadraSense server the same day. The git routine of section 6 runs today, and breaks one of the
-department's rules (section 1). The pipeline of section 7 is a design: nothing has run on the
-department's GitLab yet.
+department's rules (section 1). **The pipeline of section 7 ran on `main` on 2026-10-26** (pipeline
+366): tests pass on the instance runner; the builds wait on the two Nexus passwords, the last thing
+the owner sets (section 7). From then on it deploys every push of `main`, with no one asked - the
+product owner's decision of 2026-10-26.
 
 **Read with:** `02-department-vm.md` (the server), `03-mci-openshift.md` §3 (MCI's own pipeline, which
 this one rehearses: GitLab, runners, a hosted registry), ADR-007.
@@ -302,7 +304,17 @@ the Group build runner, never to any Instance runner; a runner token is never wr
 |---|---|
 | `<gitlab>`, `<nexus>`, `<nexus-pull>`, `<nexus-push>` | all reachable from `<server>` and (over the VPN) the laptop; all four resolve to one front address - the nginx the guide describes |
 | Docker endpoints | `401` to an anonymous `/v2/` - they want a login, as they should |
-| `<server>` | no `gitlab-runner` installed |
+| `<server>` | no `gitlab-runner` installed (the owner installed and registered it the same day: section 7) |
+
+And on 2026-10-26, from the first pipelines (349 on a branch, 366 on `main`) and `probe:runner`:
+
+| | Found |
+|---|---|
+| `docker-global`'s jobs | root inside their container, the default capability set, **no Docker socket** - as the guide says |
+| Job images from `<nexus-pull>` | pulled with **the runner host's own login** ("Authenticating with credentials from /root/.docker/config.json"), so no `DOCKER_AUTH_CONFIG` is needed. An anonymous pull is refused: "Anonymous pull is not allowed for repository: docker-group" |
+| From inside a job | Nexus's NuGet and npm groups reachable; **MCR reachable directly** - the backend test pulled `dotnet/sdk:10.0.400` from it (request 1 is still open: the rule says Nexus only) |
+| Tests (366) | `test:backend` 580 passed, 130 skipped - the integration tests that need a database, which CI has not (Domain 189, Ingestion 125, Application 101, Integration 165 of 295); `test:frontend` 187 in 25 files and the production build |
+| Builds | stop on the missing passwords. Before 2026-10-26 the build script went on into kaniko and failed with an authentication warning that hid the cause; it now stops at once and names the empty variables |
 
 ## 5. Credentials - where each one lives
 
@@ -348,7 +360,8 @@ push to the default branch of <gitlab>
 | Tests | `dotnet restore` from Nexus's NuGet group, `dotnet test`; the frontend's `npm ci` from Nexus's npm group, `npm test`, `npm run build` | `.gitlab-ci.yml` |
 | Images | `<nexus-push>/quadrasense/{api,worker,migrator,web}:<short sha>` - default branch only | |
 | **Deploy runner** | shell executor on `<server>`, Group runner of the QuadraSense group, tag `quadrasense-deploy`, Protected; `gitlab-runner` in `docker` and `deploy` | `deploy/host/install-deploy-runner.sh` |
-| Deploy | each commit gets `/opt/quadrasense/releases/<sha>` (its compose files and grants), `.env` and `tls/` linked from `/opt/quadrasense/config`; pull the four images by tag, `docker compose up -d --no-build`; `current` points at the running one; five releases kept | `deploy/compose/deploy-release.sh` |
+| Deploy | each commit gets `/opt/quadrasense/releases/<sha>` (its compose files and grants), `.env` and `tls/` linked from `/opt/quadrasense/config`; pull the four images by tag; wait while an import is being processed (up to 90 minutes - the job's timeout is 2 h); point `current` at the release and `docker compose up -d --no-build` **from `current`**, back to the previous release if that fails; wait for the API and web to report healthy (5 minutes, else the job fails); record the tag in `.env`; five releases kept | `deploy/compose/deploy-release.sh` |
+| Why from `current` | ClickHouse mounts its config files by relative path, and Compose hashes the resolved path: from each release's own directory every deploy would have recreated ClickHouse. Measured on `<server>` 2026-10-26 - the hash differed for every directory and stayed the same through a symlink, whatever it pointed at; Postgres mounts no files and was never affected. The first pipeline deploy recreates ClickHouse once (from the checkout's directory to `current`), never again | |
 | Rollback | re-run the deploy job of an older pipeline (the images are in Nexus) | |
 | Probe | a manual job that reports what `docker-global` really allows: user, capabilities, socket, which of Nexus / MCR / Docker Hub it reaches | `probe:runner` in `.gitlab-ci.yml` |
 
@@ -356,8 +369,16 @@ push to the default branch of <gitlab>
 intended; `deploy-release.sh` run on `<server>` against a scratch directory with a stand-in `docker`
 asked only for `compose pull` of the four application images and `compose up -d --no-build`, kept the
 five newest of six releases, linked `.env` and `tls/` and copied the grants; the runner install's
-checksum step, run against the real release files, refused a truncated download. **Not yet run: any
-of it on `<gitlab>`** - that waits on the steps below.
+checksum step, run against the real release files, refused a truncated download.
+
+**Checked again 2026-10-26**, the same way, for the changes above: `pull` from the release's
+directory and `up` from `current`; a failed `up` puts `current` back and leaves `.env` alone; an API
+that never turns healthy fails the job; two imports in progress, then one, then none - the deploy
+waited twice and went on; Postgres unreachable - no wait; the tag and registry written through the
+`.env` link without replacing it; the wait's query run against the server's real Postgres. The
+build script's new check, under dash and busybox `sh`: two passwords missing - it names both and
+stops; all four present - it goes on. **Not yet run on `<gitlab>`: the build and deploy jobs** - they
+wait on the two passwords below.
 
 ### CI/CD variables - on the QuadraSense group (Settings → CI/CD → Variables)
 
@@ -369,9 +390,9 @@ of it on `<gitlab>`** - that waits on the steps below.
 | `NPM_REGISTRY` | `<npm-group>` | - |
 | `NODE_IMAGE` | `<nexus-pull>/library/node:24.19.0-alpine` | - |
 | `NGINX_IMAGE` | `<nexus-pull>/nginxinc/nginx-unprivileged:1.28-alpine` | - |
-| `NEXUS_PULL_USER`, `NEXUS_PULL_PASS` | `<pull-user>` and its password | Protected, Masked |
-| `NEXUS_PUSH_USER`, `NEXUS_PUSH_PASS` | `<push-user>` and its password | Protected, Masked |
-| `DOCKER_AUTH_CONFIG` | only if `docker-global` cannot pull job images from `<nexus-pull>` by itself - Docker's `config.json` with the pull account | Protected |
+| `NEXUS_PULL_USER`, `NEXUS_PULL_PASS` | `<pull-user>` and its password | Protected; the password also Masked and hidden (a name under 8 characters cannot be masked, and is not a secret) |
+| `NEXUS_PUSH_USER`, `NEXUS_PUSH_PASS` | `<push-user>` and its password | Protected; the password also Masked and hidden |
+| `DOCKER_AUTH_CONFIG` | **not needed** - `docker-global` pulls job images from `<nexus-pull>` with its host's own login (section 4) | - |
 | `DOTNET_SDK_IMAGE`, `SDK_IMAGE`, `RUNTIME_IMAGE` | through Nexus once it proxies Microsoft's registry (request 1); until then unset - the defaults in the files | - |
 
 Protected variables reach only protected branches: the default branch is protected by GitLab already;
@@ -379,19 +400,19 @@ a test pipeline on another branch gets empty credentials - `username is empty` (
 
 ### What the owner does (credentials, root)
 
-1. **Push the code to `<gitlab>`** - the first push, with the owner's own credentials (a *new* token:
-   the one sent in a chat is to be revoked). Git's credential manager on the laptop stores it; after
-   that, pushes need no one. From the laptop over the VPN only HTTPS reaches `<gitlab>`.
-2. **The variables above**, in the group's settings.
-3. **The deploy runner**: create it in the group (Settings → CI/CD → Runners → New group runner: tag
-   `quadrasense-deploy`, not untagged, Protected), then on `<server>`:
-   `sudo GITLAB_URL=https://<gitlab>/ bash deploy/host/install-deploy-runner.sh` (the configuration is
-   in `/opt/quadrasense/config` already, so no `CONFIG_FROM`)
-   - it asks for the token at a hidden prompt. It downloads the runner (142 MB; ~17 minutes at the
-   server's 135 KB/s to that host, measured).
-4. **Run `probe:runner` once** from the first pipeline, and send its output: it decides whether
-   `docker-global` can pull job images, reach Nexus, and whether the .NET images can come from MCR
-   directly until the proxy exists.
+1. **Push the code to `<gitlab>`** - done 2026-10-26: `main` replaced the template (section 8, item 8);
+   pushes since need no one.
+2. **The variables above** - set 2026-10-26, all but `NEXUS_PULL_PASS` and `NEXUS_PUSH_PASS`, which
+   only the owner enters: **Add variable** in the group's settings, *Masked and hidden*, *Protect
+   variable* ticked. The next push of `main` then builds and deploys; or Build → Pipelines → New
+   pipeline on `main`.
+3. **The deploy runner** - done 2026-10-24: runner #28, tag `quadrasense-deploy`, online. How it was
+   made: create it in the group (Settings → CI/CD → Runners → New group runner: tag
+   `quadrasense-deploy`, not untagged, Protected), then on `<server>`
+   `sudo GITLAB_URL=https://<gitlab>/ bash deploy/host/install-deploy-runner.sh`, which asks for the
+   token at a hidden prompt.
+4. **`probe:runner`** - run 2026-10-26 (section 4): `docker-global` pulls job images from Nexus by
+   itself, reaches Nexus's NuGet and npm, and reaches MCR directly.
 
 ## 8. Requests and decisions
 
@@ -403,17 +424,17 @@ a test pipeline on another branch gets empty credentials - `username is empty` (
 | 4 | **Release files** - where the deployed tag of each environment is recorded, and so what Nexus's cleanup keeps (section 2: images in no `releases/*.env`, older than 30 days, are deleted) | **open**: ask the department how its cleanup reads them; until then the server records the running tag in `/opt/quadrasense/current.sha` |
 | 5 | The deploy runner | **decided**: a Group runner of QuadraSense's group, shell, tag `quadrasense-deploy`, Protected, on `<server>` |
 | 6 | Which branch deploys | the default branch, protected |
-| 7 | **How GitHub's `main` reaches `<gitlab>`** after the owner merges a pull request. The owner's routine (2026-10-25): the laptop is current, Claude pushes and opens the pull request, the owner merges, `<gitlab>` follows, the runners build and deploy | **open**. The owner chose a timer on `<server>` pushing to `<gitlab>` over SSH with a write deploy key - and it is not built: the red lines say git over HTTPS, not SSH, and *servers pull* (`04-…`, §2-2 row 2), and section 5 gives a server read-only access only. Compliant ways: **(a)** `<gitlab>`'s own pull mirror from the public GitHub URL (Settings → Repository → Mirroring repositories; a paid GitLab feature, and `<gitlab>` must reach github.com); **(b)** a scheduled pipeline that fetches GitHub and pushes with the job token (the instance runner must reach github.com; the probe says); **(c)** the developer pushes from the laptop, over HTTPS with their own credential - what happens until (a) or (b) exists |
-| 8 | **`<gitlab>`'s `main` held only GitLab's template README** (`Initial commit`, by the project's creator, 2026-10-24), with no history in common with the code | The owner approved replacing it once with GitHub's `main` (2026-10-25). Refused: `main` is protected against force pushes. The owner allows force pushes for Maintainers on `main` once, Claude pushes, the owner switches it back. Nothing else on `<gitlab>` is lost by it - checked 2026-10-25: of its commits, only that README and six on two `wip/` branches are missing from GitHub, and the six are already on GitHub's `main` as the same changes (`git cherry`) and on the laptop's branches |
+| 7 | **How GitHub's `main` reaches `<gitlab>`** after a pull request is merged. The owner's routine (2026-10-26): new code lands on the laptop; the laptop session pushes, opens the pull request, merges it once verified, and pushes `main` to `<gitlab>` over HTTPS - way (c) below, which is now the routine rather than a stopgap (`CLAUDE.md`, Git); the runners build and deploy | **decided 2026-10-26: (c)**. A cloud session does not merge, so nothing but the laptop moves `main`. Before that: The owner chose a timer on `<server>` pushing to `<gitlab>` over SSH with a write deploy key - and it is not built: the red lines say git over HTTPS, not SSH, and *servers pull* (`04-…`, §2-2 row 2), and section 5 gives a server read-only access only. Compliant ways: **(a)** `<gitlab>`'s own pull mirror from the public GitHub URL (Settings → Repository → Mirroring repositories; a paid GitLab feature, and `<gitlab>` must reach github.com); **(b)** a scheduled pipeline that fetches GitHub and pushes with the job token (the instance runner must reach github.com; the probe says); **(c)** the developer pushes from the laptop, over HTTPS with their own credential. (a) and (b) would matter only if `main` could move anywhere but the laptop |
+| 8 | **`<gitlab>`'s `main` held only GitLab's template README** (`Initial commit`, by the project's creator, 2026-10-24), with no history in common with the code | **Done 2026-10-26**: the owner allowed one force push on `main`, and `main` became GitHub's (`654018b`, pushed with `-o ci.skip`); merge request !1 was closed by the owner, and the project's page shows the project's own README. The owner turns force pushes off again. Nothing else on `<gitlab>` is lost by it - checked 2026-10-25: of its commits, only that README and six on two `wip/` branches are missing from GitHub, and the six are already on GitHub's `main` as the same changes (`git cherry`) and on the laptop's branches |
 
 ## 9. Order of work
 
 | # | Step | Kind | Waits on |
 |---|---|---|---|
 | 1 | Revoke the GitLab token and change both Nexus passwords (they went through a chat) | R | the owner |
-| 2 | First push to `<gitlab>` (section 7, step 1) - replaces the template README on `main` (section 8, item 8) | R | 1; force pushes allowed on `main` once |
-| 3 | Group CI/CD variables (section 7) | R | 1 |
-| 4 | Deploy runner on `<server>` (section 7, step 3) | R, T | `sudo`, a runner token |
-| 5 | First pipeline; run `probe:runner`; fix what it shows | T | 2-4 |
+| 2 | ~~First push to `<gitlab>`~~ - done 2026-10-26 | R | - |
+| 3 | Group CI/CD variables - done 2026-10-26 but for **the two Nexus passwords** | R | 1 |
+| 4 | ~~Deploy runner on `<server>`~~ - done 2026-10-24 | R, T | - |
+| 5 | ~~First pipeline; `probe:runner`~~ - 366, 2026-10-26; the first build and deploy follow the passwords | T | 3 |
 | 6 | Request 1 (MCR) and decision 4 (release files) with the department | R | - |
 | 7 | When the pipeline deploys, `update.sh` becomes the fallback only | T | 5 |

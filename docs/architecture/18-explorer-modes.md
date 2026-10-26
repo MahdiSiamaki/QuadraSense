@@ -140,6 +140,17 @@ inputs that have none, and the mask; `ExplorerEndpointTests` and `RiskEndpointTe
 columns, masked and revealed. Each was made to fail first: the rule off by one digit on the server
 (4 failures) and in the page (3), the export's ICCID left unmasked (1).
 
+ICCID in the browser, 2026-10-26, on the department VM (build `654018b9`, data through 2026-02-28),
+with one real SIM from its current state:
+
+- Simple, Auto: the 19-digit ICCID typed in was read as "An ICCID: the SIM with IMSI …" and opened
+  that SIM; its card shows the derived ICCID under the IMSI.
+- Advanced, SIM is that IMSI: both rows (an unknown handset `000000` and a Galaxy A34 5G) show the
+  ICCID under the SIM.
+- Export CSV of that query: the header is `Number,SIM,ICCID (derived from SIM),Handset,Brand,Model,
+  Active,Last change`, and each row has the IMSI followed by its ICCID. Read from the response in the
+  page; no file was saved.
+
 In the browser, on the real stack, 2026-10-19:
 
 - `/lookup` lands on `/explorer?kind=msisdn` with MSISDN chosen; the navigation shows Explorer and no
