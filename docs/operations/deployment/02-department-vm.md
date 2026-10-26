@@ -429,7 +429,7 @@ section 7 that need data, backups, and everything that waits on the data disk.
 
 - **Five days queued with `--import-file`** (section 6), carried as 741 MB of compressed pieces: imports
   3-7, 2026-01-26 to 01-30, each file's SHA-256 the original's. The owner then uploaded the next 20
-  days himself (imports 8-27, to 2026-02-19); 02-19 arrived before 02-11 to 02-18, which were folded as
+  days through the Import Center (imports 8-27, to 2026-02-19); 02-19 arrived before 02-11 to 02-18, which were folded as
   late days. All 27 imports completed.
 - **Every dashboard rebuild after the first daily file failed**, at 2.5 GB too: the filter-population
   statements took 2.96-3.41 GiB on delivery 5. The cause was the plan, not the cap - ClickHouse swapped
