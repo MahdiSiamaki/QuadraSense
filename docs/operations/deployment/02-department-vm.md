@@ -2,8 +2,8 @@
 
 **Status:** runbook, written 2026-10-22. **Running on the VM since 2026-10-24**, from
 `/opt/quadrasense`: the one-month dump, GSMA TAC version v2026.10.04 and the daily files to 2026-02-28,
-36 imports; build `654018b9` (ICCID) since 2026-10-26 (section 9 records each session on the VM and
-what it changed in this runbook). The full history waits on the data disk (section 1).
+36 imports; ICCID since 2026-10-26, and deployed by the department pipeline since the same day
+(section 3; section 9 records each session on the VM and what it changed in this runbook). The full history waits on the data disk (section 1).
 
 **Purpose of this stage.** Run the real system away from the laptop, on infrastructure the department
 operates, and find what breaks: the images, the configuration, the operating routine (upgrades,
@@ -119,13 +119,13 @@ dependencies and no build may reach the internet directly - and `update.sh` buil
 Hub, NuGet and npm. It is the interim, until the department pipeline of `05-department-ci-cd.md`
 replaces it; then it stays only as the fallback.
 
-**Once the pipeline deploys** (`05-…` §7 - it waits on the two Nexus passwords), nobody runs anything
-here: each push of `main` to the department's GitLab is tested, built in CI and deployed by the
-runner on this server, with no one asked. Each commit gets `/opt/quadrasense/releases/<sha>`, and
-`/opt/quadrasense/current` points at the one running. **Commands by hand then run from
+**The pipeline deploys, since 2026-10-26** (`05-…` §7, pipeline 370): nobody runs anything here.
+Each push of `main` to the department's GitLab is tested, built in CI and deployed by the runner on
+this server, with no one asked. Each commit gets `/opt/quadrasense/releases/<sha>`, and
+`/opt/quadrasense/current` points at the one running. **Commands by hand run from
 `/opt/quadrasense/current/deploy/compose`**, not from the checkout: Compose recreates ClickHouse
 whenever the directory it runs from changes (its config files are mounted by relative path; measured
-2026-10-26), so `update.sh` after that point recreates ClickHouse once - use it only as the fallback.
+2026-10-26), so `update.sh` now recreates ClickHouse once - it is the fallback only.
 
 - **The checkout follows `main`** since 2026-10-26 - deploy from `main` only, as everything else does.
 - **If the repository becomes private** (README, decision 10), the server needs a read-only deploy
@@ -451,8 +451,8 @@ section 7 that need data, backups, and everything that waits on the data disk.
 - **Against the laptop, day by day, 2026-01-26 to 02-19:** events, device models, feed quality,
   multi-number SIMs and SIM changes identical on 22 of 25 days (unknown-TAC rows apart by 1-4 on some
   days: the laptop counted under an older TAC version). The other three, 02-03, 02-10 and 02-15, the
-  VM holds in full and **the laptop does not** - its bulk load lost 27-45% of them, and of 03-24 too
-  (backlog). Risk published as of 02-19; the dashboard, risk, data-quality, devices and image-review
+  VM holds in full and **the laptop did not** - its bulk load lost 27-45% of them, and of 03-24 too;
+  re-imported on the laptop 2026-10-26, all four now match their files. Risk published as of 02-19; the dashboard, risk, data-quality, devices and image-review
   pages all read the VM's data.
 
 **2026-10-26, sixth session.**
@@ -470,3 +470,8 @@ section 7 that need data, backups, and everything that waits on the data disk.
 - **A defect found before the pipeline deployed anything**: from a new directory for each release,
   Compose would have recreated ClickHouse on every deploy. `deploy-release.sh` now runs Compose from
   `current` (section 3).
+- **The pipeline's first deploy** (370), after the owner entered the two passwords and removed the
+  runner user's `.bash_logout` (369's deploy failed on it): `5ea39f54`, its images pulled from Nexus;
+  ClickHouse recreated once for the move to `current`, Postgres untouched, the data intact (288,618,519
+  events through 02-28). Builds take their .NET base images from copies in Nexus since MCR transfers
+  from this network were cut (`05-…` §4).

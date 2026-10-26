@@ -95,11 +95,10 @@ build:
   parallel:
     matrix:
       - COMPONENT: [api, worker, migrator, web]
-  # The .NET base images come straight from MCR until Nexus proxies it (05, request 1), and from
-  # this network that download is cut: pipeline 368's worker build lost the SDK after 12 minutes
-  # ("stream error ... CANCEL; received from peer") while the api build, pulling the same image at
-  # the same time, got it in 13. Builds start only after the tests pass, so a failing build is
-  # almost always a transfer, and trying it again is what a person would do.
+  # Builds start only after the tests pass, so a failing build is almost always a transfer, and
+  # trying it again is what a person would do. Pipeline 368, when kaniko still fetched the .NET bases
+  # from MCR, lost two of its three backend builds that way ("stream error ... CANCEL; received from
+  # peer"); since mirror:dotnet they come from Nexus, and a cut is rarer but not impossible.
   retry:
     max: 2
     when: script_failure
