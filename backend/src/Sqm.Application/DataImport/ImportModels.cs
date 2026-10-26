@@ -109,12 +109,24 @@ public sealed record QuarantineSample(long RowNumber, string RawLine, string? Of
 /// <param name="BytesExpected">The file size, which is what percent is measured against.</param>
 /// <param name="Percent">Completion percentage, when it can be computed.</param>
 /// <param name="UpdatedAt">When the worker last reported.</param>
+/// <param name="Step">For a stage that reads no file (AGGREGATING): the step now running, in words.</param>
+/// <param name="StepIndex">Its place among the stage's steps, from 1.</param>
+/// <param name="StepCount">How many steps the stage has.</param>
 public sealed record ImportProgress(
     string Stage,
     long BytesProcessed,
     long? BytesExpected,
     decimal? Percent,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string? Step = null,
+    int? StepIndex = null,
+    int? StepCount = null);
+
+/// <summary>How long one stage usually takes, for a source.</summary>
+/// <param name="Stage">The stage, in the database's spelling.</param>
+/// <param name="TypicalMs">The median over the recent imports that went through it.</param>
+/// <param name="Jobs">How many imports the median is taken over.</param>
+public sealed record StageDuration(string Stage, long TypicalMs, int Jobs);
 
 /// <summary>A row in the import history list.</summary>
 /// <param name="JobId">Job primary key.</param>

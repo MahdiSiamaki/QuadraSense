@@ -815,6 +815,132 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
         }
     }
 
+    /// <summary>
+    /// How long a stage usually takes is the median over recent first attempts, in stage order.
+    /// </summary>
+    /// <remarks>
+    /// What the time left on the import page is estimated from. Three imports whose AGGREGATING
+    /// took 1, 2 and 10 minutes give 2; a retried one, whose stages cannot be told apart from its
+    /// failed attempt's, is left out however long it took.
+    /// </remarks>
+    [Fact]
+    public async Task Typical_stage_durations_are_the_median_of_recent_first_attempts()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        try
+        {
+            var ct = TestContext.Current.CancellationToken;
+            var aggregating = new[] { 60, 120, 600, 99_999 };
+
+            for (var i = 0; i < aggregating.Length; i++)
+            {
+                var job = await fixture.Repository.EnqueueAsync(TestSource,
+                    (await fixture.Repository.RegisterFileAsync(TestSource, $"d{i}.csv", Stored(Hash($"d{i}")), "tester", ct)).FileId,
+                    new DateOnly(2026, 7, 1 + i), "tester", ct: ct);
+                await fixture.Repository.ClaimNextAsync("worker", TimeSpan.FromMinutes(5), ct);
+                await fixture.Repository.CompleteAsync(
+                    job, ImportJobStatus.Completed, new ImportCounters(), makeEffective: true,
+                    businessDate: new DateOnly(2026, 7, 1 + i), workerId: "worker", ct);
+
+                // The timeline as a run would have written it: validating 10 s, importing 10 s,
+                // aggregating as given. The last one is a retry.
+                await SqlAsync(
+                    """
+                    DELETE FROM imports.import_event WHERE job_id = @id;
+                    INSERT INTO imports.import_event (job_id, occurred_at, severity, stage, message)
+                    VALUES (@id, @t,                         'info', 'VALIDATING',  'v'),
+                           (@id, @t + interval '5 seconds',  'info', 'VALIDATING',  'a note'),
+                           (@id, @t + interval '10 seconds', 'info', 'IMPORTING',   'i'),
+                           (@id, @t + interval '20 seconds', 'info', 'AGGREGATING', 'g'),
+                           (@id, @t + interval '20 seconds' + make_interval(secs => @agg), 'info', NULL, 'done');
+                    UPDATE imports.import_job
+                       SET finished_at = @t + interval '20 seconds' + make_interval(secs => @agg),
+                           attempt = @attempt
+                     WHERE id = @id;
+                    """,
+                    ("id", job),
+                    ("t", new DateTimeOffset(2026, 1, 1, i, 0, 0, TimeSpan.Zero)),
+                    ("agg", (double)aggregating[i]),
+                    ("attempt", (short)(i == aggregating.Length - 1 ? 2 : 1)));
+            }
+
+            var typical = await fixture.Repository.GetStageDurationsAsync(TestSource, ct);
+
+            Assert.Equal(
+                [new StageDuration("VALIDATING", 10_000, 3), new StageDuration("IMPORTING", 10_000, 3),
+                 new StageDuration("AGGREGATING", 120_000, 3)],
+                typical);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
+    /// <summary>Progress belongs to its stage: cleared when the stage changes, bytes or steps, not both.</summary>
+    /// <remarks>
+    /// The row outlived its stage, so a stage that reports nothing showed the last one's percentage
+    /// under its own name.
+    /// </remarks>
+    [Fact]
+    public async Task Progress_belongs_to_its_stage()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        try
+        {
+            var ct = TestContext.Current.CancellationToken;
+            var job = await fixture.Repository.EnqueueAsync(TestSource,
+                (await fixture.Repository.RegisterFileAsync(TestSource, "s1.csv", Stored(Hash("s1")), "tester", ct)).FileId,
+                new DateOnly(2026, 7, 9), "tester", ct: ct);
+            await fixture.Repository.ClaimNextAsync("worker", TimeSpan.FromMinutes(5), ct);
+
+            await fixture.Repository.ReportProgressAsync(job, "VALIDATING", 50, 100, ct);
+            Assert.Equal(50m, (await fixture.Repository.GetJobAsync(job, ct))!.Progress!.Percent);
+
+            await fixture.Repository.SetStageAsync(job, ImportJobStatus.Importing, ct);
+            Assert.Null((await fixture.Repository.GetJobAsync(job, ct))!.Progress);
+
+            await fixture.Repository.ReportProgressAsync(job, "IMPORTING", 10, 100, ct);
+            Assert.True(await fixture.Repository.EnterStageUnlessCancelledAsync(job, ImportJobStatus.Aggregating, ct));
+            Assert.Null((await fixture.Repository.GetJobAsync(job, ct))!.Progress);
+
+            await fixture.Repository.ReportStepAsync(job, "AGGREGATING", "Updating the binding history", 3, 7, ct);
+            var step = (await fixture.Repository.GetJobAsync(job, ct))!.Progress!;
+            Assert.Equal(("Updating the binding history", 3, 7), (step.Step, step.StepIndex, step.StepCount));
+            Assert.Equal(28.57m, step.Percent);
+
+            await fixture.Repository.ReportProgressAsync(job, "AGGREGATING", 1, 2, ct);
+            Assert.Null((await fixture.Repository.GetJobAsync(job, ct))!.Progress!.Step);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
+    private static async Task SqlAsync(string sql, params (string Name, object Value)[] parameters)
+    {
+        await using var connection = new Npgsql.NpgsqlConnection(ImportQueueFixture.ConnectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = new Npgsql.NpgsqlCommand(sql, connection);
+        foreach (var (name, value) in parameters)
+        {
+            command.Parameters.AddWithValue(name, value);
+        }
+
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+    }
+
     [Fact]
     public async Task A_retried_quarantine_keeps_one_copy_of_its_samples()
     {

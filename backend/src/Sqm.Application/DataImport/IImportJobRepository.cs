@@ -144,6 +144,13 @@ public interface IImportJobRepository
     Task ReportProgressAsync(
         long jobId, string stage, long bytesProcessed, long? bytesExpected, CancellationToken ct);
 
+    /// <summary>
+    /// Records which step of a stage that reads no file is running - AGGREGATING's fold, marts,
+    /// history and the rest - so the page can say what is happening rather than sweep.
+    /// </summary>
+    Task ReportStepAsync(
+        long jobId, string stage, string stepName, int stepIndex, int stepCount, CancellationToken ct);
+
     /// <summary>Appends one entry to the job's timeline.</summary>
     /// <remarks>
     /// The timeline is written by the worker as it works, not reconstructed from status changes
@@ -288,6 +295,17 @@ public interface IImportJobRepository
     /// the waits a person has to resolve.
     /// </summary>
     Task<IReadOnlyList<QueueBlockage>> GetBlockagesAsync(CancellationToken ct);
+
+    /// <summary>
+    /// How long each stage usually takes for a source: the median over its last ten imports that
+    /// completed on their first attempt, in the order the stages run.
+    /// </summary>
+    /// <remarks>
+    /// First attempts only, because a retry's events are interleaved with the failed attempt's and
+    /// its stages cannot be told apart. Read from the timeline, where every stage entry is recorded
+    /// with its time, so it needs nothing written that is not written already.
+    /// </remarks>
+    Task<IReadOnlyList<StageDuration>> GetStageDurationsAsync(string sourceCode, CancellationToken ct);
 
     // -----------------------------------------------------------------------
     // Operator actions

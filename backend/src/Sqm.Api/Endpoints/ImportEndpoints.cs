@@ -77,6 +77,10 @@ public static class ImportEndpoints
             .WithName("GetImportBlockages")
             .WithSummary("Failed or cancelled days that hold later queued days back, with nothing queued to land them.");
 
+        group.MapGet("/stage-durations", GetStageDurationsAsync)
+            .WithName("GetImportStageDurations")
+            .WithSummary("How long each stage usually takes for a source - what the time left is estimated from.");
+
         return app;
     }
 
@@ -331,6 +335,13 @@ public static class ImportEndpoints
 
     private static async Task<IResult> GetBlockagesAsync(IImportJobRepository repository, CancellationToken ct) =>
         Results.Ok(await repository.GetBlockagesAsync(ct).ConfigureAwait(false));
+
+    private static async Task<IResult> GetStageDurationsAsync(
+        string source, IImportJobRepository repository, CancellationToken ct) =>
+        string.IsNullOrWhiteSpace(source)
+            ? Results.Problem(title: "Missing source", detail: "Name the source: ?source=SQM.",
+                statusCode: StatusCodes.Status400BadRequest)
+            : Results.Ok(await repository.GetStageDurationsAsync(source, ct).ConfigureAwait(false));
 
     private static async Task<IResult> GetWorkerHealthAsync(
         IImportJobRepository repository, CancellationToken ct)
