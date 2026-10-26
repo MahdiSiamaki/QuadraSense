@@ -424,3 +424,25 @@ section 7 that need data, backups, and everything that waits on the data disk.
   each in the minute the tunnel dropped (nginx 400 with the body unbuffered, the API 499). So the days
   are carried compressed (2.7x) in 5 MB pieces, each retried until it lands, and queued with
   `--import-file` (section 6).
+
+**2026-10-25/26, fifth session.**
+
+- **Five days queued with `--import-file`** (section 6), carried as 741 MB of compressed pieces: imports
+  3-7, 2026-01-26 to 01-30, each file's SHA-256 the original's. The owner then uploaded the next 20
+  days himself (imports 8-27, to 2026-02-19); 02-19 arrived before 02-11 to 02-18, which were folded as
+  late days. All 27 imports completed.
+- **Every dashboard rebuild after the first daily file failed**, at 2.5 GB too: the filter-population
+  statements took 2.96-3.41 GiB on delivery 5. The cause was the plan, not the cap - ClickHouse swapped
+  their join and held every model's states in memory - and `refresh_marts.sql` section 1c no longer
+  joins the states (`dedicated-hardware.md` section 3): 628-702 MiB, outputs identical on both
+  machines. Delivery 17 (02-19) published, 31 of 31 statements; its 110,851,312 active bindings are
+  current state's.
+- **The vendor map was empty** - nothing applies the analytics seeds (section 4) - so Samsung was six
+  vendors. Seeded; now 38 rows, identical to the laptop's; the dashboard shows Samsung once, 47,729,708
+  bindings.
+- **Against the laptop, day by day, 2026-01-26 to 02-19:** events, device models, feed quality,
+  multi-number SIMs and SIM changes identical on 22 of 25 days (unknown-TAC rows apart by 1-4 on some
+  days: the laptop counted under an older TAC version). The other three, 02-03, 02-10 and 02-15, the
+  VM holds in full and **the laptop does not** - its bulk load lost 27-45% of them, and of 03-24 too
+  (backlog). Risk published as of 02-19; the dashboard, risk, data-quality, devices and image-review
+  pages all read the VM's data.
