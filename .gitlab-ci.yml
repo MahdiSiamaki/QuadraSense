@@ -1,5 +1,6 @@
 # QuadraSense on the department's GitLab - docs/operations/deployment/05-department-ci-cd.md.
 #
+#   prepare the .NET base images copied from MCR into Nexus   instance runner  (docker-global)
 #   test    backend and frontend tests                        instance runner  (docker-global)
 #   build   the four images, kaniko, pushed to Nexus           instance runner  (docker-global)
 #   deploy  the server pulls those images and starts them     the group's shell runner (quadrasense-deploy)
@@ -11,17 +12,47 @@
 # Addresses and credentials are CI/CD variables of the QuadraSense group (05, section 7), not
 # written here: this file is also in a public mirror.
 
-stages: [test, build, deploy]
+stages: [prepare, test, build, deploy]
 
 variables:
   IMAGE_PREFIX: quadrasense
-  # global.json's SDK, exactly (CLAUDE.md). Microsoft's registry has no Nexus proxy yet; when it has,
-  # a group variable of the same name points this through Nexus.
-  DOTNET_SDK_IMAGE: mcr.microsoft.com/dotnet/sdk:10.0.400
+  # global.json's SDK, exactly (CLAUDE.md), and the runtime the backend Dockerfile defaults to.
+  DOTNET_SDK_VERSION: "10.0.400"
+  ASPNET_VERSION: "10.0.11"
+  # The test job's image is pulled by the runner's own Docker daemon, which retries a cut download
+  # and keeps the image; it comes from MCR until Nexus proxies it (05, request 1).
+  DOTNET_SDK_IMAGE: mcr.microsoft.com/dotnet/sdk:$DOTNET_SDK_VERSION
+  # The image builds take the .NET base images from QuadraSense's copies in Nexus (mirror:dotnet).
+  SDK_IMAGE: $REGISTRY_PULL/$IMAGE_PREFIX/dotnet/sdk:$DOTNET_SDK_VERSION
+  RUNTIME_IMAGE: $REGISTRY_PULL/$IMAGE_PREFIX/dotnet/aspnet:$ASPNET_VERSION
   KANIKO_IMAGE: martizih/kaniko:v1.28.6-debug
 
 default:
   tags: [docker-global]
+
+# Copies the two .NET base images from Microsoft's registry into QuadraSense's space in Nexus, and the
+# image builds take them from there. kaniko fetched them from MCR itself, and from this network those
+# transfers were cut: in pipeline 368 two of the three backend builds failed on one - the SDK after
+# 12 minutes, the runtime's layers while pushing the api image after 18. Nexus does not proxy MCR yet
+# (05, request 1); when it does, SDK_IMAGE and RUNTIME_IMAGE point at the proxy and this job goes.
+# regctl copies only what the destination lacks, so once the copies exist this is two manifest
+# checks - and it puts them back if Nexus's 30-day cleanup (05, section 2) has removed them. Allowed
+# to fail: a pipeline whose copies already exist need not stop because MCR is unreachable.
+mirror:dotnet:
+  stage: prepare
+  image:
+    name: $REGISTRY_PULL/regclient/regctl:v0.11.6-alpine
+    entrypoint: [""]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  allow_failure: true
+  retry:
+    max: 2
+    when: script_failure
+  script:
+    - printf '%s' "$NEXUS_PUSH_PASS" | regctl registry login "$REGISTRY_PUSH" -u "$NEXUS_PUSH_USER" --pass-stdin
+    - regctl image copy --platform linux/amd64 "mcr.microsoft.com/dotnet/sdk:$DOTNET_SDK_VERSION" "$REGISTRY_PUSH/$IMAGE_PREFIX/dotnet/sdk:$DOTNET_SDK_VERSION"
+    - regctl image copy --platform linux/amd64 "mcr.microsoft.com/dotnet/aspnet:$ASPNET_VERSION" "$REGISTRY_PUSH/$IMAGE_PREFIX/dotnet/aspnet:$ASPNET_VERSION"
 
 # Run it once by hand: what the instance runner can and cannot do, before anything relies on it.
 probe:runner:
