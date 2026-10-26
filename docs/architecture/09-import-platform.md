@@ -788,6 +788,35 @@ message instead of trailing it. The timeline said `No attempts remain` on attemp
 same reason it says it after attempt 3, which is a contradiction on screen - a permanently rejected
 file now says so instead.
 
+### D11 - An upload is measured, can be stopped, and outlives the page (2026-10-26)
+
+The browser sends a file as one multipart request (`uploadImportFile`, `frontend/src/api/imports.ts`)
+after a small preflight that asks whether it would be accepted. Until 2026-10-26 the queue of files
+lived in the drop zone, so it lived only as long as the Import Center: opening an import's details
+while a month of files went up made the list vanish. The request carried on, but nothing showed it,
+nothing started the next file, and nothing could stop it short of closing the tab. And the bar gave
+bytes and a percentage, but not how long.
+
+Now (`frontend/src/features/imports/uploadQueue.ts`):
+
+- **The queue is held outside any page**, one per source as before, files one at a time. The header
+  shows "Uploading 2 files · 41% · about 6 min left" on every page but the Import Center, which
+  shows each file. Closing or reloading the tab while a file is going up brings the browser's own
+  "leave this page?" prompt - the only warning a page can give at that moment.
+- **Speed and time left** are measured over the last eight seconds, not since the start: over the
+  VPN the rate runs at 80-330 KB/s and stalls when the tunnel drops (`02-department-vm.md`), so an
+  average since the start keeps promising the speed of a minute ago, and a stall reads "Stalled".
+  The figure is said roughly - "about 4 min left" - because it is an estimate.
+- **Every file can be stopped**: mid-upload (the request is aborted; the server deletes what it had
+  written, `DirectoryImportFileStore.SaveAsync`), or before it starts; "Cancel all" stops a source's
+  whole queue. A cancel that lands while the preflight is answering used to be lost - its event had
+  already fired when the upload request was created - and the file went anyway; the upload now
+  checks the signal itself.
+- A queued file links to its import.
+
+Not done, by the owner's choice of 2026-10-26: **resuming a broken upload.** It needs the file sent
+in pieces (`docs/backlog.md`).
+
 ---
 
 ## 13. Still open
