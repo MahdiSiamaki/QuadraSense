@@ -870,6 +870,47 @@ the page offering Cancel past the point, and cancelling without asking (1 each).
 fault before anything shipped: a job back in the queue after failing past the point still carried
 the flag, and would have refused a cancel while merely waiting.
 
+### D13 - How long an import has left, from how long its stages usually take (2026-10-26)
+
+**What it shows.** On an import's page: its stages in order - done, the one running with its time so
+far against its usual time, the ones to come with theirs - the running stage's own bar, and "About
+18 min left, estimated from the last 10 imports". In the history, a running row's Finished cell
+reads "about 18 min left". A waiting import is given its whole usual time "once it starts".
+
+**Where the figures come from.** `GET /api/v1/imports/stage-durations?source=SQM`: for each stage,
+the median time over the source's last ten imports that completed on their first attempt - a retry's
+events interleave with the failed attempt's, so its stages cannot be told apart. Read from the
+timeline, where entering a stage already writes an event with its time; nothing new is recorded. On
+2026-10-26 they were, for daily files:
+
+| Stage | Department VM | Laptop |
+|---|---|---|
+| Validating | 1.9 s | 17.9 s |
+| Deduplicating | 0.3 s | 0.5 s |
+| Importing | 6.1 s | 5.7 s |
+| Aggregating | 27.7 min | 44.9 min |
+| Finalizing | 0 s | 0 s |
+
+So a daily import is its aggregating stage, and its estimate is that stage's median minus what has
+passed. Where the running stage counts bytes - validating, loading - its own rate replaces the median.
+A stage more than a quarter past its usual time says "Taking longer than usual" rather than promise
+a number it has no basis for; a source with no history yet says that instead.
+
+**Progress inside AGGREGATING.** The stage reads no file, so it showed an indeterminate sweep for
+its whole length. It now reports its seven steps - folding the day into current state, the change
+figures, the binding history, feed quality, the SIM changes, the device models, the dashboard figures -
+as "Step 3 of 7: Updating the binding history" (migration 018 adds the step to `import_progress`).
+And the progress row is now cleared at every stage change: it used to outlive its stage, so a stage
+that reports nothing showed the previous one's percentage under its own name.
+
+**Not done:** the dashboard step - most of the stage when it runs - is one step; its 31 statements
+are not counted on the page (`docs/backlog.md`).
+
+**Proved by failing first:** retried imports let into the medians, and the progress row kept across a
+stage change (1 each, against the real PostgreSQL); the first step no longer reported (1); a byte rate
+taken from another stage, and no stage ever overdue (1 and 2). The page itself was checked by
+component tests only: on the VM it shows once an import is running.
+
 ---
 
 ## 13. Still open
