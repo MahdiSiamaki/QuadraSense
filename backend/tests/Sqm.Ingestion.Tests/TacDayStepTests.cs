@@ -30,6 +30,7 @@ public sealed class TacDayStepTests
             {
                 "OpenFileAsync" => Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(File))),
                 "IsCancellationRequestedAsync" => Task.FromResult(false),
+                "EnterStageUnlessCancelledAsync" => Task.FromResult(true),
                 _ => Stub.Default(m),
             };
         });

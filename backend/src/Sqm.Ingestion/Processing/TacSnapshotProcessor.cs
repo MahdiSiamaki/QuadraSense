@@ -81,99 +81,117 @@ internal sealed partial class TacSnapshotProcessor(
         var versionId = checked((int)job.JobId);
         var activeVersionId = await store.GetActiveVersionIdAsync(ct).ConfigureAwait(false);
 
-        // A retry of this job gets the same id, so whatever an earlier attempt left half-loaded
-        // is cleared first. Dropping a partition that does not exist is a no-op.
-        await store.DropVersionAsync(versionId, CancellationToken.None).ConfigureAwait(false);
-
-        await context.EnterStageAsync(
-            ImportJobStatus.Importing, $"Loading as TAC version {versionId} (not yet active)", ct)
-            .ConfigureAwait(false);
-
+        // Until the version is registered (FINALIZING) it is a partition nothing reads, so an
+        // operator's cancel anywhere before that drops it and the job ends Cancelled. A shutdown
+        // or a lost lease is not caught here: the retry gets the same id and clears it first.
         long rows;
-        try
-        {
-            await using var file = await context.OpenFileAsync(ct).ConfigureAwait(false);
-            rows = await store.LoadVersionAsync(
-                versionId, file,
-                bytes => ReportBytes(context, bytes, job.FileBytes, ct), ct).ConfigureAwait(false);
-        }
-        catch
-        {
-            // The version is partitioned by its own id, so removing a half-loaded one is a
-            // partition drop: instant, and it cannot touch a version that is fine.
-            await store.DropVersionAsync(versionId, CancellationToken.None).ConfigureAwait(false);
-            throw;
-        }
-
-        // ---------------------------------------------------------------- check
-        await context.EnterStageAsync(
-            ImportJobStatus.Enriching, "Checking the loaded version", ct).ConfigureAwait(false);
-
-        var check = await store.CheckVersionAsync(versionId, ct).ConfigureAwait(false);
-        var quarantine = BuildQuarantine(check);
-
-        if (quarantine.Count > 0)
-        {
-            await context.QuarantineAsync(quarantine, ct).ConfigureAwait(false);
-        }
-
-        // A backstop. ScanStructureAsync answers this before anything is loaded and with far more
-        // to say about it, so reaching here means the scanner and ClickHouse read the same file
-        // differently - which is worth failing loudly over, because one of the two is wrong about
-        // the data that decides what every device in the product is called.
-        if (check.DistinctTacs != check.RowCount)
-        {
-            await store.DropVersionAsync(versionId, CancellationToken.None).ConfigureAwait(false);
-            throw new ImportRejectedException(
-                $"The loaded version holds {check.RowCount - check.DistinctTacs:N0} duplicate "
-                + "TAC(s) that the pre-load scan did not see. The two disagree about the file, so "
-                + "it has been discarded rather than trusted. This is a defect in the importer, "
-                + "not in the file.");
-        }
-
-        await context.NoteAsync(
-            "info",
-            $"Loaded {rows:N0} TACs. Newest lastUpdatedDate in the file: "
-            + $"{check.LatestUpdateDate ?? "none"}.",
-            check, ct).ConfigureAwait(false);
-
-        // ---------------------------------------------------------------- diff
         TacVersionDiff? diff = null;
 
-        if (activeVersionId is { } previous)
+        try
         {
+            // A retry of this job gets the same id, so whatever an earlier attempt left half-loaded
+            // is cleared first. Dropping a partition that does not exist is a no-op.
+            await store.DropVersionAsync(versionId, CancellationToken.None).ConfigureAwait(false);
+
             await context.EnterStageAsync(
-                ImportJobStatus.Aggregating,
-                $"Comparing against the active version {previous}", ct).ConfigureAwait(false);
-
-            diff = await store.DiffAsync(versionId, previous, ct).ConfigureAwait(false);
-
-            var total = diff.Added + diff.Removed + diff.Updated;
-
-            await context.NoteAsync(
-                total > UnusualDiffThreshold ? "warning" : "info",
-                $"{diff.Added:N0} TACs added, {diff.Removed:N0} removed, {diff.Updated:N0} "
-                + $"changed, {diff.Unchanged:N0} unchanged. "
-                + $"{diff.AffectedActiveBindings:N0} active binding(s) sit on a TAC it adds, removes or changes."
-                + (total > UnusualDiffThreshold
-                    ? $" That is well above the {UnusualDiffThreshold:N0} expected for one month's"
-                      + " revision - worth confirming this is the intended file before activating."
-                    : string.Empty),
-                diff, ct).ConfigureAwait(false);
-
-            LogReady(versionId, diff.Added, diff.Removed, diff.Updated);
-        }
-        else
-        {
-            await context.NoteAsync(
-                "info", "No active version to compare against; this is the first.", null, ct)
+                ImportJobStatus.Importing, $"Loading as TAC version {versionId} (not yet active)", ct)
                 .ConfigureAwait(false);
+
+            try
+            {
+                await using var file = await context.OpenFileAsync(ct).ConfigureAwait(false);
+                rows = await store.LoadVersionAsync(
+                    versionId, file,
+                    bytes => ReportBytes(context, bytes, job.FileBytes, ct), ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                // The version is partitioned by its own id, so removing a half-loaded one is a
+                // partition drop: instant, and it cannot touch a version that is fine.
+                await store.DropVersionAsync(versionId, CancellationToken.None).ConfigureAwait(false);
+                throw;
+            }
+
+            // ---------------------------------------------------------------- check
+            await context.EnterStageAsync(
+                ImportJobStatus.Enriching, "Checking the loaded version", ct).ConfigureAwait(false);
+
+            var check = await store.CheckVersionAsync(versionId, ct).ConfigureAwait(false);
+            var quarantine = BuildQuarantine(check);
+
+            if (quarantine.Count > 0)
+            {
+                await context.QuarantineAsync(quarantine, ct).ConfigureAwait(false);
+            }
+
+            // A backstop. ScanStructureAsync answers this before anything is loaded and with far more
+            // to say about it, so reaching here means the scanner and ClickHouse read the same file
+            // differently - which is worth failing loudly over, because one of the two is wrong about
+            // the data that decides what every device in the product is called.
+            if (check.DistinctTacs != check.RowCount)
+            {
+                await store.DropVersionAsync(versionId, CancellationToken.None).ConfigureAwait(false);
+                throw new ImportRejectedException(
+                    $"The loaded version holds {check.RowCount - check.DistinctTacs:N0} duplicate "
+                    + "TAC(s) that the pre-load scan did not see. The two disagree about the file, so "
+                    + "it has been discarded rather than trusted. This is a defect in the importer, "
+                    + "not in the file.");
+            }
+
+            await context.NoteAsync(
+                "info",
+                $"Loaded {rows:N0} TACs. Newest lastUpdatedDate in the file: "
+                + $"{check.LatestUpdateDate ?? "none"}.",
+                check, ct).ConfigureAwait(false);
+
+            // ---------------------------------------------------------------- diff
+            if (activeVersionId is { } previous)
+            {
+                await context.EnterStageAsync(
+                    ImportJobStatus.Aggregating,
+                    $"Comparing against the active version {previous}", ct).ConfigureAwait(false);
+
+                diff = await store.DiffAsync(versionId, previous, ct).ConfigureAwait(false);
+
+                var total = diff.Added + diff.Removed + diff.Updated;
+
+                await context.NoteAsync(
+                    total > UnusualDiffThreshold ? "warning" : "info",
+                    $"{diff.Added:N0} TACs added, {diff.Removed:N0} removed, {diff.Updated:N0} "
+                    + $"changed, {diff.Unchanged:N0} unchanged. "
+                    + $"{diff.AffectedActiveBindings:N0} active binding(s) sit on a TAC it adds, removes or changes."
+                    + (total > UnusualDiffThreshold
+                        ? $" That is well above the {UnusualDiffThreshold:N0} expected for one month's"
+                          + " revision - worth confirming this is the intended file before activating."
+                        : string.Empty),
+                    diff, ct).ConfigureAwait(false);
+
+                LogReady(versionId, diff.Added, diff.Removed, diff.Updated);
+            }
+            else
+            {
+                await context.NoteAsync(
+                    "info", "No active version to compare against; this is the first.", null, ct)
+                    .ConfigureAwait(false);
+            }
+
+        }
+        catch (Exception) when (context.CancelledByOperator)
+        {
+            await store.DropVersionAsync(versionId, CancellationToken.None).ConfigureAwait(false);
+            return Cancelled(versionId);
         }
 
         // ---------------------------------------------------------------- register
-        await context.EnterStageAsync(
-            ImportJobStatus.Finalizing, "Recording the version as ready for review", ct)
-            .ConfigureAwait(false);
+        // The point of no return: from here the version is registered and can be activated.
+        // Entered only if no cancel came first; after it, a cancel is refused.
+        if (!await context.EnterStageUnlessCancelledAsync(
+                ImportJobStatus.Finalizing, "Recording the version as ready for review", ct)
+                .ConfigureAwait(false))
+        {
+            await store.DropVersionAsync(versionId, CancellationToken.None).ConfigureAwait(false);
+            return Cancelled(versionId);
+        }
 
         await repository.CreateTacVersionAsync(
             job.JobId,
@@ -198,6 +216,12 @@ internal sealed partial class TacSnapshotProcessor(
             $"TAC version {versionId} is loaded and ready. It is NOT active - an administrator "
             + "must activate it before the dashboard uses it.");
     }
+
+    private static ImportOutcome Cancelled(int versionId) => new(
+        ImportJobStatus.Cancelled,
+        new ImportCounters(),
+        MakeEffective: false,
+        $"Cancelled before TAC version {versionId} was registered; what it had loaded was dropped.");
 
     /// <summary>
     /// Reads the whole file once, writing nothing, and refuses it if its structure is unsound.
