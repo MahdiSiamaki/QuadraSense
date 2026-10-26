@@ -22,6 +22,19 @@ set -eu
 component="${1:?usage: kaniko-build.sh <api|worker|migrator|web>}"
 : "${REGISTRY_PULL:?}" "${REGISTRY_PUSH:?}" "${IMAGE_PREFIX:?}" "${CI_COMMIT_SHORT_SHA:?}"
 
+# Stop here, naming the variable, when a credential did not arrive. Without this the job went on and
+# failed inside kaniko with "make sure you are authenticated correctly" (pipeline 366, 2026-10-26),
+# which hides the usual cause: the variable is missing, or Protected and this branch is not.
+missing=
+for name in NEXUS_PULL_USER NEXUS_PULL_PASS NEXUS_PUSH_USER NEXUS_PUSH_PASS; do
+  eval "value=\${$name:-}"
+  [ -n "$value" ] || missing="$missing $name"
+done
+if [ -n "$missing" ]; then
+  echo "empty:$missing - set in the group's CI/CD variables; Protected ones reach protected branches only" >&2
+  exit 1
+fi
+
 # Credentials for both registries, written where kaniko reads them - from Masked variables, never
 # echoed. base64 of "user:password", as Docker's config.json has it.
 auth() { printf '%s:%s' "$1" "$2" | base64 | tr -d '\n'; }
