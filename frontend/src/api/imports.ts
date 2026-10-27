@@ -6,6 +6,7 @@
  * side effects.
  */
 
+import type { DetailedError } from 'tus-js-client'
 import { api, ApiError, csrfHeader, notifyUnauthenticated } from './client'
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -284,15 +285,6 @@ export type UploadResult =
     }
 
 /**
- * Uploads one file, reporting progress as it goes.
- *
- * Uses XMLHttpRequest rather than fetch, which is a deliberate step backwards. `fetch` cannot
- * report upload progress: a request body stream is consumed by the browser with no event to
- * observe, and these files reach a gigabyte. A progress bar that sits at nothing for four
- * minutes is worse than no progress bar, so the older API wins on the one thing that matters
- * here.
- */
-/**
  * The server's answer to "would you take this file".
  *
  * A refusal arrives as a thrown `ApiError` rather than in this shape, so the caller's existing
@@ -306,11 +298,40 @@ export interface UploadPreflight {
   message: string
 }
 
+/**
+ * Waits before each new try after a connection breaks, in milliseconds: quickly at first, then a
+ * minute apart for about forty minutes. Over the department VPN the tunnel drops every ~15 minutes
+ * and can take a while to come back (docs/operations/deployment/02-department-vm.md).
+ */
+export const UPLOAD_RETRY_DELAYS = [0, 1_000, 3_000, 10_000, 30_000, ...Array<number>(40).fill(60_000)]
+
+/** Whether a failed request is worth sending again: the network, the server, or a conflict tus resolves. */
+function worthRetrying(error: DetailedError): boolean {
+  const status = error.originalResponse?.getStatus() ?? 0
+  return status === 0 || status >= 500 || status === 409 || status === 423
+}
+
+/**
+ * Uploads one file, reporting progress as it goes, and survives a broken connection.
+ *
+ * Resumable, with the tus protocol (ADR-018): the file is created as an upload on the server, its
+ * bytes sent, and when the connection breaks the browser asks how many arrived and sends the rest -
+ * by itself, for about forty minutes (`UPLOAD_RETRY_DELAYS`). It was one request until 2026-10-27,
+ * and over the department VPN two of two daily files broke partway and had to start from nothing.
+ * The same file dropped again after the page was reloaded continues where it stopped: tus keeps
+ * where each upload lives, in this browser, keyed by the file's name, size and date.
+ *
+ * Once every byte is in, the server is asked to complete it, which is where it becomes an import -
+ * or turns out to be one already - exactly as a single upload did.
+ *
+ * Cancelling terminates the upload on the server, so nothing of it is kept.
+ */
 export async function uploadImportFile(
   sourceCode: string,
   file: File,
   onProgress: (fraction: number) => void,
   signal?: AbortSignal,
+  onRetry?: (attempt: number) => void,
 ): Promise<UploadResult> {
   // Ask before sending. This is a ~200-byte JSON POST that gets the same answer the upload would
   // give for everything decidable without the body - is the session alive, is the source real,
@@ -320,9 +341,6 @@ export async function uploadImportFile(
   // the wire and refused in 0.4 ms: the server was right to refuse before reading a byte, but the
   // browser had no way to know that and sent the whole thing anyway.
   //
-  // It goes through `api.post`, so it carries the session cookie and the CSRF header without this
-  // function having to remember either - which is the failure that made the refusal happen.
-  //
   // Not a security boundary. The upload re-checks everything; skipping this would waste an
   // upload, not gain one.
   await api.post<UploadPreflight>(
@@ -331,7 +349,11 @@ export async function uploadImportFile(
     signal,
   )
 
-  return new Promise((resolve, reject) => {
+  // Loaded here, not with the page: it is 15.5 KB gzipped, and every page carried it once the
+  // upload queue moved into the header (measured 2026-10-27: 30.3 -> 45.8 KB for the entry chunk).
+  const tus = await import('tus-js-client')
+
+  const uploadUrl = await new Promise<string>((resolve, reject) => {
     // A cancel that came while the preflight was answering has already fired its event, so the
     // listener added below would never hear it and the whole file would go anyway.
     if (signal?.aborted) {
@@ -339,77 +361,71 @@ export async function uploadImportFile(
       return
     }
 
-    const form = new FormData()
-    form.append('file', file)
-
-    const request = new XMLHttpRequest()
-    request.open('POST', `${BASE}/api/v1/imports/${sourceCode}/upload`)
-    request.responseType = 'json'
-
-    // The two things `request()` in client.ts adds to every other call, and that this one has to
-    // assemble by hand because it does not go through it.
-    //
-    // WITHOUT THESE THE UPLOAD RETURNS 401, and it did: this function was written before the
-    // system had authentication at all, and the auth work never revisited the one request that
-    // bypasses the shared client. In development the SPA is on :5173 and the API on :5202, so
-    // XMLHttpRequest sends no cookies unless told to - the server saw an anonymous request and
-    // refused it in under two milliseconds, after the browser had pushed 319 MB at it.
-    request.withCredentials = true
-
-    // And then CSRF, which would have been the next failure: the middleware exempts nothing, so
-    // a POST carrying a session cookie without the matching header is a 403.
-    const csrf = csrfHeader()
-    if (csrf) request.setRequestHeader(csrf.name, csrf.value)
-
-    request.upload.addEventListener('progress', (event) => {
-      if (event.lengthComputable) onProgress(event.loaded / event.total)
+    const upload = new tus.Upload(file, {
+      endpoint: `${BASE}/api/v1/imports/uploads`,
+      metadata: { source: sourceCode, filename: file.name, filetype: file.type },
+      retryDelays: UPLOAD_RETRY_DELAYS,
+      removeFingerprintOnSuccess: true,
+      onBeforeRequest: (request) => {
+        // What `request()` in client.ts adds to every other call: the session cookie across
+        // origins in development, and the CSRF header on everything that changes state.
+        const xhr = request.getUnderlyingObject() as XMLHttpRequest
+        xhr.withCredentials = true
+        const csrf = csrfHeader()
+        if (csrf) request.setHeader(csrf.name, csrf.value)
+      },
+      onShouldRetry: (error, attempt) => {
+        const retry = worthRetrying(error)
+        if (retry) onRetry?.(attempt + 1)
+        return retry
+      },
+      onProgress: (sent, total) => onProgress(total ? sent / total : 0),
+      onSuccess: () => resolve(upload.url ?? ''),
+      onError: (error) => {
+        const status =
+          error instanceof tus.DetailedError ? (error.originalResponse?.getStatus() ?? 0) : 0
+        // A dead session must reach the auth layer, as it does for every other request.
+        if (status === 401) notifyUnauthenticated()
+        const title =
+          status === 0 ? 'The upload could not reach the server.' : 'The server refused the upload.'
+        reject(new ApiError(status, { title }, null))
+      },
     })
 
-    request.addEventListener('load', () => {
-      const body = request.response as Record<string, unknown> | null
-      const correlationId = request.getResponseHeader('X-Correlation-Id')
-
-      if (request.status === 201) {
-        resolve({
-          kind: 'queued',
-          jobId: body?.['jobId'] as number,
-          fileName: body?.['fileName'] as string,
-          sizeBytes: body?.['sizeBytes'] as number,
-          sha256: body?.['sha256'] as string,
-        })
-        return
-      }
-
-      // A duplicate is a normal outcome, not a failure: the same file sent twice, or a retry
-      // after a dropped connection. It resolves with an explanation rather than rejecting.
-      if (request.status === 409 && body && 'sha256' in body) {
-        resolve({
-          kind: 'duplicate',
-          fileId: body['fileId'] as number,
-          existingJobId: (body['existingJobId'] as number | null) ?? null,
-          originalFileName: body['originalFileName'] as string,
-          sha256: body['sha256'] as string,
-          message: body['message'] as string,
-        })
-        return
-      }
-
-      // A dead session must reach the auth layer, exactly as it does for every other request.
-      // Reporting "Unauthorized" beside a progress bar tells the user nothing they can act on.
-      if (request.status === 401) notifyUnauthenticated()
-
-      reject(new ApiError(request.status, body as never, correlationId))
+    signal?.addEventListener('abort', () => {
+      void upload.abort(true).finally(() => reject(new DOMException('Upload cancelled', 'AbortError')))
     })
 
-    request.addEventListener('error', () =>
-      reject(new ApiError(0, { title: 'The upload could not reach the server.' }, null)),
-    )
-
-    request.addEventListener('abort', () =>
-      reject(new DOMException('Upload cancelled', 'AbortError')),
-    )
-
-    signal?.addEventListener('abort', () => request.abort())
-    request.send(form)
+    void upload.findPreviousUploads().then((previous) => {
+      const earlier = previous[0]
+      if (earlier) upload.resumeFromPreviousUpload(earlier)
+      upload.start()
+    })
   })
+
+  // Every byte is in: now it becomes an import, or turns out to be one already.
+  const id = uploadUrl.slice(uploadUrl.lastIndexOf('/') + 1)
+  try {
+    const queued = await api.post<{ jobId: number; fileName: string; sizeBytes: number; sha256: string }>(
+      `/api/v1/imports/uploads/${id}/complete`,
+      {},
+      signal,
+    )
+    return { kind: 'queued', ...queued }
+  } catch (error) {
+    // A duplicate is a normal outcome, not a failure: the same file sent twice, or a retry after
+    // a dropped connection. It resolves with an explanation rather than rejecting.
+    const body = error instanceof ApiError ? (error.problem as Record<string, unknown> | null) : null
+    if (error instanceof ApiError && error.status === 409 && body && 'sha256' in body) {
+      return {
+        kind: 'duplicate',
+        fileId: body['fileId'] as number,
+        existingJobId: (body['existingJobId'] as number | null) ?? null,
+        originalFileName: body['originalFileName'] as string,
+        sha256: body['sha256'] as string,
+        message: body['message'] as string,
+      }
+    }
+    throw error
+  }
 }

@@ -105,7 +105,10 @@ const stoppable = (item: UploadItem) => item.status === 'waiting' || item.status
         Drop {{ sourceCode }} files here, or choose files
       </span>
       <span class="text-xs text-[var(--c-text-muted)]">
-        {{ hint ?? 'Several files can be queued at once; they upload one after another.' }}
+        {{
+          hint ??
+          'Several files can be queued at once; they upload one after another, and a broken connection resumes where it stopped.'
+        }}
       </span>
     </button>
 
@@ -164,7 +167,14 @@ const stoppable = (item: UploadItem) => item.status === 'waiting' || item.status
             :percent="item.file.size ? (item.sent / item.file.size) * 100 : null"
             :detail="`${formatBytes(item.sent)} of ${formatBytes(item.file.size)}`"
           />
-          <p class="tabular mt-1 text-2xs text-[var(--c-text-muted)]">
+          <p
+            v-if="item.reconnecting"
+            class="mt-1 text-2xs text-[var(--c-warning-text)]"
+            aria-live="polite"
+          >
+            Connection lost - resuming where it stopped (try {{ item.reconnecting }})
+          </p>
+          <p v-else class="tabular mt-1 text-2xs text-[var(--c-text-muted)]">
             {{ pace(item.rate, item.file.size - item.sent) }}
           </p>
         </template>

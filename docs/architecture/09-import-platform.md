@@ -795,8 +795,8 @@ file now says so instead.
 
 ### D11 - An upload is measured, can be stopped, and outlives the page (2026-10-26)
 
-The browser sends a file as one multipart request (`uploadImportFile`, `frontend/src/api/imports.ts`)
-after a small preflight that asks whether it would be accepted. Until 2026-10-26 the queue of files
+The browser sent a file as one multipart request (`uploadImportFile`, `frontend/src/api/imports.ts`;
+resumable since 2026-10-27, D14) after a small preflight that asks whether it would be accepted. Until 2026-10-26 the queue of files
 lived in the drop zone, so it lived only as long as the Import Center: opening an import's details
 while a month of files went up made the list vanish. The request carried on, but nothing showed it,
 nothing started the next file, and nothing could stop it short of closing the tab. And the bar gave
@@ -819,8 +819,8 @@ Now (`frontend/src/features/imports/uploadQueue.ts`):
   checks the signal itself.
 - A queued file links to its import.
 
-Not done, by the owner's choice of 2026-10-26: **resuming a broken upload.** It needs the file sent
-in pieces (`docs/backlog.md`).
+Not done then, by the owner's choice of 2026-10-26: **resuming a broken upload.** Built the next
+day - D14.
 
 **Checked in the browser on the department VM** (build `261140f7`), 2026-10-26, with a synthetic 40 MB
 file whose name carries no date - so had the cancel failed it could neither block nor be blocked by
@@ -916,6 +916,27 @@ taken from another stage, and no stage ever overdue (1 and 2); the refresh not r
 statements, the percent ignoring which step it is in, and a new step keeping the last one's count
 (1 each). The page itself was checked by
 component tests only: on the VM it shows once an import is running.
+
+### D14 - An upload resumes after a broken connection (2026-10-27)
+
+**Why.** Over the department VPN a daily file takes ~45 minutes and the tunnel drops about every 15:
+two of two browser uploads broke partway, and one request that breaks is lost whole
+(`02-department-vm.md` §9). ADR-018 weighs the options; the owner chose the standard, the tus protocol.
+
+**How.** The page creates an upload (`POST /api/v1/imports/uploads`, who may is decided there, as
+for a single upload), sends its bytes, and after a break asks how many arrived and sends the rest -
+by itself, for about forty minutes, while the queue says "Connection lost - resuming where it
+stopped (try 3)". Once every byte is in, `POST /api/v1/imports/uploads/{id}/complete` hashes the
+file, moves it into the store and hands it to the same intake as a single upload: the import is
+queued, or the duplicate named. An upload is only its creator's; one untouched for a day is removed.
+The same file dropped again after a reload continues the earlier upload, and Cancel ends it on the
+server. Pieces gather in `_resumable` under the storage root (`Sqm.Api/Infrastructure/ResumableUploads.cs`).
+
+**Proved by failing first** (`ResumableUploadTests`, the protocol spoken by hand against the real API
+and file store, no database): the owner check, completing before every byte is in, the permission at
+creation, and the day-old sweep each removed in turn and seen to fail; the page's side
+(`uploadImportFile.spec.ts`) the same for termination on cancel, resuming after a reload and retrying
+a refusal.
 
 ---
 

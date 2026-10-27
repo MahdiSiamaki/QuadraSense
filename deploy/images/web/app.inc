@@ -49,6 +49,23 @@ location ~ ^/api/v1/imports/[^/]+/upload$ {
     proxy_send_timeout 900s;
 }
 
+# Resumable uploads (ADR-018): the tus protocol. Its PATCH carries the file's bytes and is streamed
+# exactly as the single upload above; its POST, HEAD and DELETE, and the call that completes an
+# upload, are small. ^~ so the general /api/ location's 1 MB body limit is never the one applied.
+location ^~ /api/v1/imports/uploads {
+    client_max_body_size 11g;
+    proxy_request_buffering off;
+
+    proxy_pass http://api:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 900s;
+    proxy_send_timeout 900s;
+}
+
 # Vite's hashed assets: the name changes when the content does, so they can be cached for good.
 location /assets/ {
     include /etc/nginx/sqm/security.inc;

@@ -95,7 +95,6 @@ public static class ImportEndpoints
         ArgumentNullException.ThrowIfNull(http);
 
         var source = sourceCode.ToUpperInvariant();
-        var actor = CurrentActor(http);
 
         // The same decision the preflight made, made again. The client is expected to have asked
         // first, but the client is not what enforces this - a caller that skips the preflight,
@@ -136,11 +135,30 @@ public static class ImportEndpoints
         }
 
         var (originalName, stored) = received;
+        return await RespondToIntakeAsync(repository, fileStore, source, originalName, stored, http, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Registers a stored file and queues it, answering as every upload answers: 201 with the job,
+    /// or 409 with the import it duplicates. Shared with resumable uploads (ADR-018).
+    /// </summary>
+    internal static async Task<IResult> RespondToIntakeAsync(
+        IImportJobRepository repository,
+        IImportFileStore fileStore,
+        string source,
+        string originalName,
+        StoredFile stored,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(stored);
+        ArgumentNullException.ThrowIfNull(http);
 
         // Registering, the duplicate rule and the queueing are ImportIntake's: --import-file
         // follows the same rules for a file already on the server.
         var intake = await ImportIntake
-            .AcceptAsync(repository, fileStore, source, originalName, stored, actor, http.TraceIdentifier, ct)
+            .AcceptAsync(repository, fileStore, source, originalName, stored, CurrentActor(http), http.TraceIdentifier, ct)
             .ConfigureAwait(false);
         var registered = intake.File;
 
@@ -407,7 +425,7 @@ public static class ImportEndpoints
     /// Which permission applies depends on the source, so it cannot be declared on the route.
     /// </para>
     /// </remarks>
-    private static async Task<IResult?> RefuseUploadAsync(
+    internal static async Task<IResult?> RefuseUploadAsync(
         string sourceCode, HttpContext http, IAuditLog audit, CancellationToken ct)
     {
         var source = sourceCode.ToUpperInvariant();

@@ -309,8 +309,8 @@ reconciled to the row. See `docs/adr/ADR-009-device-module.md`.
 ### 7. Tests
 
 ```bash
-dotnet test backend/Sqm.slnx                   # 726: Domain 189, Ingestion 136, Application 101, Integration 300
-cd frontend && npm test                        # 216, in 31 files
+dotnet test backend/Sqm.slnx                   # 735: Domain 189, Ingestion 137, Application 101, Integration 308
+cd frontend && npm test                        # 222, in 31 files
 python tools/test_device_image_pipeline.py     # 46 checks, no network, no database
 python tools/test_device_image_package.py      # 111 checks, no network, no database
 ```
@@ -453,6 +453,7 @@ tools/
 | [ADR-015](docs/adr/ADR-015-new-models-network-age-data-quality.md) | New models, network age and data-quality signals, from a per-model day table | Accepted |
 | [ADR-016](docs/adr/ADR-016-dashboard-builder.md) | The dashboard builder: one JSONB definition per dashboard; each widget reads an endpoint that already exists, under its permission | Accepted |
 | [ADR-017](docs/adr/ADR-017-filtered-dashboard-views.md) | Filtered dashboard views read per-model population marts, and abandoned reads are killed | Accepted |
+| [ADR-018](docs/adr/ADR-018-resumable-uploads.md) | Uploads resume after a broken connection, with the tus protocol | Accepted |
 
 Every one of these was decided against measurement on the real dataset, not on reputation. Where a
 claim appears in these documents, the number behind it is there too.
