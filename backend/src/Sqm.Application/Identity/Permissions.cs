@@ -106,6 +106,16 @@ public static class Permissions
     /// </remarks>
     public const string RiskView = "risk.view";
 
+    /// <summary>See the network and product planning views: sunset, 5G and bands, eSIM, lifecycle, IoT, NTN.</summary>
+    /// <remarks>
+    /// Aggregates about device models and the numbers that hold them, so it goes where dashboards go:
+    /// Viewer, Analyst, Administrator. A page of numbers also needs <see cref="LookupSubscriber"/>;
+    /// <see cref="IdentifierReveal"/> decides masking; an aggregate CSV needs <see cref="DataExport"/>.
+    /// See db/operational/migrations/020_planning_permission.sql and
+    /// docs/architecture/19-network-planning.md.
+    /// </remarks>
+    public const string PlanningView = "planning.view";
+
     // --------------------------------------------------------------- dashboards
     /// <summary>Create, duplicate and import dashboards of one's own.</summary>
     /// <remarks>
@@ -172,7 +182,7 @@ public static class Permissions
     /// <summary>Every permission code known to this build.</summary>
     public static readonly FrozenSet<string> All = new[]
     {
-        DashboardView, LookupSubscriber, DataExport, LookupImsi, IdentifierReveal, ExplorerQuery, RiskView,
+        DashboardView, LookupSubscriber, DataExport, LookupImsi, IdentifierReveal, ExplorerQuery, RiskView, PlanningView,
         DashboardCreate, DashboardEdit, DashboardShare, DashboardManage,
         DeviceView, LookupImei, DeviceIdentifiers, DeviceImageManage,
         ImportView, ImportUploadSqm, ImportUploadTac, ImportReprocess, ImportCancel, ImportDelete,
