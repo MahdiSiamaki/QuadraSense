@@ -16,6 +16,7 @@ export const Permission = {
   IdentifierReveal: 'identifier.reveal',
   ExplorerQuery: 'explorer.query',
   RiskView: 'risk.view',
+  PlanningView: 'planning.view',
   DashboardCreate: 'dashboard.create',
   DashboardEdit: 'dashboard.edit',
   DashboardShare: 'dashboard.share',
