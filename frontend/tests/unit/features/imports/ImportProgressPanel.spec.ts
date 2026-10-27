@@ -26,6 +26,9 @@ const step: ImportProgress = {
   step: 'Updating the binding history',
   stepIndex: 3,
   stepCount: 7,
+  stepDone: null,
+  stepTotal: null,
+  stepUnit: null,
 }
 
 describe('the progress of a running import', () => {
@@ -37,6 +40,25 @@ describe('the progress of a running import', () => {
     expect(text).toContain('Step 3 of 7: Updating the binding history')
     expect(text).toContain('About 18 min left, estimated from the last 10 imports')
     expect(text).toContain('Validating')
+  })
+
+  it('counts the statements of the dashboard rebuild beside its step', () => {
+    const rebuilding: ImportProgress = {
+      ...step,
+      percent: 91.24,
+      step: 'Rebuilding the dashboard figures',
+      stepIndex: 7,
+      stepDone: 12,
+      stepTotal: 31,
+      stepUnit: 'statements',
+    }
+    const text = mount(ImportProgressPanel, {
+      props: { summary: summary(10), progress: rebuilding, typicals },
+    }).text()
+
+    expect(text).toContain('Step 7 of 7: Rebuilding the dashboard figures')
+    expect(text).toContain('12 of 31 statements')
+    expect(text).toContain('91.2%')
   })
 
   it('says a stage is taking longer than usual instead of a time it cannot know', () => {

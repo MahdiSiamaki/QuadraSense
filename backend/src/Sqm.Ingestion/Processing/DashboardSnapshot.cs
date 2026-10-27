@@ -71,6 +71,7 @@ internal sealed partial class DashboardSnapshot(
             job.SourceCode,
             message => context.NoteAsync("info", message, null, ct),
             message => context.NoteAsync("warning", message, null, ct),
+            (done, total) => context.ReportStepProgressAsync(done, total, "statements", ct),
             ct).ConfigureAwait(false);
     }
 
@@ -92,7 +93,7 @@ internal sealed partial class DashboardSnapshot(
 
             try
             {
-                await RebuildAsync(source, null, null, ct).ConfigureAwait(false);
+                await RebuildAsync(source, null, null, null, ct).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -106,6 +107,7 @@ internal sealed partial class DashboardSnapshot(
         string source,
         Func<string, Task>? onInfo,
         Func<string, Task>? onWarning,
+        Func<int, int, Task>? onStatement,
         CancellationToken ct)
     {
         // Read before the rebuild starts. A file that defers while it runs moves this forward,
@@ -119,7 +121,7 @@ internal sealed partial class DashboardSnapshot(
             await onInfo($"Rebuilding the dashboard marts for delivery {sequence}").ConfigureAwait(false);
         }
 
-        var failures = await martRefresh.RunAsync(sequence, onWarning, ct).ConfigureAwait(false);
+        var failures = await martRefresh.RunAsync(sequence, onWarning, onStatement, ct).ConfigureAwait(false);
 
         if (failures > 0)
         {

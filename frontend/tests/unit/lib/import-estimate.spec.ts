@@ -16,7 +16,19 @@ const at = (minutes: number) => start + minutes * 60_000
 const running = (stage: string) => ({ currentStage: stage, stageStartedAt: new Date(start).toISOString() })
 
 function bytes(stage: string, percent: number): ImportProgress {
-  return { stage, bytesProcessed: 0, bytesExpected: 100, percent, updatedAt: '', step: null, stepIndex: null, stepCount: null }
+  return {
+    stage,
+    bytesProcessed: 0,
+    bytesExpected: 100,
+    percent,
+    updatedAt: '',
+    step: null,
+    stepIndex: null,
+    stepCount: null,
+    stepDone: null,
+    stepTotal: null,
+    stepUnit: null,
+  }
 }
 
 describe('the time an import has left', () => {

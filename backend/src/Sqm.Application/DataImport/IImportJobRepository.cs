@@ -151,6 +151,12 @@ public interface IImportJobRepository
     Task ReportStepAsync(
         long jobId, string stage, string stepName, int stepIndex, int stepCount, CancellationToken ct);
 
+    /// <summary>
+    /// Records how far the running step has got - "12 of 31 statements" - and moves the stage's
+    /// percent within that step's share of it. Ignored when no step is running.
+    /// </summary>
+    Task ReportStepProgressAsync(long jobId, int done, int total, string unit, CancellationToken ct);
+
     /// <summary>Appends one entry to the job's timeline.</summary>
     /// <remarks>
     /// The timeline is written by the worker as it works, not reconstructed from status changes

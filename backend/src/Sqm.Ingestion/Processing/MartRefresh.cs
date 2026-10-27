@@ -92,8 +92,19 @@ internal sealed partial class MartRefresh(
         return latest ?? await analytics.GetMaxSequenceAsync(ct).ConfigureAwait(false);
     }
 
+    /// <param name="sequence">The delivery to rebuild.</param>
+    /// <param name="onProgress">Messages worth putting on the job's timeline.</param>
+    /// <param name="onStatement">
+    /// Before each statement and once at the end: how many are done of how many - so an import's
+    /// page can count through the half hour this takes instead of showing one step that stands
+    /// still. A retried pass counts from zero again.
+    /// </param>
+    /// <param name="ct">Cancellation.</param>
     public async Task<int> RunAsync(
-        int sequence, Func<string, Task>? onProgress, CancellationToken ct)
+        int sequence,
+        Func<string, Task>? onProgress,
+        Func<int, int, Task>? onStatement,
+        CancellationToken ct)
     {
         var failures = 0;
         var statements = SqlScript.Split(LoadScript()).Count;
@@ -146,7 +157,7 @@ internal sealed partial class MartRefresh(
 
         for (var pass = 1; pass <= MaxPasses; pass++)
         {
-            failures = await RunPassAsync(sequence, pass, onProgress, ct).ConfigureAwait(false);
+            failures = await RunPassAsync(sequence, pass, onProgress, onStatement, ct).ConfigureAwait(false);
 
             if (failures == 0)
             {
@@ -249,7 +260,11 @@ internal sealed partial class MartRefresh(
     }
 
     private async Task<int> RunPassAsync(
-        int sequence, int pass, Func<string, Task>? onProgress, CancellationToken ct)
+        int sequence,
+        int pass,
+        Func<string, Task>? onProgress,
+        Func<int, int, Task>? onStatement,
+        CancellationToken ct)
     {
         var statements = SqlScript.Split(LoadScript());
         var started = DateTime.UtcNow;
@@ -266,6 +281,11 @@ internal sealed partial class MartRefresh(
             }
 
             var label = SqlScript.Label(statements[i], i + 1);
+
+            if (onStatement is not null)
+            {
+                await onStatement(i, statements.Count).ConfigureAwait(false);
+            }
 
             try
             {
@@ -287,6 +307,11 @@ internal sealed partial class MartRefresh(
                         .ConfigureAwait(false);
                 }
             }
+        }
+
+        if (onStatement is not null)
+        {
+            await onStatement(statements.Count, statements.Count).ConfigureAwait(false);
         }
 
         var seconds = (long)(DateTime.UtcNow - started).TotalSeconds;

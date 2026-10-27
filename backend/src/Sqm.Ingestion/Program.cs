@@ -105,6 +105,7 @@ if (args.Contains("--refresh-dashboard"))
         failed = await refresh.RunAsync(
             sequence,
             message => { Console.WriteLine("  " + message); return Task.CompletedTask; },
+            (done, total) => { Console.WriteLine($"  {done} of {total} statements"); return Task.CompletedTask; },
             CancellationToken.None).ConfigureAwait(false);
     }
     finally

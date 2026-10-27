@@ -112,6 +112,9 @@ public sealed record QuarantineSample(long RowNumber, string RawLine, string? Of
 /// <param name="Step">For a stage that reads no file (AGGREGATING): the step now running, in words.</param>
 /// <param name="StepIndex">Its place among the stage's steps, from 1.</param>
 /// <param name="StepCount">How many steps the stage has.</param>
+/// <param name="StepDone">Within the running step: how much is done, in <paramref name="StepUnit"/>.</param>
+/// <param name="StepTotal">Within the running step: how much there is.</param>
+/// <param name="StepUnit">What the step counts - "statements" for the dashboard rebuild.</param>
 public sealed record ImportProgress(
     string Stage,
     long BytesProcessed,
@@ -120,7 +123,10 @@ public sealed record ImportProgress(
     DateTimeOffset UpdatedAt,
     string? Step = null,
     int? StepIndex = null,
-    int? StepCount = null);
+    int? StepCount = null,
+    int? StepDone = null,
+    int? StepTotal = null,
+    string? StepUnit = null);
 
 /// <summary>How long one stage usually takes, for a source.</summary>
 /// <param name="Stage">The stage, in the database's spelling.</param>
