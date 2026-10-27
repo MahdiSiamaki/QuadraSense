@@ -45,7 +45,7 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
         Message = "Planning snapshot run {RunId}: {Outcome}")]
     private partial void LogPlanningRun(ulong runId, string outcome);
 
-    private static readonly string[] PlanningTables = ["planning_number", "planning_breakdown", "planning_iot_device"];
+    private static readonly string[] PlanningTables = ["planning_handset_stage", "planning_number", "planning_breakdown", "planning_iot_device"];
 
     /// <inheritdoc />
     public async Task<bool> PlanningDeployedAsync(CancellationToken ct) =>
@@ -181,14 +181,17 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
         if (table == PlanningTable.Numbers)
         {
             var range = await PlanningRangeAsync(run, "msisdn_cuts", "msisdn", chunk, numeric: true, ct).ConfigureAwait(false);
-            foreach (var target in new[] { "planning_number", "planning_breakdown" })
+            foreach (var target in new[] { "planning_handset_stage", "planning_number", "planning_breakdown" })
             {
                 await ExecuteHttpAsync(
                     $"ALTER TABLE {_database}.{target} DROP PARTITION ({run.RunId}, {chunk})", NoParameters, ct).ConfigureAwait(false);
             }
 
-            await ExecuteHttpAsync(NumbersSql(run, chunk, range), limits, ct).ConfigureAwait(false);
-            await ExecuteHttpAsync(BreakdownSql(run, chunk, range), limits, ct).ConfigureAwait(false);
+            await ExecuteHttpAsync(StageSql(run, chunk, range), limits, ct).ConfigureAwait(false);
+            await ExecuteHttpAsync(NumbersSql(run, chunk), limits, ct).ConfigureAwait(false);
+            await ExecuteHttpAsync(BreakdownSql(run, chunk), limits, ct).ConfigureAwait(false);
+            await ExecuteHttpAsync(
+                $"ALTER TABLE {_database}.planning_handset_stage DROP PARTITION ({run.RunId}, {chunk})", NoParameters, ct).ConfigureAwait(false);
         }
         else
         {
@@ -317,11 +320,30 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
         """;
 
     /// <summary>
-    /// One row per number. The handsets are gathered as (imei, tac, state, esim, umts, iot); a handset
-    /// that cannot be assessed takes its dual-SIM partner's profile when the partner is on the number
-    /// with a known one; then the number's classes follow from the whole set.
+    /// A chunk's handsets: one row per (number, IMEI) of its active bindings, with the model's profile.
+    /// The one read of current state a chunk makes.
     /// </summary>
-    private string NumbersSql(PlanningRun run, int chunk, string range) => $$"""
+    private string StageSql(PlanningRun run, int chunk, string range) => $$"""
+        INSERT INTO {{_database}}.planning_handset_stage (run_id, chunk, msisdn, imei, tac, state, esim, umts, iot, bindings)
+        SELECT {{run.RunId}}, {{chunk}}, b.msisdn, b.imei, any(b.tac),
+               toUInt8(any({{HandsetState("b.imei", "r.tac", "r.sunset")}})),
+               toUInt8(any(if(r.tac = '', 2, r.esim))),
+               any(r.umts),
+               toUInt8(any(r.device_class = 'IoT / M2M')),
+               toUInt32(count())
+        FROM {{_database}}.binding_current AS b FINAL
+        LEFT JOIN (SELECT tac, sunset, esim, umts, device_class FROM {{_database}}.tac_radio_active) AS r ON r.tac = b.tac
+        WHERE b.active = 1 AND {{range}}
+        GROUP BY b.msisdn, b.imei
+        """;
+
+    /// <summary>
+    /// One row per number, from the chunk's handsets. A handset that cannot be assessed (state 0 or 7)
+    /// takes the profile of its dual-SIM partner, found by a join on the number and the partner's IMEI:
+    /// the same TAC and a serial one either side, or a TAC a hundred either side and the same serial.
+    /// Then the number's classes follow from the whole set.
+    /// </summary>
+    private string NumbersSql(PlanningRun run, int chunk) => $$"""
         INSERT INTO {{_database}}.planning_number
             (run_id, chunk, msisdn, sunset, reason, esim, iot, gsm_only, handsets, bindings, paired, tacs)
         SELECT
@@ -329,51 +351,64 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
             multiIf(has(st, 1), 1, has(st, 2), 2, hasAny(st, [0, 5, 6, 7]), 4, 3)                  AS sunset,
             multiIf(sunset != 4, 0, has(st, 5), 1, has(st, 6), 2, has(st, 7), 3, 4)                  AS reason,
             multiIf(has(es, 1), 1, has(es, 2), 2, 0)                                                 AS esim,
-            toUInt8(arrayExists(r -> r.4 = 1, rs))                                                   AS iot,
-            toUInt8(sunset = 3 AND NOT arrayExists(r -> r.3 = 1, rs))                                AS gsm_only,
-            toUInt16(length(hs))                                                                     AS handsets,
-            toUInt16(least(bindings, 65535))                                                         AS bindings,
-            toUInt8(least(arrayCount(r -> r.5 = 1, rs), 255))                                        AS paired,
-            if(sunset = 1, [], arrayDistinct(arrayMap(h -> h.2, hs)))                                AS tacs
+            iot_any                                                                                  AS iot,
+            toUInt8(sunset = 3 AND umts_any = 0)                                                     AS gsm_only,
+            toUInt16(least(handset_count, 65535))                                                    AS handsets,
+            toUInt16(least(binding_count, 65535))                                                    AS bindings,
+            toUInt8(least(paired_count, 255))                                                        AS paired,
+            if(sunset = 1, [], models)                                                               AS tacs
         FROM (
-            SELECT msisdn, hs, bindings,
-                   -- A handset of state 0 or 7 with a dual-SIM partner of known profile on this number.
-                   arrayMap(h -> (h, if(h.3 IN (0, 7), arrayFirstIndex(k -> k.3 IN (1, 2, 3) AND (
-                           (k.2 = h.2 AND abs(toInt64OrZero(substring(k.1, 9, 6)) - toInt64OrZero(substring(h.1, 9, 6))) = 1)
-                           OR (abs(toInt64OrZero(k.2) - toInt64OrZero(h.2)) = 100 AND substring(k.1, 9, 6) = substring(h.1, 9, 6))), hs), 0)),
-                       hs) AS hx,
-                   arrayMap(x -> if(x.2 > 0,
-                           (hs[x.2].3, hs[x.2].4, hs[x.2].5, hs[x.2].6, toUInt8(1)),
-                           (tupleElement(x.1, 3), tupleElement(x.1, 4), tupleElement(x.1, 5), tupleElement(x.1, 6), toUInt8(0))), hx) AS rs,
-                   arrayMap(r -> r.1, rs) AS st,
-                   arrayMap(r -> r.2, rs) AS es
+            SELECT h.msisdn AS msisdn,
+                   groupUniqArray(if(p.found = 1, p.state, h.state))          AS st,
+                   groupUniqArray(if(p.found = 1, p.esim, h.esim))            AS es,
+                   toUInt8(max(if(p.found = 1, p.iot, h.iot)))                AS iot_any,
+                   max(if(p.found = 1, p.umts, h.umts))                       AS umts_any,
+                   count()                                                    AS handset_count,
+                   sum(h.bindings)                                            AS binding_count,
+                   countIf(p.found = 1)                                       AS paired_count,
+                   groupUniqArray(64)(h.tac)                                  AS models
             FROM (
-                SELECT msisdn, groupUniqArray((imei, tac, state, esim, umts, iot)) AS hs, count() AS bindings
+                SELECT msisdn, imei, tac, state, esim, umts, iot, bindings
+                FROM {{_database}}.planning_handset_stage WHERE run_id = {{run.RunId}} AND chunk = {{chunk}}
+            ) AS h
+            LEFT JOIN (
+                SELECT u.msisdn AS msisdn, u.imei AS imei, toUInt8(1) AS found,
+                       min(k.state) AS state, if(max(k.esim = 1) = 1, toUInt8(1), min(k.esim)) AS esim,
+                       max(k.umts) AS umts, max(k.iot) AS iot
                 FROM (
-                    SELECT b.msisdn AS msisdn, b.imei AS imei, b.tac AS tac,
-                           toUInt8({{HandsetState("b.imei", "r.tac", "r.sunset")}}) AS state,
-                           toUInt8(if(r.tac = '', 2, r.esim)) AS esim,
-                           r.umts AS umts,
-                           toUInt8(r.device_class = 'IoT / M2M') AS iot
-                    FROM {{_database}}.binding_current AS b FINAL
-                    LEFT JOIN (SELECT tac, sunset, esim, umts, device_class FROM {{_database}}.tac_radio_active) AS r ON r.tac = b.tac
-                    WHERE b.active = 1 AND {{range}}
-                )
-                GROUP BY msisdn
-            )
+                    SELECT msisdn, imei,
+                           arrayJoin([
+                               concat(substring(imei, 1, 8), leftPad(toString(toUInt32(substring(imei, 9, 6)) + 1), 6, '0')),
+                               concat(substring(imei, 1, 8), leftPad(toString(toInt64(substring(imei, 9, 6)) - 1), 6, '0')),
+                               concat(leftPad(toString(toUInt32(substring(imei, 1, 8)) + 100), 8, '0'), substring(imei, 9, 6)),
+                               concat(leftPad(toString(toInt64(substring(imei, 1, 8)) - 100), 8, '0'), substring(imei, 9, 6))]) AS partner
+                    FROM {{_database}}.planning_handset_stage
+                    WHERE run_id = {{run.RunId}} AND chunk = {{chunk}} AND state IN (0, 7)
+                ) AS u
+                INNER JOIN (
+                    SELECT msisdn, imei, state, esim, umts, iot
+                    FROM {{_database}}.planning_handset_stage
+                    WHERE run_id = {{run.RunId}} AND chunk = {{chunk}} AND state IN (1, 2, 3)
+                ) AS k ON k.msisdn = u.msisdn AND k.imei = u.partner
+                GROUP BY u.msisdn, u.imei
+            ) AS p ON p.msisdn = h.msisdn AND p.imei = h.imei
+            GROUP BY h.msisdn
         )
         """;
 
     /// <summary>Who holds which model, under each number class: the breakdown by vendor, model and type.</summary>
-    private string BreakdownSql(PlanningRun run, int chunk, string range) => $"""
+    private string BreakdownSql(PlanningRun run, int chunk) => $"""
         INSERT INTO {_database}.planning_breakdown (run_id, chunk, sunset, reason, esim, tac, numbers, bindings, handsets)
-        SELECT {run.RunId}, {chunk}, n.sunset, n.reason, n.esim, b.tac,
-               uniqState(b.msisdn), count(), uniqStateIf(b.imei, length(b.imei) = 14)
-        FROM (SELECT msisdn, imei, tac FROM {_database}.binding_current FINAL WHERE active = 1 AND {range}) AS b
+        SELECT {run.RunId}, {chunk}, n.sunset, n.reason, n.esim, s.tac,
+               uniqState(s.msisdn), sum(s.bindings), uniqStateIf(s.imei, length(s.imei) = 14)
+        FROM (
+            SELECT msisdn, imei, tac, bindings FROM {_database}.planning_handset_stage
+            WHERE run_id = {run.RunId} AND chunk = {chunk}
+        ) AS s
         INNER JOIN (
             SELECT msisdn, sunset, reason, esim FROM {_database}.planning_number WHERE run_id = {run.RunId} AND chunk = {chunk}
-        ) AS n ON n.msisdn = b.msisdn
-        GROUP BY n.sunset, n.reason, n.esim, b.tac
+        ) AS n ON n.msisdn = s.msisdn
+        GROUP BY n.sunset, n.reason, n.esim, s.tac
         """;
 
     /// <summary>

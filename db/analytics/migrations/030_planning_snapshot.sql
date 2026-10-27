@@ -39,6 +39,28 @@ CREATE TABLE IF NOT EXISTS sqm.planning_run
 ENGINE = ReplacingMergeTree(updated_at)
 ORDER BY run_id;
 
+-- A chunk's handsets, one row per (number, IMEI), written once from current state and read by the
+-- chunk's other statements, then dropped. Current state is read once per chunk this way, and the
+-- dual-SIM pairing is a join here - linear - rather than every handset of a number searched against
+-- every other, which measured 1.25 GiB on one chunk where some numbers hold thousands of IMEIs
+-- (SIMs listed under many numbers, shifted IMEIs).
+CREATE TABLE IF NOT EXISTS sqm.planning_handset_stage
+(
+    run_id          UInt64,
+    chunk           UInt16,
+    msisdn          UInt64,
+    imei            String,
+    tac             String,
+    state           UInt8,           -- 0-3 the profile's sunset class, 5 shifted, 6 unknown device, 7 TAC not in the catalogue
+    esim            UInt8,
+    umts            UInt8,
+    iot             UInt8,
+    bindings        UInt32           -- active bindings of this number on this IMEI (one per SIM)
+)
+ENGINE = MergeTree
+PARTITION BY (run_id, chunk)
+ORDER BY (msisdn, imei);
+
 -- One row per number with at least one active binding.
 --
 --   sunset   1 LTE or 5G on some handset - ready
