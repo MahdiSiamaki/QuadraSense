@@ -173,8 +173,9 @@ public sealed class ResumableUploadTests : IClassFixture<WebApplicationFactory<P
         using var delete = Request(HttpMethod.Delete, upload, "operator");
         Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(delete, TestContext.Current.CancellationToken)).StatusCode);
 
-        var left = Directory.GetFiles(Path.Combine(_root, "_resumable"));
-        Assert.All(left, f => Assert.EndsWith(".owner", f, StringComparison.Ordinal));
+        // The owner too: tus deletes only its own files, and on the VM, 2026-10-27, a cancel left
+        // the upload's owner behind for the day-old sweep.
+        Assert.Empty(Directory.GetFiles(Path.Combine(_root, "_resumable")));
         using var complete = Request(HttpMethod.Post, upload + "/complete", "operator");
         Assert.Equal(HttpStatusCode.NotFound, (await client.SendAsync(complete, TestContext.Current.CancellationToken)).StatusCode);
     }

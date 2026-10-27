@@ -75,6 +75,7 @@ public sealed partial class ResumableUploads
                 OnAuthorizeAsync = AuthorizeAsync,
                 OnBeforeCreateAsync = BeforeCreateAsync,
                 OnCreateCompleteAsync = RecordOwnerAsync,
+                OnDeleteCompleteAsync = ForgetOwnerAsync,
             },
         };
     }
@@ -231,6 +232,14 @@ public sealed partial class ResumableUploads
                 user.UserId.ToString(CultureInfo.InvariantCulture),
                 context.CancellationToken)
             .ConfigureAwait(false);
+    }
+
+    // A cancel from the browser is tus's own DELETE, which removes only tus's files: without this the
+    // owner stayed until the day-old sweep (on the VM, 2026-10-27).
+    private Task ForgetOwnerAsync(DeleteCompleteContext context)
+    {
+        File.Delete(Path.Combine(_directory, context.FileId + OwnerSuffix));
+        return Task.CompletedTask;
     }
 }
 
