@@ -102,6 +102,50 @@ export interface IotView {
   noData: PlanningNoData[]
 }
 
+/** One band and the population of the models whose GSMA record lists it. */
+export interface PlanningBandRow {
+  technology: 'lte' | 'nr'
+  /** 3 for LTE band 3, 78 for n78. */
+  band: number
+  /** On the operator's configured list. */
+  operator: boolean
+  numbers: number
+  bindings: number
+  handsets: number
+  sharePercent: number
+}
+
+/** N2. Per model: a number holding two models is counted under each, and the figures are estimated. */
+export interface BandsView {
+  run: PlanningRun
+  filtered: boolean
+  totalNumbers: number
+  /** Empty when the operator's list is not configured: then nothing is matched. */
+  operatorLte: number[]
+  operatorNr: number[]
+  lteMatch: PlanningClass[]
+  nrMatch: PlanningClass[]
+  architecture: PlanningClass[]
+  ambiguous: PlanningClass
+  lteBands: PlanningBandRow[]
+  nrBands: PlanningBandRow[]
+  noData: PlanningNoData[]
+}
+
+/** N6. Per model, like N2. */
+export interface NtnView {
+  run: PlanningRun
+  filtered: boolean
+  totalNumbers: number
+  classes: PlanningClass[]
+  byMode: PlanningBreakdownRow[]
+  byOrbit: PlanningBreakdownRow[]
+  byBand: PlanningBreakdownRow[]
+  notClassified: PlanningClass
+  modelTrend: PlanningModelTrendPoint[]
+  noData: PlanningNoData[]
+}
+
 export interface PlanningBreakdown {
   run: PlanningRun
   view: string
@@ -136,7 +180,7 @@ export interface PlanningFilter {
   deviceType?: string
 }
 
-export type PlanningView = 'sunset' | 'esim' | 'iot'
+export type PlanningView = 'sunset' | 'esim' | 'iot' | 'bands' | 'ntn'
 export type PlanningBy = 'vendor' | 'model' | 'deviceType' | 'tac'
 
 function params(run: number | null, filter: PlanningFilter) {
@@ -169,6 +213,12 @@ export const useEsim = (run: MaybeRefOrGetter<number | null>, filter: MaybeRefOr
 
 export const useIot = (run: MaybeRefOrGetter<number | null>, filter: MaybeRefOrGetter<PlanningFilter>, enabled: MaybeRefOrGetter<boolean>) =>
   useView<IotView>('iot', run, filter, enabled)
+
+export const useBands = (run: MaybeRefOrGetter<number | null>, filter: MaybeRefOrGetter<PlanningFilter>, enabled: MaybeRefOrGetter<boolean>) =>
+  useView<BandsView>('bands', run, filter, enabled)
+
+export const useNtn = (run: MaybeRefOrGetter<number | null>, filter: MaybeRefOrGetter<PlanningFilter>, enabled: MaybeRefOrGetter<boolean>) =>
+  useView<NtnView>('ntn', run, filter, enabled)
 
 export function usePlanningBreakdown(
   view: MaybeRefOrGetter<PlanningView>,

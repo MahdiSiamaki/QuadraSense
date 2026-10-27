@@ -10,7 +10,9 @@ import TextField from '@/design-system/TextField.vue'
 import { Permission, useAuth } from '@/features/auth/useAuth'
 import { formatDate, formatDateTime, formatFull, formatPercent, formatSequence } from '@/lib/format'
 import CampaignRequestDialog from './CampaignRequestDialog.vue'
+import PlanningBandsView from './PlanningBandsView.vue'
 import PlanningBreakdown from './PlanningBreakdown.vue'
+import PlanningNtnView from './PlanningNtnView.vue'
 import PlanningNumbers from './PlanningNumbers.vue'
 import PlanningTrendChart from './PlanningTrendChart.vue'
 
@@ -27,11 +29,13 @@ const { can } = useAuth()
 const route = useRoute()
 const router = useRouter()
 
-type Tab = 'sunset' | 'esim' | 'iot'
+type Tab = 'sunset' | 'bands' | 'esim' | 'iot' | 'ntn'
 const TABS: { value: Tab; label: string }[] = [
   { value: 'sunset', label: '2G/3G sunset' },
+  { value: 'bands', label: 'Bands and 5G' },
   { value: 'esim', label: 'eSIM' },
   { value: 'iot', label: 'IoT fleet' },
+  { value: 'ntn', label: 'Satellite' },
 ]
 
 const tab = computed<Tab>(() => (TABS.some((t) => t.value === route.query['tab']) ? (route.query['tab'] as Tab) : 'sunset'))
@@ -126,7 +130,8 @@ const requestLabel = computed(() => {
         <h1 class="text-xl font-semibold tracking-tight">Network planning</h1>
         <p class="mt-0.5 max-w-3xl text-sm text-[var(--c-text-secondary)]">
           What the handsets on the network can use, counted by the numbers that hold them: who a 2G/3G switch-off
-          strands, who has an eSIM-capable handset, and how the IoT fleet stands. From the GSMA catalogue's own
+          strands, which bands and 5G modes they support, who has an eSIM-capable or satellite-capable handset, and how the IoT
+          fleet stands. From the GSMA catalogue's own
           statements - what a record does not state is counted as unknown, never as “no”.
         </p>
       </div>
@@ -390,6 +395,24 @@ const requestLabel = computed(() => {
               </template>
               <p v-else class="py-10 text-center text-2xs text-[var(--c-text-muted)]">Loading…</p>
             </template>
+
+            <!-- ====================================================== N2 -->
+            <PlanningBandsView
+              v-else-if="tab === 'bands'"
+              :run="run.runId"
+              :filter="filter"
+              :can-export="can(Permission.DataExport)"
+              :can-open-device="can(Permission.DeviceView)"
+            />
+
+            <!-- ====================================================== N6 -->
+            <PlanningNtnView
+              v-else-if="tab === 'ntn'"
+              :run="run.runId"
+              :filter="filter"
+              :can-export="can(Permission.DataExport)"
+              :can-open-device="can(Permission.DeviceView)"
+            />
 
             <!-- ====================================================== N5 -->
             <template v-else>
