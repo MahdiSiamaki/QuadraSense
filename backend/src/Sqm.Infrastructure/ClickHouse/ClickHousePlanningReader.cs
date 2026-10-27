@@ -252,12 +252,16 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             var iotParameters = FilterParameters(filter);
             iotParameters["run"] = Id(run);
             var tacMatch = filter.Any ? $"AND tac IN ({MatchingTacs})" : string.Empty;
+
+            // The fleet as it stands, like the headline above it: the devices active now, and every SIM
+            // each has carried. All devices ever seen counted 9.5 M on the VM against 6.4 M active,
+            // side by side and unexplained (2026-10-27).
             rotation = await GroupedAsync($$"""
                 SELECT k, k, '', count() AS devices, sum(numbers_active), toUInt64(0)
                 FROM (SELECT multiIf(sims_ever <= 1, 1, sims_ever = 2, 2, sims_ever <= 5, 3, sims_ever <= 10, 4, sims_ever <= 50, 5, 6) AS i,
                              ['1 SIM', '2 SIMs', '3-5 SIMs', '6-10 SIMs', '11-50 SIMs', 'more than 50 SIMs'][i] AS k,
                              numbers_active
-                      FROM planning_iot_device WHERE run_id = {run:UInt64} {{tacMatch}})
+                      FROM planning_iot_device WHERE run_id = {run:UInt64} AND numbers_active > 0 {{tacMatch}})
                 GROUP BY k ORDER BY min(i)
                 """, iotParameters, ct).ConfigureAwait(false);
         }

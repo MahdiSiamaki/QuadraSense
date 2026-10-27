@@ -280,7 +280,7 @@ public sealed record LifecycleResponse(
 /// <param name="Devices">IoT / M2M handsets (IMEIs) active now, and the numbers and bindings they carry.</param>
 /// <param name="ByDeviceType">Per GSMA device type.</param>
 /// <param name="Exposure">2G only, 2G/3G only, LTE-M / NB-IoT only, LTE or 5G, not stated - per device.</param>
-/// <param name="SimRotation">Devices by how many SIMs they have carried, all time.</param>
+/// <param name="SimRotation">Devices active now by how many SIMs they have carried, all time.</param>
 /// <param name="NotClassified">Handsets the classification cannot place: unknown devices and TACs the catalogue lacks.</param>
 /// <param name="NoData">Trackers: the catalogue has no such device type.</param>
 public sealed record IotResponse(

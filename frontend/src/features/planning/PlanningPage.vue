@@ -483,8 +483,8 @@ const requestLabel = computed(() => {
                   </Card>
                 </div>
                 <p class="text-2xs text-[var(--c-text-muted)]">
-                  Devices are distinct IMEIs, estimated. SIMs carried counts every SIM a device's bindings have had since the initial
-                  dump, from the binding history; shifted IMEIs are not counted as devices.
+                  Devices are distinct IMEIs, estimated. SIMs carried counts, for each device active now, every SIM its bindings have
+                  had since the initial dump, from the binding history; shifted IMEIs are not counted as devices.
                 </p>
 
                 <div v-for="n in iot.data.value.noData" :key="n.topic" class="rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-4 py-3 text-xs">

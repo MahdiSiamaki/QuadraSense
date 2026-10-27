@@ -172,6 +172,12 @@ public sealed class PlanningRealDataTests
         Write($"iot view: {timer.ElapsedMilliseconds} ms, ~{iot.Devices.Handsets:N0} devices, {iot.SimRotation.Count} rotation buckets");
         Assert.True(iot.Devices.Handsets > 0);
 
+        // The SIM rotation counts the same fleet as the headline - the devices active now - exactly,
+        // where the headline is an estimate that also holds the few with no history row.
+        var rotated = iot.SimRotation.Sum(r => r.Numbers);
+        Write($"iot devices: ~{iot.Devices.Handsets:N0} active (estimated); {rotated:N0} in the SIM rotation");
+        Assert.InRange(rotated, (long)(iot.Devices.Handsets * 0.9), (long)(iot.Devices.Handsets * 1.02));
+
         // The per-model views: every binding of the delivery is in one NTN class or not classified, and
         // the band view reads within budget with no operator list configured.
         timer.Restart();
