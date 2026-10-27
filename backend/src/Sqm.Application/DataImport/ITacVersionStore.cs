@@ -37,7 +37,26 @@ public interface ITacVersionStore
 
     /// <summary>Removes a loaded version's rows. Used when a version fails its checks.</summary>
     Task DropVersionAsync(int versionId, CancellationToken ct);
+
+    /// <summary>
+    /// The radio profile parse a version holds (analytics migration 029), or null when it has none.
+    /// </summary>
+    Task<TacRadioParse?> GetRadioParseAsync(int versionId, CancellationToken ct);
+
+    /// <summary>
+    /// Parses every record of a version into its radio profile (<c>Sqm.Domain.Devices.RadioProfileParser</c>)
+    /// and swaps the result in whole, so a reader sees the previous parse or this one, never a half.
+    /// Null when migration 029 has not been applied, so there is nowhere to write it.
+    /// </summary>
+    Task<TacRadioParse?> ParseRadioAsync(int versionId, CancellationToken ct);
 }
+
+/// <summary>A version's radio profiles, as parsed.</summary>
+/// <param name="VersionId">The TAC version.</param>
+/// <param name="ParserVersion">The parser that wrote them; current when it equals <c>RadioProfileParser.Version</c>.</param>
+/// <param name="Rows">Profiles written - one per TAC.</param>
+/// <param name="UnparsedTacs">TACs with at least one band token no rule recognised: an ambiguity, counted rather than guessed.</param>
+public sealed record TacRadioParse(int VersionId, int ParserVersion, long Rows, long UnparsedTacs);
 
 /// <summary>What a loaded TAC version looks like on inspection.</summary>
 /// <param name="RowCount">Rows in the version.</param>
