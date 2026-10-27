@@ -84,6 +84,7 @@ the merge. On dedicated hardware:
 |---|---|
 | Explorer: `QueryThreads` 2, `QueryMemoryBytes` 1.5 GB, `MaxConcurrentQueries` 4, `BudgetRows` 100 M, `BudgetSeconds` 30 (`ExplorerOptions`) | Raise with cores and RAM; the budget then admits wider questions |
 | Lookups and searches: `max_threads` 1, `max_memory_usage` 500 MB (`ClickHouseJsonQuery`) | Usually fine as they are - point reads; raise only if measured |
+| Planning's per-model views (bands, satellite, IoT) merge uniq() states under that same 500 MB: 380-434 MiB at their peak, measured 2026-10-27, so each statement looks up profiles instead of joining and reads by the mart's key (`19-network-planning.md` §5) | More memory per query - or give these reads a budget of their own - before the catalogue or the network grows past that margin |
 | API's ClickHouse client timeout 180 s (`Program.cs`); `QueryTimeoutSeconds` 120 | Lower, once `FINAL` is fast: a long wait is a symptom, not a need |
 
 ### 5. Storage

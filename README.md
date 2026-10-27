@@ -309,13 +309,13 @@ reconciled to the row. See `docs/adr/ADR-009-device-module.md`.
 ### 7. Tests
 
 ```bash
-dotnet test backend/Sqm.slnx                   # 735: Domain 189, Ingestion 137, Application 101, Integration 308
-cd frontend && npm test                        # 223, in 31 files
+dotnet test backend/Sqm.slnx                   # 820: Domain 243, Ingestion 137, Application 101, Integration 339
+cd frontend && npm test                        # 229, in 33 files
 python tools/test_device_image_pipeline.py     # 46 checks, no network, no database
 python tools/test_device_image_package.py      # 111 checks, no network, no database
 ```
 
-Counted 2026-10-26. Integration tests run against a real PostgreSQL and ClickHouse and **skip with a
+Counted 2026-10-27. Integration tests run against a real PostgreSQL and ClickHouse and **skip with a
 reason** when none is reachable, rather than failing — so a green run without the stack proves only
 the tests that do not need it. They connect as `sqm_app`, not as the owner: connecting as the owner
 would leave the append-only guarantee untested while appearing to pass. A system proxy that
@@ -454,6 +454,7 @@ tools/
 | [ADR-016](docs/adr/ADR-016-dashboard-builder.md) | The dashboard builder: one JSONB definition per dashboard; each widget reads an endpoint that already exists, under its permission | Accepted |
 | [ADR-017](docs/adr/ADR-017-filtered-dashboard-views.md) | Filtered dashboard views read per-model population marts, and abandoned reads are killed | Accepted |
 | [ADR-018](docs/adr/ADR-018-resumable-uploads.md) | Uploads resume after a broken connection, with the tus protocol | Accepted |
+| [ADR-019](docs/adr/ADR-019-planning-snapshot.md) | Network planning: each number classed once per delivery by an idle-time snapshot, from parsed radio profiles | Accepted |
 
 Every one of these was decided against measurement on the real dataset, not on reputation. Where a
 claim appears in these documents, the number behind it is there too.

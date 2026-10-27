@@ -106,6 +106,28 @@ public static class Permissions
     /// </remarks>
     public const string RiskView = "risk.view";
 
+    /// <summary>See the network and product planning views: sunset, 5G and bands, eSIM, lifecycle, IoT, NTN.</summary>
+    /// <remarks>
+    /// Aggregates about device models and the numbers that hold them, so it goes where dashboards go:
+    /// Viewer, Analyst, Administrator. A page of numbers also needs <see cref="LookupSubscriber"/>;
+    /// <see cref="IdentifierReveal"/> decides masking; an aggregate CSV needs <see cref="DataExport"/>.
+    /// See db/operational/migrations/020_planning_permission.sql and
+    /// docs/architecture/19-network-planning.md.
+    /// </remarks>
+    public const string PlanningView = "planning.view";
+
+    /// <summary>Request a campaign list of numbers, with a reason, and download it once approved.</summary>
+    /// <remarks>
+    /// The product owner's decision of 2026-10-21: lists for campaigns are allowed with controls - a
+    /// permission of their own, a recorded reason, a second person's approval above a size threshold.
+    /// Also needs <see cref="LookupSubscriber"/>. Administrator only until the role matrix says
+    /// otherwise. See db/operational/migrations/021_campaign_export.sql.
+    /// </remarks>
+    public const string CampaignExport = "campaign.export";
+
+    /// <summary>Approve or reject another person's campaign list request - never one's own.</summary>
+    public const string CampaignApprove = "campaign.approve";
+
     // --------------------------------------------------------------- dashboards
     /// <summary>Create, duplicate and import dashboards of one's own.</summary>
     /// <remarks>
@@ -172,7 +194,8 @@ public static class Permissions
     /// <summary>Every permission code known to this build.</summary>
     public static readonly FrozenSet<string> All = new[]
     {
-        DashboardView, LookupSubscriber, DataExport, LookupImsi, IdentifierReveal, ExplorerQuery, RiskView,
+        DashboardView, LookupSubscriber, DataExport, LookupImsi, IdentifierReveal, ExplorerQuery, RiskView, PlanningView,
+        CampaignExport, CampaignApprove,
         DashboardCreate, DashboardEdit, DashboardShare, DashboardManage,
         DeviceView, LookupImei, DeviceIdentifiers, DeviceImageManage,
         ImportView, ImportUploadSqm, ImportUploadTac, ImportReprocess, ImportCancel, ImportDelete,

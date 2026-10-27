@@ -102,6 +102,13 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Risk signals', permission: Permission.RiskView },
   },
   {
+    // The tab and the vendor/model/type filter are in the query; numbers never are - pages of them are POSTed.
+    path: '/planning',
+    name: 'planning',
+    component: () => import('@/features/planning/PlanningPage.vue'),
+    meta: { title: 'Network planning', permission: Permission.PlanningView },
+  },
+  {
     // Counts and rates only: behind import.view, as the feed-quality figures it sits beside.
     path: '/quality',
     name: 'data-quality',
@@ -184,6 +191,12 @@ const routes: RouteRecordRaw[] = [
         name: 'audit',
         component: () => import('@/features/admin/audit/AuditLogPage.vue'),
         meta: { title: 'Audit log', permission: Permission.AuditView },
+      },
+      {
+        path: 'campaign-lists',
+        name: 'campaign-lists',
+        component: () => import('@/features/planning/CampaignListsPage.vue'),
+        meta: { title: 'Campaign lists', anyPermission: [Permission.CampaignExport, Permission.CampaignApprove] },
       },
       {
         path: 'device-images',

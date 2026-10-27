@@ -28,6 +28,7 @@ namespace Sqm.Ingestion.Processing;
 /// </remarks>
 internal sealed partial class MartRefresh(
     IAnalyticsIngestionStore analytics,
+    ITacVersionStore tacStore,
     ILogger<MartRefresh> logger)
 {
     [LoggerMessage(EventId = 3800, Level = LogLevel.Information,
@@ -150,6 +151,11 @@ internal sealed partial class MartRefresh(
             return 0;
         }
 
+        // The capability and device-class marts read the active version's radio profiles
+        // (analytics migration 029). A version is parsed when it is loaded, so this does work only
+        // for a version loaded before the parser existed, or after the parser changed.
+        await EnsureRadioProfilesAsync(onProgress, ct).ConfigureAwait(false);
+
         // Withdraw the delivery before touching it. From here until the refresh finishes, the
         // dashboard reads the previous complete delivery rather than a mart that is being
         // dropped and rebuilt underneath it.
@@ -207,6 +213,29 @@ internal sealed partial class MartRefresh(
         }
 
         return failures;
+    }
+
+    /// <summary>Parses the active TAC version's radio profiles if the current parser has not.</summary>
+    private async Task EnsureRadioProfilesAsync(Func<string, Task>? onProgress, CancellationToken ct)
+    {
+        if (await tacStore.GetActiveVersionIdAsync(ct).ConfigureAwait(false) is not { } active)
+        {
+            return;
+        }
+
+        var parsed = await tacStore.GetRadioParseAsync(active, ct).ConfigureAwait(false);
+        if (parsed?.ParserVersion == Sqm.Domain.Devices.RadioProfileParser.Version)
+        {
+            return;
+        }
+
+        var radio = await tacStore.ParseRadioAsync(active, ct).ConfigureAwait(false);
+        if (radio is not null && onProgress is not null)
+        {
+            await onProgress(
+                $"Read the radio bands of TAC version {active}: {radio.Rows:N0} models, "
+                + $"{radio.UnparsedTacs:N0} with a token no rule recognises").ConfigureAwait(false);
+        }
     }
 
     /// <summary>

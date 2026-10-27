@@ -72,11 +72,76 @@ internal sealed class ClickHouseJsonQuery
         CancellationToken ct,
         QueryBudget? budget = null)
     {
+        using var request = Request(sql, parameters, budget, "JSONCompact");
+
+        var client = _httpClientFactory.CreateClient(ClickHouseAnalyticsStore.HttpClientName);
+        using var response = await client.SendAsync(request, ct).ConfigureAwait(false);
+
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var code = response.Headers.TryGetValues("X-ClickHouse-Exception-Code", out var values)
+                ? values.FirstOrDefault()
+                : null;
+
+            throw Failure((int)response.StatusCode, body, code);
+        }
+
+        return Parse(body);
+    }
+
+    /// <summary>
+    /// Runs a query and hands its result to <paramref name="onLine"/> one tab-separated line at a time,
+    /// as the server sends it - for a result too large to hold, such as a campaign list of millions of
+    /// numbers. Same read-only settings and caps as <see cref="ExecuteAsync"/>.
+    /// </summary>
+    /// <returns>Lines handed over.</returns>
+    public async Task<long> StreamLinesAsync(
+        string sql,
+        IReadOnlyDictionary<string, string> parameters,
+        Func<string, ValueTask> onLine,
+        CancellationToken ct,
+        QueryBudget? budget = null)
+    {
+        ArgumentNullException.ThrowIfNull(onLine);
+        using var request = Request(sql, parameters, budget, "TabSeparated");
+
+        var client = _httpClientFactory.CreateClient(ClickHouseAnalyticsStore.HttpClientName);
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var code = response.Headers.TryGetValues("X-ClickHouse-Exception-Code", out var values) ? values.FirstOrDefault() : null;
+            throw Failure((int)response.StatusCode, await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false), code);
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+
+        long lines = 0;
+        while (await reader.ReadLineAsync(ct).ConfigureAwait(false) is { } line)
+        {
+            // A failure after the headers arrives in the body, which the server marks this way.
+            if (line.StartsWith("Code: ", StringComparison.Ordinal) && line.Contains("DB::Exception", StringComparison.Ordinal))
+            {
+                throw Failure(500, line);
+            }
+
+            await onLine(line).ConfigureAwait(false);
+            lines++;
+        }
+
+        return lines;
+    }
+
+    private HttpRequestMessage Request(string sql, IReadOnlyDictionary<string, string> parameters, QueryBudget? budget, string format)
+    {
         var query = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["query"] = sql,
             ["database"] = _database,
-            ["default_format"] = "JSONCompact",
+            ["default_format"] = format,
 
             // One thread. ClickHouse builds one hash table per thread, and for a search that reads
             // tens of thousands of rows there is nothing to parallelise - measured at the same
@@ -118,27 +183,13 @@ internal sealed class ClickHouseJsonQuery
                 $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}")),
         }.Uri;
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        var request = new HttpRequestMessage(HttpMethod.Post, url);
         if (_authentication is not null)
         {
             request.Headers.Authorization = _authentication;
         }
 
-        var client = _httpClientFactory.CreateClient(ClickHouseAnalyticsStore.HttpClientName);
-        using var response = await client.SendAsync(request, ct).ConfigureAwait(false);
-
-        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            var code = response.Headers.TryGetValues("X-ClickHouse-Exception-Code", out var values)
-                ? values.FirstOrDefault()
-                : null;
-
-            throw Failure((int)response.StatusCode, body, code);
-        }
-
-        return Parse(body);
+        return request;
     }
 
     /// <summary>

@@ -31,6 +31,8 @@
       from the DDL that ships rather than from a copy of it that could drift.
     -->
     <None Include="..\..\..\db\analytics\migrations\*.sql" LinkBase="Migrations\analytics" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The mart refresh the worker embeds, so a test can run its statements as they ship. -->
+    <None Include="..\..\..\db\analytics\jobs\refresh_marts.sql" LinkBase="Migrations\jobs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

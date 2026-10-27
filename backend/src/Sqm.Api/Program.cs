@@ -99,6 +99,15 @@ builder.Services.Configure<Sqm.Application.Risk.RiskOptions>(
     builder.Configuration.GetSection(Sqm.Application.Risk.RiskOptions.SectionName));
 builder.Services.AddSingleton<Sqm.Application.Risk.IRiskReader, Sqm.Infrastructure.ClickHouse.ClickHouseRiskReader>();
 
+// Network planning: the reader of the worker's planning snapshot (analytics migrations 029, 030), and
+// the controlled export of campaign lists from it (operational migration 021).
+builder.Services.AddSingleton<Sqm.Application.Planning.IPlanningReader, Sqm.Infrastructure.ClickHouse.ClickHousePlanningReader>();
+builder.Services.Configure<Sqm.Application.Planning.OperatorBandsOptions>(
+    builder.Configuration.GetSection(Sqm.Application.Planning.OperatorBandsOptions.SectionName));
+builder.Services.Configure<Sqm.Application.Campaigns.CampaignExportOptions>(
+    builder.Configuration.GetSection(Sqm.Application.Campaigns.CampaignExportOptions.SectionName));
+builder.Services.AddSingleton<Sqm.Application.Campaigns.ICampaignExportStore, Sqm.Infrastructure.Identity.PostgresCampaignExportStore>();
+
 // New models and network age (analytics migration 025).
 builder.Services.AddSingleton<Sqm.Application.Devices.IModelArrivalReader, Sqm.Infrastructure.ClickHouse.ClickHouseModelArrivalReader>();
 builder.Services.AddSingleton<Sqm.Application.Quality.IQualityReader, Sqm.Infrastructure.ClickHouse.ClickHouseQualityReader>();
@@ -343,6 +352,8 @@ app.MapQualityEndpoints();
 app.MapExplorerEndpoints();
 app.MapTimelineEndpoints();
 app.MapRiskEndpoints();
+app.MapPlanningEndpoints();
+app.MapCampaignExportEndpoints();
 app.MapModelArrivalEndpoints();
 app.MapDeviceImageReviewEndpoints();
 

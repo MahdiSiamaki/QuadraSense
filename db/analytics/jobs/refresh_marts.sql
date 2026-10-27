@@ -280,32 +280,33 @@ WHERE active = 1;
 -- --------------------------------------------------------------------------
 -- 3. Capability flags per TAC.
 --
---    Derived once over 270,166 device models rather than re-parsed for every one of the
+--    Derived once over the device models rather than re-parsed for every one of the
 --    126M bindings. Joining the full TAC table into that aggregation -- `bandDetails`
 --    holds multi-hundred-character band lists -- exhausted a 6 GB server.
+--
+--    Read from the radio profiles (migration 029) since 2026-10-27: the parsing is done once
+--    per GSMA version, in Sqm.Domain.Devices.RadioProfileParser, and tested there. Every flag is
+--    1 supported, 0 not, 2 not stated. Two definitions changed with it, by the product owner's
+--    decision:
+--      * eSIM: '00' in the eUICC counts is "not stated", not zero. It was read as zero, so
+--        every record predating the field was "known to have no eSIM".
+--      * 5G: an NR band. "5G NA Options" alone - an architecture option and no band - no
+--        longer counts; about a thousand records, feature phones among them, did.
+--    LTE is any LTE, LTE-M and NB-IoT included, as the old search for "LTE" was.
 -- --------------------------------------------------------------------------
 TRUNCATE TABLE sqm.tac_capability;
 
 INSERT INTO sqm.tac_capability (tac, has_lte, has_5g, has_esim, ims_emergency)
-SELECT
-    tac,
-    bandDetails ILIKE '%LTE%' AS has_lte,
-    -- Two spellings occur: "5G NR: n2, n66" for handsets and "5G NA Options: 5G-5Series"
-    -- for modules. Matching bare '5G' also catches 135 rows that mention it incidentally.
-    (bandDetails ILIKE '%5G NR%' OR bandDetails ILIKE '%5G NA%') AS has_5g,
-    -- The GSMA eUICC fields are counts, not flags: '0' and '00' both mean none, and
-    -- 1, 2 and 3 all occur and all mean the device has an embedded UICC.
-    (toUInt8OrZero(removableEUICC) + toUInt8OrZero(nonremovableEUICC)) > 0 AS has_esim,
-    multiIf(authenticatedIMSEmergencyCallSupport IN ('Y', 'Yes'), 1,
-            authenticatedIMSEmergencyCallSupport IN ('N', 'No'), 0,
-            2) AS ims_emergency
-FROM sqm.tac;
+SELECT tac, lte, five_g, esim, ims_emergency
+FROM sqm.tac_radio_active;
 
 -- --------------------------------------------------------------------------
 -- 4. Device-class mix, per measure.
 --
 --    The class mapping is deliberately coarse. The point of this widget is the
---    handset-versus-machine split, which a 19-category chart obscures.
+--    handset-versus-machine split, which a 19-category chart obscures. Since 2026-10-27 it
+--    is one mapping, RadioProfileParser.DeviceClassOf, stored with each radio profile
+--    (migration 029); it was written out three times here.
 --
 --    Under 'bindings' and 'handsets' the classes PARTITION the population - every row
 --    falls in exactly one. Under 'subscribers' they OVERLAP: someone owning a smartphone
@@ -317,63 +318,30 @@ ALTER TABLE sqm.agg_device_class_daily DROP PARTITION {seq:UInt16};
 INSERT INTO sqm.agg_device_class_daily (seq, data_date, measure, device_class, n)
 SELECT
     {seq:UInt16}, NULL, 'bindings',
-    multiIf(
-        b.tac = '',                                              'Unknown device',
-        t.tac = '',                                              'Unregistered TAC',
-        t.deviceType IN ('Smartphone'),                          'Smartphone',
-        t.deviceType IN ('Mobile Phone/Feature phone'),          'Feature phone',
-        t.deviceType IN ('Tablet', 'e-Book'),                    'Tablet',
-        t.deviceType IN ('Modem', 'Dongle', 'Module', 'WLAN Router',
-                         'IoT Device', 'Vehicle', 'Vehicle TCU',
-                         'Connected Computer', 'UAS/UAV', 'Satellite'), 'IoT / M2M',
-        t.deviceType IN ('Wearable'),                            'Wearable',
-        'Other'
-    ) AS device_class,
+    multiIf(b.tac = '', 'Unknown device', r.tac = '', 'Unregistered TAC', r.device_class) AS device_class,
     count() AS n
 FROM sqm.binding_current AS b FINAL
-LEFT JOIN (SELECT tac, deviceType FROM sqm.tac) AS t ON t.tac = b.tac
+LEFT JOIN (SELECT tac, device_class FROM sqm.tac_radio_active) AS r ON r.tac = b.tac
 WHERE b.active = 1
 GROUP BY device_class;
 
 INSERT INTO sqm.agg_device_class_daily (seq, data_date, measure, device_class, n)
 SELECT
     {seq:UInt16}, NULL, 'subscribers',
-    multiIf(
-        b.tac = '',                                              'Unknown device',
-        t.tac = '',                                              'Unregistered TAC',
-        t.deviceType IN ('Smartphone'),                          'Smartphone',
-        t.deviceType IN ('Mobile Phone/Feature phone'),          'Feature phone',
-        t.deviceType IN ('Tablet', 'e-Book'),                    'Tablet',
-        t.deviceType IN ('Modem', 'Dongle', 'Module', 'WLAN Router',
-                         'IoT Device', 'Vehicle', 'Vehicle TCU',
-                         'Connected Computer', 'UAS/UAV', 'Satellite'), 'IoT / M2M',
-        t.deviceType IN ('Wearable'),                            'Wearable',
-        'Other'
-    ) AS device_class,
+    multiIf(b.tac = '', 'Unknown device', r.tac = '', 'Unregistered TAC', r.device_class) AS device_class,
     uniq(b.msisdn) AS n
 FROM sqm.binding_current AS b FINAL
-LEFT JOIN (SELECT tac, deviceType FROM sqm.tac) AS t ON t.tac = b.tac
+LEFT JOIN (SELECT tac, device_class FROM sqm.tac_radio_active) AS r ON r.tac = b.tac
 WHERE b.active = 1
 GROUP BY device_class;
 
 INSERT INTO sqm.agg_device_class_daily (seq, data_date, measure, device_class, n)
 SELECT
     {seq:UInt16}, NULL, 'handsets',
-    multiIf(
-        b.tac = '',                                              'Unknown device',
-        t.tac = '',                                              'Unregistered TAC',
-        t.deviceType IN ('Smartphone'),                          'Smartphone',
-        t.deviceType IN ('Mobile Phone/Feature phone'),          'Feature phone',
-        t.deviceType IN ('Tablet', 'e-Book'),                    'Tablet',
-        t.deviceType IN ('Modem', 'Dongle', 'Module', 'WLAN Router',
-                         'IoT Device', 'Vehicle', 'Vehicle TCU',
-                         'Connected Computer', 'UAS/UAV', 'Satellite'), 'IoT / M2M',
-        t.deviceType IN ('Wearable'),                            'Wearable',
-        'Other'
-    ) AS device_class,
+    multiIf(b.tac = '', 'Unknown device', r.tac = '', 'Unregistered TAC', r.device_class) AS device_class,
     uniqIf(b.imei, length(b.imei) = 14) AS n
 FROM sqm.binding_current AS b FINAL
-LEFT JOIN (SELECT tac, deviceType FROM sqm.tac) AS t ON t.tac = b.tac
+LEFT JOIN (SELECT tac, device_class FROM sqm.tac_radio_active) AS r ON r.tac = b.tac
 WHERE b.active = 1
 GROUP BY device_class;
 
@@ -411,13 +379,13 @@ FROM (
         SELECT
             countIf(c.tac != '' AND c.has_lte = 1) AS s0,
             countIf(c.tac != '' AND c.has_lte = 0) AS u0,
-            countIf(c.tac = '') AS x0,
+            countIf(c.tac = '' OR c.has_lte = 2) AS x0,
             countIf(c.tac != '' AND c.has_5g = 1) AS s1,
             countIf(c.tac != '' AND c.has_5g = 0) AS u1,
-            countIf(c.tac = '') AS x1,
+            countIf(c.tac = '' OR c.has_5g = 2) AS x1,
             countIf(c.tac != '' AND c.has_esim = 1) AS s2,
             countIf(c.tac != '' AND c.has_esim = 0) AS u2,
-            countIf(c.tac = '') AS x2,
+            countIf(c.tac = '' OR c.has_esim = 2) AS x2,
             countIf(c.tac != '' AND c.ims_emergency = 1) AS s3,
             countIf(c.tac != '' AND c.ims_emergency = 0) AS u3,
             countIf(c.tac = '' OR c.ims_emergency = 2) AS x3
@@ -441,13 +409,13 @@ FROM (
         SELECT
             uniqIf(b.msisdn, c.tac != '' AND c.has_lte = 1) AS s0,
             uniqIf(b.msisdn, c.tac != '' AND c.has_lte = 0) AS u0,
-            uniqIf(b.msisdn, c.tac = '') AS x0,
+            uniqIf(b.msisdn, c.tac = '' OR c.has_lte = 2) AS x0,
             uniqIf(b.msisdn, c.tac != '' AND c.has_5g = 1) AS s1,
             uniqIf(b.msisdn, c.tac != '' AND c.has_5g = 0) AS u1,
-            uniqIf(b.msisdn, c.tac = '') AS x1,
+            uniqIf(b.msisdn, c.tac = '' OR c.has_5g = 2) AS x1,
             uniqIf(b.msisdn, c.tac != '' AND c.has_esim = 1) AS s2,
             uniqIf(b.msisdn, c.tac != '' AND c.has_esim = 0) AS u2,
-            uniqIf(b.msisdn, c.tac = '') AS x2,
+            uniqIf(b.msisdn, c.tac = '' OR c.has_esim = 2) AS x2,
             uniqIf(b.msisdn, c.tac != '' AND c.ims_emergency = 1) AS s3,
             uniqIf(b.msisdn, c.tac != '' AND c.ims_emergency = 0) AS u3,
             uniqIf(b.msisdn, c.tac = '' OR c.ims_emergency = 2) AS x3
@@ -471,13 +439,13 @@ FROM (
         SELECT
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.has_lte = 1)) AS s0,
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.has_lte = 0)) AS u0,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac = '')) AS x0,
+            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac = '' OR c.has_lte = 2)) AS x0,
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.has_5g = 1)) AS s1,
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.has_5g = 0)) AS u1,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac = '')) AS x1,
+            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac = '' OR c.has_5g = 2)) AS x1,
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.has_esim = 1)) AS s2,
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.has_esim = 0)) AS u2,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac = '')) AS x2,
+            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac = '' OR c.has_esim = 2)) AS x2,
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.ims_emergency = 1)) AS s3,
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.ims_emergency = 0)) AS u3,
             uniqIf(b.imei, length(b.imei) = 14 AND (c.tac = '' OR c.ims_emergency = 2)) AS x3

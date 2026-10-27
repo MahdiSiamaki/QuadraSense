@@ -44,6 +44,7 @@ const nav = computed(() =>
       label: 'Explorer',
       show: canAny(Permission.ExplorerQuery, Permission.LookupSubscriber, Permission.LookupImsi, Permission.LookupImei),
     },
+    { to: '/planning', label: 'Planning', show: can(Permission.PlanningView) },
     { to: '/risk', label: 'Risk signals', show: can(Permission.RiskView) },
     { to: '/imports', label: 'Imports', show: can(Permission.ImportView) },
     { to: '/quality', label: 'Data quality', show: can(Permission.ImportView) },

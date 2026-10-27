@@ -287,6 +287,48 @@ if (args.Contains("--refresh-risk-days"))
         .ConfigureAwait(false);
 }
 
+// Builds the planning snapshot (analytics migration 030) now, step by step, instead of a chunk per
+// idle moment of the worker. Stop the worker first, or the two build the same run.
+//
+//   dotnet run --project backend/src/Sqm.Ingestion -- --refresh-planning [--force]
+if (args.Contains("--refresh-planning"))
+{
+    return await PlanningSnapshotRefresh
+        .RunAsync(host.Services, args.Contains("--force"), CancellationToken.None)
+        .ConfigureAwait(false);
+}
+
+// Parses a TAC version's radio profiles (analytics migration 029) - the active one unless
+// --version names another. A version is parsed when it is loaded and before a dashboard rebuild
+// when the parser has changed, so this is for versions loaded before the migration, or to look.
+//
+//   dotnet run --project backend/src/Sqm.Ingestion -- --parse-tac-radio [--version N]
+if (args.Contains("--parse-tac-radio"))
+{
+    var tacStore = host.Services.GetRequiredService<ITacVersionStore>();
+    var at = Array.IndexOf(args, "--version");
+    var version = at >= 0 && at + 1 < args.Length
+        && int.TryParse(args[at + 1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var named)
+        ? named
+        : await tacStore.GetActiveVersionIdAsync(CancellationToken.None).ConfigureAwait(false);
+
+    if (version is not { } id)
+    {
+        Console.Error.WriteLine("no TAC version is active; name one with --version");
+        return 2;
+    }
+
+    var radio = await tacStore.ParseRadioAsync(id, CancellationToken.None).ConfigureAwait(false);
+    if (radio is null)
+    {
+        Console.Error.WriteLine("analytics migration 029 has not been applied");
+        return 2;
+    }
+
+    Console.WriteLine($"TAC version {id}: {radio.Rows:N0} radio profiles, {radio.UnparsedTacs:N0} with a token no rule recognises");
+    return 0;
+}
+
 // Builds the risk snapshot (analytics migration 024) now, step by step, instead of a chunk per idle
 // moment of the worker. For the first build after the migration, and to retry a failed run; stop the
 // worker first, or the two build the same run and publication refuses it.

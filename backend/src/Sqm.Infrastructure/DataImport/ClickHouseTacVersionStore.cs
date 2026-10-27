@@ -320,6 +320,13 @@ public sealed partial class ClickHouseTacVersionStore : ITacVersionStore
             $"ALTER TABLE {_database}.tac_all DROP PARTITION {versionId}";
 
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+        // Its radio profiles go with it (migration 029); before that migration there are none.
+        if (await RadioDeployedAsync(ct).ConfigureAwait(false))
+        {
+            command.CommandText = $"ALTER TABLE {_database}.tac_radio DROP PARTITION {versionId}";
+            await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
     }
 
     private async Task<object?> ScalarAsync(string sql, CancellationToken ct)

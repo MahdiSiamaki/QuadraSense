@@ -49,6 +49,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     anyOf: [Permission.AuditView],
   },
   {
+    to: '/settings/campaign-lists',
+    label: 'Campaign lists',
+    description: 'Lists of numbers for a campaign: why, who approved, who downloaded.',
+    group: 'Oversight',
+    anyOf: [Permission.CampaignExport, Permission.CampaignApprove],
+  },
+  {
     to: '/settings/device-images',
     label: 'Device images',
     description: 'Proposed product images, live only once approved.',

@@ -141,6 +141,16 @@ public static class ImportWorkerRegistration
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IIdleTask, RiskSnapshot>(
             sp => sp.GetRequiredService<RiskSnapshot>()));
 
+        // Network planning's per-number measures (analytics migration 030), a chunk per idle moment,
+        // after the risk snapshot: the same store instance, the same limits.
+        services.Configure<Sqm.Application.Planning.PlanningOptions>(
+            configuration.GetSection(Sqm.Application.Planning.PlanningOptions.SectionName));
+        services.TryAddSingleton<Sqm.Application.Planning.IPlanningSnapshotStore>(
+            sp => (Sqm.Application.Planning.IPlanningSnapshotStore)sp.GetRequiredService<IAnalyticsIngestionStore>());
+        services.TryAddSingleton<PlanningSnapshot>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IIdleTask, PlanningSnapshot>(
+            sp => sp.GetRequiredService<PlanningSnapshot>()));
+
         // One processor per data source, resolved by source code at claim time. TryAddEnumerable
         // rather than TryAddSingleton: these are a collection, and TryAdd on a collection would
         // keep only the first.

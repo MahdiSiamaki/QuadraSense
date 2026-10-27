@@ -138,7 +138,7 @@ public sealed class RiskDayStepTests
             repository,
             new DashboardSnapshot(
                 analytics, repository,
-                new MartRefresh(analytics, NullLogger<MartRefresh>.Instance),
+                new MartRefresh(analytics, Stub.Create<ITacVersionStore>((m, _) => Stub.Default(m)), NullLogger<MartRefresh>.Instance),
                 NullLogger<DashboardSnapshot>.Instance),
             new FeedQualityMonitor(
                 analytics, Stub.Create<IFeedQualityReader>((m, _) => Stub.Default(m)),

@@ -144,6 +144,20 @@ internal sealed partial class TacSnapshotProcessor(
                 + $"{check.LatestUpdateDate ?? "none"}.",
                 check, ct).ConfigureAwait(false);
 
+            // The radio profiles are read now, while the version is inactive, so activating it is
+            // still one small insert and a planning page never meets a version with no profiles.
+            await context.EnterStageAsync(
+                ImportJobStatus.Enriching, "Reading the radio bands of every model", ct).ConfigureAwait(false);
+
+            if (await store.ParseRadioAsync(versionId, ct).ConfigureAwait(false) is { } radio)
+            {
+                await context.NoteAsync(
+                    "info",
+                    $"Radio profiles: {radio.Rows:N0} TACs parsed; {radio.UnparsedTacs:N0} carry a band token "
+                    + "no rule recognises, kept as written rather than guessed.",
+                    radio, ct).ConfigureAwait(false);
+            }
+
             // ---------------------------------------------------------------- diff
             if (activeVersionId is { } previous)
             {
