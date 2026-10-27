@@ -17,6 +17,8 @@ export const Permission = {
   ExplorerQuery: 'explorer.query',
   RiskView: 'risk.view',
   PlanningView: 'planning.view',
+  CampaignExport: 'campaign.export',
+  CampaignApprove: 'campaign.approve',
   DashboardCreate: 'dashboard.create',
   DashboardEdit: 'dashboard.edit',
   DashboardShare: 'dashboard.share',

@@ -9,6 +9,7 @@ import SegmentedControl, { tabId } from '@/design-system/SegmentedControl.vue'
 import TextField from '@/design-system/TextField.vue'
 import { Permission, useAuth } from '@/features/auth/useAuth'
 import { formatDate, formatDateTime, formatFull, formatPercent, formatSequence } from '@/lib/format'
+import CampaignRequestDialog from './CampaignRequestDialog.vue'
 import PlanningBreakdown from './PlanningBreakdown.vue'
 import PlanningNumbers from './PlanningNumbers.vue'
 import PlanningTrendChart from './PlanningTrendChart.vue'
@@ -107,6 +108,15 @@ function modelPoints(points: PlanningModelTrendPoint[] | undefined) {
 }
 
 const canNumbers = computed(() => can(Permission.LookupSubscriber))
+const canCampaign = computed(() => can(Permission.CampaignExport) && can(Permission.LookupSubscriber))
+const requesting = ref<'sunset' | 'esim' | null>(null)
+
+const requestLabel = computed(() => {
+  if (requesting.value === 'esim') return esim.data.value?.classes.find((c) => c.class === chosen.value.esim)?.label ?? ''
+  const label = sunset.data.value?.classes.find((c) => c.class === chosen.value.sunset)?.label ?? ''
+  const why = sunset.data.value?.notAssessable.find((r) => r.class === reason.value)?.label
+  return why ? `${label}: ${why}` : label
+})
 </script>
 
 <template>
@@ -296,6 +306,9 @@ const canNumbers = computed(() => can(Permission.LookupSubscriber))
                 </Card>
 
                 <Card v-if="canNumbers && run.hasNumbers" title="The numbers">
+                  <div v-if="canCampaign" class="mb-2 flex justify-end">
+                    <Button size="sm" variant="secondary" @click="requesting = 'sunset'">Request a campaign list</Button>
+                  </div>
                   <PlanningNumbers view="sunset" :planning-class="chosen.sunset" :reason="reason" :run="run.runId" :filter="filter" />
                 </Card>
               </template>
@@ -369,6 +382,9 @@ const canNumbers = computed(() => can(Permission.LookupSubscriber))
                 </Card>
 
                 <Card v-if="canNumbers && run.hasNumbers" title="The numbers">
+                  <div v-if="canCampaign" class="mb-2 flex justify-end">
+                    <Button size="sm" variant="secondary" @click="requesting = 'esim'">Request a campaign list</Button>
+                  </div>
                   <PlanningNumbers view="esim" :planning-class="chosen.esim" :run="run.runId" :filter="filter" />
                 </Card>
               </template>
@@ -436,6 +452,18 @@ const canNumbers = computed(() => can(Permission.LookupSubscriber))
               <p v-else class="py-10 text-center text-2xs text-[var(--c-text-muted)]">Loading…</p>
             </template>
           </section>
+
+          <CampaignRequestDialog
+            v-if="canCampaign"
+            :open="requesting !== null"
+            :view="requesting ?? 'sunset'"
+            :planning-class="requesting === 'esim' ? chosen.esim : chosen.sunset"
+            :class-label="requestLabel"
+            :reason="requesting === 'sunset' && chosen.sunset === 'not-assessable' ? reason : null"
+            :run="run"
+            :filter="filter"
+            @close="requesting = null"
+          />
 
           <details class="rounded-[var(--radius-md)] border px-4 py-3 text-xs text-[var(--c-text-secondary)]">
             <summary class="cursor-pointer font-medium text-[var(--c-text)]">How these are counted</summary>

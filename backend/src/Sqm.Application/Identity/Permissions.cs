@@ -116,6 +116,18 @@ public static class Permissions
     /// </remarks>
     public const string PlanningView = "planning.view";
 
+    /// <summary>Request a campaign list of numbers, with a reason, and download it once approved.</summary>
+    /// <remarks>
+    /// The product owner's decision of 2026-10-21: lists for campaigns are allowed with controls - a
+    /// permission of their own, a recorded reason, a second person's approval above a size threshold.
+    /// Also needs <see cref="LookupSubscriber"/>. Administrator only until the role matrix says
+    /// otherwise. See db/operational/migrations/021_campaign_export.sql.
+    /// </remarks>
+    public const string CampaignExport = "campaign.export";
+
+    /// <summary>Approve or reject another person's campaign list request - never one's own.</summary>
+    public const string CampaignApprove = "campaign.approve";
+
     // --------------------------------------------------------------- dashboards
     /// <summary>Create, duplicate and import dashboards of one's own.</summary>
     /// <remarks>
@@ -183,6 +195,7 @@ public static class Permissions
     public static readonly FrozenSet<string> All = new[]
     {
         DashboardView, LookupSubscriber, DataExport, LookupImsi, IdentifierReveal, ExplorerQuery, RiskView, PlanningView,
+        CampaignExport, CampaignApprove,
         DashboardCreate, DashboardEdit, DashboardShare, DashboardManage,
         DeviceView, LookupImei, DeviceIdentifiers, DeviceImageManage,
         ImportView, ImportUploadSqm, ImportUploadTac, ImportReprocess, ImportCancel, ImportDelete,

@@ -44,4 +44,16 @@ public interface IPlanningReader
     /// <summary>A page of the numbers in one class, ordered by number.</summary>
     Task<(PlanningRunInfo Run, IReadOnlyList<PlanningNumberRead> Rows, long Total)?> ListNumbersAsync(
         ulong? runId, string view, string planningClass, string? reason, PlanningFilter filter, int page, int pageSize, CancellationToken ct);
+
+    /// <summary>
+    /// How many numbers a campaign list of one class would hold - the same condition as the list - or
+    /// null when the run no longer holds its numbers.
+    /// </summary>
+    Task<long?> CountNumbersAsync(ulong runId, string view, string planningClass, string? reason, PlanningFilter filter, CancellationToken ct);
+
+    /// <summary>Every number of one class, in order, one at a time: a campaign list, never held whole.</summary>
+    /// <returns>Numbers handed over.</returns>
+    Task<long> StreamNumbersAsync(
+        ulong runId, string view, string planningClass, string? reason, PlanningFilter filter,
+        Func<PlanningNumberRead, ValueTask> onRow, CancellationToken ct);
 }

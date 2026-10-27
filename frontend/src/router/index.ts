@@ -193,6 +193,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'Audit log', permission: Permission.AuditView },
       },
       {
+        path: 'campaign-lists',
+        name: 'campaign-lists',
+        component: () => import('@/features/planning/CampaignListsPage.vue'),
+        meta: { title: 'Campaign lists', anyPermission: [Permission.CampaignExport, Permission.CampaignApprove] },
+      },
+      {
         path: 'device-images',
         name: 'device-image-review',
         component: () => import('@/features/devices/DeviceImageReviewPage.vue'),

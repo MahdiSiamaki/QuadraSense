@@ -374,27 +374,15 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             return null;
         }
 
-        var classes = view == "esim" ? EsimClasses : SunsetClasses;
-        if (classes.FirstOrDefault(c => c.Key == planningClass) is not { Key: not null } chosen)
+        if (NumbersCondition(view, planningClass, reason, filter) is not { } condition)
         {
             return (run, [], 0);
-        }
-
-        var column = view == "esim" ? "esim" : "sunset";
-        var condition = $"{column} = {chosen.Code}";
-        if (view != "esim" && reason is not null && Reasons.FirstOrDefault(r => r.Key == reason) is { Key: not null } why)
-        {
-            condition += $" AND reason = {why.Code}";
         }
 
         var parameters = FilterParameters(filter);
         parameters["run"] = Id(run);
         parameters["limit"] = pageSize.ToString(CultureInfo.InvariantCulture);
         parameters["offset"] = ((long)(page - 1) * pageSize).ToString(CultureInfo.InvariantCulture);
-        if (filter.Any)
-        {
-            condition += $" AND hasAny(tacs, ({MatchingTacs}))";
-        }
 
         var rows = await _query.ExecuteAsync($$"""
             WITH (SELECT (groupArray(tac), groupArray(marketingName)) FROM tac) AS names
@@ -416,6 +404,92 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         var total = rows.Rows.Count == 0 ? 0 : ClickHouseJsonResult.Int64(rows.Rows[0], 5);
 
         return (run, list, total);
+    }
+
+    /// <inheritdoc />
+    public async Task<long?> CountNumbersAsync(
+        ulong runId, string view, string planningClass, string? reason, PlanningFilter filter, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        if (await RunAsync(runId, ct).ConfigureAwait(false) is not { HasNumbers: true } run)
+        {
+            return null;
+        }
+
+        if (NumbersCondition(view, planningClass, reason, filter) is not { } condition)
+        {
+            return 0;
+        }
+
+        var parameters = FilterParameters(filter);
+        parameters["run"] = Id(run);
+        var result = await _query.ExecuteAsync(
+            $"SELECT count() FROM planning_number WHERE run_id = {{run:UInt64}} AND {condition}", parameters, ct, Budget)
+            .ConfigureAwait(false);
+        return ClickHouseJsonResult.Int64(result.Rows[0], 0);
+    }
+
+    /// <summary>A campaign list may take minutes to stream; it reads one class of one run, in key order.</summary>
+    private static readonly QueryBudget StreamBudget = new(MaxRowsToRead: 200_000_000, MaxExecutionSeconds: 1800);
+
+    /// <inheritdoc />
+    public async Task<long> StreamNumbersAsync(
+        ulong runId, string view, string planningClass, string? reason, PlanningFilter filter,
+        Func<PlanningNumberRead, ValueTask> onRow, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        ArgumentNullException.ThrowIfNull(onRow);
+
+        if (NumbersCondition(view, planningClass, reason, filter) is not { } condition)
+        {
+            return 0;
+        }
+
+        var parameters = FilterParameters(filter);
+        parameters["run"] = runId.ToString(CultureInfo.InvariantCulture);
+
+        // Models joined with a separator no marketing name holds, then split here; a TSV field
+        // escapes only the backslash, tab and newline, which no name holds either.
+        return await _query.StreamLinesAsync($$"""
+            WITH (SELECT (groupArray(tac), groupArray(marketingName)) FROM tac) AS names
+            SELECT msisdn, reason, handsets, bindings,
+                   arrayStringConcat(arrayDistinct(arrayMap(x -> if(x = '', '(unknown device)', transform(x, names.1, names.2, concat('TAC ', x))), tacs)), '\x1f')
+            FROM planning_number
+            WHERE run_id = {run:UInt64} AND {{condition}}
+            ORDER BY msisdn
+            """, parameters, line =>
+            {
+                var f = line.Split('\t');
+                return onRow(new PlanningNumberRead(
+                    ulong.Parse(f[0], CultureInfo.InvariantCulture),
+                    int.Parse(f[1], CultureInfo.InvariantCulture),
+                    int.Parse(f[2], CultureInfo.InvariantCulture),
+                    int.Parse(f[3], CultureInfo.InvariantCulture),
+                    f.Length > 4 && f[4].Length > 0 ? f[4].Split('\x1f') : []));
+            }, ct, StreamBudget).ConfigureAwait(false);
+    }
+
+    /// <summary>The condition that selects one class's numbers, or null when the class is not one of the view's.</summary>
+    private static string? NumbersCondition(string view, string planningClass, string? reason, PlanningFilter filter)
+    {
+        var classes = view == "esim" ? EsimClasses : SunsetClasses;
+        if (classes.FirstOrDefault(c => c.Key == planningClass) is not { Key: not null } chosen)
+        {
+            return null;
+        }
+
+        var condition = $"{(view == "esim" ? "esim" : "sunset")} = {chosen.Code}";
+        if (view != "esim" && reason is not null && Reasons.FirstOrDefault(r => r.Key == reason) is { Key: not null } why)
+        {
+            condition += $" AND reason = {why.Code}";
+        }
+
+        if (filter.Any)
+        {
+            condition += $" AND hasAny(tacs, ({MatchingTacs}))";
+        }
+
+        return condition;
     }
 
     // ------------------------------------------------------------------ helpers

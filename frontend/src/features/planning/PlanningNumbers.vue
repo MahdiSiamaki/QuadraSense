@@ -9,8 +9,9 @@ import { formatFull } from '@/lib/format'
  * numbers - and masked unless the caller may reveal identifiers.
  *
  * A page, not a list to take away: the first 10,000 rows can be paged through here. A whole class as
- * a campaign list leaves the system only through the controlled export, with its own permission, a
- * recorded reason and a second person's approval (the product owner's decision of 2026-10-21).
+ * a campaign list leaves the system only through the controlled export (CampaignRequestDialog), with
+ * its own permission, a recorded reason and a second person's approval (the product owner's decision
+ * of 2026-10-21).
  */
 const props = defineProps<{
   view: 'sunset' | 'esim'
@@ -50,8 +51,8 @@ watch(() => [props.view, props.planningClass, props.reason, props.run, props.fil
     <template v-else-if="result">
       <p class="text-2xs text-[var(--c-text-muted)]">
         {{ formatFull(result.total) }} number{{ result.total === 1 ? '' : 's' }} in this class<template v-if="result.masked">,
-        masked</template>. Pages reach the first 10,000; a whole class as a campaign list goes through the controlled
-        export, which is not built yet.
+        masked</template>. Pages reach the first 10,000; the whole class, as a campaign list, is a request with a
+        reason and a second person's approval.
       </p>
       <div class="overflow-x-auto">
         <table class="w-full text-xs">
