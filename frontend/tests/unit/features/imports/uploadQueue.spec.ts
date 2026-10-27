@@ -131,6 +131,27 @@ describe('the upload queue', () => {
     expect(totals.value).toBeNull()
   })
 
+  it('measures a resumed upload from where it resumed, not from nothing', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(0)
+      const { items } = useUploadQueue('SQM')
+      enqueue('SQM', [file('a.csv', 1_000_000)])
+      await flushPromises()
+
+      // Half of it was already on the server: the first report says 50%, then 1% more in 2 s.
+      vi.setSystemTime(2_000)
+      pending[0]!.onProgress(0.5)
+      vi.setSystemTime(4_000)
+      pending[0]!.onProgress(0.51)
+
+      // 10,000 bytes in 2 s - not the 510,000 since the start, which read 2.6 MB/s on the VM.
+      expect(items.value[0]!.rate).toBe(5_000)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('outlives the page that started it', async () => {
     enqueue('SQM', [file('a.csv')])
     await flushPromises()

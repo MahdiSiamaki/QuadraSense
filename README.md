@@ -310,7 +310,7 @@ reconciled to the row. See `docs/adr/ADR-009-device-module.md`.
 
 ```bash
 dotnet test backend/Sqm.slnx                   # 735: Domain 189, Ingestion 137, Application 101, Integration 308
-cd frontend && npm test                        # 222, in 31 files
+cd frontend && npm test                        # 223, in 31 files
 python tools/test_device_image_pipeline.py     # 46 checks, no network, no database
 python tools/test_device_image_package.py      # 111 checks, no network, no database
 ```

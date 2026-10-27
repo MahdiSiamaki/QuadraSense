@@ -938,6 +938,28 @@ creation, and the day-old sweep each removed in turn and seen to fail; the page'
 (`uploadImportFile.spec.ts`) the same for termination on cancel, resuming after a reload and retrying
 a refusal.
 
+**Checked in the browser on the department VM**, 2026-10-27, with synthetic files whose names carry
+no date, over the VPN at 350-650 KB/s:
+
+- **A break, mid-file, and the deploy that caused it.** A 400 MB upload was at 163.6 MB (40.9%) when
+  the pipeline deployed release `81d9c81e` and recreated the API and nginx. The row read "Connection
+  lost - resuming where it stopped (try 1)", then tries 2 and 3; the browser asked how much had
+  arrived (HEAD, 200, 03:57:51) and the same upload went on - 185.2 MB on the server at 03:58:18,
+  186.7 MB six seconds later. Nothing was sent twice and nothing started again.
+- **After the page was gone.** The same upload's first request had broken after 31.5 s with 16.6 MB
+  in, and the Chrome tab stopped answering - no retry came for seven minutes. Why is not known; the
+  same tab had stopped answering earlier that day on a page with no upload, so the likeliest cause
+  is Chrome suspending it, which is inferred, not proven. Dropped again in a new tab, the file was
+  recognised: one HEAD, and it continued from 16.6 MB.
+- **Cancel.** Both uploads were cancelled before their last byte, so neither became an import (the
+  newest is still 36). nginx shows the browser's DELETE refused 423 while the server was still
+  writing, then 204 on tus's retry. The first cancel left the upload's owner record behind; the
+  second, after the fix (PR #59), left nothing.
+- **Not tried on the VM: completion.** It would have put a synthetic import into the department's
+  history. `ResumableUploadTests` cover it, against the real API and file store.
+- **Found and fixed:** the owner record left by a cancel; and a resumed upload's speed read 2.6 MB/s
+  for its first seconds, because the bytes already on the server were counted as just sent.
+
 ---
 
 ## 13. Still open

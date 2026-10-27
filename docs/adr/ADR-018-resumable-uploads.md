@@ -73,3 +73,7 @@ The single-request endpoint stays: the tests of the intake use it, and it costs 
   hashed right; completing early, another user's requests, a forbidden source, a duplicate, a cancel
   and the day-old sweep - each made to fail first with its check removed. The page's side has its
   own tests (cancel, resume, retry, completion, duplicate), likewise made to fail first.
+- Checked on the department VM, 2026-10-27 (`09-import-platform.md` D14): a 400 MB upload went on
+  across the deploy that recreated the API and nginx under it, and after its tab was reopened; a
+  cancel left nothing. Completion was not tried there, to keep a synthetic import out of the
+  department's history.

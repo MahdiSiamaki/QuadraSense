@@ -115,7 +115,9 @@ async function send(item: UploadItem): Promise<void> {
   controllers.set(item.id, controller)
   meters.set(item.id, meter)
   item.status = 'uploading'
-  meter.sample(0)
+  // No sample of 0 at the start: a resumed upload's first report already counts what the server
+  // had, and measured from 0 those bytes read as sent in the first seconds - 2.6 MB/s over a VPN
+  // doing 350 KB/s, on the department VM, 2026-10-27.
 
   try {
     const result = await uploadImportFile(
