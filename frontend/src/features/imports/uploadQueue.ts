@@ -25,6 +25,11 @@ export interface UploadItem {
   sent: number
   /** Bytes per second over the last few seconds; null until there is enough to say. */
   rate: number | null
+  /**
+   * The connection broke and the upload is trying again - which attempt - or 0 while it flows. It
+   * continues from the last byte the server has (ADR-018), so nothing already sent is sent twice.
+   */
+  reconnecting: number
   message?: string
   jobId?: number
 }
@@ -42,7 +47,7 @@ const unfinished = (item: UploadItem) => item.status === 'waiting' || item.statu
 
 export function enqueue(sourceCode: string, files: File[]): void {
   for (const file of files) {
-    items.push({ id: nextId++, sourceCode, file, status: 'waiting', sent: 0, rate: null })
+    items.push({ id: nextId++, sourceCode, file, status: 'waiting', sent: 0, rate: null, reconnecting: 0 })
   }
   void drain(sourceCode)
 }
@@ -118,10 +123,12 @@ async function send(item: UploadItem): Promise<void> {
       item.file,
       (fraction) => {
         item.sent = Math.round(item.file.size * fraction)
+        item.reconnecting = 0
         meter.sample(item.sent)
         item.rate = meter.rate()
       },
       controller.signal,
+      (attempt) => (item.reconnecting = attempt),
     )
     apply(item, result)
   } catch (error) {
@@ -139,6 +146,7 @@ async function send(item: UploadItem): Promise<void> {
     controllers.delete(item.id)
     meters.delete(item.id)
     item.rate = null
+    item.reconnecting = 0
   }
 }
 
