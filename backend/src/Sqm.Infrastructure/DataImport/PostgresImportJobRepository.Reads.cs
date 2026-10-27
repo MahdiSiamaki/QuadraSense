@@ -219,7 +219,8 @@ public sealed partial class PostgresImportJobRepository
         const string ProgressSql = """
             SELECT stage AS Stage, bytes_processed AS BytesProcessed, bytes_expected AS BytesExpected,
                    percent AS Percent, updated_at AS UpdatedAt,
-                   step AS Step, step_index::int AS StepIndex, step_count::int AS StepCount
+                   step AS Step, step_index::int AS StepIndex, step_count::int AS StepCount,
+                   step_done AS StepDone, step_total AS StepTotal, step_unit AS StepUnit
               FROM imports.import_progress
              WHERE job_id = @job
             """;

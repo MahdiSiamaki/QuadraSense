@@ -544,7 +544,10 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                    updated_at     = EXCLUDED.updated_at,
                    step           = NULL,
                    step_index     = NULL,
-                   step_count     = NULL
+                   step_count     = NULL,
+                   step_done      = NULL,
+                   step_total     = NULL,
+                   step_unit      = NULL
             """;
 
         await connection.ExecuteAsync(Command(Sql, new
@@ -578,7 +581,10 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
                    updated_at      = EXCLUDED.updated_at,
                    step            = EXCLUDED.step,
                    step_index      = EXCLUDED.step_index,
-                   step_count      = EXCLUDED.step_count
+                   step_count      = EXCLUDED.step_count,
+                   step_done       = NULL,
+                   step_total      = NULL,
+                   step_unit       = NULL
             """;
 
         await connection.ExecuteAsync(Command(Sql, new
@@ -589,6 +595,30 @@ public sealed partial class PostgresImportJobRepository : IImportJobRepository
             index = (short)stepIndex,
             count = (short)stepCount,
         }, ct)).ConfigureAwait(false);
+    }
+
+    public async Task ReportStepProgressAsync(
+        long jobId, int done, int total, string unit, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+
+        // The stage's percent moves through this step's share of it: step 7 of 7 with 12 of 31
+        // statements done is (6 + 12/31) / 7 = 91.2%, not stuck at 85.7% for half an hour.
+        const string Sql = """
+            UPDATE imports.import_progress
+               SET step_done  = @done,
+                   step_total = @total,
+                   step_unit  = @unit,
+                   percent    = LEAST(100, ROUND(
+                       ((step_index - 1) + LEAST(@done, @total)::numeric / GREATEST(@total, 1))
+                       * 100 / GREATEST(step_count, 1), 2)),
+                   updated_at = now()
+             WHERE job_id = @job
+               AND step IS NOT NULL
+            """;
+
+        await connection.ExecuteAsync(Command(Sql, new { job = jobId, done, total, unit }, ct))
+            .ConfigureAwait(false);
     }
 
     public async Task AppendEventAsync(

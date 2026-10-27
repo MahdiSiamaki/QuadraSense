@@ -928,6 +928,48 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
         }
     }
 
+    /// <summary>A long step counts its way through its share of the stage, and the next step starts clean.</summary>
+    [Fact]
+    public async Task A_long_step_moves_through_its_share_of_the_stage()
+    {
+        if (!await ReadyAsync())
+        {
+            Assert.Skip(fixture.UnavailableReason ?? "no database");
+            return;
+        }
+
+        try
+        {
+            var ct = TestContext.Current.CancellationToken;
+            var job = await fixture.Repository.EnqueueAsync(TestSource,
+                (await fixture.Repository.RegisterFileAsync(TestSource, "w1.csv", Stored(Hash("w1")), "tester", ct)).FileId,
+                new DateOnly(2026, 7, 11), "tester", ct: ct);
+            await fixture.Repository.ClaimNextAsync("worker", TimeSpan.FromMinutes(5), ct);
+            Assert.True(await fixture.Repository.EnterStageUnlessCancelledAsync(job, ImportJobStatus.Aggregating, ct));
+
+            // No step yet: a count has nothing to belong to, and is dropped.
+            await fixture.Repository.ReportStepProgressAsync(job, 1, 31, "statements", ct);
+            Assert.Null((await fixture.Repository.GetJobAsync(job, ct))!.Progress);
+
+            await fixture.Repository.ReportStepAsync(job, "AGGREGATING", "Rebuilding the dashboard figures", 7, 7, ct);
+            Assert.Equal(85.71m, (await fixture.Repository.GetJobAsync(job, ct))!.Progress!.Percent);
+
+            await fixture.Repository.ReportStepProgressAsync(job, 12, 31, "statements", ct);
+            var counted = (await fixture.Repository.GetJobAsync(job, ct))!.Progress!;
+            Assert.Equal((12, 31, "statements"), (counted.StepDone, counted.StepTotal, counted.StepUnit));
+            Assert.Equal(91.24m, counted.Percent);
+
+            await fixture.Repository.ReportStepAsync(job, "AGGREGATING", "Another step", 7, 7, ct);
+            var next = (await fixture.Repository.GetJobAsync(job, ct))!.Progress!;
+            Assert.Null(next.StepDone);
+            Assert.Null(next.StepUnit);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
     private static async Task SqlAsync(string sql, params (string Name, object Value)[] parameters)
     {
         await using var connection = new Npgsql.NpgsqlConnection(ImportQueueFixture.ConnectionString);
