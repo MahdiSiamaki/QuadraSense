@@ -79,8 +79,9 @@ public sealed class ClickHousePlanningReader : IPlanningReader
 
         var runs = await RunsAsync(ct).ConfigureAwait(false);
 
-        var running = await _query.ExecuteAsync("""
-            SELECT run_id, as_of_seq, toString(as_of_date), length(done), chunks * 2
+        // Every table is built in the run's chunks, so the parts to write are chunks times tables.
+        var running = await _query.ExecuteAsync($$"""
+            SELECT run_id, as_of_seq, toString(as_of_date), length(done), chunks * {{Enum.GetValues<PlanningTable>().Length}}
             FROM planning_run FINAL WHERE state = 'running' ORDER BY run_id DESC LIMIT 1
             """, NoParameters, ct).ConfigureAwait(false);
         var progress = running.Rows.Count == 0

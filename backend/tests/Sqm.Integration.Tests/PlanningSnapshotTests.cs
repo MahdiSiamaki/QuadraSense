@@ -317,6 +317,12 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
         Assert.Equal((1L, 1L), (view.Dump!.Spells, view.Dump.Changed));
         Assert.Equal(["2026-02|1", "2026-03|1"], view.DeviceAge.Select(a => $"{a.Key}|{a.Handsets}"));
         Assert.Equal(["2021|1", "2023|1"], view.ModelAge.Select(a => $"{a.Key}|{a.Handsets}"));
+
+        // A run being built reports its parts across every table: two chunks of four tables.
+        var next = await Store().PlanPlanningRunAsync(await Store().ReadPlanningInputsAsync(ct), new PlanningOptions { Chunks = 2 }, ct);
+        var progress = (await Reader().GetStatusAsync(ct)).Running!;
+        Assert.Equal((0, 8), (progress.ChunksDone, progress.ChunksTotal));
+        await Store().EndPlanningRunAsync(next, "abandoned", "a test of the progress", ct);
     }
 
     private async Task<PlanningRun> BuildAsync(CancellationToken ct)
