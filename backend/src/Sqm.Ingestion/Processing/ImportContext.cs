@@ -79,6 +79,10 @@ internal sealed class ImportContext(
     public Task ReportStepAsync(string stepName, int stepIndex, int stepCount, CancellationToken ct) =>
         repository.ReportStepAsync(job.JobId, _stage, stepName, stepIndex, stepCount, ct);
 
+    // Not throttled either: the dashboard rebuild's statements take seconds to minutes each.
+    public Task ReportStepProgressAsync(int done, int total, string unit, CancellationToken ct) =>
+        repository.ReportStepProgressAsync(job.JobId, done, total, unit, ct);
+
     public Task NoteAsync(string severity, string message, object? detail, CancellationToken ct) =>
         repository.AppendEventAsync(job.JobId, severity, _stage, message, detail, ct);
 

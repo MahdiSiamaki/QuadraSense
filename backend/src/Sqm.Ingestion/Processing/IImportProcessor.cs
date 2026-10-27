@@ -57,6 +57,12 @@ public interface IImportContext
     /// </summary>
     Task ReportStepAsync(string stepName, int stepIndex, int stepCount, CancellationToken ct);
 
+    /// <summary>
+    /// Reports how far the running step has got, in what it counts - "12 of 31 statements" - for a
+    /// step long enough that its bar would otherwise stand still.
+    /// </summary>
+    Task ReportStepProgressAsync(int done, int total, string unit, CancellationToken ct);
+
     /// <summary>Adds a line to the job's timeline.</summary>
     Task NoteAsync(string severity, string message, object? detail, CancellationToken ct);
 

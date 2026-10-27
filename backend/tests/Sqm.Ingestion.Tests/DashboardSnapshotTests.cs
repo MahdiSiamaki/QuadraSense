@@ -37,6 +37,9 @@ public sealed class DashboardSnapshotTests
 
         public List<string> Notes { get; } = [];
 
+        /// <summary>What the rebuild reported of its statements: done, total, unit.</summary>
+        public List<(int Done, int Total, string Unit)> Counted { get; } = [];
+
         public DashboardSnapshot Build()
         {
             var analytics = Stub.Create<IAnalyticsIngestionStore>(Analytics);
@@ -58,6 +61,11 @@ public sealed class DashboardSnapshotTests
             if (m.Name == "NoteAsync")
             {
                 Notes.Add((string)args[1]!);
+            }
+
+            if (m.Name == "ReportStepProgressAsync")
+            {
+                Counted.Add(((int)args[0]!, (int)args[1]!, (string)args[2]!));
             }
 
             return Stub.Default(m);
@@ -115,6 +123,20 @@ public sealed class DashboardSnapshotTests
     private static readonly ClaimedJob Job = new(
         42, "SQM", 1, "stored", "daily_subs_device_sim_info_2026-05-08.csv", "sha",
         100, new DateOnly(2026, 5, 8), 1, 3, 0, null);
+
+    [Fact]
+    public async Task A_file_that_rebuilds_the_dashboard_counts_its_statements_on_the_job()
+    {
+        // The rebuild is most of AGGREGATING when it runs, and as one step its bar stood still.
+        var harness = new Harness();
+
+        await harness.Build().AfterDayAsync(Job, harness.Context(), CancellationToken.None);
+
+        var statements = harness.Calls.Count(c => c == "mart statement");
+        Assert.True(statements > 1);
+        Assert.Equal(Enumerable.Range(0, statements + 1).ToList(), harness.Counted.Select(c => c.Done).ToList());
+        Assert.All(harness.Counted, c => Assert.Equal((statements, "statements"), (c.Total, c.Unit)));
+    }
 
     [Fact]
     public async Task A_file_with_more_queued_behind_it_defers_the_rebuild_and_records_the_debt()
