@@ -81,7 +81,10 @@ public sealed class PlanningModelViewTests : IAsyncLifetime
             await QueryAsync($"INSERT INTO {_database}.tac_active (singleton, version_id, activated_at) VALUES (1, 1, now64(3))");
             await QueryAsync($"CREATE VIEW {_database}.tac AS SELECT * FROM {_database}.tac_all WHERE version_id = 1");
 
-            // Delivery 7. Number 4 holds two models; 6 an unknown device; 7 a TAC the catalogue lacks.
+            // Delivery 7's per-model population, and a published run for it with a row per number and
+            // its summary - the views' denominator. Number 4 holds two models; 6 an unknown device; 7 a
+            // TAC the catalogue lacks; 8, Acme's two models, is put in the exposed class. As the snapshot
+            // writes them, ready numbers keep no models.
             await QueryAsync($"""
                 INSERT INTO {_database}.agg_tac_population (seq, tac, bindings, unknown_device, malformed_imei, subscribers, sims, handsets, first_seen, last_seen)
                 SELECT 7, tac, count(), 0, 0, uniqState(msisdn), uniqState(msisdn), uniqState(imei), NULL, NULL
@@ -93,7 +96,29 @@ public sealed class PlanningModelViewTests : IAsyncLifetime
                 GROUP BY tac
                 """);
 
-            // A published run for delivery 7: the per-model views read its delivery, not its rows.
+            await QueryAsync($"""
+                INSERT INTO {_database}.planning_number (run_id, chunk, msisdn, sunset, reason, esim, iot, gsm_only, handsets, bindings, paired, tacs) VALUES
+                    (1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, []), (1, 1, 2, 1, 0, 0, 0, 0, 1, 1, 1, []),
+                    (1, 1, 3, 1, 0, 0, 0, 0, 1, 1, 0, []), (1, 1, 4, 1, 0, 0, 0, 0, 2, 2, 0, []),
+                    (1, 1, 5, 1, 0, 0, 0, 0, 1, 1, 0, []), (1, 1, 6, 4, 2, 0, 0, 0, 1, 1, 0, ['']),
+                    (1, 1, 7, 4, 3, 0, 0, 0, 1, 1, 0, ['99999999']), (1, 1, 8, 3, 0, 0, 1, 0, 2, 2, 0, ['35000005', '35000006'])
+                """);
+            await QueryAsync($"""
+                INSERT INTO {_database}.planning_breakdown (run_id, chunk, sunset, reason, esim, tac, numbers, bindings, handsets)
+                SELECT 1, 1, multiIf(tac IN ('', '99999999'), 4, tac IN ('35000005', '35000006'), 3, 1),
+                       multiIf(tac = '', 2, tac = '99999999', 3, 0), 0, tac,
+                       uniqState(msisdn), count(), uniqState(imei)
+                FROM values('tac String, msisdn UInt64, imei String',
+                    ('35000001', 1, '35000001000001'), ('35000002', 2, '35000002000002'), ('35000003', 3, '35000003000003'),
+                    ('35000001', 4, '35000001000004'), ('35000002', 4, '35000002000004'), ('35000004', 5, '35000004000005'),
+                    ('', 6, '00000000000000'), ('99999999', 7, '99999999000007'), ('35000005', 8, '35000005000008'),
+                    ('35000006', 8, '35000006000008'))
+                GROUP BY tac
+                """);
+            await QueryAsync($"""
+                INSERT INTO {_database}.planning_summary (run_id, as_of_seq, as_of_date, measure, class, reason, numbers, bindings, handsets)
+                VALUES (1, 7, '2026-10-01', 'sunset', 1, 0, 8, 10, 10)
+                """);
             await QueryAsync($"""
                 INSERT INTO {_database}.planning_run (run_id, as_of_seq, as_of_date, fingerprint, tac_version_id, parser_version, state, chunks, msisdn_cuts, imei_cuts, done, note, updated_at)
                 VALUES (1, 7, '2026-10-01', 0, 1, 1, 'published', 1, [], [], [], '', now64(3))
@@ -211,6 +236,39 @@ public sealed class PlanningModelViewTests : IAsyncLifetime
 
         var breakdown = (await Reader().GetBreakdownAsync(null, "ntn", "satellite", "model", PlanningFilter.None, 50, new OperatorBandsOptions(), ct))!;
         Assert.Equal(["Sat Phone|1"], breakdown.Rows.Select(r => $"{r.Key}|{r.Numbers}"));
+
+        // By TAC, each row is one model, named.
+        var byTac = (await Reader().GetBreakdownAsync(null, "ntn", "not-capable", "tac", PlanningFilter.None, 50, new OperatorBandsOptions(), ct))!;
+        Assert.Equal(["35000002|Redmi Two|2", "35000005|Plain LTE|1", "35000006|NSA Five|1"], byTac.Rows.Select(r => $"{r.Key}|{r.Label}|{r.Numbers}"));
+    }
+
+    [Fact]
+    public async Task A_filter_matching_several_models_narrows_the_numbers_to_those_holding_one()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        // Acme makes two models; number 8 holds both. A filter matching more than one model once
+        // failed outright, in the sunset view and in a campaign list's count alike.
+        var ct = TestContext.Current.CancellationToken;
+        var acme = new PlanningFilter("Acme", null, null);
+
+        var sunset = (await Reader().GetSunsetAsync(null, acme, ct))!;
+        Assert.True(sunset.Filtered);
+        Assert.Equal(1, sunset.TotalNumbers);
+        Assert.Equal(1, sunset.Classes.Single(c => c.Class == "exposed").Numbers);
+        Assert.Equal(1, sunset.ExposedIot);
+        Assert.Equal(0, sunset.Paired);
+        Assert.Equal(1, (await Reader().GetSunsetAsync(null, PlanningFilter.None, ct))!.Paired);
+
+        Assert.Equal(1, await Reader().CountNumbersAsync(1, "sunset", "exposed", null, acme, ct));
+
+        // A ready number keeps no models, so a list of ready numbers is not narrowed - not answered as empty.
+        Assert.Null(await Reader().CountNumbersAsync(1, "sunset", "ready-lte", null, new PlanningFilter("Xiaomi", null, null), ct));
+        Assert.Null(await Reader().CountNumbersAsync(1, "esim", "not-capable", null, acme, ct));
     }
 
     private static OperatorBandsOptions Bands(int[] lte, int[] nr)

@@ -116,7 +116,7 @@ public sealed class PlanningRealDataTests
         }
 
         var ct = TestContext.Current.CancellationToken;
-        foreach (var (view, planningClass) in new[] { ("sunset", "exposed"), ("sunset", "not-assessable"), ("esim", "capable"), ("iot", "iot") })
+        foreach (var (view, planningClass) in new[] { ("sunset", "exposed"), ("sunset", "not-assessable"), ("esim", "capable"), ("iot", "iot"), ("bands", "lte-3"), ("bands", "arch-nsa"), ("ntn", "ntn") })
         {
             foreach (var by in new[] { "vendor", "model", "deviceType", "tac" })
             {
@@ -131,6 +131,22 @@ public sealed class PlanningRealDataTests
         var iot = (await Reader().GetIotAsync(null, PlanningFilter.None, ct))!;
         Write($"iot view: {timer.ElapsedMilliseconds} ms, ~{iot.Devices.Handsets:N0} devices, {iot.SimRotation.Count} rotation buckets");
         Assert.True(iot.Devices.Handsets > 0);
+
+        // The per-model views: every binding of the delivery is in one NTN class or not classified, and
+        // the band view reads within budget with no operator list configured.
+        timer.Restart();
+        var ntn = (await Reader().GetNtnAsync(null, PlanningFilter.None, ct))!;
+        var bindings = long.Parse(await QueryAsync(
+            $"SELECT sum(bindings) FROM sqm.agg_tac_population WHERE seq = {ntn.Run.AsOfSequence}"), System.Globalization.CultureInfo.InvariantCulture);
+        Write($"ntn view: {timer.ElapsedMilliseconds} ms; " + string.Join("; ", ntn.Classes.Select(c => $"{c.Label} ~{c.Numbers:N0}")));
+        Assert.Equal(bindings, ntn.Classes.Sum(c => c.Bindings) + ntn.NotClassified.Bindings);
+
+        timer.Restart();
+        var bands = (await Reader().GetBandsAsync(null, PlanningFilter.None, new OperatorBandsOptions(), ct))!;
+        Write($"bands view: {timer.ElapsedMilliseconds} ms; {bands.LteBands.Count} LTE bands, {bands.NrBands.Count} NR bands; "
+            + string.Join("; ", bands.Architecture.Select(c => $"{c.Label} ~{c.Numbers:N0}")) + $"; ambiguous ~{bands.Ambiguous.Numbers:N0}");
+        Assert.Empty(bands.LteMatch);
+        Assert.Contains(bands.NoData, n => n.Topic == "The operator's bands");
 
         var filtered = (await Reader().GetSunsetAsync(null, new PlanningFilter("Samsung", null, null), ct))!;
         Write($"sunset filtered to Samsung: {filtered.TotalNumbers:N0} numbers holding a Samsung");

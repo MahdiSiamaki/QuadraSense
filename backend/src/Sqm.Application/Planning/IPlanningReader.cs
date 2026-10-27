@@ -55,7 +55,8 @@ public interface IPlanningReader
 
     /// <summary>
     /// How many numbers a campaign list of one class would hold - the same condition as the list - or
-    /// null when the run no longer holds its numbers.
+    /// null when the run no longer holds its numbers, or the list is narrowed by model for a class whose
+    /// numbers keep none (ready, and every eSIM class).
     /// </summary>
     Task<long?> CountNumbersAsync(ulong runId, string view, string planningClass, string? reason, PlanningFilter filter, CancellationToken ct);
 

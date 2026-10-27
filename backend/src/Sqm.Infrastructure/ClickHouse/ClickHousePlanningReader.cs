@@ -141,14 +141,21 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         {
             var parameters = FilterParameters(filter);
             parameters["run"] = Id(run);
+            // The two exposed-class counts read that class alone, by the table's key. Paired spans every
+            // class, and a ready number keeps no models to narrow by, so it is only counted unnarrowed.
             var counts = await _query.ExecuteAsync($$"""
-                SELECT countIf(sunset = 3 AND gsm_only = 1), countIf(sunset = 3 AND iot = 1), sum(paired)
+                SELECT countIf(gsm_only = 1), countIf(iot = 1)
                 FROM planning_number
-                WHERE run_id = {run:UInt64} {{(filter.Any ? $"AND hasAny(tacs, ({MatchingTacs}))" : string.Empty)}}
+                WHERE run_id = {run:UInt64} AND sunset = 3 {{(filter.Any ? $"AND {NumbersHolding("sunset = 3")}" : string.Empty)}}
                 """, parameters, ct, Budget).ConfigureAwait(false);
             gsmOnly = ClickHouseJsonResult.Int64(counts.Rows[0], 0);
             iot = ClickHouseJsonResult.Int64(counts.Rows[0], 1);
-            paired = ClickHouseJsonResult.Int64(counts.Rows[0], 2);
+            if (!filter.Any)
+            {
+                var all = await _query.ExecuteAsync(
+                    "SELECT sum(paired) FROM planning_number WHERE run_id = {run:UInt64}", parameters, ct, Budget).ConfigureAwait(false);
+                paired = ClickHouseJsonResult.Int64(all.Rows[0], 0);
+            }
         }
 
         var trend = filter.Any ? [] : await TrendAsync("sunset", SunsetClasses, ct).ConfigureAwait(false);
@@ -205,27 +212,19 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             return null;
         }
 
-        var parameters = FilterParameters(filter);
-        parameters["seq"] = run.AsOfSequence.ToString(CultureInfo.InvariantCulture);
+        var parameters = ModelParameters(run, filter, [], []);
         var match = filter.Any ? $"AND p.tac IN ({MatchingTacs})" : string.Empty;
 
-        // The population of the run's delivery, per model, as the dashboard's filtered views read it.
-        var population = $$"""
-            SELECT p.tac AS tac, p.bindings AS bindings, p.subscribers AS subscribers, p.handsets AS handsets,
-                   r.device_class AS device_class, r.sunset AS sunset, r.umts AS umts, r.gsm AS gsm, t.deviceType AS device_type
-            FROM agg_tac_population AS p
-            INNER JOIN tac_radio_active AS r ON r.tac = p.tac
-            LEFT JOIN tac AS t ON t.tac = p.tac
-            WHERE p.seq = {seq:UInt16} AND r.device_class = 'IoT / M2M' {{match}}
-            """;
+        // The run's rows for IoT models, each with its device type (a1) and exposure (a2).
+        var population = ModelRows(
+            "r.device_class = 'IoT / M2M'", match, "t.deviceType",
+            "multiIf(r.sunset = 3 AND r.umts = 0, '2g-only', r.sunset = 3, '2g-3g', r.sunset = 2, 'lpwan', r.sunset = 1, 'lte', 'unknown')");
 
         var devices = await _query.ExecuteAsync($"""
-            SELECT uniqMerge(subscribers), sum(bindings), uniqMerge(handsets)
+            SELECT uniqMerge(numbers), sum(bindings), uniqMerge(handsets)
             FROM ({population})
             """, parameters, ct, Budget).ConfigureAwait(false);
-        var all = await _query.ExecuteAsync(
-            "SELECT uniqMerge(subscribers) FROM agg_tac_population WHERE seq = {seq:UInt16}", parameters, ct, Budget).ConfigureAwait(false);
-        var totalNumbers = ClickHouseJsonResult.Int64(all.Rows[0], 0);
+        var totalNumbers = await AllNumbersAsync(parameters, ct).ConfigureAwait(false);
 
         var deviceRow = new PlanningClassRow(
             "iot", "IoT / M2M devices",
@@ -234,16 +233,15 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             Percent(ClickHouseJsonResult.Int64(devices.Rows[0], 0), totalNumbers));
 
         var byType = await GroupedAsync($"""
-            SELECT device_type, device_type, '', uniqMerge(subscribers) AS n, sum(bindings), uniqMerge(handsets)
-            FROM ({population}) GROUP BY device_type ORDER BY n DESC
+            SELECT a1, a1, '', uniqMerge(numbers) AS n, sum(bindings), uniqMerge(handsets)
+            FROM ({population}) GROUP BY a1 ORDER BY n DESC
             """, parameters, ct).ConfigureAwait(false);
 
         var exposure = await GroupedAsync($"""
             SELECT k, multiIf(k = '2g-only', 'GSM (2G) only', k = '2g-3g', '2G and 3G, no LTE', k = 'lpwan', 'LTE-M / NB-IoT only',
                               k = 'lte', 'LTE or 5G', 'Not stated: no band listed'),
-                   '', uniqMerge(subscribers) AS n, sum(bindings), uniqMerge(handsets)
-            FROM (SELECT *, multiIf(sunset = 3 AND umts = 0, '2g-only', sunset = 3, '2g-3g', sunset = 2, 'lpwan', sunset = 1, 'lte', 'unknown') AS k
-                  FROM ({population}))
+                   '', uniqMerge(numbers) AS n, sum(bindings), uniqMerge(handsets)
+            FROM (SELECT *, a2 AS k FROM ({population}))
             GROUP BY k ORDER BY n DESC
             """, parameters, ct).ConfigureAwait(false);
 
@@ -398,11 +396,9 @@ public sealed class ClickHousePlanningReader : IPlanningReader
 
         var match = filter.Any ? $"AND p.tac IN ({MatchingTacs})" : string.Empty;
         string Ntn(string key, string label) => $$"""
-            SELECT {{key}} AS k, {{label}}, '', uniqMerge(subscribers) AS n, sum(bindings), uniqMerge(handsets)
-            FROM (SELECT p.subscribers AS subscribers, p.bindings AS bindings, p.handsets AS handsets,
-                         r.ntn_mode AS ntn_mode, r.ntn_orbits AS ntn_orbits, r.ntn_bands AS ntn_bands
-                  FROM agg_tac_population AS p INNER JOIN tac_radio_active AS r ON r.tac = p.tac
-                  WHERE p.seq = {seq:UInt16} AND r.ntn = 1 {{match}})
+            SELECT {{key}} AS k, {{label}}, '', uniqMerge(numbers) AS n, sum(bindings), uniqMerge(handsets)
+            FROM (SELECT numbers, bindings, handsets, a1 AS ntn_mode, a2 AS ntn_orbits, a3 AS ntn_bands
+                  FROM ({{ModelRows("r.ntn = 1", match, "r.ntn_mode", "r.ntn_orbits", "r.ntn_bands")}}))
             GROUP BY k ORDER BY n DESC, k
             """;
 
@@ -451,7 +447,6 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             "deviceType" => "coalesce(nullIf(t.deviceType, ''), '(unknown TAC)')",
             _ => "b.tac",
         };
-        var label = by == "tac" ? "coalesce(nullIf(t.marketingName, ''), if(b.tac = '', '(unknown device)', '(unknown TAC)'))" : "k";
         var tac = by is "tac" or "model" ? "any(b.tac)" : "''";
 
         var problems = bands.Problems();
@@ -463,7 +458,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         string source;
         if (view is "iot" or "bands" or "ntn")
         {
-            // A per-model view: the delivery's population of the models in the class.
+            // A per-model view: the delivery's population of the models in the class (see ModelRows).
             if (ModelCondition(view, planningClass, parameters) is not { } condition)
             {
                 return new PlanningBreakdownResponse(run, view, planningClass, by, [], 0);
@@ -471,8 +466,8 @@ public sealed class ClickHousePlanningReader : IPlanningReader
 
             source = $$"""
                 SELECT p.tac AS tac, p.subscribers AS numbers, p.bindings AS bindings, p.handsets AS handsets
-                FROM agg_tac_population AS p INNER JOIN tac_radio_active AS r ON r.tac = p.tac
-                WHERE p.seq = {seq:UInt16} AND {{condition}}
+                FROM agg_tac_population AS p
+                WHERE p.seq = {seq:UInt16} AND p.tac IN ({{ModelTacs(condition)}})
                 """;
         }
         else
@@ -495,16 +490,59 @@ public sealed class ClickHousePlanningReader : IPlanningReader
                 """;
         }
 
-        var rows = await _query.ExecuteAsync($$"""
-            SELECT {{key}} AS k, {{label}} AS l, {{tac}}, uniqMerge(b.numbers) AS n, sum(b.bindings), uniqMerge(b.handsets),
-                   count() OVER () AS total
-            FROM ({{source}}) AS b
+        const string Names = """
             LEFT JOIN tac AS t ON t.tac = b.tac
             LEFT JOIN (SELECT * FROM tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
+            """;
+
+        // Two passes, so the only uniq() states read are the page's: first the largest groups by active
+        // bindings - an exact sum, no state read - then the numbers and handsets of the TACs in those
+        // groups, chosen inside the read so no other model's states are decoded. Reading every state of
+        // the class and filtering after took the IoT fleet by vendor to 1.84 GiB and the eSIM-capable
+        // models by TAC to 480 MiB, over the 476 MiB cap (2026-10-27).
+        var largest = await _query.ExecuteAsync($$"""
+            SELECT {{key}} AS k, sum(b.bindings) AS bindings, count() OVER () AS total
+            FROM (SELECT tac, bindings FROM ({{source}})) AS b
+            {{Names}}
             WHERE 1 {{match}}
             GROUP BY k
-            ORDER BY n DESC, k
+            ORDER BY bindings DESC, k
             LIMIT {limit:UInt32}
+            """, parameters, ct, Budget).ConfigureAwait(false);
+        if (largest.Rows.Count == 0)
+        {
+            return new PlanningBreakdownResponse(run, view, planningClass, by, [], 0);
+        }
+
+        parameters["keys"] = StringArray(largest.Rows.Select(r => ClickHouseJsonResult.Text(r, 0) ?? string.Empty));
+
+        // The page's TACs. A key read from the catalogue names its TACs through the catalogue, and
+        // "(unknown TAC)" is every TAC the catalogue lacks, the unknown device's '' among them.
+        var pageTacs = by == "tac"
+            ? "tac IN {keys:Array(String)}"
+            : $$"""
+                (tac IN (SELECT t.tac FROM tac AS t
+                         LEFT JOIN (SELECT * FROM tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
+                         WHERE {{key}} IN {keys:Array(String)})
+                 OR (has({keys:Array(String)}, '(unknown TAC)') AND tac NOT IN (SELECT tac FROM tac)))
+                """;
+
+        // The page's names, looked up rather than joined: see ModelRows.
+        var named = by == "tac" ? "t.tac IN {keys:Array(String)}" : $"{key} IN {{keys:Array(String)}}";
+        var pageKey = by == "tac" ? "b.tac" : "transform(b.tac, names.1, names.2, '(unknown TAC)')";
+        var pageLabel = by == "tac"
+            ? "any(coalesce(nullIf(transform(b.tac, names.1, names.3, ''), ''), if(b.tac = '', '(unknown device)', '(unknown TAC)')))"
+            : "k";
+        var rows = await _query.ExecuteAsync($$"""
+            WITH (SELECT (groupArray(t.tac), groupArray({{(by == "tac" ? "t.tac" : key)}}), groupArray(t.marketingName))
+                  FROM tac AS t
+                  LEFT JOIN (SELECT * FROM tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
+                  WHERE {{named}}) AS names
+            SELECT {{pageKey}} AS k, {{pageLabel}} AS l, {{tac}}, uniqMerge(b.numbers) AS n, sum(b.bindings), uniqMerge(b.handsets)
+            FROM ({{source}} AND {{pageTacs}}) AS b
+            WHERE k IN {keys:Array(String)} {{match}}
+            GROUP BY k
+            ORDER BY n DESC, k
             """, parameters, ct, Budget).ConfigureAwait(false);
 
         var list = rows.Rows.Select(r => new PlanningBreakdownRow(
@@ -512,7 +550,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             ClickHouseJsonResult.Text(r, 1) ?? string.Empty,
             ClickHouseJsonResult.NullIfEmpty(r, 2),
             ClickHouseJsonResult.Int64(r, 3), ClickHouseJsonResult.Int64(r, 4), ClickHouseJsonResult.Int64(r, 5))).ToList();
-        var total = rows.Rows.Count == 0 ? 0 : ClickHouseJsonResult.Int64(rows.Rows[0], 6);
+        var total = ClickHouseJsonResult.Int64(largest.Rows[0], 2);
 
         return new PlanningBreakdownResponse(run, view, planningClass, by, list, total);
     }
@@ -565,6 +603,12 @@ public sealed class ClickHousePlanningReader : IPlanningReader
     {
         ArgumentNullException.ThrowIfNull(filter);
         if (await RunAsync(runId, ct).ConfigureAwait(false) is not { HasNumbers: true } run)
+        {
+            return null;
+        }
+
+        // A class whose numbers keep no models cannot be narrowed: no answer, rather than zero.
+        if (filter.Any && !KeepsModels(view, planningClass))
         {
             return null;
         }
@@ -639,11 +683,38 @@ public sealed class ClickHousePlanningReader : IPlanningReader
 
         if (filter.Any)
         {
-            condition += $" AND hasAny(tacs, ({MatchingTacs}))";
+            if (!KeepsModels(view, planningClass))
+            {
+                return null;
+            }
+
+            condition += $" AND {NumbersHolding(condition)}";
         }
 
         return condition;
     }
+
+    /// <summary>
+    /// The numbers of one class holding a model the filter selects, as <c>msisdn IN (...)</c>.
+    /// </summary>
+    /// <remarks>
+    /// Each number's models unnested and looked up in the set of matching TACs. <c>hasAny</c> against the
+    /// same TACs as an array compares every model of every row with every TAC in it: narrowed to Samsung,
+    /// the exposed class's two counts passed 60 s (2026-10-27).
+    /// </remarks>
+    private static string NumbersHolding(string classCondition) => $"""
+        msisdn IN (SELECT msisdn FROM planning_number ARRAY JOIN tacs AS tac
+                   WHERE run_id = {"{run:UInt64}"} AND {classCondition} AND tac IN ({MatchingTacs}))
+        """;
+
+    /// <summary>
+    /// Whether the numbers of a class keep the models they hold, so that a list of them can be narrowed
+    /// by vendor, model or device type. A ready number does not - 65 million of them, and the models of
+    /// a number that is ready are not what a sunset campaign asks about - and an eSIM class spans ready
+    /// numbers too.
+    /// </summary>
+    public static bool KeepsModels(string view, string planningClass) =>
+        view == "sunset" && planningClass is "ready-lpwan" or "exposed" or "not-assessable";
 
     // ------------------------------------------------------------------ helpers
 
@@ -662,6 +733,10 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         ["model"] = filter.Model?.Trim() ?? string.Empty,
         ["type"] = filter.DeviceType?.Trim() ?? string.Empty,
     };
+
+    /// <summary>An Array(String) query parameter: quoted, with quotes and backslashes escaped.</summary>
+    private static string StringArray(IEnumerable<string> values) =>
+        "[" + string.Join(",", values.Select(v => "'" + v.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("'", @"\'", StringComparison.Ordinal) + "'")) + "]";
 
     private static string Id(PlanningRunInfo run) => run.RunId.ToString(CultureInfo.InvariantCulture);
 
@@ -819,21 +894,27 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             ClickHouseJsonResult.Text(r, 2) ?? string.Empty, ClickHouseJsonResult.Int64(r, 3)))];
     }
 
-    /// <summary>The parameters of a per-model view: the run's delivery, the filter and the operator's bands.</summary>
+    /// <summary>The parameters of a per-model view: the run and its delivery, the filter and the operator's bands.</summary>
     private static Dictionary<string, string> ModelParameters(PlanningRunInfo run, PlanningFilter filter, IReadOnlyList<int> lte, IReadOnlyList<int> nr)
     {
         var parameters = FilterParameters(filter);
+        parameters["run"] = Id(run);
         parameters["seq"] = run.AsOfSequence.ToString(CultureInfo.InvariantCulture);
         parameters["lte"] = "[" + string.Join(",", lte.Select(b => b.ToString(CultureInfo.InvariantCulture))) + "]";
         parameters["nr"] = "[" + string.Join(",", nr.Select(b => b.ToString(CultureInfo.InvariantCulture))) + "]";
         return parameters;
     }
 
-    /// <summary>Numbers with an active binding at the delivery: every per-model share's denominator.</summary>
+    /// <summary>
+    /// Numbers with an active binding at the run's delivery, exactly, from its summary: every per-model
+    /// share's denominator. (A uniqMerge over the delivery's per-model mart is an estimate, and read
+    /// 796 MiB for one statement, 2026-10-27.)
+    /// </summary>
     private async Task<long> AllNumbersAsync(IReadOnlyDictionary<string, string> parameters, CancellationToken ct)
     {
         var all = await _query.ExecuteAsync(
-            "SELECT uniqMerge(subscribers) FROM agg_tac_population WHERE seq = {seq:UInt16}", parameters, ct, Budget).ConfigureAwait(false);
+            "SELECT sum(numbers) FROM planning_summary FINAL WHERE run_id = {run:UInt64} AND measure = 'sunset'",
+            parameters, ct, Budget).ConfigureAwait(false);
         return ClickHouseJsonResult.Int64(all.Rows[0], 0);
     }
 
@@ -847,10 +928,8 @@ public sealed class ClickHousePlanningReader : IPlanningReader
     {
         var match = filter.Any ? $"AND p.tac IN ({MatchingTacs})" : string.Empty;
         var result = await _query.ExecuteAsync($$"""
-            SELECT {{expression}} AS k, uniqMerge(p.subscribers), sum(p.bindings), uniqMerge(p.handsets)
-            FROM agg_tac_population AS p
-            INNER JOIN tac_radio_active AS r ON r.tac = p.tac
-            WHERE p.seq = {seq:UInt16} AND {{where}} {{match}}
+            SELECT a1 AS k, uniqMerge(numbers), sum(bindings), uniqMerge(handsets)
+            FROM ({{ModelRows(where, match, expression)}})
             GROUP BY k
             """, parameters, ct, Budget).ConfigureAwait(false);
 
@@ -873,10 +952,9 @@ public sealed class ClickHousePlanningReader : IPlanningReader
     {
         var match = filter.Any ? $"AND p.tac IN ({MatchingTacs})" : string.Empty;
         var result = await _query.ExecuteAsync($$"""
-            SELECT band, uniqMerge(subscribers) AS n, sum(bindings), uniqMerge(handsets)
-            FROM (SELECT p.subscribers AS subscribers, p.bindings AS bindings, p.handsets AS handsets, arrayJoin({{column}}) AS band
-                  FROM agg_tac_population AS p INNER JOIN tac_radio_active AS r ON r.tac = p.tac
-                  WHERE p.seq = {seq:UInt16} {{match}})
+            SELECT band, uniqMerge(numbers) AS n, sum(bindings), uniqMerge(handsets)
+            FROM (SELECT numbers, bindings, handsets, arrayJoin(a1) AS band
+                  FROM ({{ModelRows($"notEmpty({column})", match, column)}}))
             GROUP BY band
             ORDER BY n DESC, band
             """, parameters, ct, Budget).ConfigureAwait(false);
@@ -905,6 +983,47 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             ClickHouseJsonResult.Int64(unclassified.Rows[0], 2),
             Percent(ClickHouseJsonResult.Int64(unclassified.Rows[0], 0), total));
     }
+
+    /// <summary>
+    /// The delivery's per-model rows (<c>agg_tac_population</c>) for the models <paramref name="condition"/>
+    /// (on <c>r</c>, tac_radio_active) holds of, each with <paramref name="attributes"/> of its profile or
+    /// catalogue record (on <c>r</c> and <c>t</c>) as <c>a1</c>, <c>a2</c>... - looked up by TAC, not joined.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The uniq() states must not pass through a join.</b> Joined to the catalogue for its names, the IoT
+    /// fleet by vendor took 1.84 GiB, and the four NTN classes 796 MiB, over the read path's 476 MiB cap;
+    /// looked up instead, 380 and 386 MiB, and the LTE bands 382 MiB (2026-10-27, delivery 246; turning
+    /// join side-swapping off changed nothing). The profiles of the models in question go into arrays once,
+    /// and each row finds its own with <c>transform</c>.
+    /// </para>
+    /// <para>
+    /// <b>The mart, not the run's breakdown.</b> Both give the same figures - the NTN classes agree to the
+    /// binding - but the mart is ordered by (delivery, TAC), so a TAC condition skips every other model's
+    /// states: 33-46 MiB read. The run's breakdown is ordered by class first, and the IoT fleet read all
+    /// 447 MiB of it and used 597 MiB.
+    /// </para>
+    /// </remarks>
+    private static string ModelRows(string condition, string match, params string[] attributes)
+    {
+        var arrays = string.Concat(attributes.Select(a => $", groupArray({a})"));
+        var columns = string.Concat(attributes.Select((_, n) => $", m.{n + 2}[ix] AS a{n + 1}"));
+        return $$"""
+            WITH (SELECT (groupArray(r.tac){{arrays}})
+                  FROM tac_radio_active AS r LEFT JOIN tac AS t ON t.tac = r.tac
+                  WHERE {{condition}}) AS m
+            SELECT p.tac AS tac, p.subscribers AS numbers, p.bindings AS bindings, p.handsets AS handsets,
+                   transform(p.tac, m.1, arrayEnumerate(m.1), toUInt32(0)) AS ix{{columns}}
+            FROM agg_tac_population AS p
+            WHERE p.seq = {seq:UInt16} AND p.tac IN ({{ModelTacs(condition)}}) {{match}}
+            """;
+    }
+
+    /// <summary>
+    /// The TACs a condition on <c>r</c> holds of, for <c>p.tac IN (...)</c>: on the mart's key, so the
+    /// states of every other model are not read (see ModelRows).
+    /// </summary>
+    private static string ModelTacs(string condition) => $"SELECT r.tac FROM tac_radio_active AS r WHERE {condition}";
 
     /// <summary>
     /// The models of one class of a per-model view, as a condition on <c>r</c>, tac_radio_active - or

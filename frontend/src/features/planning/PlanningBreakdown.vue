@@ -11,7 +11,8 @@ import { formatFull } from '@/lib/format'
  * One class of a planning view, by vendor, model, device type or TAC - who holds what.
  *
  * A number holding two models is counted under each, so the rows do not add up to the class: the
- * column says "numbers holding it", and its figures are merged estimates.
+ * column says "numbers holding it", and its figures are merged estimates. The rows are the largest
+ * groups by active bindings, ordered by numbers: the server merges the estimates of those groups only.
  */
 const props = defineProps<{
   view: PlanningView
@@ -93,7 +94,8 @@ const BY: { value: PlanningBy; label: string }[] = [
         </tbody>
       </table>
       <p v-if="(breakdown.data.value?.total ?? 0) > rows.length" class="border-t px-3 py-2 text-2xs text-[var(--c-text-muted)]">
-        The largest {{ rows.length }} of {{ formatFull(breakdown.data.value!.total) }}. The CSV holds up to 500.
+        The largest {{ rows.length }} of {{ formatFull(breakdown.data.value!.total) }} by active bindings, ordered by numbers. The CSV holds
+        up to 500.
       </p>
     </div>
   </div>

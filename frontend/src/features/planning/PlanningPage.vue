@@ -112,8 +112,21 @@ function modelPoints(points: PlanningModelTrendPoint[] | undefined) {
 }
 
 const canNumbers = computed(() => can(Permission.LookupSubscriber))
+
+/**
+ * Whether a class's list can be narrowed by vendor, model or type: the planning run keeps the models
+ * of the exposed, LTE-M / NB-IoT-only and not-assessable numbers only (the server refuses the rest).
+ */
+const filtered = computed(() => !!(filter.value.vendor || filter.value.model || filter.value.deviceType))
+const narrowable = (view: 'sunset' | 'esim', planningClass: string) =>
+  !filtered.value || (view === 'sunset' && ['ready-lpwan', 'exposed', 'not-assessable'].includes(planningClass))
 const canCampaign = computed(() => can(Permission.CampaignExport) && can(Permission.LookupSubscriber))
 const requesting = ref<'sunset' | 'esim' | null>(null)
+const NOT_NARROWABLE =
+  'A list narrowed by vendor, model or device type is kept for the exposed, LTE-M / NB-IoT-only and not-assessable classes: ' +
+  'the planning run keeps the models of those numbers only. Clear the filter to list this class.'
+
+
 
 const requestLabel = computed(() => {
   if (requesting.value === 'esim') return esim.data.value?.classes.find((c) => c.class === chosen.value.esim)?.label ?? ''
@@ -263,10 +276,12 @@ const requestLabel = computed(() => {
                       <dd class="tabular text-right">{{ formatFull(sunset.data.value.exposedGsmOnly) }}</dd>
                       <dt class="text-[var(--c-text-secondary)]">Holding an IoT / M2M device</dt>
                       <dd class="tabular text-right">{{ formatFull(sunset.data.value.exposedIot) }}</dd>
-                      <dt class="text-[var(--c-text-secondary)]" title="Same TAC and a serial one apart, or a TAC 100 apart and the same serial, on the same number">
-                        Handsets assessed through their dual-SIM partner
-                      </dt>
-                      <dd class="tabular text-right">{{ formatFull(sunset.data.value.paired) }}</dd>
+                      <template v-if="!sunset.data.value.filtered">
+                        <dt class="text-[var(--c-text-secondary)]" title="Same TAC and a serial one apart, or a TAC 100 apart and the same serial, on the same number">
+                          Handsets assessed through their dual-SIM partner, every class
+                        </dt>
+                        <dd class="tabular text-right">{{ formatFull(sunset.data.value.paired) }}</dd>
+                      </template>
                     </dl>
                     <div v-for="n in sunset.data.value.noData" :key="n.topic" class="mt-3 border-t pt-3 text-xs">
                       <p class="font-medium">{{ n.topic }}: no data</p>
@@ -311,10 +326,13 @@ const requestLabel = computed(() => {
                 </Card>
 
                 <Card v-if="canNumbers && run.hasNumbers" title="The numbers">
-                  <div v-if="canCampaign" class="mb-2 flex justify-end">
-                    <Button size="sm" variant="secondary" @click="requesting = 'sunset'">Request a campaign list</Button>
-                  </div>
-                  <PlanningNumbers view="sunset" :planning-class="chosen.sunset" :reason="reason" :run="run.runId" :filter="filter" />
+                  <template v-if="narrowable('sunset', chosen.sunset)">
+                    <div v-if="canCampaign" class="mb-2 flex justify-end">
+                      <Button size="sm" variant="secondary" @click="requesting = 'sunset'">Request a campaign list</Button>
+                    </div>
+                    <PlanningNumbers view="sunset" :planning-class="chosen.sunset" :reason="reason" :run="run.runId" :filter="filter" />
+                  </template>
+                  <p v-else class="text-xs text-[var(--c-text-secondary)]">{{ NOT_NARROWABLE }}</p>
                 </Card>
               </template>
               <p v-else class="py-10 text-center text-2xs text-[var(--c-text-muted)]">Loading…</p>
@@ -387,10 +405,13 @@ const requestLabel = computed(() => {
                 </Card>
 
                 <Card v-if="canNumbers && run.hasNumbers" title="The numbers">
-                  <div v-if="canCampaign" class="mb-2 flex justify-end">
-                    <Button size="sm" variant="secondary" @click="requesting = 'esim'">Request a campaign list</Button>
-                  </div>
-                  <PlanningNumbers view="esim" :planning-class="chosen.esim" :run="run.runId" :filter="filter" />
+                  <template v-if="narrowable('esim', chosen.esim)">
+                    <div v-if="canCampaign" class="mb-2 flex justify-end">
+                      <Button size="sm" variant="secondary" @click="requesting = 'esim'">Request a campaign list</Button>
+                    </div>
+                    <PlanningNumbers view="esim" :planning-class="chosen.esim" :run="run.runId" :filter="filter" />
+                  </template>
+                  <p v-else class="text-xs text-[var(--c-text-secondary)]">{{ NOT_NARROWABLE }}</p>
                 </Card>
               </template>
               <p v-else class="py-10 text-center text-2xs text-[var(--c-text-muted)]">Loading…</p>

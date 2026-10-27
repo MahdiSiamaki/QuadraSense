@@ -72,7 +72,10 @@ public sealed record PlanningNoData(string Topic, string Reason);
 /// <param name="NotAssessable">The last class by reason, the first that applies to each number.</param>
 /// <param name="ExposedGsmOnly">Exposed numbers whose every handset is GSM only - stranded by a 2G switch-off too.</param>
 /// <param name="ExposedIot">Exposed numbers holding an IoT / M2M device.</param>
-/// <param name="Paired">Handsets of an unassessable model resolved through their dual-SIM partner.</param>
+/// <param name="Paired">
+/// Handsets of an unassessable model resolved through their dual-SIM partner, in every class; 0 when the
+/// view is narrowed, since a ready number keeps no models to narrow by.
+/// </param>
 /// <param name="Trend">The per-number classes in every published run.</param>
 /// <param name="ModelTrend">Bindings on each model class at every delivery the per-model mart holds.</param>
 /// <param name="NoData">VoLTE.</param>

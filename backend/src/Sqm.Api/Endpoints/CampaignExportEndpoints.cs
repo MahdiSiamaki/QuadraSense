@@ -109,6 +109,13 @@ public static class CampaignExportEndpoints
         {
             errors["class"] = ["The class to list."];
         }
+        else if (!string.IsNullOrWhiteSpace(request.Vendor) || !string.IsNullOrWhiteSpace(request.Model) || !string.IsNullOrWhiteSpace(request.DeviceType))
+        {
+            if (!ClickHousePlanningReader.KeepsModels(view, request.Class))
+            {
+                errors["vendor"] = [PlanningEndpoints.NotNarrowable];
+            }
+        }
 
         if (errors.Count > 0)
         {

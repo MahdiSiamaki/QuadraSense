@@ -34,6 +34,11 @@ public static class PlanningEndpoints
     public const int MaxReachable = 10_000;
 
     private static readonly string[] Views = ["sunset", "esim", "iot", "bands", "ntn"];
+
+    /// <summary>Why a list of numbers cannot be narrowed by model for this class.</summary>
+    public const string NotNarrowable =
+        "A list narrowed by vendor, model or device type is kept for the exposed, LTE-M / NB-IoT-only and not-assessable "
+        + "classes: the planning run keeps the models of those numbers only. Clear the filter to list this class.";
     private static readonly string[] Breakdowns = ["vendor", "model", "deviceType", "tac"];
 
     /// <summary>Registers the planning routes.</summary>
@@ -190,12 +195,17 @@ public static class PlanningEndpoints
             errors["page"] = [$"From 1, within the first {MaxReachable:N0} rows. A whole class is a campaign list: the controlled export."];
         }
 
+        var filter = new PlanningFilter(request.Vendor, request.Model, request.DeviceType);
+        if (filter.Any && !ClickHousePlanningReader.KeepsModels(view, request.Class ?? string.Empty))
+        {
+            errors["vendor"] = [NotNarrowable];
+        }
+
         if (errors.Count > 0)
         {
             return Results.ValidationProblem(errors);
         }
 
-        var filter = new PlanningFilter(request.Vendor, request.Model, request.DeviceType);
         var detail = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["view"] = view,

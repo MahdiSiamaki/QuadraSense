@@ -97,6 +97,19 @@ public sealed class PlanningEndpointTests : IClassFixture<WebApplicationFactory<
         Assert.Equal("exposed", entry.Detail!["class"]);
     }
 
+    [Theory]
+    [InlineData("sunset", "ready-lte")]
+    [InlineData("esim", "capable")]
+    public async Task A_list_narrowed_by_model_is_refused_for_a_class_that_keeps_no_models(string view, string planningClass)
+    {
+        // Answered as an empty list, it would say no ready Samsung number exists.
+        var (status, body) = await SendAsync(HttpMethod.Post, "/api/v1/planning/numbers", new { view, @class = planningClass, vendor = "Samsung" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Contains("keeps the models", body.GetProperty("errors").GetProperty("vendor")[0].GetString(), StringComparison.Ordinal);
+        Assert.Empty(_audited);
+    }
+
     [Fact]
     public async Task Numbers_are_masked_without_reveal_and_the_audit_counts_them_without_naming_them()
     {
