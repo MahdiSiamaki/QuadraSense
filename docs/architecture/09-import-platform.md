@@ -903,12 +903,18 @@ as "Step 3 of 7: Updating the binding history" (migration 018 adds the step to `
 And the progress row is now cleared at every stage change: it used to outlive its stage, so a stage
 that reports nothing showed the previous one's percentage under its own name.
 
-**Not done:** the dashboard step - most of the stage when it runs - is one step; its 31 statements
-are not counted on the page (`docs/backlog.md`).
+**The dashboard step counts its statements** (2026-10-27): it is most of the stage when it runs, and
+as one step its bar stood still for half an hour. The mart refresh reports each statement it starts
+and the end of the last; the page shows "Step 7 of 7: Rebuilding the dashboard figures · 12 of 31
+statements", and the stage's percent moves through the step's share of it - (6 + 12/31) / 7 = 91.2%
+rather than 85.7% throughout (migration 019). A retried pass counts from zero again. The command-line
+refresh prints the same count.
 
 **Proved by failing first:** retried imports let into the medians, and the progress row kept across a
 stage change (1 each, against the real PostgreSQL); the first step no longer reported (1); a byte rate
-taken from another stage, and no stage ever overdue (1 and 2). The page itself was checked by
+taken from another stage, and no stage ever overdue (1 and 2); the refresh not reporting its
+statements, the percent ignoring which step it is in, and a new step keeping the last one's count
+(1 each). The page itself was checked by
 component tests only: on the VM it shows once an import is running.
 
 ---

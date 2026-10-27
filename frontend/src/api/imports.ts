@@ -143,6 +143,10 @@ export interface ImportProgress {
   step: string | null
   stepIndex: number | null
   stepCount: number | null
+  /** Within the running step, for one long enough to count: "12 of 31 statements". */
+  stepDone: number | null
+  stepTotal: number | null
+  stepUnit: string | null
 }
 
 /** How long a stage usually takes for a source: the median over its recent first attempts. */

@@ -37,7 +37,15 @@ const bar = computed(() => {
   if (!stage) return null
   if (!p || p.stage !== stage) return { percent: null, label: stageLabel(stage), detail: undefined }
   if (p.step && p.stepIndex && p.stepCount) {
-    return { percent: p.percent, label: `Step ${p.stepIndex} of ${p.stepCount}: ${p.step}`, detail: undefined }
+    return {
+      percent: p.percent,
+      label: `Step ${p.stepIndex} of ${p.stepCount}: ${p.step}`,
+      // The dashboard rebuild counts its statements: the step's own progress, beside the stage's.
+      detail:
+        p.stepTotal !== null && p.stepDone !== null
+          ? `${p.stepDone} of ${p.stepTotal} ${p.stepUnit ?? ''}`.trim()
+          : undefined,
+    }
   }
   return {
     percent: p.percent,
