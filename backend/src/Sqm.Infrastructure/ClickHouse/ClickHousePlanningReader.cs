@@ -426,6 +426,148 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         return new NtnResponse(run, filter.Any, total, classes, byMode, byOrbit, byBand, notClassified, modelTrend, noData);
     }
 
+    // ------------------------------------------------------------------ N4
+
+    private static readonly IReadOnlyList<(int Code, string Key, string Label)> ChangeKinds =
+    [
+        (1, "newer", "To a newer model (an upgrade)"),
+        (2, "older", "To an older model"),
+        (3, "not-stated", "Neither: same allocation date, or one not stated"),
+        (4, "same-model", "The same model again"),
+    ];
+
+    /// <summary>A model's vendor, as the breakdowns name it; looked up by TAC.</summary>
+    private const string VendorOfTac = """
+        SELECT t.tac AS tac, coalesce(nullIf(v.vendor_canonical, ''), nullIf(t.manufacturer, ''), '(unknown TAC)') AS name
+        FROM tac AS t LEFT JOIN (SELECT * FROM tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
+        """;
+
+    private const string ModelOfTac = "SELECT tac, coalesce(nullIf(marketingName, ''), '(unknown TAC)') AS name FROM tac";
+
+    /// <inheritdoc />
+    public async Task<LifecycleResponse?> GetLifecycleAsync(ulong? runId, PlanningFilter filter, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        if (await RunAsync(runId, ct).ConfigureAwait(false) is not { HasNumbers: true } run)
+        {
+            return null;
+        }
+
+        var parameters = FilterParameters(filter);
+        parameters["run"] = Id(run);
+        var changeMatch = filter.Any ? $"AND (from_tac IN ({MatchingTacs}) OR to_tac IN ({MatchingTacs}))" : string.Empty;
+        var tacMatch = filter.Any ? $"AND tac IN ({MatchingTacs})" : string.Empty;
+
+        var kinds = await _query.ExecuteAsync($$"""
+            SELECT kind, sum(changes), toString(min(month)), toString(max(month))
+            FROM planning_change WHERE run_id = {run:UInt64} {{changeMatch}}
+            GROUP BY kind
+            """, parameters, ct, Budget).ConfigureAwait(false);
+        var byKind = kinds.Rows.ToDictionary(r => ClickHouseJsonResult.Int32(r, 0), r => ClickHouseJsonResult.Int64(r, 1));
+        var changes = byKind.Values.Sum();
+        var months = kinds.Rows.SelectMany(r => new[] { ClickHouseJsonResult.Text(r, 2), ClickHouseJsonResult.Text(r, 3) })
+            .OfType<string>().Where(m => m.Length == 6).Order(StringComparer.Ordinal).ToList();
+
+        async Task<List<LifecycleMoveRow>> MovesAsync(string names)
+        {
+            var result = await _query.ExecuteAsync($$"""
+                SELECT if(f.tac = '', '(unknown TAC)', f.name) AS a, if(t2.tac = '', '(unknown TAC)', t2.name) AS b,
+                       sum(c.changes) AS n, sumIf(c.changes, c.kind = 1)
+                FROM (SELECT from_tac, to_tac, kind, changes FROM planning_change WHERE run_id = {run:UInt64} {{changeMatch}}) AS c
+                LEFT JOIN ({{names}}) AS f ON f.tac = c.from_tac
+                LEFT JOIN ({{names}}) AS t2 ON t2.tac = c.to_tac
+                GROUP BY a, b
+                ORDER BY n DESC, a, b
+                LIMIT 50
+                """, parameters, ct, Budget).ConfigureAwait(false);
+            return [.. result.Rows.Select(r => new LifecycleMoveRow(
+                ClickHouseJsonResult.Text(r, 0) ?? string.Empty, ClickHouseJsonResult.Text(r, 1) ?? string.Empty,
+                ClickHouseJsonResult.Int64(r, 2), ClickHouseJsonResult.Int64(r, 3)))];
+        }
+
+        var vendorMoves = await MovesAsync(VendorOfTac).ConfigureAwait(false);
+        var modelMoves = await MovesAsync(ModelOfTac).ConfigureAwait(false);
+
+        // Time to a change: the spells carry no model, so the cohorts are the whole network's only.
+        List<LifecycleCohortRow> cohorts = [];
+        LifecycleCohortRow? dump = null;
+        long notAssessed = 0;
+        if (!filter.Any)
+        {
+            var tenure = await _query.ExecuteAsync("""
+                SELECT cohort, days, outcome, kind, sum(spells)
+                FROM planning_tenure WHERE run_id = {run:UInt64}
+                GROUP BY cohort, days, outcome, kind
+                """, parameters, ct, Budget).ConfigureAwait(false);
+            var rows = tenure.Rows.Select(r => (
+                Cohort: ClickHouseJsonResult.Int32(r, 0), Days: ClickHouseJsonResult.Int32(r, 1),
+                Outcome: ClickHouseJsonResult.Int32(r, 2), Kind: ClickHouseJsonResult.Int32(r, 3),
+                Spells: ClickHouseJsonResult.Int64(r, 4))).ToList();
+
+            notAssessed = rows.Where(r => r.Outcome == 4).Sum(r => r.Spells);
+            foreach (var group in rows.Where(r => r.Outcome != 4).GroupBy(r => r.Cohort).OrderBy(g => g.Key))
+            {
+                var changed = group.Select(r => new Survival.Spells(r.Days, r.Outcome == 1, r.Spells)).ToList();
+                var upgraded = group.Select(r => new Survival.Spells(r.Days, r.Outcome == 1 && r.Kind == 1, r.Spells)).ToList();
+                var changedBy = Survival.EventShareBy(changed, [30, 90, 180]);
+                var upgradedBy = Survival.EventShareBy(upgraded, [90, 180]);
+                var row = new LifecycleCohortRow(
+                    group.Key == 0 ? "dump" : $"{group.Key / 100:D4}-{group.Key % 100:D2}",
+                    group.Sum(r => r.Spells), group.Where(r => r.Outcome == 1).Sum(r => r.Spells), group.Where(r => r.Outcome != 1).Sum(r => r.Spells),
+                    Pct(changedBy[0]), Pct(changedBy[1]), Pct(changedBy[2]), Pct(upgradedBy[0]), Pct(upgradedBy[1]),
+                    Survival.MedianDays(changed));
+                if (group.Key == 0)
+                {
+                    dump = row;
+                }
+                else
+                {
+                    cohorts.Add(row);
+                }
+            }
+        }
+
+        var firstSeen = await _query.ExecuteAsync($$"""
+            SELECT first_month, sum(handsets) FROM planning_device_age
+            WHERE run_id = {run:UInt64} {{tacMatch}}
+            GROUP BY first_month ORDER BY first_month
+            """, parameters, ct, Budget).ConfigureAwait(false);
+        var seen = firstSeen.Rows.Select(r => (Month: ClickHouseJsonResult.Int32(r, 0), Handsets: ClickHouseJsonResult.Int64(r, 1))).ToList();
+        var seenTotal = seen.Sum(r => r.Handsets);
+        List<LifecycleAgeRow> deviceAge = [.. seen.Select(r => r.Month == 0
+            ? new LifecycleAgeRow("dump", "Before 2026-01-26 (in the initial dump)", r.Handsets, Percent(r.Handsets, seenTotal))
+            : new LifecycleAgeRow($"{r.Month / 100:D4}-{r.Month % 100:D2}", $"{r.Month / 100:D4}-{r.Month % 100:D2}", r.Handsets, Percent(r.Handsets, seenTotal)))];
+
+        var allocated = await _query.ExecuteAsync($$"""
+            SELECT if(r.allocation_date IS NULL, 0, toYear(r.allocation_date)) AS y, sum(a.handsets)
+            FROM (SELECT tac, handsets FROM planning_device_age WHERE run_id = {run:UInt64} {{tacMatch}}) AS a
+            LEFT JOIN (SELECT tac, allocation_date FROM tac_radio_active) AS r ON r.tac = a.tac
+            GROUP BY y ORDER BY y
+            """, parameters, ct, Budget).ConfigureAwait(false);
+        var years = allocated.Rows.Select(r => (Year: ClickHouseJsonResult.Int32(r, 0), Handsets: ClickHouseJsonResult.Int64(r, 1))).ToList();
+        var yearTotal = years.Sum(r => r.Handsets);
+        List<LifecycleAgeRow> modelAge = [.. years.Select(r => r.Year is 0 or 1970
+            ? new LifecycleAgeRow("not-stated", "Not stated, or a TAC the catalogue lacks", r.Handsets, Percent(r.Handsets, yearTotal))
+            : new LifecycleAgeRow(r.Year.ToString(CultureInfo.InvariantCulture), r.Year.ToString(CultureInfo.InvariantCulture), r.Handsets, Percent(r.Handsets, yearTotal)))];
+
+        IReadOnlyList<PlanningNoData> noData =
+        [
+            new("Purchase or manufacture date",
+                "Nothing in the catalogue or the operator's files says when a handset was made or bought. A handset's age here "
+                + "is how long the network has seen it, and a model's is the GSMA allocation of its TAC - which comes before the "
+                + "model is sold."),
+        ];
+
+        return new LifecycleResponse(
+            run, filter.Any, months.Count > 0 ? Month(months[0]) : null, months.Count > 0 ? Month(months[^1]) : null, changes,
+            [.. ChangeKinds.Select(k => new LifecycleKindRow(k.Key, k.Label, byKind.GetValueOrDefault(k.Code), Percent(byKind.GetValueOrDefault(k.Code), changes)))],
+            vendorMoves, modelMoves, cohorts, dump, notAssessed, deviceAge, modelAge, noData);
+    }
+
+    private static double? Pct(double? share) => share is { } s ? Math.Round(100 * s, 2) : null;
+
+    private static string Month(string yyyymm) => $"{yyyymm[..4]}-{yyyymm[4..]}";
+
     // ------------------------------------------------------------------ breakdown and lists
 
     /// <inheritdoc />

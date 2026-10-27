@@ -107,6 +107,46 @@ public sealed class PlanningRealDataTests
     }
 
     [Fact]
+    public async Task The_lifecycle_reads_within_budget_and_its_parts_agree()
+    {
+        if (!await PublishedAsync())
+        {
+            Assert.Skip("no ClickHouse with a published planning run");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var watch = Stopwatch.StartNew();
+        var view = (await Reader().GetLifecycleAsync(null, PlanningFilter.None, ct))!;
+        Write($"lifecycle view: {watch.ElapsedMilliseconds} ms; {view.Changes:N0} changes {view.FirstMonth}..{view.LastMonth}; "
+            + string.Join("; ", view.Kinds.Select(k => $"{k.Label} {k.Changes:N0}")) + $"; not assessed {view.NotAssessedNumbers:N0} numbers");
+        foreach (var c in view.Cohorts)
+        {
+            Write($"  {c.Cohort}: {c.Spells:N0} spells, {c.Changed:N0} changed; by 30/90/180 days {c.ChangedBy30}/{c.ChangedBy90}/{c.ChangedBy180}%, "
+                + $"upgraded by 90/180 {c.UpgradedBy90}/{c.UpgradedBy180}%, median {c.MedianDays}");
+        }
+
+        Assert.Equal(view.Changes, view.Kinds.Sum(k => k.Changes));
+        Assert.All(view.Cohorts, c => Assert.Equal(c.Spells, c.Changed + c.Censored));
+        Assert.All(view.Cohorts, c => Assert.True((c.ChangedBy30 ?? 0) <= (c.ChangedBy90 ?? 100) && (c.UpgradedBy90 ?? 0) <= (c.ChangedBy90 ?? 100)));
+
+        // The same handsets two ways, and no more than the dashboard's active 14-digit IMEIs, which
+        // also count the shifted ones the lifecycle sets aside.
+        var held = view.DeviceAge.Sum(a => a.Handsets);
+        Assert.Equal(held, view.ModelAge.Sum(a => a.Handsets));
+        var devices = long.Parse(await QueryAsync(
+            $"SELECT distinct_devices FROM sqm.agg_kpi_daily WHERE seq = {view.Run.AsOfSequence}"), System.Globalization.CultureInfo.InvariantCulture);
+        Write($"handsets held now with a history: {held:N0}; the KPI's active 14-digit IMEIs (shifted included): {devices:N0}");
+        Assert.InRange(held, 1, (long)(devices * 1.01));
+
+        watch.Restart();
+        var samsung = (await Reader().GetLifecycleAsync(null, new PlanningFilter("Samsung", null, null), ct))!;
+        Write($"lifecycle narrowed to Samsung: {watch.ElapsedMilliseconds} ms, {samsung.Changes:N0} changes from or to it");
+        Assert.InRange(samsung.Changes, 1, view.Changes);
+        Assert.Empty(samsung.Cohorts);
+    }
+
+    [Fact]
     public async Task Every_breakdown_and_the_iot_view_read_within_budget()
     {
         if (!await PublishedAsync())

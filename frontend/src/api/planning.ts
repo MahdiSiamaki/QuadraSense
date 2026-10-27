@@ -146,6 +146,55 @@ export interface NtnView {
   noData: PlanningNoData[]
 }
 
+/** N4. Changes and ages are exact counts; the cohorts' shares are Kaplan-Meier estimates. */
+export interface LifecycleView {
+  run: PlanningRun
+  filtered: boolean
+  firstMonth: string | null
+  lastMonth: string | null
+  changes: number
+  kinds: { kind: 'newer' | 'older' | 'not-stated' | 'same-model'; label: string; changes: number; sharePercent: number }[]
+  vendorMoves: LifecycleMove[]
+  modelMoves: LifecycleMove[]
+  /** Unfiltered only: a spell carries no model. */
+  cohorts: LifecycleCohort[]
+  /** Spells already running in the initial dump: their start is unknown. */
+  dump: LifecycleCohort | null
+  notAssessedNumbers: number
+  deviceAge: LifecycleAge[]
+  modelAge: LifecycleAge[]
+  noData: PlanningNoData[]
+}
+
+export interface LifecycleMove {
+  from: string
+  to: string
+  changes: number
+  /** To a model with a later GSMA allocation date. */
+  upgrades: number
+}
+
+export interface LifecycleCohort {
+  cohort: string
+  spells: number
+  changed: number
+  censored: number
+  /** Percent; null where nobody in the cohort was followed that long. */
+  changedBy30: number | null
+  changedBy90: number | null
+  changedBy180: number | null
+  upgradedBy90: number | null
+  upgradedBy180: number | null
+  medianDays: number | null
+}
+
+export interface LifecycleAge {
+  key: string
+  label: string
+  handsets: number
+  sharePercent: number
+}
+
 export interface PlanningBreakdown {
   run: PlanningRun
   view: string
@@ -195,7 +244,7 @@ export function usePlanningStatus() {
   })
 }
 
-function useView<T>(view: PlanningView, run: MaybeRefOrGetter<number | null>, filter: MaybeRefOrGetter<PlanningFilter>, enabled: MaybeRefOrGetter<boolean>) {
+function useView<T>(view: PlanningView | 'lifecycle', run: MaybeRefOrGetter<number | null>, filter: MaybeRefOrGetter<PlanningFilter>, enabled: MaybeRefOrGetter<boolean>) {
   return useQuery({
     queryKey: computed(() => ['planning', view, toValue(run), toValue(filter)]),
     queryFn: ({ signal }) => api.get<T>(`/api/v1/planning/${view}`, params(toValue(run), toValue(filter)), signal),
@@ -213,6 +262,9 @@ export const useEsim = (run: MaybeRefOrGetter<number | null>, filter: MaybeRefOr
 
 export const useIot = (run: MaybeRefOrGetter<number | null>, filter: MaybeRefOrGetter<PlanningFilter>, enabled: MaybeRefOrGetter<boolean>) =>
   useView<IotView>('iot', run, filter, enabled)
+
+export const useLifecycle = (run: MaybeRefOrGetter<number | null>, filter: MaybeRefOrGetter<PlanningFilter>, enabled: MaybeRefOrGetter<boolean>) =>
+  useView<LifecycleView>('lifecycle', run, filter, enabled)
 
 export const useBands = (run: MaybeRefOrGetter<number | null>, filter: MaybeRefOrGetter<PlanningFilter>, enabled: MaybeRefOrGetter<boolean>) =>
   useView<BandsView>('bands', run, filter, enabled)

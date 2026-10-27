@@ -11,6 +11,7 @@ import { Permission, useAuth } from '@/features/auth/useAuth'
 import { formatDate, formatDateTime, formatFull, formatPercent, formatSequence } from '@/lib/format'
 import CampaignRequestDialog from './CampaignRequestDialog.vue'
 import PlanningBandsView from './PlanningBandsView.vue'
+import PlanningLifecycleView from './PlanningLifecycleView.vue'
 import PlanningBreakdown from './PlanningBreakdown.vue'
 import PlanningNtnView from './PlanningNtnView.vue'
 import PlanningNumbers from './PlanningNumbers.vue'
@@ -29,11 +30,12 @@ const { can } = useAuth()
 const route = useRoute()
 const router = useRouter()
 
-type Tab = 'sunset' | 'bands' | 'esim' | 'iot' | 'ntn'
+type Tab = 'sunset' | 'bands' | 'esim' | 'lifecycle' | 'iot' | 'ntn'
 const TABS: { value: Tab; label: string }[] = [
   { value: 'sunset', label: '2G/3G sunset' },
   { value: 'bands', label: 'Bands and 5G' },
   { value: 'esim', label: 'eSIM' },
+  { value: 'lifecycle', label: 'Lifecycle' },
   { value: 'iot', label: 'IoT fleet' },
   { value: 'ntn', label: 'Satellite' },
 ]
@@ -425,6 +427,14 @@ const requestLabel = computed(() => {
               :can-export="can(Permission.DataExport)"
               :can-open-device="can(Permission.DeviceView)"
             />
+
+            <!-- ====================================================== N4 -->
+            <template v-else-if="tab === 'lifecycle'">
+              <PlanningLifecycleView v-if="run.hasNumbers" :run="run.runId" :filter="filter" />
+              <p v-else class="py-10 text-center text-xs text-[var(--c-text-secondary)]">
+                The lifecycle figures are kept for the two newest runs only. Choose a current delivery.
+              </p>
+            </template>
 
             <!-- ====================================================== N6 -->
             <PlanningNtnView
