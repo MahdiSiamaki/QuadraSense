@@ -8,6 +8,12 @@ public enum PlanningTable
 
     /// <summary>Per IoT / M2M device, all time: the SIMs and numbers it has carried (N5).</summary>
     IotDevices,
+
+    /// <summary>Per number, all time: its handsets' spells, the changes between them and how long each lasted (N4).</summary>
+    Lifecycle,
+
+    /// <summary>Per handset held now: when the network first saw it (N4).</summary>
+    DeviceAge,
 }
 
 /// <summary>What a planning run is built from, and whether it can be built at all.</summary>
@@ -65,7 +71,7 @@ public sealed record PlanningRun(
 /// </summary>
 public interface IPlanningSnapshotStore
 {
-    /// <summary>False when migration 030 (or the radio profiles of 029) has not been applied.</summary>
+    /// <summary>False when migration 030 or 031 (or the radio profiles of 029) has not been applied.</summary>
     Task<bool> PlanningDeployedAsync(CancellationToken ct);
 
     /// <summary>What a run would be built from now.</summary>
