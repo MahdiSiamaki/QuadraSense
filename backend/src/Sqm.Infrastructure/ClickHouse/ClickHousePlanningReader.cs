@@ -263,17 +263,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
                 """, iotParameters, ct).ConfigureAwait(false);
         }
 
-        // What no class can place: unknown devices (no TAC) and TACs the catalogue does not hold.
-        var unclassified = await _query.ExecuteAsync("""
-            SELECT uniqMerge(subscribers), sum(bindings), uniqMerge(handsets)
-            FROM agg_tac_population
-            WHERE seq = {seq:UInt16} AND (tac = '' OR tac NOT IN (SELECT tac FROM tac_radio_active))
-            """, parameters, ct, Budget).ConfigureAwait(false);
-        var notClassified = new PlanningClassRow(
-            "not-classified", "Not classifiable: unknown devices and TACs the catalogue lacks",
-            ClickHouseJsonResult.Int64(unclassified.Rows[0], 0), ClickHouseJsonResult.Int64(unclassified.Rows[0], 1),
-            ClickHouseJsonResult.Int64(unclassified.Rows[0], 2),
-            Percent(ClickHouseJsonResult.Int64(unclassified.Rows[0], 0), totalNumbers));
+        var notClassified = await NotClassifiedAsync(parameters, totalNumbers, ct).ConfigureAwait(false);
 
         IReadOnlyList<PlanningNoData> noData =
         [
@@ -285,13 +275,170 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         return new IotResponse(run, deviceRow, byType, exposure, rotation, notClassified, noData);
     }
 
+    // ------------------------------------------------------------------ N2
+
+    // How an LTE or 5G model meets the operator's bands, and what a 5G record states of its
+    // architecture. Each is one expression, read by the view and by its breakdown alike. A match is
+    // only made against a configured list: hasAll against an empty one is true of everything.
+    private const string LteMatchExpression =
+        "multiIf(empty(r.lte_bands), 'lte-no-bands', hasAll(r.lte_bands, {lte:Array(UInt16)}), 'lte-all', "
+        + "hasAny(r.lte_bands, {lte:Array(UInt16)}), 'lte-some', 'lte-none')";
+
+    private const string NrMatchExpression =
+        "multiIf(empty(r.nr_bands), 'nr-no-bands', hasAll(r.nr_bands, {nr:Array(UInt16)}), 'nr-all', "
+        + "hasAny(r.nr_bands, {nr:Array(UInt16)}), 'nr-some', 'nr-none')";
+
+    private const string ArchitectureExpression =
+        "multiIf(r.sa = 1 AND r.nsa = 1, 'arch-both', r.sa = 1, 'arch-sa', r.nsa = 1, 'arch-nsa', 'arch-not-stated')";
+
+    private static readonly IReadOnlyList<(string Key, string Label)> LteMatchClasses =
+    [
+        ("lte-all", "Every one of the operator's LTE bands"),
+        ("lte-some", "Some of them"),
+        ("lte-none", "None of them"),
+        ("lte-no-bands", "LTE stated, no band listed to match"),
+    ];
+
+    private static readonly IReadOnlyList<(string Key, string Label)> NrMatchClasses =
+    [
+        ("nr-all", "Every one of the operator's NR bands"),
+        ("nr-some", "Some of them"),
+        ("nr-none", "None of them"),
+        ("nr-no-bands", "5G stated, no band listed to match"),
+    ];
+
+    private static readonly IReadOnlyList<(string Key, string Label)> ArchitectureClasses =
+    [
+        ("arch-both", "Both SA and NSA stated"),
+        ("arch-sa", "Only SA stated"),
+        ("arch-nsa", "Only NSA stated"),
+        ("arch-not-stated", "Neither stated"),
+    ];
+
+    /// <inheritdoc />
+    public async Task<BandsResponse?> GetBandsAsync(ulong? runId, PlanningFilter filter, OperatorBandsOptions bands, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        ArgumentNullException.ThrowIfNull(bands);
+        if (await RunAsync(runId, ct).ConfigureAwait(false) is not { } run)
+        {
+            return null;
+        }
+
+        var problems = bands.Problems();
+        IReadOnlyList<int> lte = problems.Count == 0 ? bands.LteBands : [];
+        IReadOnlyList<int> nr = problems.Count == 0 ? bands.NrBands : [];
+
+        var parameters = ModelParameters(run, filter, lte, nr);
+        var total = await AllNumbersAsync(parameters, ct).ConfigureAwait(false);
+
+        var lteMatch = lte.Count == 0
+            ? []
+            : await ModelClassesAsync(LteMatchExpression, "r.lte = 1", LteMatchClasses, filter, parameters, total, ct).ConfigureAwait(false);
+        var nrMatch = nr.Count == 0
+            ? []
+            : await ModelClassesAsync(NrMatchExpression, "r.five_g = 1", NrMatchClasses, filter, parameters, total, ct).ConfigureAwait(false);
+        var architecture = await ModelClassesAsync(
+            ArchitectureExpression, "r.five_g = 1", ArchitectureClasses, filter, parameters, total, ct).ConfigureAwait(false);
+        var ambiguous = (await ModelClassesAsync(
+            "'ambiguous'", "notEmpty(r.unparsed)", [("ambiguous", "A band entry the parser could not read")],
+            filter, parameters, total, ct).ConfigureAwait(false))[0];
+
+        var lteBands = await BandRowsAsync("lte", "r.lte_bands", lte, filter, parameters, total, ct).ConfigureAwait(false);
+        var nrBands = await BandRowsAsync("nr", "r.nr_bands", nr, filter, parameters, total, ct).ConfigureAwait(false);
+
+        var noData = new List<PlanningNoData>
+        {
+            new("A band in use",
+                "The operator's files say which handset a number uses, never the band or cell it used. A band a model "
+                + "supports is not shown to be used on the network, and a model may support a band the record omits."),
+        };
+        if (problems.Count > 0)
+        {
+            noData.Add(new("The operator's bands", "The configured list is not valid and is ignored: " + string.Join(" ", problems)));
+        }
+        else if (lte.Count == 0 || nr.Count == 0)
+        {
+            noData.Add(new("The operator's bands",
+                $"Not configured for {(lte.Count == 0 && nr.Count == 0 ? "LTE or NR" : lte.Count == 0 ? "LTE" : "NR")}: "
+                + "the operator's real band list is set as OperatorBands:Lte and OperatorBands:Nr. Until then no model is "
+                + "matched against the network; every band's population is shown as the catalogue states it."));
+        }
+
+        return new BandsResponse(run, filter.Any, total, lte, nr, lteMatch, nrMatch, architecture, ambiguous, lteBands, nrBands, noData);
+    }
+
+    // ------------------------------------------------------------------ N6
+
+    // 3GPP NTN first: a record stating it is NTN capable whatever else it lists. A satellite radio in
+    // the band list (L-band, S-band, Inmarsat, BGAN) is another technology and kept apart.
+    private const string NtnExpression =
+        "multiIf(r.ntn = 1, 'ntn', r.satellite_listed = 1, 'satellite', r.ntn = 0, 'not-capable', 'not-stated')";
+
+    private static readonly IReadOnlyList<(string Key, string Label)> NtnClasses =
+    [
+        ("ntn", "3GPP NTN capable"),
+        ("satellite", "A satellite radio listed, not 3GPP NTN"),
+        ("not-capable", "Stated: no NTN"),
+        ("not-stated", "Not stated"),
+    ];
+
+    /// <inheritdoc />
+    public async Task<NtnResponse?> GetNtnAsync(ulong? runId, PlanningFilter filter, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        if (await RunAsync(runId, ct).ConfigureAwait(false) is not { } run)
+        {
+            return null;
+        }
+
+        var parameters = ModelParameters(run, filter, [], []);
+        var total = await AllNumbersAsync(parameters, ct).ConfigureAwait(false);
+        var classes = await ModelClassesAsync(NtnExpression, "1", NtnClasses, filter, parameters, total, ct).ConfigureAwait(false);
+
+        var match = filter.Any ? $"AND p.tac IN ({MatchingTacs})" : string.Empty;
+        string Ntn(string key, string label) => $$"""
+            SELECT {{key}} AS k, {{label}}, '', uniqMerge(subscribers) AS n, sum(bindings), uniqMerge(handsets)
+            FROM (SELECT p.subscribers AS subscribers, p.bindings AS bindings, p.handsets AS handsets,
+                         r.ntn_mode AS ntn_mode, r.ntn_orbits AS ntn_orbits, r.ntn_bands AS ntn_bands
+                  FROM agg_tac_population AS p INNER JOIN tac_radio_active AS r ON r.tac = p.tac
+                  WHERE p.seq = {seq:UInt16} AND r.ntn = 1 {{match}})
+            GROUP BY k ORDER BY n DESC, k
+            """;
+
+        var byMode = await GroupedAsync(Ntn("if(ntn_mode = '', 'not-stated', ntn_mode)", "if(k = 'not-stated', 'Not stated', k)"), parameters, ct).ConfigureAwait(false);
+        var byOrbit = await GroupedAsync(Ntn(
+            "if(ntn_orbits = '', 'not-stated', ntn_orbits)",
+            "multiIf(k = 'GSO', 'GSO (geostationary)', k = 'NGSO', 'NGSO (non-geostationary)', k = 'GSO,NGSO', 'Both GSO and NGSO', 'Not stated')"),
+            parameters, ct).ConfigureAwait(false);
+        var byBand = await GroupedAsync(Ntn(
+            "arrayJoin(if(empty(ntn_bands), ['not-stated'], ntn_bands))",
+            "multiIf(k = 'not-stated', 'No NTN band listed', startsWith(k, 'B'), concat('LTE band ', substring(k, 2)), concat('NR ', k))"),
+            parameters, ct).ConfigureAwait(false);
+
+        var notClassified = await NotClassifiedAsync(parameters, total, ct).ConfigureAwait(false);
+        var modelTrend = await ModelTrendAsync(
+            $"if(r.tac = '', 'not-classified', {NtnExpression})", filter, ct).ConfigureAwait(false);
+
+        IReadOnlyList<PlanningNoData> noData =
+        [
+            new("Satellite service in use",
+                "Capability is not service. The operator's files hold no satellite subscription or use, so these are the "
+                + "numbers that could be offered it, not those who have it."),
+        ];
+
+        return new NtnResponse(run, filter.Any, total, classes, byMode, byOrbit, byBand, notClassified, modelTrend, noData);
+    }
+
     // ------------------------------------------------------------------ breakdown and lists
 
     /// <inheritdoc />
     public async Task<PlanningBreakdownResponse?> GetBreakdownAsync(
-        ulong? runId, string view, string planningClass, string by, PlanningFilter filter, int limit, CancellationToken ct)
+        ulong? runId, string view, string planningClass, string by, PlanningFilter filter, int limit,
+        OperatorBandsOptions bands, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(filter);
+        ArgumentNullException.ThrowIfNull(bands);
         if (await RunAsync(runId, ct).ConfigureAwait(false) is not { } run)
         {
             return null;
@@ -307,19 +454,25 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         var label = by == "tac" ? "coalesce(nullIf(t.marketingName, ''), if(b.tac = '', '(unknown device)', '(unknown TAC)'))" : "k";
         var tac = by is "tac" or "model" ? "any(b.tac)" : "''";
 
-        var parameters = FilterParameters(filter);
+        var problems = bands.Problems();
+        var parameters = ModelParameters(run, filter, problems.Count == 0 ? bands.LteBands : [], problems.Count == 0 ? bands.NrBands : []);
         parameters["run"] = Id(run);
-        parameters["seq"] = run.AsOfSequence.ToString(CultureInfo.InvariantCulture);
         parameters["limit"] = Math.Clamp(limit, 1, 500).ToString(CultureInfo.InvariantCulture);
         var match = filter.Any ? $"AND b.tac IN ({MatchingTacs})" : string.Empty;
 
         string source;
-        if (view == "iot")
+        if (view is "iot" or "bands" or "ntn")
         {
-            source = """
+            // A per-model view: the delivery's population of the models in the class.
+            if (ModelCondition(view, planningClass, parameters) is not { } condition)
+            {
+                return new PlanningBreakdownResponse(run, view, planningClass, by, [], 0);
+            }
+
+            source = $$"""
                 SELECT p.tac AS tac, p.subscribers AS numbers, p.bindings AS bindings, p.handsets AS handsets
                 FROM agg_tac_population AS p INNER JOIN tac_radio_active AS r ON r.tac = p.tac
-                WHERE p.seq = {seq:UInt16} AND r.device_class = 'IoT / M2M'
+                WHERE p.seq = {seq:UInt16} AND {{condition}}
                 """;
         }
         else
@@ -654,7 +807,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         var result = await _query.ExecuteAsync($$"""
             SELECT d.seq, toString(any(e.data_date)), {{classExpression}} AS k, sum(d.bindings)
             FROM agg_device_model AS d
-            LEFT JOIN (SELECT tac, sunset, esim FROM tac_radio_active) AS r ON r.tac = d.tac
+            LEFT JOIN (SELECT tac, sunset, esim, ntn, satellite_listed FROM tac_radio_active) AS r ON r.tac = d.tac
             LEFT JOIN (SELECT seq, min(data_date) AS data_date FROM agg_change_summary_daily GROUP BY seq) AS e ON e.seq = d.seq
             WHERE d.seq IN (SELECT seq FROM mart_ready FINAL) {{match}}
             GROUP BY d.seq, k
@@ -664,6 +817,145 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         return [.. result.Rows.Select(r => new PlanningModelTrendPoint(
             ClickHouseJsonResult.Int32(r, 0), DateText(ClickHouseJsonResult.Text(r, 1)),
             ClickHouseJsonResult.Text(r, 2) ?? string.Empty, ClickHouseJsonResult.Int64(r, 3)))];
+    }
+
+    /// <summary>The parameters of a per-model view: the run's delivery, the filter and the operator's bands.</summary>
+    private static Dictionary<string, string> ModelParameters(PlanningRunInfo run, PlanningFilter filter, IReadOnlyList<int> lte, IReadOnlyList<int> nr)
+    {
+        var parameters = FilterParameters(filter);
+        parameters["seq"] = run.AsOfSequence.ToString(CultureInfo.InvariantCulture);
+        parameters["lte"] = "[" + string.Join(",", lte.Select(b => b.ToString(CultureInfo.InvariantCulture))) + "]";
+        parameters["nr"] = "[" + string.Join(",", nr.Select(b => b.ToString(CultureInfo.InvariantCulture))) + "]";
+        return parameters;
+    }
+
+    /// <summary>Numbers with an active binding at the delivery: every per-model share's denominator.</summary>
+    private async Task<long> AllNumbersAsync(IReadOnlyDictionary<string, string> parameters, CancellationToken ct)
+    {
+        var all = await _query.ExecuteAsync(
+            "SELECT uniqMerge(subscribers) FROM agg_tac_population WHERE seq = {seq:UInt16}", parameters, ct, Budget).ConfigureAwait(false);
+        return ClickHouseJsonResult.Int64(all.Rows[0], 0);
+    }
+
+    /// <summary>
+    /// The population of the models in each class of <paramref name="expression"/>, among those
+    /// <paramref name="where"/> holds of. Per model: a number holding models of two classes is in both.
+    /// </summary>
+    private async Task<List<PlanningClassRow>> ModelClassesAsync(
+        string expression, string where, IReadOnlyList<(string Key, string Label)> classes, PlanningFilter filter,
+        IReadOnlyDictionary<string, string> parameters, long total, CancellationToken ct)
+    {
+        var match = filter.Any ? $"AND p.tac IN ({MatchingTacs})" : string.Empty;
+        var result = await _query.ExecuteAsync($$"""
+            SELECT {{expression}} AS k, uniqMerge(p.subscribers), sum(p.bindings), uniqMerge(p.handsets)
+            FROM agg_tac_population AS p
+            INNER JOIN tac_radio_active AS r ON r.tac = p.tac
+            WHERE p.seq = {seq:UInt16} AND {{where}} {{match}}
+            GROUP BY k
+            """, parameters, ct, Budget).ConfigureAwait(false);
+
+        var byClass = result.Rows.ToDictionary(
+            r => ClickHouseJsonResult.Text(r, 0) ?? string.Empty,
+            r => (Numbers: ClickHouseJsonResult.Int64(r, 1), Bindings: ClickHouseJsonResult.Int64(r, 2), Handsets: ClickHouseJsonResult.Int64(r, 3)),
+            StringComparer.Ordinal);
+
+        return [.. classes.Select(c =>
+        {
+            var v = byClass.GetValueOrDefault(c.Key);
+            return new PlanningClassRow(c.Key, c.Label, v.Numbers, v.Bindings, v.Handsets, Percent(v.Numbers, total));
+        })];
+    }
+
+    /// <summary>Every band of one technology that a model on the network lists, with that model's population.</summary>
+    private async Task<List<PlanningBandRow>> BandRowsAsync(
+        string technology, string column, IReadOnlyList<int> operatorBands, PlanningFilter filter,
+        IReadOnlyDictionary<string, string> parameters, long total, CancellationToken ct)
+    {
+        var match = filter.Any ? $"AND p.tac IN ({MatchingTacs})" : string.Empty;
+        var result = await _query.ExecuteAsync($$"""
+            SELECT band, uniqMerge(subscribers) AS n, sum(bindings), uniqMerge(handsets)
+            FROM (SELECT p.subscribers AS subscribers, p.bindings AS bindings, p.handsets AS handsets, arrayJoin({{column}}) AS band
+                  FROM agg_tac_population AS p INNER JOIN tac_radio_active AS r ON r.tac = p.tac
+                  WHERE p.seq = {seq:UInt16} {{match}})
+            GROUP BY band
+            ORDER BY n DESC, band
+            """, parameters, ct, Budget).ConfigureAwait(false);
+
+        var operatorSet = operatorBands.ToHashSet();
+        return [.. result.Rows.Select(r =>
+        {
+            var band = ClickHouseJsonResult.Int32(r, 0);
+            var numbers = ClickHouseJsonResult.Int64(r, 1);
+            return new PlanningBandRow(technology, band, operatorSet.Contains(band), numbers,
+                ClickHouseJsonResult.Int64(r, 2), ClickHouseJsonResult.Int64(r, 3), Percent(numbers, total));
+        })];
+    }
+
+    /// <summary>What no per-model class can place: unknown devices (no TAC) and TACs the catalogue does not hold.</summary>
+    private async Task<PlanningClassRow> NotClassifiedAsync(IReadOnlyDictionary<string, string> parameters, long total, CancellationToken ct)
+    {
+        var unclassified = await _query.ExecuteAsync("""
+            SELECT uniqMerge(subscribers), sum(bindings), uniqMerge(handsets)
+            FROM agg_tac_population
+            WHERE seq = {seq:UInt16} AND (tac = '' OR tac NOT IN (SELECT tac FROM tac_radio_active))
+            """, parameters, ct, Budget).ConfigureAwait(false);
+        return new PlanningClassRow(
+            "not-classified", "Not classifiable: unknown devices and TACs the catalogue lacks",
+            ClickHouseJsonResult.Int64(unclassified.Rows[0], 0), ClickHouseJsonResult.Int64(unclassified.Rows[0], 1),
+            ClickHouseJsonResult.Int64(unclassified.Rows[0], 2),
+            Percent(ClickHouseJsonResult.Int64(unclassified.Rows[0], 0), total));
+    }
+
+    /// <summary>
+    /// The models of one class of a per-model view, as a condition on <c>r</c>, tac_radio_active - or
+    /// null when the class is not one of the view's. The band classes are the view's own expressions.
+    /// </summary>
+    private static string? ModelCondition(string view, string planningClass, Dictionary<string, string> parameters)
+    {
+        parameters["class"] = planningClass;
+        switch (view)
+        {
+            case "iot":
+                return "r.device_class = 'IoT / M2M'";
+            case "ntn":
+                return NtnClasses.Any(c => c.Key == planningClass) ? $"{NtnExpression} = {{class:String}}" : null;
+            case "bands":
+                break;
+            default:
+                return null;
+        }
+
+        if (planningClass == "ambiguous")
+        {
+            return "notEmpty(r.unparsed)";
+        }
+
+        if (ArchitectureClasses.Any(c => c.Key == planningClass))
+        {
+            return $"r.five_g = 1 AND {ArchitectureExpression} = {{class:String}}";
+        }
+
+        // A match needs the operator's list: against an empty one every model "has all" of it.
+        if (LteMatchClasses.Any(c => c.Key == planningClass))
+        {
+            return parameters["lte"] == "[]" ? null : $"r.lte = 1 AND {LteMatchExpression} = {{class:String}}";
+        }
+
+        if (NrMatchClasses.Any(c => c.Key == planningClass))
+        {
+            return parameters["nr"] == "[]" ? null : $"r.five_g = 1 AND {NrMatchExpression} = {{class:String}}";
+        }
+
+        // One band: "lte-3", "nr-78".
+        var parts = planningClass.Split('-');
+        if (parts.Length == 2 && parts[0] is "lte" or "nr"
+            && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var band) && band is > 0 and <= 1024)
+        {
+            parameters["band"] = band.ToString(CultureInfo.InvariantCulture);
+            return parts[0] == "lte" ? "has(r.lte_bands, {band:UInt16})" : "has(r.nr_bands, {band:UInt16})";
+        }
+
+        return null;
     }
 
     private async Task<List<PlanningBreakdownRow>> GroupedAsync(

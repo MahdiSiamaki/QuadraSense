@@ -137,6 +137,73 @@ public sealed record PlanningBreakdownRequest(
 public sealed record PlanningNumberRequest(
     string? View, string? Class, string? Reason, string? Vendor, string? Model, string? DeviceType, ulong? RunId, int Page = 1, int PageSize = 50);
 
+/// <summary>One radio band and the population of the models whose GSMA record lists it.</summary>
+/// <param name="Technology"><c>lte</c> (E-UTRA, broadband) or <c>nr</c> (5G NR).</param>
+/// <param name="Band">The band number: 3 for LTE band 3, 78 for n78.</param>
+/// <param name="Operator">Whether the band is on the operator's configured list.</param>
+/// <param name="Numbers">Numbers holding such a model. Estimated.</param>
+/// <param name="Bindings">Active bindings on such models. Exact.</param>
+/// <param name="Handsets">Distinct handsets of such models. Estimated.</param>
+/// <param name="SharePercent">Of all numbers with an active binding.</param>
+public sealed record PlanningBandRow(
+    string Technology, int Band, bool Operator, long Numbers, long Bindings, long Handsets, double SharePercent);
+
+/// <summary>N2 - 5G and radio bands, for one delivery, per model.</summary>
+/// <param name="Run">The delivery.</param>
+/// <param name="Filtered">A vendor, model or device type is applied.</param>
+/// <param name="TotalNumbers">Numbers with an active binding: the denominator of every share. Estimated.</param>
+/// <param name="OperatorLte">The operator's LTE bands, as configured; empty when not configured.</param>
+/// <param name="OperatorNr">The operator's NR bands, as configured; empty when not configured.</param>
+/// <param name="LteMatch">
+/// LTE models by how they meet the operator's LTE bands - every one, some, none, or no band listed to
+/// match. Empty when the list is not configured. A number holding two models is counted under each.
+/// </param>
+/// <param name="NrMatch">The same for 5G models and the operator's NR bands.</param>
+/// <param name="Architecture">5G models by what their record states: SA, NSA, both, or neither.</param>
+/// <param name="Ambiguous">Models with a band entry the parser could not read, kept as written.</param>
+/// <param name="LteBands">Every LTE band the catalogue lists for the models on the network, largest first.</param>
+/// <param name="NrBands">Every NR band likewise.</param>
+/// <param name="NoData">What the bands cannot say: actual use of a band.</param>
+public sealed record BandsResponse(
+    PlanningRunInfo Run,
+    bool Filtered,
+    long TotalNumbers,
+    IReadOnlyList<int> OperatorLte,
+    IReadOnlyList<int> OperatorNr,
+    IReadOnlyList<PlanningClassRow> LteMatch,
+    IReadOnlyList<PlanningClassRow> NrMatch,
+    IReadOnlyList<PlanningClassRow> Architecture,
+    PlanningClassRow Ambiguous,
+    IReadOnlyList<PlanningBandRow> LteBands,
+    IReadOnlyList<PlanningBandRow> NrBands,
+    IReadOnlyList<PlanningNoData> NoData);
+
+/// <summary>N6 - satellite (NTN) capability, for one delivery, per model.</summary>
+/// <param name="Run">The delivery.</param>
+/// <param name="Filtered">A vendor, model or device type is applied.</param>
+/// <param name="TotalNumbers">Numbers with an active binding. Estimated.</param>
+/// <param name="Classes">
+/// 3GPP NTN capable, a satellite radio listed (not 3GPP NTN), stated not capable, not stated - per
+/// model, so a number holding two models is counted under each.
+/// </param>
+/// <param name="ByMode">NTN models by whether they also use the terrestrial network.</param>
+/// <param name="ByOrbit">NTN models by the orbits their record names: GSO, NGSO or both.</param>
+/// <param name="ByBand">NTN models by the NTN band their record lists.</param>
+/// <param name="NotClassified">Unknown devices and TACs the catalogue lacks.</param>
+/// <param name="ModelTrend">Bindings on each class at every delivery the per-model mart holds.</param>
+/// <param name="NoData">Satellite service in use: capability is not a subscription.</param>
+public sealed record NtnResponse(
+    PlanningRunInfo Run,
+    bool Filtered,
+    long TotalNumbers,
+    IReadOnlyList<PlanningClassRow> Classes,
+    IReadOnlyList<PlanningBreakdownRow> ByMode,
+    IReadOnlyList<PlanningBreakdownRow> ByOrbit,
+    IReadOnlyList<PlanningBreakdownRow> ByBand,
+    PlanningClassRow NotClassified,
+    IReadOnlyList<PlanningModelTrendPoint> ModelTrend,
+    IReadOnlyList<PlanningNoData> NoData);
+
 /// <summary>N5 - the IoT / M2M fleet, for one delivery.</summary>
 /// <param name="Run">The delivery.</param>
 /// <param name="Devices">IoT / M2M handsets (IMEIs) active now, and the numbers and bindings they carry.</param>

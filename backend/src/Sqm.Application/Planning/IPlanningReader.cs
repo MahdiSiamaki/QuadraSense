@@ -34,12 +34,20 @@ public interface IPlanningReader
     /// <summary>N5 for a run.</summary>
     Task<IotResponse?> GetIotAsync(ulong? runId, PlanningFilter filter, CancellationToken ct);
 
+    /// <summary>N2 for a run's delivery, matched against the operator's bands.</summary>
+    Task<BandsResponse?> GetBandsAsync(ulong? runId, PlanningFilter filter, OperatorBandsOptions bands, CancellationToken ct);
+
+    /// <summary>N6 for a run's delivery.</summary>
+    Task<NtnResponse?> GetNtnAsync(ulong? runId, PlanningFilter filter, CancellationToken ct);
+
     /// <summary>
-    /// One class of a view (<c>sunset</c>, <c>esim</c> or <c>iot</c>) broken down by <c>vendor</c>,
-    /// <c>model</c>, <c>deviceType</c> or <c>tac</c>, largest first.
+    /// One class of a view (<c>sunset</c>, <c>esim</c>, <c>iot</c>, <c>bands</c> or <c>ntn</c>) broken
+    /// down by <c>vendor</c>, <c>model</c>, <c>deviceType</c> or <c>tac</c>, largest first. A
+    /// <c>bands</c> class names the operator's bands only through <paramref name="bands"/>.
     /// </summary>
     Task<PlanningBreakdownResponse?> GetBreakdownAsync(
-        ulong? runId, string view, string planningClass, string by, PlanningFilter filter, int limit, CancellationToken ct);
+        ulong? runId, string view, string planningClass, string by, PlanningFilter filter, int limit,
+        OperatorBandsOptions bands, CancellationToken ct);
 
     /// <summary>A page of the numbers in one class, ordered by number.</summary>
     Task<(PlanningRunInfo Run, IReadOnlyList<PlanningNumberRead> Rows, long Total)?> ListNumbersAsync(

@@ -139,7 +139,7 @@ public sealed class PlanningEndpointTests : IClassFixture<WebApplicationFactory<
 
     [Theory]
     [InlineData("/api/v1/planning/breakdown?view=sunset&class=exposed&by=colour")]
-    [InlineData("/api/v1/planning/breakdown?view=bands&class=exposed&by=vendor")]
+    [InlineData("/api/v1/planning/breakdown?view=weather&class=exposed&by=vendor")]
     public async Task A_breakdown_by_anything_but_its_four_properties_is_refused(string path)
     {
         var (status, _) = await SendAsync(HttpMethod.Get, path);

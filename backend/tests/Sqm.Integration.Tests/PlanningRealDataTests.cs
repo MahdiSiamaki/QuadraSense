@@ -121,7 +121,7 @@ public sealed class PlanningRealDataTests
             foreach (var by in new[] { "vendor", "model", "deviceType", "tac" })
             {
                 var watch = Stopwatch.StartNew();
-                var breakdown = await Reader().GetBreakdownAsync(null, view, planningClass, by, PlanningFilter.None, 50, ct);
+                var breakdown = await Reader().GetBreakdownAsync(null, view, planningClass, by, PlanningFilter.None, 50, new OperatorBandsOptions(), ct);
                 Write($"{view}/{planningClass} by {by}: {breakdown!.Rows.Count} of {breakdown.Total:N0} rows, {watch.ElapsedMilliseconds} ms");
                 Assert.True(breakdown.Rows.SequenceEqual(breakdown.Rows.OrderByDescending(r => r.Numbers).ThenBy(r => r.Key, StringComparer.Ordinal)));
             }

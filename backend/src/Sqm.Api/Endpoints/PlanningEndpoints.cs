@@ -5,11 +5,12 @@ using Sqm.Application.Identity;
 using Sqm.Application.Planning;
 using Sqm.Contracts.Planning;
 using Sqm.Domain.Identifiers;
+using Microsoft.Extensions.Options;
 using Sqm.Infrastructure.ClickHouse;
 
 namespace Sqm.Api.Endpoints;
 
-/// <summary>Network and product planning: the 2G/3G sunset, eSIM and IoT views (N1, N3, N5).</summary>
+/// <summary>Network and product planning: the 2G/3G sunset, bands, eSIM, IoT and satellite views (N1-N3, N5, N6).</summary>
 /// <remarks>
 /// <para>
 /// <b>Read, never computed here.</b> The per-number classes are the planning snapshot's (analytics
@@ -32,7 +33,7 @@ public static class PlanningEndpoints
     /// <summary>Rows paging can reach. Beyond it is a campaign list, which is the controlled export's.</summary>
     public const int MaxReachable = 10_000;
 
-    private static readonly string[] Views = ["sunset", "esim", "iot"];
+    private static readonly string[] Views = ["sunset", "esim", "iot", "bands", "ntn"];
     private static readonly string[] Breakdowns = ["vendor", "model", "deviceType", "tac"];
 
     /// <summary>Registers the planning routes.</summary>
@@ -58,6 +59,14 @@ public static class PlanningEndpoints
         builder.MapGet("/iot", IotAsync)
             .WithName("GetPlanningIot")
             .WithSummary("N5: IoT / M2M devices, their 2G/3G exposure and the SIMs they have carried. Names nobody.");
+
+        builder.MapGet("/bands", BandsAsync)
+            .WithName("GetPlanningBands")
+            .WithSummary("N2: models by the LTE and NR bands they list, matched to the operator's configured bands. Names nobody.");
+
+        builder.MapGet("/ntn", NtnAsync)
+            .WithName("GetPlanningNtn")
+            .WithSummary("N6: models by satellite (3GPP NTN) capability, its mode, orbits and bands. Names nobody.");
 
         builder.MapGet("/breakdown", BreakdownAsync)
             .WithName("GetPlanningBreakdown")
@@ -92,8 +101,17 @@ public static class PlanningEndpoints
         IPlanningReader reader, ulong? run, string? vendor, string? model, string? deviceType, CancellationToken ct) =>
         Answer(await reader.GetIotAsync(run, new PlanningFilter(vendor, model, deviceType), ct).ConfigureAwait(false));
 
+    private static async Task<IResult> BandsAsync(
+        IPlanningReader reader, IOptionsMonitor<OperatorBandsOptions> bands,
+        ulong? run, string? vendor, string? model, string? deviceType, CancellationToken ct) =>
+        Answer(await reader.GetBandsAsync(run, new PlanningFilter(vendor, model, deviceType), bands.CurrentValue, ct).ConfigureAwait(false));
+
+    private static async Task<IResult> NtnAsync(
+        IPlanningReader reader, ulong? run, string? vendor, string? model, string? deviceType, CancellationToken ct) =>
+        Answer(await reader.GetNtnAsync(run, new PlanningFilter(vendor, model, deviceType), ct).ConfigureAwait(false));
+
     private static async Task<IResult> BreakdownAsync(
-        IPlanningReader reader, string? view, string? @class, string? by, ulong? run,
+        IPlanningReader reader, IOptionsMonitor<OperatorBandsOptions> bands, string? view, string? @class, string? by, ulong? run,
         string? vendor, string? model, string? deviceType, int? limit, CancellationToken ct)
     {
         if (Invalid(view, by) is { } problem)
@@ -102,11 +120,13 @@ public static class PlanningEndpoints
         }
 
         return Answer(await reader.GetBreakdownAsync(
-            run, view!, @class ?? string.Empty, by!, new PlanningFilter(vendor, model, deviceType), limit ?? 50, ct).ConfigureAwait(false));
+            run, view!, @class ?? string.Empty, by!, new PlanningFilter(vendor, model, deviceType), limit ?? 50,
+            bands.CurrentValue, ct).ConfigureAwait(false));
     }
 
     private static async Task<IResult> BreakdownExportAsync(
-        PlanningBreakdownRequest request, IPlanningReader reader, HttpContext http, IAuditLog audit, CancellationToken ct)
+        PlanningBreakdownRequest request, IPlanningReader reader, IOptionsMonitor<OperatorBandsOptions> bands,
+        HttpContext http, IAuditLog audit, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (Invalid(request.View, request.By) is { } problem)
@@ -116,7 +136,8 @@ public static class PlanningEndpoints
 
         var filter = new PlanningFilter(request.Vendor, request.Model, request.DeviceType);
         if (await reader.GetBreakdownAsync(
-                request.RunId, request.View!, request.Class ?? string.Empty, request.By!, filter, 500, ct).ConfigureAwait(false) is not { } breakdown)
+                request.RunId, request.View!, request.Class ?? string.Empty, request.By!, filter, 500,
+                bands.CurrentValue, ct).ConfigureAwait(false) is not { } breakdown)
         {
             return Unavailable();
         }
