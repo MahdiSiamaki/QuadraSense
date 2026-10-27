@@ -31,6 +31,23 @@ public interface IImportFileStore
     Task<StoredFile> SaveAsync(
         string sourceCode, string originalFileName, Stream content, CancellationToken ct);
 
+    /// <summary>
+    /// Takes over a file already written on the store's own volume - a resumable upload, assembled
+    /// from its pieces (ADR-018) - hashing it and moving it to where <see cref="SaveAsync"/> would
+    /// have put it.
+    /// </summary>
+    /// <param name="sourceCode">Data source, used to lay out storage.</param>
+    /// <param name="originalFileName">The client-supplied name. Recorded, never used as a path.</param>
+    /// <param name="path">The file, inside the storage root. It is moved, not copied.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <remarks>
+    /// Hashed by reading it once, here: a resumable upload arrives over several requests, and a hash
+    /// cannot be carried from one request to the next. So the recorded hash is of the bytes on disk,
+    /// which are the bytes stored - read back before they are moved, not as they went past.
+    /// </remarks>
+    Task<StoredFile> AdoptAsync(
+        string sourceCode, string originalFileName, string path, CancellationToken ct);
+
     /// <summary>Opens a stored file for reading.</summary>
     Task<Stream> OpenReadAsync(string storedPath, CancellationToken ct);
 

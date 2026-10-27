@@ -274,7 +274,16 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
     .AllowAnyHeader()
     .AllowAnyMethod()
     .AllowCredentials()
-    .WithExposedHeaders("Content-Disposition", "X-Export-Scope", "X-Correlation-Id")));
+    .WithExposedHeaders(
+        "Content-Disposition", "X-Export-Scope", "X-Correlation-Id",
+        // The tus protocol's (ADR-018): where an upload lives, and how much of it has arrived.
+        "Location", "Upload-Offset", "Upload-Length", "Upload-Expires",
+        "Tus-Resumable", "Tus-Version", "Tus-Max-Size", "Tus-Extension")));
+
+// Resumable uploads (ADR-018): the tus endpoint's store and configuration, and the hourly removal
+// of uploads nobody finished.
+builder.Services.AddSingleton<Sqm.Api.Infrastructure.ResumableUploads>();
+builder.Services.AddHostedService<Sqm.Api.Infrastructure.ResumableUploadCleanup>();
 
 builder.Services.AddHealthChecks()
     .AddCheck<ClickHouseHealthCheck>("clickhouse", tags: ["ready"]);
@@ -324,6 +333,7 @@ app.MapDashboardEndpoints();
 app.MapDashboardBuilderEndpoints();
 app.MapDashboardExportEndpoints();
 app.MapImportEndpoints();
+app.MapResumableUploadEndpoints();
 app.MapTacEndpoints();
 app.MapLookupEndpoints();
 app.MapImsiEndpoints();

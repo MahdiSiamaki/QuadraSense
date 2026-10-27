@@ -158,6 +158,53 @@ public sealed partial class DirectoryImportFileStore : IImportFileStore
         return new StoredFile(relativePath, written, sha256);
     }
 
+    public async Task<StoredFile> AdoptAsync(
+        string sourceCode, string originalFileName, string path, CancellationToken ct)
+    {
+        var source = Path.GetFullPath(path);
+        if (!IsInsideRoot(source))
+        {
+            throw new InvalidOperationException($"a file to adopt must be inside the storage root: {path}");
+        }
+
+        var length = new FileInfo(source).Length;
+        if (length == 0)
+        {
+            throw new InvalidOperationException("the uploaded file was empty");
+        }
+
+        if (length > _options.MaxFileBytes)
+        {
+            throw new InvalidOperationException($"file exceeds the {_options.MaxFileBytes:N0}-byte limit");
+        }
+
+        byte[] hash;
+        await using (var read = new FileStream(
+            source, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1 << 20, useAsync: true))
+        {
+            hash = await SHA256.HashDataAsync(read, ct).ConfigureAwait(false);
+        }
+
+        var relativeDirectory = Path.Combine(
+            sourceCode, DateTime.UtcNow.ToString("yyyy/MM", CultureInfo.InvariantCulture));
+        var absoluteDirectory = Path.Combine(_root, relativeDirectory);
+        Directory.CreateDirectory(absoluteDirectory);
+
+        var storedName = string.Create(CultureInfo.InvariantCulture,
+            $"{DateTime.UtcNow:yyyyMMdd'T'HHmmss'Z'}-{Guid.NewGuid():N}{SafeExtension(originalFileName)}");
+        var finalPath = Path.Combine(absoluteDirectory, storedName);
+
+        // A rename on the one volume: the bytes do not move, and the file appears whole or not at all.
+        File.Move(source, finalPath, overwrite: false);
+        File.SetAttributes(finalPath, FileAttributes.ReadOnly);
+
+        var relativePath = Path.Combine(relativeDirectory, storedName).Replace('\\', '/');
+        var sha256 = Convert.ToHexStringLower(hash);
+
+        LogStored(length, relativePath, sha256);
+        return new StoredFile(relativePath, length, sha256);
+    }
+
     public Task<Stream> OpenReadAsync(string storedPath, CancellationToken ct)
     {
         Stream stream = new FileStream(
@@ -205,16 +252,20 @@ public sealed partial class DirectoryImportFileStore : IImportFileStore
     {
         var full = Path.GetFullPath(Path.Combine(_root, storedPath));
 
-        // With the separator: a bare prefix test let "/data/imports-evil" pass as inside
-        // "/data/imports".
-        var inside = Path.EndsInDirectorySeparator(_root) ? _root : _root + Path.DirectorySeparatorChar;
-
-        if (!full.StartsWith(inside, StringComparison.OrdinalIgnoreCase))
+        if (!IsInsideRoot(full))
         {
             throw new InvalidOperationException($"stored path escapes the storage root: {storedPath}");
         }
 
         return full;
+    }
+
+    private bool IsInsideRoot(string fullPath)
+    {
+        // With the separator: a bare prefix test let "/data/imports-evil" pass as inside
+        // "/data/imports".
+        var inside = Path.EndsInDirectorySeparator(_root) ? _root : _root + Path.DirectorySeparatorChar;
+        return fullPath.StartsWith(inside, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

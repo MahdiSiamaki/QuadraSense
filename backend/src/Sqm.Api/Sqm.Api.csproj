@@ -9,6 +9,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <!-- Resumable uploads: the tus protocol (ADR-018). net6.0 build, no dependencies. -->
+    <PackageReference Include="tusdotnet" Version="2.12.0" />
   </ItemGroup>
 
   <!--
