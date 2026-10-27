@@ -431,7 +431,8 @@ section 7 that need data, backups, and everything that waits on the data disk.
   today, and a browser upload cannot resume: two of two attempts broke at 12.6 and 16.5 minutes,
   each in the minute the tunnel dropped (nginx 400 with the body unbuffered, the API 499). So the days
   are carried compressed (2.7x) in 5 MB pieces, each retried until it lands, and queued with
-  `--import-file` (section 6).
+  `--import-file` (section 6). Since 2026-10-27 a browser upload resumes where the break left it
+  (ADR-018).
 
 **2026-10-25/26, fifth session.**
 
