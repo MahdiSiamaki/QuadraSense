@@ -287,6 +287,17 @@ if (args.Contains("--refresh-risk-days"))
         .ConfigureAwait(false);
 }
 
+// Builds the planning snapshot (analytics migration 030) now, step by step, instead of a chunk per
+// idle moment of the worker. Stop the worker first, or the two build the same run.
+//
+//   dotnet run --project backend/src/Sqm.Ingestion -- --refresh-planning [--force]
+if (args.Contains("--refresh-planning"))
+{
+    return await PlanningSnapshotRefresh
+        .RunAsync(host.Services, args.Contains("--force"), CancellationToken.None)
+        .ConfigureAwait(false);
+}
+
 // Parses a TAC version's radio profiles (analytics migration 029) - the active one unless
 // --version names another. A version is parsed when it is loaded and before a dashboard rebuild
 // when the parser has changed, so this is for versions loaded before the migration, or to look.
