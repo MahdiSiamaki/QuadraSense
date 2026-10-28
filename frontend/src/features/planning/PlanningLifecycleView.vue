@@ -116,7 +116,9 @@ function pct(value: number | null) {
             </tbody>
           </table>
           <p class="mt-2 text-2xs text-[var(--c-text-muted)]">
-            — means not yet observable: nobody in that cohort has been followed so long.
+            — means not yet observable: nobody in that cohort has been followed so long. The feed is read as delivered: since
+            15 September 2026 its files carry shifted IMEIs (set aside here, see Data quality), so a handset hidden behind one
+            ends its spell early and those months' changes are understated until corrected files are imported.
             <template v-if="data.dump">{{ formatFull(data.dump.spells) }} handsets were already on their numbers in the initial dump - when they
               arrived is unknown, so they are not a cohort; {{ formatFull(data.dump.changed) }} of them have changed since.</template>
           </p>
