@@ -150,6 +150,8 @@ export interface NtnView {
 export interface LifecycleView {
   run: PlanningRun
   filtered: boolean
+  /** False for a run built before the lifecycle measures: everything below is empty, not zero. */
+  built: boolean
   firstMonth: string | null
   lastMonth: string | null
   changes: number

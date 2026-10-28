@@ -323,6 +323,18 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
         var progress = (await Reader().GetStatusAsync(ct)).Running!;
         Assert.Equal((0, 8), (progress.ChunksDone, progress.ChunksTotal));
         await Store().EndPlanningRunAsync(next, "abandoned", "a test of the progress", ct);
+
+        // A run without the lifecycle - built before it existed - says so instead of answering zero.
+        Assert.True(view.Built);
+        foreach (var chunk in new[] { 0, 1 })
+        {
+            await QueryAsync($"ALTER TABLE {_database}.planning_tenure DROP PARTITION ({run.RunId}, {chunk})");
+        }
+
+        var before = (await Reader().GetLifecycleAsync(run.RunId, PlanningFilter.None, ct))!;
+        Assert.False(before.Built);
+        Assert.Equal(0, before.Changes);
+        Assert.Contains(before.NoData, n => n.Topic == "This run");
     }
 
     private async Task<PlanningRun> BuildAsync(CancellationToken ct)
