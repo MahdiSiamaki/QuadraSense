@@ -626,21 +626,27 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
     /// Handsets held now, by model and the month the network first saw them: the earliest first day of
     /// any of their bindings, 0 when the initial dump already listed one. Countable IMEIs only.
     /// </summary>
+    /// <remarks>
+    /// One aggregation per IMEI, in the history's key order, joined to the IMEIs active now under the
+    /// worker's grace-hash budget. Grouping by binding and then by IMEI held every IMEI of the range at
+    /// once, and filtering by an IN-set held 4.1 M active IMEIs: the first failed a real chunk at the
+    /// 1.12 GiB limit, the second used 952 MiB; this form, 644 MiB (2026-10-28).
+    /// </remarks>
     private string DeviceAgeSql(PlanningRun run, int chunk, string range) => $"""
         INSERT INTO {_database}.planning_device_age (run_id, chunk, tac, first_month, handsets)
-        SELECT {run.RunId}, {chunk}, substring(imei, 1, 8) AS tac, toUInt32(if(dump = 1, 0, toYYYYMM(first))) AS first_month, count()
+        SELECT {run.RunId}, {chunk}, substring(h.imei, 1, 8) AS tac, toUInt32(if(h.dump = 1, 0, toYYYYMM(h.first))) AS first_month, count()
         FROM (
-            SELECT imei, min(first) AS first, max(dump) AS dump
-            FROM (
-                SELECT imei, msisdn, imsi, min(first_date) AS first, max(in_dump) AS dump
-                FROM {_database}.binding_history_by_imei
-                WHERE {range}
-                GROUP BY imei, msisdn, imsi
-            )
-            WHERE {Countable("imei")}
+            SELECT imei, min(first_date) AS first, max(in_dump) AS dump
+            FROM {_database}.binding_history_by_imei
+            WHERE {range}
             GROUP BY imei
-        )
-        WHERE imei IN (SELECT imei FROM {_database}.binding_by_imei FINAL WHERE {range} AND active = 1)
+        ) AS h
+        INNER JOIN (
+            SELECT imei FROM {_database}.binding_by_imei FINAL
+            WHERE {range} AND active = 1
+            GROUP BY imei
+        ) AS a ON a.imei = h.imei
+        WHERE {Countable("h.imei")}
         GROUP BY tac, first_month
         SETTINGS optimize_aggregation_in_order = 1
         """;
