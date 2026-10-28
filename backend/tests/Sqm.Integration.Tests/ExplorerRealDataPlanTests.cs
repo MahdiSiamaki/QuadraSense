@@ -25,8 +25,11 @@ namespace Sqm.Integration.Tests;
 /// repository does not hold subscriber identifiers.
 /// </para>
 /// <para>
-/// In the real-data collection, so it never runs beside another class's heavy reads: in parallel with
-/// the planning views' it passed its 100-second client timeout, where alone it takes 7 s (2026-10-28).
+/// In the real-data collection, like every other real-data class. It has timed out at its 100-second
+/// client limit twice in full runs on the laptop, where alone it takes 7 s. Measured the second time
+/// (2026-10-28): one index-only estimate selected 84 parts and 177 marks, all from the mark cache, and
+/// waited 125 s on disk reads - the laptop's disk stalling under the suite's other work, not the
+/// query's shape. A failure here is worth a rerun before a diagnosis.
 /// </para>
 /// </remarks>
 [Collection("clickhouse-scratch")]
