@@ -61,6 +61,7 @@ const ntn = {
 const lifecycle = {
   run,
   filtered: false,
+  built: true,
   firstMonth: '2026-01',
   lastMonth: '2026-10',
   changes: 100,
@@ -82,13 +83,14 @@ const lifecycle = {
   noData: [{ topic: 'Purchase or manufacture date', reason: 'Nothing says when a handset was made or bought.' }],
 }
 
+const lifecycleView = ref<unknown>(lifecycle)
 const bands = ref<unknown>(notConfigured)
 const query = <T>(value: T) => ({ data: value, isPending: ref(false), isError: ref(false), error: ref(null) })
 
 vi.mock('@/api/planning', () => ({
   useBands: () => query(bands),
   useNtn: () => query(ref(ntn)),
-  useLifecycle: () => query(ref(lifecycle)),
+  useLifecycle: () => query(lifecycleView),
 }))
 
 const { default: PlanningBandsView } = await import('@/features/planning/PlanningBandsView.vue')
@@ -144,5 +146,27 @@ describe('Planning lifecycle view', () => {
     expect(wrapper.findAll('tbody tr').some((r) => r.text().startsWith('dump'))).toBe(false)
     expect(wrapper.text()).toContain('900 handsets were already on their numbers in the initial dump')
     expect(wrapper.text()).toContain('Purchase or manufacture date: no data')
+  })
+})
+
+describe('Planning lifecycle view, a run built before it', () => {
+  it('says the run holds no lifecycle figures instead of showing zero changes', () => {
+    lifecycleView.value = {
+      ...lifecycle,
+      built: false,
+      changes: 0,
+      kinds: [],
+      cohorts: [],
+      dump: null,
+      deviceAge: [],
+      modelAge: [],
+      noData: [{ topic: 'This run', reason: 'It was built before the lifecycle measures existed, so it holds none.' }],
+    }
+    const text = mount(PlanningLifecycleView, { props: { run: run.runId, filter: {} }, global: { stubs } }).text()
+    lifecycleView.value = lifecycle
+
+    expect(text).toContain('Not built for this delivery yet')
+    expect(text).toContain('built before the lifecycle measures existed')
+    expect(text).not.toContain('changes of handset')
   })
 })

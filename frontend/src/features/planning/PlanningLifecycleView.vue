@@ -37,6 +37,10 @@ function pct(value: number | null) {
 <template>
   <div class="flex flex-col gap-4">
     <p v-if="lifecycle.isError.value" class="text-sm text-[var(--c-danger-text)]" role="alert">Not available.</p>
+    <div v-else-if="data && !data.built" class="rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-4 py-3 text-sm" role="status">
+      <p class="font-medium">Not built for this delivery yet</p>
+      <p v-for="n in data.noData" :key="n.topic" class="mt-1 text-xs text-[var(--c-text-secondary)]">{{ n.reason }}</p>
+    </div>
     <template v-else-if="data">
       <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div v-for="k in data.kinds" :key="k.kind" class="rounded-[var(--radius-lg)] border bg-[var(--c-surface)] p-4">

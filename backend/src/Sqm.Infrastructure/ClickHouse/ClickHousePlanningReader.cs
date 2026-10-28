@@ -460,6 +460,19 @@ public sealed class ClickHousePlanningReader : IPlanningReader
 
         var parameters = FilterParameters(filter);
         parameters["run"] = Id(run);
+
+        // A run built before the lifecycle measures holds none of them: say so, rather than answer zero
+        // changes. Every run since migration 031 writes tenure rows for every chunk.
+        var held = await _query.ExecuteAsync(
+            "SELECT count() FROM planning_tenure WHERE run_id = {run:UInt64}", parameters, ct, Budget).ConfigureAwait(false);
+        if (ClickHouseJsonResult.Int64(held.Rows[0], 0) == 0)
+        {
+            return new LifecycleResponse(
+                run, filter.Any, Built: false, null, null, 0, [], [], [], [], null, 0, [], [],
+                [new("This run", "It was built before the lifecycle measures existed, so it holds none. The import worker builds a "
+                    + "run with them when it is idle; until it is published there is nothing to show here.")]);
+        }
+
         var changeMatch = filter.Any ? $"AND (from_tac IN ({MatchingTacs}) OR to_tac IN ({MatchingTacs}))" : string.Empty;
         var tacMatch = filter.Any ? $"AND tac IN ({MatchingTacs})" : string.Empty;
 
@@ -564,7 +577,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         ];
 
         return new LifecycleResponse(
-            run, filter.Any, months.Count > 0 ? Month(months[0]) : null, months.Count > 0 ? Month(months[^1]) : null, changes,
+            run, filter.Any, Built: true, months.Count > 0 ? Month(months[0]) : null, months.Count > 0 ? Month(months[^1]) : null, changes,
             [.. ChangeKinds.Select(k => new LifecycleKindRow(k.Key, k.Label, byKind.GetValueOrDefault(k.Code), Percent(byKind.GetValueOrDefault(k.Code), changes)))],
             vendorMoves, modelMoves, cohorts, dump, notAssessed, deviceAge, modelAge, noData);
     }

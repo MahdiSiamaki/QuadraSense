@@ -247,6 +247,10 @@ public sealed record LifecycleAgeRow(string Key, string Label, long Handsets, do
 /// <summary>N4 - handset lifecycle, for one run.</summary>
 /// <param name="Run">The run.</param>
 /// <param name="Filtered">A vendor, model or device type is applied: changes from or to it, handsets of it.</param>
+/// <param name="Built">
+/// False for a run built before the lifecycle measures (analytics migration 031): it holds none, and
+/// every figure below is empty - not zero.
+/// </param>
 /// <param name="FirstMonth">The first month a change was seen in, yyyy-MM; the observation window's start.</param>
 /// <param name="LastMonth">The last.</param>
 /// <param name="Changes">Changes of handset in the window.</param>
@@ -262,6 +266,7 @@ public sealed record LifecycleAgeRow(string Key, string Label, long Handsets, do
 public sealed record LifecycleResponse(
     PlanningRunInfo Run,
     bool Filtered,
+    bool Built,
     string? FirstMonth,
     string? LastMonth,
     long Changes,
