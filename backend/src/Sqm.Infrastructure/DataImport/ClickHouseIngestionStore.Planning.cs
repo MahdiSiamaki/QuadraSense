@@ -45,12 +45,17 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
         Message = "Planning snapshot run {RunId}: {Outcome}")]
     private partial void LogPlanningRun(ulong runId, string outcome);
 
-    private static readonly string[] PlanningTables = ["planning_handset_stage", "planning_number", "planning_breakdown", "planning_iot_device"];
+    private static readonly string[] PlanningTables =
+    [
+        "planning_handset_stage", "planning_number", "planning_breakdown", "planning_iot_device",
+        "planning_spell_stage", "planning_spell", "planning_change", "planning_tenure", "planning_device_age",
+    ];
 
     /// <inheritdoc />
     public async Task<bool> PlanningDeployedAsync(CancellationToken ct) =>
         await ScalarAsync($"EXISTS TABLE {_database}.planning_run", ct).ConfigureAwait(false) == 1
-        && await ScalarAsync($"EXISTS TABLE {_database}.tac_radio_parsed", ct).ConfigureAwait(false) == 1;
+        && await ScalarAsync($"EXISTS TABLE {_database}.tac_radio_parsed", ct).ConfigureAwait(false) == 1
+        && await ScalarAsync($"EXISTS TABLE {_database}.planning_tenure", ct).ConfigureAwait(false) == 1;
 
     /// <inheritdoc />
     public async Task<PlanningInputs> ReadPlanningInputsAsync(CancellationToken ct)
@@ -193,12 +198,32 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
             await ExecuteHttpAsync(
                 $"ALTER TABLE {_database}.planning_handset_stage DROP PARTITION ({run.RunId}, {chunk})", NoParameters, ct).ConfigureAwait(false);
         }
+        else if (table == PlanningTable.Lifecycle)
+        {
+            var range = await PlanningRangeAsync(run, "msisdn_cuts", "msisdn", chunk, numeric: true, ct).ConfigureAwait(false);
+            foreach (var target in new[] { "planning_spell_stage", "planning_spell", "planning_change", "planning_tenure" })
+            {
+                await ExecuteHttpAsync(
+                    $"ALTER TABLE {_database}.{target} DROP PARTITION ({run.RunId}, {chunk})", NoParameters, ct).ConfigureAwait(false);
+            }
+
+            await ExecuteHttpAsync(SpellStageSql(run, chunk, range), limits, ct).ConfigureAwait(false);
+            await ExecuteHttpAsync(SpellSql(run, chunk), limits, ct).ConfigureAwait(false);
+            await ExecuteHttpAsync(
+                $"ALTER TABLE {_database}.planning_spell_stage DROP PARTITION ({run.RunId}, {chunk})", NoParameters, ct).ConfigureAwait(false);
+            await ExecuteHttpAsync(TenureSql(run, chunk), limits, ct).ConfigureAwait(false);
+            await ExecuteHttpAsync(ChangeSql(run, chunk), limits, ct).ConfigureAwait(false);
+            await ExecuteHttpAsync(
+                $"ALTER TABLE {_database}.planning_spell DROP PARTITION ({run.RunId}, {chunk})", NoParameters, ct).ConfigureAwait(false);
+        }
         else
         {
             var range = await PlanningRangeAsync(run, "imei_cuts", "imei", chunk, numeric: false, ct).ConfigureAwait(false);
+            var target = table == PlanningTable.IotDevices ? "planning_iot_device" : "planning_device_age";
             await ExecuteHttpAsync(
-                $"ALTER TABLE {_database}.planning_iot_device DROP PARTITION ({run.RunId}, {chunk})", NoParameters, ct).ConfigureAwait(false);
-            await ExecuteHttpAsync(IotDeviceSql(run, chunk, range), limits, ct).ConfigureAwait(false);
+                $"ALTER TABLE {_database}.{target} DROP PARTITION ({run.RunId}, {chunk})", NoParameters, ct).ConfigureAwait(false);
+            await ExecuteHttpAsync(
+                table == PlanningTable.IotDevices ? IotDeviceSql(run, chunk, range) : DeviceAgeSql(run, chunk, range), limits, ct).ConfigureAwait(false);
         }
 
         var done = new HashSet<string>(run.Done, StringComparer.Ordinal) { PlanningRun.Key(table, chunk) };
@@ -223,6 +248,7 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
                      ("planning_number", "msisdn"),
                      ("planning_iot_device", "imei"),
                      ("planning_breakdown", "(chunk, sunset, reason, esim, tac)"),
+                     ("planning_device_age", "(tac, first_month, chunk)"),
                  })
         {
             var duplicates = await ScalarAsync(
@@ -448,6 +474,182 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
             ) AS c ON c.imei = h.imei
             """;
     }
+
+    // ------------------------------------------------------------------ handset lifecycle (N4)
+
+    private const string StillHeld = "toDate('2100-01-01')";
+
+    /// <summary>
+    /// A chunk's bindings over all time, one row per binding: its first day from the binding history,
+    /// its end from current state (2100-01-01 while it is active). Countable IMEIs only.
+    /// </summary>
+    private string SpellStageSql(PlanningRun run, int chunk, string range) => $"""
+        INSERT INTO {_database}.planning_spell_stage (run_id, chunk, msisdn, imei, imsi, start, finish, dump)
+        SELECT {run.RunId}, {chunk}, h.msisdn, h.imei, h.imsi, h.start,
+               if(c.active = 1, {StillHeld}, c.last_change_date), h.dump
+        FROM (
+            SELECT msisdn, imsi, imei, min(first_date) AS start, max(in_dump) AS dump
+            FROM {_database}.binding_history
+            WHERE {range}
+            GROUP BY msisdn, imsi, imei
+        ) AS h
+        INNER JOIN (
+            SELECT msisdn, imsi, imei, active, last_change_date
+            FROM {_database}.binding_current FINAL
+            WHERE {range}
+        ) AS c ON c.msisdn = h.msisdn AND c.imsi = h.imsi AND c.imei = h.imei
+        WHERE {Countable("h.imei")}
+        SETTINGS optimize_aggregation_in_order = 1
+        """;
+
+    /// <summary>
+    /// The spells that count, one row per (number, IMEI): first day, last day, and whether the initial
+    /// dump listed it - kept only when it stayed <see cref="PlanningOptions.MinStayDays"/> days. Read in
+    /// key order, so it streams rather than holding a chunk's twenty million bindings.
+    /// </summary>
+    private string SpellSql(PlanningRun run, int chunk)
+    {
+        var asOf = Iso(run.AsOfDate ?? new DateOnly(2026, 1, 25));
+        return $"""
+            INSERT INTO {_database}.planning_spell (run_id, chunk, msisdn, imei, start, finish, dump)
+            SELECT {run.RunId}, {chunk}, msisdn, imei, min(start) AS s, max(finish) AS f, max(dump)
+            FROM {_database}.planning_spell_stage
+            WHERE run_id = {run.RunId} AND chunk = {chunk}
+            GROUP BY msisdn, imei
+            HAVING dateDiff('day', s, if(f = {StillHeld}, toDate('{asOf}'), f)) >= {PlanningOptions.MinStayDays}
+            SETTINGS optimize_aggregation_in_order = 1
+            """;
+    }
+
+    /// <summary>
+    /// Each number's handset spells, and how each ended. The higher IMEI of a dual-SIM pair is set
+    /// aside; a number with more than <see cref="PlanningOptions.MaxImeisPerNumber"/> IMEIs or
+    /// <see cref="PlanningOptions.MaxHandsetsPerNumber"/> handsets is not assessed. A spell's successor
+    /// is the earliest later handset that arrived at most <see cref="PlanningOptions.ChangeOverlapDays"/>
+    /// days before the spell ended, or at most <see cref="PlanningOptions.ChangeGapDays"/> days after.
+    /// Rows: (outcome, days, cohort, from_tac, to_tac, month) - outcome 1 replaced, 2 ended with no
+    /// successor, 3 still held, 4 not assessed.
+    /// </summary>
+    /// <remarks>
+    /// Numbers are grouped in key order and the lambdas run on blocks of 1,024: each nested lambda
+    /// copies the arrays it captures once per element, so a block of 65,536 numbers took 1.2 GiB on one
+    /// real chunk and a block of 1,024, 92 MiB (2026-10-27).
+    /// </remarks>
+    private string SpellEventsSql(PlanningRun run, int chunk)
+    {
+        var asOf = Iso(run.AsOfDate ?? new DateOnly(2026, 1, 25));
+        const string Lower1 = "concat(substring(h.1, 1, 8), leftPad(toString(toInt64(substring(h.1, 9, 6)) - 1), 6, '0'))";
+        const string Lower100 = "concat(leftPad(toString(toInt64(substring(h.1, 1, 8)) - 100), 8, '0'), substring(h.1, 9, 6))";
+        var spells = $"{_database}.planning_spell WHERE run_id = {run.RunId} AND chunk = {chunk}";
+        return $$"""
+            SELECT e.1 AS outcome, e.2 AS days, e.3 AS cohort, e.4 AS from_tac, e.5 AS to_tac, e.6 AS month
+            FROM (
+                SELECT if(length(kept) > {{PlanningOptions.MaxHandsetsPerNumber}},
+                          [(toUInt8(4), toUInt16(0), toUInt32(0), '', '', toUInt32(0))],
+                          arrayMap(i -> (
+                              toUInt8(multiIf(kept[i].3 = {{StillHeld}}, 3, nx[i] > 0, 1, 2)),
+                              toUInt16(greatest(0, least(65535, dateDiff('day', kept[i].2,
+                                  multiIf(kept[i].3 = {{StillHeld}}, toDate('{{asOf}}'), nx[i] > 0, kept[nx[i]].2, kept[i].3))))),
+                              toUInt32(if(kept[i].4 = 1, 0, toYYYYMM(kept[i].2))),
+                              kept[i].5,
+                              if(nx[i] > 0, kept[nx[i]].5, ''),
+                              toUInt32(if(nx[i] > 0, toYYYYMM(kept[nx[i]].2), 0))
+                          ), arrayEnumerate(kept))) AS events
+                FROM (
+                    SELECT kept,
+                           arrayMap(i -> if(kept[i].3 = {{StillHeld}}, 0,
+                               arrayFirstIndex(k -> k != i AND kept[k].2 > kept[i].2
+                                   AND dateDiff('day', kept[i].3, kept[k].2) BETWEEN -{{PlanningOptions.ChangeOverlapDays}} AND {{PlanningOptions.ChangeGapDays}},
+                                   arrayEnumerate(kept))), arrayEnumerate(kept)) AS nx
+                    FROM (
+                        SELECT arrayFilter(h -> NOT has(imeis, {{Lower1}}) AND NOT has(imeis, {{Lower100}}), hs) AS kept
+                        FROM (
+                            SELECT msisdn,
+                                   arraySort(x -> (x.2, x.1), groupArray((imei, start, finish, dump, substring(imei, 1, 8)))) AS hs,
+                                   arrayMap(x -> x.1, hs) AS imeis
+                            FROM {{spells}}
+                            GROUP BY msisdn
+                        )
+                        WHERE length(hs) <= {{PlanningOptions.MaxImeisPerNumber}}
+                    )
+                )
+            )
+            ARRAY JOIN events AS e
+            UNION ALL
+            SELECT toUInt8(4), toUInt16(0), toUInt32(0), '', '', toUInt32(0)
+            FROM (SELECT msisdn FROM {{spells}} GROUP BY msisdn HAVING count() > {{PlanningOptions.MaxImeisPerNumber}})
+            """;
+    }
+
+    /// <summary>
+    /// The kind of a change from one model to another: 4 the same model (same TAC or marketing name),
+    /// 1 a later GSMA allocation date, 2 an earlier one, 3 neither can be said.
+    /// </summary>
+    private static string ChangeKind(string fromTac, string toTac) => $"""
+        multiIf({fromTac} = {toTac} OR (fi.name != '' AND fi.name = ti.name), 4,
+                fi.allocated IS NULL OR ti.allocated IS NULL OR fi.allocated = ti.allocated, 3,
+                ti.allocated > fi.allocated, 1, 2)
+        """;
+
+    private string ModelInfo(string alias, string tacColumn) => $"""
+        LEFT JOIN (
+            SELECT r.tac AS tac, coalesce(t.marketingName, '') AS name, r.allocation_date AS allocated
+            FROM {_database}.tac_radio_active AS r LEFT JOIN {_database}.tac AS t ON t.tac = r.tac
+        ) AS {alias} ON {alias}.tac = {tacColumn}
+        """;
+
+    /// <summary>The chunk's spells as survival data: by cohort, length and outcome (and kind, when replaced).</summary>
+    private string TenureSql(PlanningRun run, int chunk) => $"""
+        INSERT INTO {_database}.planning_tenure (run_id, chunk, cohort, days, outcome, kind, spells)
+        SELECT {run.RunId}, {chunk}, ev.cohort, ev.days, ev.outcome,
+               toUInt8(if(ev.outcome = 1, {ChangeKind("ev.from_tac", "ev.to_tac")}, 0)) AS kind, count()
+        FROM ({SpellEventsSql(run, chunk)}) AS ev
+        {ModelInfo("fi", "ev.from_tac")}
+        {ModelInfo("ti", "ev.to_tac")}
+        GROUP BY ev.cohort, ev.days, ev.outcome, kind
+        SETTINGS max_block_size = 1024, optimize_aggregation_in_order = 1
+        """;
+
+    /// <summary>The chunk's changes of handset, by month and the two models.</summary>
+    private string ChangeSql(PlanningRun run, int chunk) => $"""
+        INSERT INTO {_database}.planning_change (run_id, chunk, month, from_tac, to_tac, kind, changes)
+        SELECT {run.RunId}, {chunk}, ev.month, ev.from_tac, ev.to_tac, toUInt8({ChangeKind("ev.from_tac", "ev.to_tac")}) AS kind, count()
+        FROM ({SpellEventsSql(run, chunk)}) AS ev
+        {ModelInfo("fi", "ev.from_tac")}
+        {ModelInfo("ti", "ev.to_tac")}
+        WHERE ev.outcome = 1
+        GROUP BY ev.month, ev.from_tac, ev.to_tac, kind
+        SETTINGS max_block_size = 1024, optimize_aggregation_in_order = 1
+        """;
+
+    /// <summary>
+    /// Handsets held now, by model and the month the network first saw them: the earliest first day of
+    /// any of their bindings, 0 when the initial dump already listed one. Countable IMEIs only.
+    /// </summary>
+    /// <remarks>
+    /// One aggregation per IMEI, in the history's key order, joined to the IMEIs active now under the
+    /// worker's grace-hash budget. Grouping by binding and then by IMEI held every IMEI of the range at
+    /// once, and filtering by an IN-set held 4.1 M active IMEIs: the first failed a real chunk at the
+    /// 1.12 GiB limit, the second used 952 MiB; this form, 644 MiB (2026-10-28).
+    /// </remarks>
+    private string DeviceAgeSql(PlanningRun run, int chunk, string range) => $"""
+        INSERT INTO {_database}.planning_device_age (run_id, chunk, tac, first_month, handsets)
+        SELECT {run.RunId}, {chunk}, substring(h.imei, 1, 8) AS tac, toUInt32(if(h.dump = 1, 0, toYYYYMM(h.first))) AS first_month, count()
+        FROM (
+            SELECT imei, min(first_date) AS first, max(in_dump) AS dump
+            FROM {_database}.binding_history_by_imei
+            WHERE {range}
+            GROUP BY imei
+        ) AS h
+        INNER JOIN (
+            SELECT imei FROM {_database}.binding_by_imei FINAL
+            WHERE {range} AND active = 1
+            GROUP BY imei
+        ) AS a ON a.imei = h.imei
+        WHERE {Countable("h.imei")}
+        GROUP BY tac, first_month
+        SETTINGS optimize_aggregation_in_order = 1
+        """;
 
     // ------------------------------------------------------------------ helpers
 

@@ -107,3 +107,13 @@ handset) counted bindings from the dashboard marts, before the strict definition
 stated" was then "no", and 5G did not need an NR band. They are a different unit and a different rule,
 not this view's figures, and were never targets: 10,311,936 bindings are on numbers in the exposed
 class here.
+
+## Addendum: handset lifecycle (2026-10-28)
+
+N4 joined the run as two more passes (analytics migration 031, `DefinitionVersion` 2): **Lifecycle** by
+ranges of numbers and **Device age** by ranges of IMEIs, each written as exact counts. The idle-time
+snapshot was the only place it could go: a number's whole handset history is grouped per number, as
+the sunset class is, and over the binding history rather than current state. The rules for a change
+are the product owner's, from measurements (`19-network-planning.md` §6). On the laptop the lifecycle
+adds about 55 minutes to a run and device age about 8, every statement under the 1.12 GiB limit -
+after three statement shapes were measured and rejected for it; the run now builds 128 parts.

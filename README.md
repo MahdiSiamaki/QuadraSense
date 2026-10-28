@@ -309,13 +309,13 @@ reconciled to the row. See `docs/adr/ADR-009-device-module.md`.
 ### 7. Tests
 
 ```bash
-dotnet test backend/Sqm.slnx                   # 820: Domain 243, Ingestion 137, Application 101, Integration 339
-cd frontend && npm test                        # 229, in 33 files
+dotnet test backend/Sqm.slnx                   # 826: Domain 243, Ingestion 137, Application 105, Integration 341
+cd frontend && npm test                        # 230, in 33 files
 python tools/test_device_image_pipeline.py     # 46 checks, no network, no database
 python tools/test_device_image_package.py      # 111 checks, no network, no database
 ```
 
-Counted 2026-10-27. Integration tests run against a real PostgreSQL and ClickHouse and **skip with a
+Counted 2026-10-28. Integration tests run against a real PostgreSQL and ClickHouse and **skip with a
 reason** when none is reachable, rather than failing — so a green run without the stack proves only
 the tests that do not need it. They connect as `sqm_app`, not as the owner: connecting as the owner
 would leave the append-only guarantee untested while appearing to pass. A system proxy that

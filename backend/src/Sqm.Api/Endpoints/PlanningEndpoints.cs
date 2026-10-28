@@ -10,7 +10,7 @@ using Sqm.Infrastructure.ClickHouse;
 
 namespace Sqm.Api.Endpoints;
 
-/// <summary>Network and product planning: the 2G/3G sunset, bands, eSIM, IoT and satellite views (N1-N3, N5, N6).</summary>
+/// <summary>Network and product planning: the 2G/3G sunset, bands, eSIM, lifecycle, IoT and satellite views (N1-N6).</summary>
 /// <remarks>
 /// <para>
 /// <b>Read, never computed here.</b> The per-number classes are the planning snapshot's (analytics
@@ -73,6 +73,10 @@ public static class PlanningEndpoints
             .WithName("GetPlanningNtn")
             .WithSummary("N6: models by satellite (3GPP NTN) capability, its mode, orbits and bands. Names nobody.");
 
+        builder.MapGet("/lifecycle", LifecycleAsync)
+            .WithName("GetPlanningLifecycle")
+            .WithSummary("N4: device and model age, changes of handset by kind and between models, and time to a change. Names nobody.");
+
         builder.MapGet("/breakdown", BreakdownAsync)
             .WithName("GetPlanningBreakdown")
             .WithSummary("One class of a view by vendor, model, device type or TAC. Names nobody.");
@@ -114,6 +118,10 @@ public static class PlanningEndpoints
     private static async Task<IResult> NtnAsync(
         IPlanningReader reader, ulong? run, string? vendor, string? model, string? deviceType, CancellationToken ct) =>
         Answer(await reader.GetNtnAsync(run, new PlanningFilter(vendor, model, deviceType), ct).ConfigureAwait(false));
+
+    private static async Task<IResult> LifecycleAsync(
+        IPlanningReader reader, ulong? run, string? vendor, string? model, string? deviceType, CancellationToken ct) =>
+        Answer(await reader.GetLifecycleAsync(run, new PlanningFilter(vendor, model, deviceType), ct).ConfigureAwait(false));
 
     private static async Task<IResult> BreakdownAsync(
         IPlanningReader reader, IOptionsMonitor<OperatorBandsOptions> bands, string? view, string? @class, string? by, ulong? run,

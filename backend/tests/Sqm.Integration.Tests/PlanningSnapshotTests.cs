@@ -47,14 +47,14 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
             }
 
             await QueryAsync($"CREATE DATABASE {_database}");
-            foreach (var table in new[] { "binding_event", "binding_current", "binding_by_imei", "tac_all", "tac_active" })
+            foreach (var table in new[] { "binding_event", "binding_current", "binding_by_imei", "tac_all", "tac_active", "tac_vendor_map" })
             {
                 await QueryAsync($"CREATE TABLE {_database}.{table} AS sqm.{table}");
             }
 
             await QueryAsync($"CREATE MATERIALIZED VIEW {_database}.mv_by_imei TO {_database}.binding_by_imei AS SELECT imei, msisdn, imsi, active, last_change_seq, last_change_date FROM {_database}.binding_current");
 
-            foreach (var migration in new[] { "022_binding_history.sql", "029_tac_radio.sql", "030_planning_snapshot.sql" })
+            foreach (var migration in new[] { "022_binding_history.sql", "029_tac_radio.sql", "030_planning_snapshot.sql", "031_planning_lifecycle.sql" })
             {
                 foreach (var statement in SqlScript.Split(MigrationText(migration).Replace("sqm.", _database + ".", StringComparison.Ordinal)))
                 {
@@ -74,7 +74,7 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
                     (1, '01010900', 'Handheld', '00', '00', 'Not Known', '20-Apr-2000', 'Not Known', 'Radio Interface: NONE')
                 """);
             await QueryAsync($"INSERT INTO {_database}.tac_active (singleton, version_id, activated_at) VALUES (1, 1, now64(3))");
-            await QueryAsync($"CREATE VIEW {_database}.tac AS SELECT tac FROM {_database}.tac_all WHERE version_id = 1");
+            await QueryAsync($"CREATE VIEW {_database}.tac AS SELECT * FROM {_database}.tac_all WHERE version_id = 1");
 
             // Each number is one case; the comment says what it must come out as.
             await QueryAsync($"""
@@ -106,6 +106,52 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
                     (202603, 9120000004, 432110000000012, '86000001000001', 0, '2026-03-01', '2026-03-20', 1, 1, [('2026-03-01', 1, 1), ('2026-03-20', 1, 2)]),
                     (202604, 9120000004, 432110000000013, '86000001000001', 0, '2026-04-01', '2026-04-20', 1, 1, [('2026-04-01', 1, 1), ('2026-04-20', 1, 2)]),
                     (202605, 9120000012, 432110000000014, '86000001000001', 0, '2026-05-01', '2026-05-01', 1, 0, [('2026-05-01', 1, 1)])
+                """);
+            // Handset lifecycle: numbers 30-37 are one case each, every binding ended so the classes
+            // above do not move; number 1's phone is still held. Allocation: 35000001 2023, 35100001
+            // 2005, 35200001 2019.
+            await QueryAsync($"""
+                INSERT INTO {_database}.binding_current (msisdn, imsi, imei, active, last_change_seq, last_change_date) VALUES
+                    (9120000030, 432110000000030, '35100001000030', 0, 1, '2026-03-02'),
+                    (9120000030, 432110000000030, '35000001000031', 0, 1, '2026-04-10'),
+                    (9120000031, 432110000000031, '35100001000040', 0, 1, '2026-04-01'),
+                    (9120000031, 432110000000031, '35000001000041', 0, 1, '2026-04-20'),
+                    (9120000032, 432110000000032, '35200001000050', 0, 1, '2026-02-10'),
+                    (9120000032, 432110000000032, '35000001000051', 0, 1, '2026-03-20'),
+                    (9120000033, 432110000000033, '35200001000060', 0, 1, '2026-02-10'),
+                    (9120000033, 432110000000033, '35000001000061', 0, 1, '2026-03-25'),
+                    (9120000034, 432110000000034, '35200001000070', 0, 1, '2026-03-01'),
+                    (9120000034, 432110000000034, '35200001000071', 0, 1, '2026-03-01'),
+                    (9120000034, 432110000000034, '35000001000072', 0, 1, '2026-03-15'),
+                    (9120000035, 432110000000035, '35100001000080', 0, 1, '2026-02-05'),
+                    (9120000035, 432110000000035, '35000001000081', 0, 1, '2026-02-20'),
+                    (9120000036, 432110000000036, '35000001000090', 0, 1, '2026-02-20'),
+                    (9120000036, 432110000000036, '35000001000095', 0, 1, '2026-03-01'),
+                    (9120000037, 432110000000037, '35100001000100', 0, 1, '2026-03-01'),
+                    (9120000037, 432110000000037, '35000001000105', 0, 1, '2026-03-01'),
+                    (9120000037, 432110000000037, '35000001000110', 0, 1, '2026-03-20')
+                """);
+            await QueryAsync($"""
+                INSERT INTO {_database}.binding_history (month, msisdn, imsi, imei, in_dump, first_date, last_date, adds, removes, events) VALUES
+                    (202602, 9120000001, 432110000000001, '35000001000001', 0, '2026-02-01', '2026-02-01', 1, 0, []),
+                    (202602, 9120000030, 432110000000030, '35100001000030', 0, '2026-02-01', '2026-03-02', 1, 1, []),
+                    (202603, 9120000030, 432110000000030, '35000001000031', 0, '2026-03-01', '2026-04-10', 1, 1, []),
+                    (202602, 9120000031, 432110000000031, '35100001000040', 0, '2026-02-01', '2026-04-01', 1, 1, []),
+                    (202602, 9120000031, 432110000000031, '35000001000041', 0, '2026-02-15', '2026-04-20', 1, 1, []),
+                    (202602, 9120000032, 432110000000032, '35200001000050', 0, '2026-02-01', '2026-02-10', 1, 1, []),
+                    (202603, 9120000032, 432110000000032, '35000001000051', 0, '2026-03-03', '2026-03-20', 1, 1, []),
+                    (202602, 9120000033, 432110000000033, '35200001000060', 0, '2026-02-01', '2026-02-10', 1, 1, []),
+                    (202603, 9120000033, 432110000000033, '35000001000061', 0, '2026-03-18', '2026-03-25', 1, 1, []),
+                    (202602, 9120000034, 432110000000034, '35200001000070', 0, '2026-02-01', '2026-03-01', 1, 1, []),
+                    (202602, 9120000034, 432110000000034, '35200001000071', 0, '2026-02-01', '2026-03-01', 1, 1, []),
+                    (202603, 9120000034, 432110000000034, '35000001000072', 0, '2026-03-01', '2026-03-15', 1, 1, []),
+                    (0, 9120000035, 432110000000035, '35100001000080', 1, '2025-12-27', '2026-02-05', 0, 1, []),
+                    (202602, 9120000035, 432110000000035, '35000001000081', 0, '2026-02-04', '2026-02-20', 1, 1, []),
+                    (202602, 9120000036, 432110000000036, '35000001000090', 0, '2026-02-01', '2026-02-20', 1, 1, []),
+                    (202602, 9120000036, 432110000000036, '35000001000095', 0, '2026-02-20', '2026-03-01', 1, 1, []),
+                    (202602, 9120000037, 432110000000037, '35100001000100', 0, '2026-02-01', '2026-03-01', 1, 1, []),
+                    (202602, 9120000037, 432110000000037, '35000001000105', 0, '2026-02-28', '2026-03-01', 1, 1, []),
+                    (202603, 9120000037, 432110000000037, '35000001000110', 0, '2026-03-02', '2026-03-20', 1, 1, [])
                 """);
             await QueryAsync($"INSERT INTO {_database}.binding_history_day (data_date, state, events, updated_at) VALUES ('2026-05-01', 'done', 1, now64(3))");
             await QueryAsync($"INSERT INTO {_database}.binding_event (seq, data_date, msisdn, imsi, imei, label) VALUES (1, '2026-05-01', 9120000001, 432110000000001, '35000001000001', 'add')");
@@ -205,6 +251,80 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
         Assert.Equal("86000001000001|3|2|1|1|3|2026-03-01", device);
     }
 
+    [Fact]
+    public async Task A_change_of_handset_is_a_successor_within_the_windows_and_nothing_else()
+    {
+        Assert.SkipWhen(_unavailable is not null, _unavailable ?? "");
+        var ct = TestContext.Current.CancellationToken;
+
+        var run = await BuildAsync(ct);
+
+        // cohort | days | outcome (1 replaced, 2 ended, 3 still held) | kind (1 newer, 4 same model) | spells
+        var tenure = await QueryAsync($"""
+            SELECT concatWithSeparator('|', toString(cohort), toString(days), toString(outcome), toString(kind), toString(sum(spells)))
+            FROM {_database}.planning_tenure WHERE run_id = {run.RunId}
+            GROUP BY cohort, days, outcome, kind ORDER BY cohort, days FORMAT TSVRaw
+            """);
+        Assert.Equal(
+            [
+                "0|39|1|1|1",        // 35: a handset from the initial dump, replaced - cohort 0, never a month
+                "202602|9|2|0|2",    // 33: gone 36 days before the next arrived - ended; and 36's second phone
+                "202602|16|2|0|1",   // 35: its new phone, ended with nothing after it
+                "202602|19|1|4|1",   // 36: the same model again
+                "202602|28|1|1|2",   // 30: the old phone left the day after the new one came; 34 likewise, its twin set aside
+                "202602|29|1|1|1",   // 37: a one-day sighting in between is no handset - the change is to the next
+                "202602|30|1|1|1",   // 32: a 21-day gap is still a change
+                "202602|59|2|0|1",   // 31: two phones side by side for 45 days - no change
+                "202602|64|2|0|1",   // 31: the other one
+                "202602|89|3|0|1",   // 1: still held at the delivery, censored there
+                "202603|7|2|0|1",
+                "202603|14|2|0|1",
+                "202603|17|2|0|1",
+                "202603|18|2|0|1",
+                "202603|40|2|0|1",
+            ],
+            tenure.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+
+        // month | from | to | kind | changes
+        var changes = await QueryAsync($"""
+            SELECT concatWithSeparator('|', toString(month), from_tac, to_tac, toString(kind), toString(sum(changes)))
+            FROM {_database}.planning_change WHERE run_id = {run.RunId}
+            GROUP BY month, from_tac, to_tac, kind ORDER BY month, from_tac, to_tac FORMAT TSVRaw
+            """);
+        Assert.Equal(
+            ["202602|35000001|35000001|4|1", "202602|35100001|35000001|1|1", "202603|35100001|35000001|1|2", "202603|35200001|35000001|1|2"],
+            changes.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+
+        // Handsets held now, by when the network first saw them: number 1's phone, and the modem.
+        var age = await QueryAsync($"""
+            SELECT concatWithSeparator('|', tac, toString(first_month), toString(sum(handsets)))
+            FROM {_database}.planning_device_age WHERE run_id = {run.RunId}
+            GROUP BY tac, first_month ORDER BY tac FORMAT TSVRaw
+            """);
+        Assert.Equal(
+            ["35000001|202602|1", "86000001|202603|1"],
+            age.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+
+        // As the page reads it. February's eleven spells: five changed (days 19, 28, 28, 29, 30), six
+        // censored (9, 9, 16, 59, 64, 89). Kaplan-Meier: 1 - (7/8)(5/7)(4/5)(3/4) = 62.5% changed within 30
+        // days, half by day 29, and no answer at 90: nobody in it was followed that long.
+        var view = (await Reader().GetLifecycleAsync(run.RunId, PlanningFilter.None, ct))!;
+        Assert.Equal(6, view.Changes);
+        Assert.Equal(["newer|5", "older|0", "not-stated|0", "same-model|1"], view.Kinds.Select(k => $"{k.Kind}|{k.Changes}"));
+        Assert.Equal(("2026-02", "2026-03"), (view.FirstMonth, view.LastMonth));
+        Assert.Equal(["2026-02|11|5|62.5||29", "2026-03|5|0|0||"],
+            view.Cohorts.Select(c => $"{c.Cohort}|{c.Spells}|{c.Changed}|{c.ChangedBy30}|{c.ChangedBy90}|{c.MedianDays}"));
+        Assert.Equal((1L, 1L), (view.Dump!.Spells, view.Dump.Changed));
+        Assert.Equal(["2026-02|1", "2026-03|1"], view.DeviceAge.Select(a => $"{a.Key}|{a.Handsets}"));
+        Assert.Equal(["2021|1", "2023|1"], view.ModelAge.Select(a => $"{a.Key}|{a.Handsets}"));
+
+        // A run being built reports its parts across every table: two chunks of four tables.
+        var next = await Store().PlanPlanningRunAsync(await Store().ReadPlanningInputsAsync(ct), new PlanningOptions { Chunks = 2 }, ct);
+        var progress = (await Reader().GetStatusAsync(ct)).Running!;
+        Assert.Equal((0, 8), (progress.ChunksDone, progress.ChunksTotal));
+        await Store().EndPlanningRunAsync(next, "abandoned", "a test of the progress", ct);
+    }
+
     private async Task<PlanningRun> BuildAsync(CancellationToken ct)
     {
         var store = Store();
@@ -231,6 +351,9 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
         Options.Create(new ClickHouseOptions { ConnectionString = ConnectionString }),
         new Factory(),
         NullLogger<ClickHouseIngestionStore>.Instance);
+
+    private ClickHousePlanningReader Reader() => new(
+        Options.Create(new ClickHouseOptions { ConnectionString = ConnectionString }), new Factory());
 
     private ClickHouseTacVersionStore TacStore() => new(
         Options.Create(new ClickHouseOptions { ConnectionString = ConnectionString }),

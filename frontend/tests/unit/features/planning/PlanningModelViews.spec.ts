@@ -58,16 +58,42 @@ const ntn = {
   noData: [{ topic: 'Satellite service in use', reason: 'Capability is not service.' }],
 }
 
+const lifecycle = {
+  run,
+  filtered: false,
+  firstMonth: '2026-01',
+  lastMonth: '2026-10',
+  changes: 100,
+  kinds: [
+    { kind: 'newer', label: 'To a newer model (an upgrade)', changes: 60, sharePercent: 60 },
+    { kind: 'older', label: 'To an older model', changes: 20, sharePercent: 20 },
+    { kind: 'not-stated', label: 'Neither', changes: 5, sharePercent: 5 },
+    { kind: 'same-model', label: 'The same model again', changes: 15, sharePercent: 15 },
+  ],
+  vendorMoves: [{ from: 'Samsung', to: 'Xiaomi', changes: 40, upgrades: 30 }],
+  modelMoves: [],
+  cohorts: [
+    { cohort: '2026-09', spells: 50, changed: 5, censored: 45, changedBy30: 10, changedBy90: null, changedBy180: null, upgradedBy90: null, upgradedBy180: null, medianDays: null },
+  ],
+  dump: { cohort: 'dump', spells: 900, changed: 120, censored: 780, changedBy30: 1, changedBy90: 5, changedBy180: 9, upgradedBy90: 3, upgradedBy180: 6, medianDays: null },
+  notAssessedNumbers: 3,
+  deviceAge: [{ key: 'dump', label: 'Before 2026-01-26 (in the initial dump)', handsets: 70, sharePercent: 70 }],
+  modelAge: [{ key: '2023', label: '2023', handsets: 30, sharePercent: 30 }],
+  noData: [{ topic: 'Purchase or manufacture date', reason: 'Nothing says when a handset was made or bought.' }],
+}
+
 const bands = ref<unknown>(notConfigured)
 const query = <T>(value: T) => ({ data: value, isPending: ref(false), isError: ref(false), error: ref(null) })
 
 vi.mock('@/api/planning', () => ({
   useBands: () => query(bands),
   useNtn: () => query(ref(ntn)),
+  useLifecycle: () => query(ref(lifecycle)),
 }))
 
 const { default: PlanningBandsView } = await import('@/features/planning/PlanningBandsView.vue')
 const { default: PlanningNtnView } = await import('@/features/planning/PlanningNtnView.vue')
+const { default: PlanningLifecycleView } = await import('@/features/planning/PlanningLifecycleView.vue')
 
 const stubs = { PlanningBreakdown: true, PlanningTrendChart: true }
 const props = { run: run.runId, filter: {}, canExport: false, canOpenDevice: false }
@@ -103,5 +129,20 @@ describe('Planning satellite view', () => {
     expect(text).toContain('A satellite radio listed, not 3GPP NTN')
     expect(text).toContain('Satellite service in use: no data')
     expect(text).toContain('No NTN model on the network.')
+  })
+})
+
+describe('Planning lifecycle view', () => {
+  it('shows a horizon nobody was followed to as unobservable, and the dump apart from the cohorts', () => {
+    const wrapper = mount(PlanningLifecycleView, { props: { run: run.runId, filter: {} }, global: { stubs } })
+    const cohortRow = wrapper.findAll('tbody tr').find((r) => r.text().startsWith('2026-09'))!
+    const cells = cohortRow.findAll('td').map((c) => c.text())
+
+    expect(cells[2]).toBe('10.0%')
+    expect(cells[3]).toBe('—')
+    expect(cells[6]).toBe('—')
+    expect(wrapper.findAll('tbody tr').some((r) => r.text().startsWith('dump'))).toBe(false)
+    expect(wrapper.text()).toContain('900 handsets were already on their numbers in the initial dump')
+    expect(wrapper.text()).toContain('Purchase or manufacture date: no data')
   })
 })

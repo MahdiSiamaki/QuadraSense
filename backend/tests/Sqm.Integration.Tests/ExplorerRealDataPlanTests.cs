@@ -24,7 +24,12 @@ namespace Sqm.Integration.Tests;
 /// The sample identifiers are read from the data when the test runs, never written here: this
 /// repository does not hold subscriber identifiers.
 /// </para>
+/// <para>
+/// In the real-data collection, so it never runs beside another class's heavy reads: in parallel with
+/// the planning views' it passed its 100-second client timeout, where alone it takes 7 s (2026-10-28).
+/// </para>
 /// </remarks>
+[Collection("clickhouse-scratch")]
 public sealed class ExplorerRealDataPlanTests : IAsyncLifetime
 {
     private const string Endpoint = "http://localhost:18123/";

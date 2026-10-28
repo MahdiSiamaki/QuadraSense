@@ -207,12 +207,80 @@ public sealed record NtnResponse(
     IReadOnlyList<PlanningModelTrendPoint> ModelTrend,
     IReadOnlyList<PlanningNoData> NoData);
 
+/// <summary>Changes of one kind.</summary>
+/// <param name="Kind"><c>newer</c>, <c>older</c>, <c>not-stated</c> or <c>same-model</c>.</param>
+/// <param name="Label">What it is called on screen.</param>
+/// <param name="Changes">Changes of handset. Exact.</param>
+/// <param name="SharePercent">Of all changes.</param>
+public sealed record LifecycleKindRow(string Kind, string Label, long Changes, double SharePercent);
+
+/// <summary>Numbers moving from one vendor or model to another.</summary>
+/// <param name="From">The model or vendor left.</param>
+/// <param name="To">The one moved to.</param>
+/// <param name="Changes">Changes from one to the other. Exact.</param>
+/// <param name="Upgrades">Of those, to a model with a later GSMA allocation date.</param>
+public sealed record LifecycleMoveRow(string From, string To, long Changes, long Upgrades);
+
+/// <summary>The handset spells that began in one month, followed to the run's delivery.</summary>
+/// <param name="Cohort">The month, yyyy-MM; <c>dump</c> for spells from the initial dump.</param>
+/// <param name="Spells">Spells of a handset on a number that began then.</param>
+/// <param name="Changed">Of those, replaced by another handset.</param>
+/// <param name="Censored">Still held at the delivery, or ended with no successor: followed, not replaced.</param>
+/// <param name="ChangedBy30">Kaplan-Meier share changed within 30 days, percent; null where nobody was followed that long.</param>
+/// <param name="ChangedBy90">The same within 90 days.</param>
+/// <param name="ChangedBy180">The same within 180 days.</param>
+/// <param name="UpgradedBy90">Share changed to a newer model within 90 days, other changes censored.</param>
+/// <param name="UpgradedBy180">The same within 180 days.</param>
+/// <param name="MedianDays">Days by which half had changed, or null.</param>
+public sealed record LifecycleCohortRow(
+    string Cohort, long Spells, long Changed, long Censored,
+    double? ChangedBy30, double? ChangedBy90, double? ChangedBy180,
+    double? UpgradedBy90, double? UpgradedBy180, int? MedianDays);
+
+/// <summary>Handsets held now, by an age.</summary>
+/// <param name="Key">The month first seen (yyyy-MM, or <c>dump</c>), or the allocation year.</param>
+/// <param name="Label">What it is called on screen.</param>
+/// <param name="Handsets">Distinct IMEIs held now. Exact.</param>
+/// <param name="SharePercent">Of the handsets in the table.</param>
+public sealed record LifecycleAgeRow(string Key, string Label, long Handsets, double SharePercent);
+
+/// <summary>N4 - handset lifecycle, for one run.</summary>
+/// <param name="Run">The run.</param>
+/// <param name="Filtered">A vendor, model or device type is applied: changes from or to it, handsets of it.</param>
+/// <param name="FirstMonth">The first month a change was seen in, yyyy-MM; the observation window's start.</param>
+/// <param name="LastMonth">The last.</param>
+/// <param name="Changes">Changes of handset in the window.</param>
+/// <param name="Kinds">Changes by kind: to a newer model, an older one, neither stated, the same model.</param>
+/// <param name="VendorMoves">The largest vendor-to-vendor moves.</param>
+/// <param name="ModelMoves">The largest model-to-model moves.</param>
+/// <param name="Cohorts">Time to a change, per month the spells began. Unfiltered only.</param>
+/// <param name="Dump">The spells already running in the initial dump: their start is unknown.</param>
+/// <param name="NotAssessedNumbers">Numbers with more than 20 handsets in their history, not read as changes.</param>
+/// <param name="DeviceAge">Handsets held now, by the month the network first saw them.</param>
+/// <param name="ModelAge">Handsets held now, by their model's GSMA allocation year.</param>
+/// <param name="NoData">Purchase and manufacture dates.</param>
+public sealed record LifecycleResponse(
+    PlanningRunInfo Run,
+    bool Filtered,
+    string? FirstMonth,
+    string? LastMonth,
+    long Changes,
+    IReadOnlyList<LifecycleKindRow> Kinds,
+    IReadOnlyList<LifecycleMoveRow> VendorMoves,
+    IReadOnlyList<LifecycleMoveRow> ModelMoves,
+    IReadOnlyList<LifecycleCohortRow> Cohorts,
+    LifecycleCohortRow? Dump,
+    long NotAssessedNumbers,
+    IReadOnlyList<LifecycleAgeRow> DeviceAge,
+    IReadOnlyList<LifecycleAgeRow> ModelAge,
+    IReadOnlyList<PlanningNoData> NoData);
+
 /// <summary>N5 - the IoT / M2M fleet, for one delivery.</summary>
 /// <param name="Run">The delivery.</param>
 /// <param name="Devices">IoT / M2M handsets (IMEIs) active now, and the numbers and bindings they carry.</param>
 /// <param name="ByDeviceType">Per GSMA device type.</param>
 /// <param name="Exposure">2G only, 2G/3G only, LTE-M / NB-IoT only, LTE or 5G, not stated - per device.</param>
-/// <param name="SimRotation">Devices by how many SIMs they have carried, all time.</param>
+/// <param name="SimRotation">Devices active now by how many SIMs they have carried, all time.</param>
 /// <param name="NotClassified">Handsets the classification cannot place: unknown devices and TACs the catalogue lacks.</param>
 /// <param name="NoData">Trackers: the catalogue has no such device type.</param>
 public sealed record IotResponse(

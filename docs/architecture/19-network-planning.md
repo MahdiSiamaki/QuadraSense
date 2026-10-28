@@ -18,7 +18,7 @@ Six views for network and product planning, asked for on 2026-10-27:
 | N1 | 2G/3G sunset readiness: numbers every one of whose active handsets lacks LTE | 2026-10-27, section 3 |
 | N2 | 5G and band readiness against the operator's own bands | 2026-10-27, section 5 - the operator's band list is not configured yet |
 | N3 | eSIM readiness | 2026-10-27, section 3 |
-| N4 | Handset lifecycle: device age, model age, upgrade cohorts, model-to-model moves | not yet |
+| N4 | Handset lifecycle: device age, model age, upgrade cohorts, model-to-model moves | 2026-10-27, section 6 |
 | N5 | IoT / M2M fleet | 2026-10-27, section 3 |
 | N6 | Satellite (NTN) devices | 2026-10-27, section 5 |
 
@@ -291,3 +291,99 @@ are counted apart. NTN models are broken down by mode (NTN only, or NTN and the 
 orbit (GSO, NGSO) and NTN band (E-UTRA B255/B256, NR n255/n256), with bindings per class at every
 delivery the per-model mart holds. **Satellite service in use: no data** - capability is not a
 subscription.
+
+## 6. Handset lifecycle (N4) (built 2026-10-27)
+
+The planning run gains two passes (analytics migration 031), both exact counts with no uniq() states:
+**Lifecycle**, by ranges of numbers, from the binding history (each binding's first day) and current
+state (its removal); and **Device age**, by ranges of IMEIs, from the history ordered by IMEI.
+
+### What a handset on a number is, and what a change is
+
+A **spell** is one IMEI on one number, from its first binding's first day to its last removal - or
+"still held" at the run's delivery. Countable IMEIs only: shifted IMEIs and unknown devices are not
+handsets. Four rules, each decided by the product owner on 2026-10-27 from a measurement on one
+thirty-second of the numbers (2.9 M numbers, 18.4 M spells):
+
+| Rule | The measurement behind it |
+|---|---|
+| **A handset counts only if it stayed at least 7 days.** Shorter sightings are left out altogether: nothing changes into or out of them | 59.3% of spells lasted 0-1 days and 5.6% 2-3 days, then a flat tail - 1.6% 4-7 days, 1.1% 8-14. 91% of the one-day spells were smartphones, crowded onto numbers with many handsets: a SIM tried in another phone is not a change |
+| **B replaces A when A leaves at most 7 days after B arrives**; a longer overlap is two handsets used side by side | Among numbers with exactly two handsets, A most often left the day after B arrived (41,923); the count per day was flat by days 4-7; 63,610 kept both for more than 30 days |
+| **... or when A left at most 30 days before B arrived**; after a longer gap A ended with no successor, since the number may have passed to someone else | - |
+| **Every change of model is counted and split by kind**: to a newer model (a later GSMA allocation date - the only kind called an *upgrade*), an older one, neither (same date, or one not stated), or the same model again (same TAC or marketing name) | - |
+
+The higher IMEI of a dual-SIM pair (section 3's rule) is set aside, so a handset's second radio is
+never its own successor. A number with more than 40 such IMEIs, or 20 handsets once the twins are
+set aside, is **not assessed** and counted as such rather than read as twenty changes. The windows
+and limits are constants in `PlanningOptions`, part of the definition every run's fingerprint carries.
+
+### The observation window, and censoring
+
+The history starts with the initial dump - a month of observations without dates (2025-12-27 to
+2026-01-25). A handset in it was first seen "before 2026-01-26" and how long its number had held it
+is unknown, so its spell is reported apart and never as a cohort. A spell still held at the delivery
+is **censored** there, one that ended with no successor where it ended: each counts for as long as it
+was followed and no further. **Time to a change** is therefore a Kaplan-Meier estimate per month the
+spells began (`Sqm.Application.Planning.Survival`), and a horizon nobody in a cohort was followed to
+is shown as not yet observable, never as zero. For **time to an upgrade**, a change to another kind
+of model ends the spell without the event and is censored there - the cause-specific estimate.
+
+**Device age** is how long the network has seen a handset held now - the earliest first day of any
+of its bindings, on any number; **model age** is its TAC's GSMA allocation year. Neither is a
+purchase, manufacture or release date, and the page says so.
+
+### What the view shows
+
+Changes by kind, the largest vendor-to-vendor and model-to-model moves, time to a change and to an
+upgrade by cohort, handsets held now by the month first seen and by allocation year. A filter narrows
+the changes and moves to those from or to the models it selects, and the ages to those models; the
+cohorts are the whole network's only, since a spell is not stored with its model. The view is kept
+for the two runs that keep their rows.
+
+### What it found (the laptop, delivery 246)
+
+| Changes of handset, 2026-01 to 2026-10 | Changes | Share |
+|---|---|---|
+| To a newer model (an upgrade) | 9,799,608 | 49.0% |
+| To an older model | 7,280,474 | 36.4% |
+| Neither: same allocation date, or one not stated | 184,698 | 0.9% |
+| The same model again | 2,740,109 | 13.7% |
+| **All** | **20,004,889** | |
+
+90,219 numbers were not assessed. Of the handsets that arrived on a number in February 2026 (8.49 M),
+5.69% had been replaced within 30 days, 13.37% within 90 and 21.29% within 180; 6.89% had been
+upgraded within 90 days. No cohort reaches half, so no median yet. 82,341,858 handsets are held now
+with a history, against the dashboard's 83,372,376 active 14-digit IMEIs, which include the shifted
+ones set aside here.
+
+**Read with the feed's defect.** Since 15 September 2026 the operator's files carry shifted IMEIs
+(`docs/discovery/05-shifted-imei-verification.md`; corrected files are in the backlog). They are set
+aside here, so a handset hidden behind one ends its spell early: the changes and cohorts of those
+months are understated until corrected files are imported, and the page says so.
+
+### Cost
+
+The laptop's first run with the lifecycle (delivery 246, 2026-10-27/28), 32 chunks each, under the
+worker's 1.12 GiB statement limit:
+
+| Statement, per chunk | Mean | Slowest | Peak memory |
+|---|---|---|---|
+| Stage: every binding of the range with its first day and end, countable IMEIs | 72.3 s | 131.4 s | 715 MiB |
+| Spells: one row per (number, IMEI) that stayed 7 days, by key order | 13.4 s | 61.1 s | 312 MiB |
+| Tenure: each number's spells and successors, blocks of 1,024 numbers | 10.4 s | 19.3 s | 262 MiB |
+| Changes: the same, by month and the two models | 6.9 s | 16.9 s | 261 MiB |
+| Device age, per IMEI chunk | 14.5 s | 22.7 s | 669 MiB |
+
+The lifecycle adds about 55 minutes to a run and device age about 8. A run keeps 17.4 M change rows
+(117 MiB), 252,266 tenure rows and 343,829 device-age rows.
+
+Three shapes were rejected, each measured on a real chunk first:
+
+- Nested lambdas in ClickHouse's default blocks of 65,536 rows took 1.2 GiB: each copies the arrays
+  it captures once per element. In blocks of 1,024, 92 MiB.
+- Grouping by (number, IMEI) and then by number in one statement held every number's arrays at once
+  (1.12 GiB at 8.5 M rows read). So the spells are a table of their own, read in key order.
+- Device age grouped by binding and then by IMEI, holding every IMEI of the range: it peaked at
+  1.10 GiB on the chunks it passed and failed the fourth. Filtering by an IN-set of the 4.1 M IMEIs
+  active now took 952 MiB. One aggregation per IMEI in the history's key order, joined to the active
+  IMEIs under the worker's grace-hash budget, gives the same rows at 644 MiB.

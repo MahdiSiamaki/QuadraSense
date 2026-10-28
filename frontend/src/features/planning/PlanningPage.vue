@@ -11,6 +11,7 @@ import { Permission, useAuth } from '@/features/auth/useAuth'
 import { formatDate, formatDateTime, formatFull, formatPercent, formatSequence } from '@/lib/format'
 import CampaignRequestDialog from './CampaignRequestDialog.vue'
 import PlanningBandsView from './PlanningBandsView.vue'
+import PlanningLifecycleView from './PlanningLifecycleView.vue'
 import PlanningBreakdown from './PlanningBreakdown.vue'
 import PlanningNtnView from './PlanningNtnView.vue'
 import PlanningNumbers from './PlanningNumbers.vue'
@@ -29,11 +30,12 @@ const { can } = useAuth()
 const route = useRoute()
 const router = useRouter()
 
-type Tab = 'sunset' | 'bands' | 'esim' | 'iot' | 'ntn'
+type Tab = 'sunset' | 'bands' | 'esim' | 'lifecycle' | 'iot' | 'ntn'
 const TABS: { value: Tab; label: string }[] = [
   { value: 'sunset', label: '2G/3G sunset' },
   { value: 'bands', label: 'Bands and 5G' },
   { value: 'esim', label: 'eSIM' },
+  { value: 'lifecycle', label: 'Lifecycle' },
   { value: 'iot', label: 'IoT fleet' },
   { value: 'ntn', label: 'Satellite' },
 ]
@@ -426,6 +428,14 @@ const requestLabel = computed(() => {
               :can-open-device="can(Permission.DeviceView)"
             />
 
+            <!-- ====================================================== N4 -->
+            <template v-else-if="tab === 'lifecycle'">
+              <PlanningLifecycleView v-if="run.hasNumbers" :run="run.runId" :filter="filter" />
+              <p v-else class="py-10 text-center text-xs text-[var(--c-text-secondary)]">
+                The lifecycle figures are kept for the two newest runs only. Choose a current delivery.
+              </p>
+            </template>
+
             <!-- ====================================================== N6 -->
             <PlanningNtnView
               v-else-if="tab === 'ntn'"
@@ -473,8 +483,8 @@ const requestLabel = computed(() => {
                   </Card>
                 </div>
                 <p class="text-2xs text-[var(--c-text-muted)]">
-                  Devices are distinct IMEIs, estimated. SIMs carried counts every SIM a device's bindings have had since the initial
-                  dump, from the binding history; shifted IMEIs are not counted as devices.
+                  Devices are distinct IMEIs, estimated. SIMs carried counts, for each device active now, every SIM its bindings have
+                  had since the initial dump, from the binding history; shifted IMEIs are not counted as devices.
                 </p>
 
                 <div v-for="n in iot.data.value.noData" :key="n.topic" class="rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-4 py-3 text-xs">
