@@ -116,17 +116,20 @@ function modelPoints(points: PlanningModelTrendPoint[] | undefined) {
 const canNumbers = computed(() => can(Permission.LookupSubscriber))
 
 /**
- * Whether a class's list can be narrowed by vendor, model or type: the planning run keeps the models
- * of the exposed, LTE-M / NB-IoT-only and not-assessable numbers only (the server refuses the rest).
+ * Whether a class's list can be narrowed by vendor, model or type: in a run that holds every number's
+ * models, always; in one built before, for the exposed, LTE-M / NB-IoT-only and not-assessable classes
+ * only (the server refuses the rest).
  */
 const filtered = computed(() => !!(filter.value.vendor || filter.value.model || filter.value.deviceType))
 const narrowable = (view: 'sunset' | 'esim', planningClass: string) =>
-  !filtered.value || (view === 'sunset' && ['ready-lpwan', 'exposed', 'not-assessable'].includes(planningClass))
+  !filtered.value ||
+  !!run.value?.hasModelIndex ||
+  (view === 'sunset' && ['ready-lpwan', 'exposed', 'not-assessable'].includes(planningClass))
 const canCampaign = computed(() => can(Permission.CampaignExport) && can(Permission.LookupSubscriber))
 const requesting = ref<'sunset' | 'esim' | null>(null)
 const NOT_NARROWABLE =
-  'A list narrowed by vendor, model or device type is kept for the exposed, LTE-M / NB-IoT-only and not-assessable classes: ' +
-  'the planning run keeps the models of those numbers only. Clear the filter to list this class.'
+  "This delivery's run was built before every number's models were kept: a list narrowed by vendor, model or device type is " +
+  'kept for its exposed, LTE-M / NB-IoT-only and not-assessable classes only. Clear the filter, or choose a newer delivery.'
 
 
 
@@ -430,7 +433,7 @@ const requestLabel = computed(() => {
 
             <!-- ====================================================== N4 -->
             <template v-else-if="tab === 'lifecycle'">
-              <PlanningLifecycleView v-if="run.hasNumbers" :run="run.runId" :filter="filter" />
+              <PlanningLifecycleView v-if="run.hasNumbers" :run="run.runId" :filter="filter" :can-export="can(Permission.DataExport)" />
               <p v-else class="py-10 text-center text-xs text-[var(--c-text-secondary)]">
                 The lifecycle figures are kept for the two newest runs only. Choose a current delivery.
               </p>

@@ -8,9 +8,10 @@ public sealed class PlanningOptions
 
     /// <summary>
     /// Bumped whenever what a stored measure means changes, so every run built under the old meaning
-    /// becomes stale. 2: handset lifecycle (N4), analytics migration 031.
+    /// becomes stale. 2: handset lifecycle (N4), analytics migration 031. 3: every number's models and
+    /// the band view's figures written at publication, migration 032.
     /// </summary>
-    public const int DefinitionVersion = 2;
+    public const int DefinitionVersion = 3;
 
     /// <summary>
     /// A new handset replaces the old one on a number when the old one leaves at most this many days

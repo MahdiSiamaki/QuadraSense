@@ -22,7 +22,7 @@ namespace Sqm.Integration.Tests;
 public sealed class CampaignExportEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private const ulong Number = 9121234567;
-    private static readonly PlanningRunInfo Run = new(1790000000000, 246, "2026-10-10", "2026-10-27T05:00:00Z", true);
+    private static readonly PlanningRunInfo Run = new(1790000000000, 246, "2026-10-10", "2026-10-27T05:00:00Z", true, true);
 
     private readonly WebApplicationFactory<Program> _factory;
     private readonly List<AuditEntry> _audited = [];
@@ -59,6 +59,7 @@ public sealed class CampaignExportEndpointTests : IClassFixture<WebApplicationFa
             {
                 "GetStatusAsync" => Task.FromResult(new PlanningStatusResponse(true, [Run], null, null, null)),
                 "CountNumbersAsync" => Task.FromResult(_count),
+                "CanNarrowAsync" => Task.FromResult(true),
                 "StreamNumbersAsync" => Stream((Func<PlanningNumberRead, ValueTask>)args[5]!),
                 _ => throw new NotSupportedException(method.Name),
             }));

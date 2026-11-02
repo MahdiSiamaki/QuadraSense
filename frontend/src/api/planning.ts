@@ -18,6 +18,8 @@ export interface PlanningRun {
   publishedAt: string
   /** Only the two newest runs keep their per-number rows; older ones keep their figures for the trend. */
   hasNumbers: boolean
+  /** It holds every number's models: a list of any class can be narrowed by vendor, model or type. */
+  hasModelIndex: boolean
 }
 
 export interface PlanningStatus {
@@ -300,6 +302,15 @@ export function usePlanningBreakdownExport() {
   return useMutation({
     mutationFn: (request: { view: PlanningView; class: string; by: PlanningBy; runId: number | null } & PlanningFilter) =>
       api.download('/api/v1/planning/breakdown/export', request),
+  })
+}
+
+export type LifecycleTable = 'vendor-moves' | 'model-moves' | 'cohorts' | 'device-age' | 'model-age'
+
+export function useLifecycleExport() {
+  return useMutation({
+    mutationFn: (request: { table: LifecycleTable; runId: number | null } & PlanningFilter) =>
+      api.download('/api/v1/planning/lifecycle/export', request),
   })
 }
 

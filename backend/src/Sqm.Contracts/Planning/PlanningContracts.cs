@@ -9,7 +9,12 @@ namespace Sqm.Contracts.Planning;
 /// Whether its per-number rows are still held. Only the two newest runs keep them; older runs keep
 /// their finished figures, for the trend.
 /// </param>
-public sealed record PlanningRunInfo(ulong RunId, int AsOfSequence, string? AsOfDate, string PublishedAt, bool HasNumbers);
+/// <param name="HasModelIndex">
+/// Whether it holds every number's models (analytics migration 032), so that a list of any class can be
+/// narrowed by vendor, model or device type. Runs built before it narrow the exposed, LTE-M / NB-IoT-only
+/// and not-assessable classes only.
+/// </param>
+public sealed record PlanningRunInfo(ulong RunId, int AsOfSequence, string? AsOfDate, string PublishedAt, bool HasNumbers, bool HasModelIndex);
 
 /// <summary>What the planning views can show now.</summary>
 /// <param name="Deployed">False until analytics migrations 029 and 030 are applied.</param>
@@ -131,6 +136,15 @@ public sealed record PlanningNumberPage(
 /// <param name="Bindings">Its active bindings.</param>
 /// <param name="Models">The models it holds, by marketing name where the catalogue has one.</param>
 public sealed record PlanningNumberRow(string Msisdn, string? Reason, int Handsets, int Bindings, IReadOnlyList<string> Models);
+
+/// <summary>One table of the lifecycle view to export as CSV.</summary>
+/// <param name="Table"><c>vendor-moves</c>, <c>model-moves</c>, <c>cohorts</c>, <c>device-age</c> or <c>model-age</c>.</param>
+/// <param name="RunId">The run; the newest when null.</param>
+/// <param name="Vendor">Narrows the moves and ages, as the view does.</param>
+/// <param name="Model">The same, by marketing name.</param>
+/// <param name="DeviceType">The same, by GSMA device type.</param>
+public sealed record PlanningLifecycleExportRequest(
+    string? Table, ulong? RunId, string? Vendor, string? Model, string? DeviceType);
 
 /// <summary>A breakdown to export as CSV.</summary>
 public sealed record PlanningBreakdownRequest(

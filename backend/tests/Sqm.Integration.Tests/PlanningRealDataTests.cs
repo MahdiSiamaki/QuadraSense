@@ -117,7 +117,7 @@ public sealed class PlanningRealDataTests
 
         var ct = TestContext.Current.CancellationToken;
         var watch = Stopwatch.StartNew();
-        var view = (await Reader().GetLifecycleAsync(null, PlanningFilter.None, ct))!;
+        var view = (await Reader().GetLifecycleAsync(null, PlanningFilter.None, 50, ct))!;
         Write($"lifecycle view: {watch.ElapsedMilliseconds} ms; {view.Changes:N0} changes {view.FirstMonth}..{view.LastMonth}; "
             + string.Join("; ", view.Kinds.Select(k => $"{k.Label} {k.Changes:N0}")) + $"; not assessed {view.NotAssessedNumbers:N0} numbers");
         foreach (var c in view.Cohorts)
@@ -140,7 +140,7 @@ public sealed class PlanningRealDataTests
         Assert.InRange(held, 1, (long)(devices * 1.01));
 
         watch.Restart();
-        var samsung = (await Reader().GetLifecycleAsync(null, new PlanningFilter("Samsung", null, null), ct))!;
+        var samsung = (await Reader().GetLifecycleAsync(null, new PlanningFilter("Samsung", null, null), 50, ct))!;
         Write($"lifecycle narrowed to Samsung: {watch.ElapsedMilliseconds} ms, {samsung.Changes:N0} changes from or to it");
         Assert.InRange(samsung.Changes, 1, view.Changes);
         Assert.Empty(samsung.Cohorts);
@@ -222,5 +222,86 @@ public sealed class PlanningRealDataTests
             Assert.True(deep.Value.Rows.Select(r => r.Msisdn).SequenceEqual(deep.Value.Rows.Select(r => r.Msisdn).Order()));
             Assert.Equal(deep.Value.Total, await Reader().CountNumbersAsync(deep.Value.Run.RunId, view, planningClass, null, PlanningFilter.None, ct));
         }
+    }
+
+    [Fact]
+    public async Task A_ready_or_esim_list_narrowed_by_vendor_reads_from_the_model_index_within_budget()
+    {
+        if (!await PublishedAsync())
+        {
+            Assert.Skip("no ClickHouse with a published planning run");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var samsung = new PlanningFilter("Samsung", null, null);
+        foreach (var (view, planningClass) in new[] { ("sunset", "ready-lte"), ("esim", "capable") })
+        {
+            Assert.True(await Reader().CanNarrowAsync(null, view, planningClass, ct), "the newest run holds every number's models");
+            foreach (var page in new[] { 1, 199 })
+            {
+                var watch = Stopwatch.StartNew();
+                var read = (await Reader().ListNumbersAsync(null, view, planningClass, null, samsung, page, 50, ct))!.Value;
+                Write($"{view}/{planningClass} narrowed to Samsung, page {page}: {watch.ElapsedMilliseconds} ms, {read.Total:N0} numbers");
+
+                Assert.Equal(50, read.Rows.Count);
+                Assert.True(read.Rows.Select(r => r.Msisdn).SequenceEqual(read.Rows.Select(r => r.Msisdn).Order()));
+                Assert.All(read.Rows, r => Assert.NotEmpty(r.Models));
+            }
+        }
+
+        // A campaign file of a narrowed class holds exactly the numbers its request counted, in order.
+        var run = (await Reader().ListNumbersAsync(null, "esim", "capable", null, samsung, 1, 1, ct))!.Value.Run;
+        var counting = Stopwatch.StartNew();
+        var counted = await Reader().CountNumbersAsync(run.RunId, "esim", "capable", null, samsung, ct);
+        Write($"esim/capable narrowed to Samsung, counted: {counting.ElapsedMilliseconds} ms, {counted:N0} numbers");
+
+        var streaming = Stopwatch.StartNew();
+        ulong previous = 0;
+        var inOrder = true;
+        var withModels = true;
+        var streamed = await Reader().StreamNumbersAsync(run.RunId, "esim", "capable", null, samsung, row =>
+        {
+            inOrder &= row.Msisdn > previous;
+            withModels &= row.Models.Count > 0;
+            previous = row.Msisdn;
+            return ValueTask.CompletedTask;
+        }, ct);
+        Write($"esim/capable narrowed to Samsung, streamed: {streaming.ElapsedMilliseconds} ms, {streamed:N0} numbers");
+
+        Assert.Equal(counted, streamed);
+        Assert.True(inOrder, "the file is in number order, each number once");
+        Assert.True(withModels, "every number in the file names its models");
+
+        // Every chunk of the index is one part: a narrowed read merges every part of the run in key order.
+        var parts = await QueryAsync(
+            $"SELECT max(c) FROM (SELECT count() AS c FROM system.parts WHERE database = 'sqm' AND table = 'planning_number_model' "
+            + $"AND active AND partition LIKE '({run.RunId},%' GROUP BY partition)");
+        Assert.Equal("1", parts.Trim());
+    }
+
+    [Fact]
+    public async Task The_band_view_reads_the_figures_written_at_publication()
+    {
+        if (!await PublishedAsync())
+        {
+            Assert.Skip("no ClickHouse with a published planning run");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var watch = Stopwatch.StartNew();
+        var bands = (await Reader().GetBandsAsync(null, PlanningFilter.None, new OperatorBandsOptions(), ct))!;
+        Write($"bands view from the figures: {watch.ElapsedMilliseconds} ms; {bands.LteBands.Count} LTE bands, {bands.NrBands.Count} NR bands");
+
+        var written = long.Parse(await QueryAsync(
+            $"SELECT count() FROM sqm.planning_model_figure FINAL WHERE run_id = {bands.Run.RunId} AND view = 'bands' AND item != 'complete'"),
+            System.Globalization.CultureInfo.InvariantCulture);
+        var complete = long.Parse(await QueryAsync(
+            $"SELECT count() FROM sqm.planning_model_figure FINAL WHERE run_id = {bands.Run.RunId} AND view = 'bands' AND item = 'complete'"),
+            System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(bands.LteBands.Count + bands.NrBands.Count + 5, written);
+        Assert.Equal(1, complete);
+        Assert.True(watch.ElapsedMilliseconds < 10_000);
     }
 }

@@ -54,7 +54,7 @@ public sealed class PlanningModelViewTests : IAsyncLifetime
                 await QueryAsync($"CREATE TABLE {_database}.{table} AS sqm.{table}");
             }
 
-            foreach (var migration in new[] { "029_tac_radio.sql", "030_planning_snapshot.sql" })
+            foreach (var migration in new[] { "029_tac_radio.sql", "030_planning_snapshot.sql", "031_planning_lifecycle.sql", "032_planning_figures_and_model_index.sql" })
             {
                 foreach (var statement in SqlScript.Split(MigrationText(migration).Replace("sqm.", _database + ".", StringComparison.Ordinal)))
                 {
@@ -315,4 +315,107 @@ public sealed class PlanningModelViewTests : IAsyncLifetime
             Timeout = TimeSpan.FromMinutes(2),
         };
     }
+
+    [Fact]
+    public async Task The_band_figures_written_at_publication_are_what_the_page_reads()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var live = (await Reader().GetBandsAsync(null, PlanningFilter.None, Operator, ct))!;
+
+        await Store().WritePlanningFiguresAsync(
+            new PlanningRun(1, 7, new DateOnly(2026, 10, 1), 0, 1, "published", 1, new HashSet<string>(StringComparer.Ordinal), string.Empty, DateTimeOffset.UtcNow),
+            ct);
+
+        // With the delivery's mart emptied, only the written figures can answer - and they answer the same.
+        await QueryAsync($"TRUNCATE TABLE {_database}.agg_tac_population");
+        var written = (await Reader().GetBandsAsync(null, PlanningFilter.None, Operator, ct))!;
+
+        string Bands(Sqm.Contracts.Planning.BandsResponse b) => string.Join(";", b.LteBands.Concat(b.NrBands).Select(x => $"{x.Technology}{x.Band}|{x.Operator}|{x.Numbers}|{x.Bindings}|{x.Handsets}"));
+        string Classes(Sqm.Contracts.Planning.BandsResponse b) => string.Join(";", b.Architecture.Append(b.Ambiguous).Select(c => $"{c.Class}|{c.Numbers}|{c.Bindings}|{c.SharePercent}"));
+        Assert.Equal(Bands(live), Bands(written));
+        Assert.Equal(Classes(live), Classes(written));
+        Assert.NotEmpty(written.LteBands);
+
+        // Narrowed, the view is read live - here from the emptied mart.
+        Assert.Empty((await Reader().GetBandsAsync(null, new PlanningFilter("Samsung", null, null), Operator, ct))!.LteBands);
+    }
+
+    [Fact]
+    public async Task Band_figures_cut_short_are_never_read_as_the_whole_view()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        await Store().WritePlanningFiguresAsync(
+            new PlanningRun(1, 7, new DateOnly(2026, 10, 1), 0, 1, "published", 1, new HashSet<string>(StringComparer.Ordinal), string.Empty, DateTimeOffset.UtcNow),
+            ct);
+
+        // A write that stopped before its last statement: the bands are there, the marker is not.
+        await QueryAsync($"DELETE FROM {_database}.planning_model_figure WHERE item = 'complete'");
+        Assert.NotEqual("0", (await QueryAsync($"SELECT count() FROM {_database}.planning_model_figure")).Trim());
+
+        // So the page reads the view live - here from an emptied mart, which shows it did.
+        await QueryAsync($"TRUNCATE TABLE {_database}.agg_tac_population");
+        var read = (await Reader().GetBandsAsync(null, PlanningFilter.None, Operator, ct))!;
+        Assert.Empty(read.LteBands);
+        Assert.Empty(read.NrBands);
+    }
+
+    [Fact]
+    public async Task A_list_of_any_class_narrows_through_the_index_of_who_holds_which_model()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var xiaomi = new PlanningFilter("Xiaomi", null, null);
+
+        // Before the index: a ready list cannot be narrowed (its numbers keep no models in planning_number).
+        Assert.False(await Reader().CanNarrowAsync(1, "sunset", "ready-lte", ct));
+        Assert.Null(await Reader().CountNumbersAsync(1, "sunset", "ready-lte", null, xiaomi, ct));
+
+        // The index as the run writes it: every (number, model), with the number's classes. Number 4
+        // holds a Samsung and a Xiaomi; 8 is the exposed one.
+        await QueryAsync($"""
+            INSERT INTO {_database}.planning_number_model (run_id, chunk, msisdn, tac, sunset, reason, esim, handsets, bindings) VALUES
+                (1, 1, 1, '35000001', 1, 0, 0, 1, 1), (1, 1, 2, '35000002', 1, 0, 0, 1, 1), (1, 1, 3, '35000003', 1, 0, 0, 1, 1),
+                (1, 1, 4, '35000001', 1, 0, 0, 2, 2), (1, 1, 4, '35000002', 1, 0, 0, 2, 2), (1, 1, 5, '35000004', 1, 0, 0, 1, 1),
+                (1, 1, 6, '', 4, 2, 0, 1, 1), (1, 1, 7, '99999999', 4, 3, 0, 1, 1),
+                (1, 1, 8, '35000005', 3, 0, 0, 2, 2), (1, 1, 8, '35000006', 3, 0, 0, 2, 2)
+            """);
+        Assert.True(await Reader().CanNarrowAsync(1, "sunset", "ready-lte", ct));
+
+        var ready = (await Reader().ListNumbersAsync(1, "sunset", "ready-lte", null, xiaomi, 1, 50, ct))!.Value;
+        Assert.Equal(2, ready.Total);
+        Assert.Equal(["2|Redmi Two", "4|Galaxy One,Redmi Two"], ready.Rows.Select(r => $"{r.Msisdn}|{string.Join(",", r.Models.Order(StringComparer.Ordinal))}"));
+        Assert.Equal(2, await Reader().CountNumbersAsync(1, "sunset", "ready-lte", null, xiaomi, ct));
+
+        var esim = (await Reader().ListNumbersAsync(1, "esim", "not-capable", null, new PlanningFilter("Samsung", null, null), 1, 50, ct))!.Value;
+        Assert.Equal(["1", "4"], esim.Rows.Select(r => r.Msisdn.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+        // The page's second half, and the campaign file - in number order, the whole class.
+        var second = (await Reader().ListNumbersAsync(1, "sunset", "ready-lte", null, xiaomi, 2, 1, ct))!.Value;
+        Assert.Equal([4UL], second.Rows.Select(r => r.Msisdn));
+        var streamed = new List<ulong>();
+        Assert.Equal(2, await Reader().StreamNumbersAsync(1, "sunset", "ready-lte", null, xiaomi, r => { streamed.Add(r.Msisdn); return ValueTask.CompletedTask; }, ct));
+        Assert.Equal([2UL, 4UL], streamed);
+    }
+
+    private ClickHouseIngestionStore Store() => new(
+        Options.Create(new ClickHouseOptions { ConnectionString = ConnectionString }),
+        new Factory(),
+        NullLogger<ClickHouseIngestionStore>.Instance);
 }

@@ -20,7 +20,7 @@ vi.mock('vue-router', () => ({
   RouterLink: { template: '<a><slot /></a>' },
 }))
 
-const run = { runId: 1790000000000, asOfSequence: 246, asOfDate: '2026-10-10', publishedAt: '2026-10-27T05:00:00Z', hasNumbers: true }
+const run = { runId: 1790000000000, asOfSequence: 246, asOfDate: '2026-10-10', publishedAt: '2026-10-27T05:00:00Z', hasNumbers: true, hasModelIndex: false }
 
 const sunset = {
   run,
