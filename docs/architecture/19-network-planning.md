@@ -207,11 +207,45 @@ is audited with its class and filters, never a number; an aggregate CSV needs `d
 reach the first 10,000 numbers and no further: **a whole class as a campaign list** is the
 controlled export's (section 4).
 
-A list narrowed by vendor, model or device type is kept for the **exposed, LTE-M / NB-IoT-only and not
-assessable** classes only: the run stores each number's models for those classes (9.6 M numbers), not
-for the 65 M ready ones. A narrowed list of ready or eSIM numbers is refused with that reason - an
-empty list would say no such number exists. The narrowed sunset view still shows the classes, from the
-per-model breakdown; its handsets-assessed-through-a-pair figure is shown unnarrowed only.
+**Lists narrowed by vendor, model or device type** read the run's index of who holds which model
+(`planning_number_model`, analytics migration 032, in every run since 2026-11-02). This covers a
+page, its count and a campaign list. The index has one row per number and model held, with the
+number's classes, ordered by number. So any class narrows, ready and eSIM included. A number is
+listed when one of its handsets is of a selected model; its class is still decided by all of them.
+Each chunk is checked as it is written: the index must hold exactly the chunk's numbers, or the chunk
+fails.
+
+A run built before the index kept models only for the **exposed, LTE-M / NB-IoT-only and not
+assessable** classes. In such a run a narrowed list of another class is refused with that reason,
+since an empty list would say no such number exists. The narrowed sunset view still shows the classes,
+from the per-model breakdown. Its figure for handsets assessed through a pair is shown unnarrowed only.
+
+How each list is read, measured on the laptop at delivery 246, 2026-11-02. Unless a row says
+otherwise, the figures are for the ready class narrowed to Samsung: 36,998,031 numbers.
+
+| | How | Cost |
+|---|---|---|
+| A page | Its 50 numbers come from a plain read in key order, which the LIMIT stops. Then only those numbers' models are read. | 0.4 s, 77 MiB, at page 1 or page 199 |
+| Its count | The matching rows, grouped by number in key order. Read once per list and kept for the run, since a published run never changes. | 10.6 s, 95 MiB |
+| A campaign list | Every row of the class in key order, put together into numbers by the API as the rows pass. | 48 s and 166 MiB for the ready class's 105.6 M rows. eSIM-capable narrowed to Samsung: 4,521,947 numbers, exactly the count, in 10.7 s |
+
+Fitting this in the API's 476 MiB took three changes, each measured:
+- **No grouping of the whole class.** `groupArray` over the class grew to the cap within 5.5 M
+  rows, in key order or not. So a page finds its numbers first, and the API groups a list as it
+  streams.
+- **No read-ahead.** ClickHouse buffers ahead of an in-order merge (`read_in_order_use_buffering`).
+  With that on, a page read all 116 M rows (7.6 s, 416 MiB) and a list failed at the cap. It is
+  switched off for these reads.
+- **One part per chunk.** An insert of 4 M rows leaves four or five parts, 128 for the run, and an
+  in-order read merges them all. Each chunk is now merged to one part, at 1.2 s a chunk. The count
+  fell from 20 s and 323 MiB to 10 s and 95 MiB.
+
+**The index itself:** 116,420,620 rows for 75,393,005 numbers, 632 MiB on disk. Writing it takes
+4.3 s per chunk (11.4 s the slowest, 390 MiB), about 2.3 minutes a run.
+
+That figure came only after a fourth trap. Aggregating the index in key order cost **486 to 754 s
+per chunk**, about 4.5 hours a run. The stage is sorted by (number, IMEI), which the (number, model)
+key only partly follows. The hash aggregation gives the same rows, with the same checksum.
 
 ## 4. Campaign lists - the controlled export (built 2026-10-27)
 
@@ -260,6 +294,24 @@ delivery, exactly, from the run's summary.
 The peaks are 380-434 MiB - the largest a breakdown by vendor whose page holds the biggest vendors -
 up to 91% of the cap; every view answers within 33 s (bands, the slowest). They are the first thing to
 measure again when the catalogue or the network grows.
+
+**The unnarrowed band view is written at publication** (`planning_model_figure`, migration 032). The
+worker runs the same statements once, under its own limits. A last row marks the figures complete.
+The page then reads the 115 rows they give:
+
+| | Before | Now |
+|---|---|---|
+| Unnarrowed band view, read | 33 s on the laptop, 42–48 s on the department VM, merged live | 0.2 s |
+| Writing the figures, once per run | – | 41.9 s (LTE bands 24.4 s, NR bands 9.4 s, the 5G architecture classes 5.0 s, the ambiguous models 3.1 s), 381 MiB at most |
+
+Laptop, delivery 246, 2026-11-02.
+
+This is an optimisation, not a condition of publication. The view is read live in these cases:
+- a run published without the figures: built before them, or whose write failed;
+- figures with no completion marker, because a write cut short is never shown as the whole view;
+- every narrowed view;
+- the match against the operator's bands. The bands are configuration, and they may change after
+  the run.
 
 ### Bands and 5G
 
@@ -339,6 +391,13 @@ upgrade by cohort, handsets held now by the month first seen and by allocation y
 the changes and moves to those from or to the models it selects, and the ages to those models; the
 cohorts are the whole network's only, since a spell is not stored with its model. The view is kept
 for the two runs that keep their rows.
+
+Each table exports as CSV with `data.export`, filtered as on the page:
+- the moves, by vendor or by model, the largest 500 (the page shows 50);
+- the cohorts, with the initial dump's handsets on a row of their own;
+- device age and model age.
+
+Each export is audited with its table, run and filter. The tables name no number.
 
 ### What it found (the laptop, delivery 246)
 
