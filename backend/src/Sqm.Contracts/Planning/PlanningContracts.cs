@@ -9,7 +9,12 @@ namespace Sqm.Contracts.Planning;
 /// Whether its per-number rows are still held. Only the two newest runs keep them; older runs keep
 /// their finished figures, for the trend.
 /// </param>
-public sealed record PlanningRunInfo(ulong RunId, int AsOfSequence, string? AsOfDate, string PublishedAt, bool HasNumbers);
+/// <param name="HasModelIndex">
+/// Whether it holds every number's models (analytics migration 032), so that a list of any class can be
+/// narrowed by vendor, model or device type. Runs built before it narrow the exposed, LTE-M / NB-IoT-only
+/// and not-assessable classes only.
+/// </param>
+public sealed record PlanningRunInfo(ulong RunId, int AsOfSequence, string? AsOfDate, string PublishedAt, bool HasNumbers, bool HasModelIndex);
 
 /// <summary>What the planning views can show now.</summary>
 /// <param name="Deployed">False until analytics migrations 029 and 030 are applied.</param>

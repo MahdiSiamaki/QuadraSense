@@ -71,7 +71,7 @@ public sealed record PlanningRun(
 /// </summary>
 public interface IPlanningSnapshotStore
 {
-    /// <summary>False when migration 030 or 031 (or the radio profiles of 029) has not been applied.</summary>
+    /// <summary>False when migration 030, 031 or 032 (or the radio profiles of 029) has not been applied.</summary>
     Task<bool> PlanningDeployedAsync(CancellationToken ct);
 
     /// <summary>What a run would be built from now.</summary>
@@ -79,6 +79,13 @@ public interface IPlanningSnapshotStore
 
     /// <summary>The newest run in the given state, or null.</summary>
     Task<PlanningRun?> LatestPlanningRunAsync(string state, CancellationToken ct);
+
+    /// <summary>
+    /// Writes the per-model figures of a run's delivery that no filter or setting changes - the band
+    /// view's - once, so the page reads them rather than merging every model's states. Part of
+    /// publication; a run published without them is read live.
+    /// </summary>
+    Task WritePlanningFiguresAsync(PlanningRun run, CancellationToken ct);
 
     /// <summary>Plans a run: fixes its key-range cut points and records it as running.</summary>
     Task<PlanningRun> PlanPlanningRunAsync(PlanningInputs inputs, PlanningOptions options, CancellationToken ct);

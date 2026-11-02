@@ -111,7 +111,7 @@ public static class CampaignExportEndpoints
         }
         else if (!string.IsNullOrWhiteSpace(request.Vendor) || !string.IsNullOrWhiteSpace(request.Model) || !string.IsNullOrWhiteSpace(request.DeviceType))
         {
-            if (!ClickHousePlanningReader.KeepsModels(view, request.Class))
+            if (!await reader.CanNarrowAsync(request.RunId, view, request.Class, ct).ConfigureAwait(false))
             {
                 errors["vendor"] = [PlanningEndpoints.NotNarrowable];
             }

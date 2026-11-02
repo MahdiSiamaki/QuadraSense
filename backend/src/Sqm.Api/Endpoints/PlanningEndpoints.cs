@@ -35,10 +35,11 @@ public static class PlanningEndpoints
 
     private static readonly string[] Views = ["sunset", "esim", "iot", "bands", "ntn"];
 
-    /// <summary>Why a list of numbers cannot be narrowed by model for this class.</summary>
+    /// <summary>Why a list of numbers cannot be narrowed by model for this class in this run.</summary>
     public const string NotNarrowable =
-        "A list narrowed by vendor, model or device type is kept for the exposed, LTE-M / NB-IoT-only and not-assessable "
-        + "classes: the planning run keeps the models of those numbers only. Clear the filter to list this class.";
+        "This run was built before every number's models were kept, so a list narrowed by vendor, model or device type is "
+        + "kept for its exposed, LTE-M / NB-IoT-only and not-assessable classes only. Runs built since narrow every class; "
+        + "clear the filter, or choose a newer delivery.";
     private static readonly string[] Breakdowns = ["vendor", "model", "deviceType", "tac"];
     private static readonly string[] LifecycleTables = ["vendor-moves", "model-moves", "cohorts", "device-age", "model-age"];
 
@@ -274,7 +275,8 @@ public static class PlanningEndpoints
         }
 
         var filter = new PlanningFilter(request.Vendor, request.Model, request.DeviceType);
-        if (filter.Any && !ClickHousePlanningReader.KeepsModels(view, request.Class ?? string.Empty))
+        if (filter.Any && errors.Count == 0
+            && !await reader.CanNarrowAsync(request.RunId, view, request.Class ?? string.Empty, ct).ConfigureAwait(false))
         {
             errors["vendor"] = [NotNarrowable];
         }

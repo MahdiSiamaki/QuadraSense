@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using Microsoft.Extensions.Options;
 using Sqm.Application.Planning;
@@ -28,6 +29,12 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     private readonly ClickHouseJsonQuery _query;
+
+    /// <summary>
+    /// Narrowed counts already read, by run, class and filter. A published run's rows never change and
+    /// such a count reads the whole class, so a list pays for it once rather than with every page.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, long> _indexedCounts = new(StringComparer.Ordinal);
 
     /// <summary>Creates the reader over the analytics connection.</summary>
     public ClickHousePlanningReader(IOptions<ClickHouseOptions> options, IHttpClientFactory httpClientFactory)
@@ -217,7 +224,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         var match = filter.Any ? $"AND p.tac IN ({MatchingTacs})" : string.Empty;
 
         // The run's rows for IoT models, each with its device type (a1) and exposure (a2).
-        var population = ModelRows(
+        var population = PlanningModelSql.ModelRows(
             "r.device_class = 'IoT / M2M'", match, "t.deviceType",
             "multiIf(r.sunset = 3 AND r.umts = 0, '2g-only', r.sunset = 3, '2g-3g', r.sunset = 2, 'lpwan', r.sunset = 1, 'lte', 'unknown')");
 
@@ -291,8 +298,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         "multiIf(empty(r.nr_bands), 'nr-no-bands', hasAll(r.nr_bands, {nr:Array(UInt16)}), 'nr-all', "
         + "hasAny(r.nr_bands, {nr:Array(UInt16)}), 'nr-some', 'nr-none')";
 
-    private const string ArchitectureExpression =
-        "multiIf(r.sa = 1 AND r.nsa = 1, 'arch-both', r.sa = 1, 'arch-sa', r.nsa = 1, 'arch-nsa', 'arch-not-stated')";
+    private const string ArchitectureExpression = PlanningModelSql.ArchitectureExpression;
 
     private static readonly IReadOnlyList<(string Key, string Label)> LteMatchClasses =
     [
@@ -341,14 +347,47 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         var nrMatch = nr.Count == 0
             ? []
             : await ModelClassesAsync(NrMatchExpression, "r.five_g = 1", NrMatchClasses, filter, parameters, total, ct).ConfigureAwait(false);
-        var architecture = await ModelClassesAsync(
-            ArchitectureExpression, "r.five_g = 1", ArchitectureClasses, filter, parameters, total, ct).ConfigureAwait(false);
-        var ambiguous = (await ModelClassesAsync(
-            "'ambiguous'", "notEmpty(r.unparsed)", [("ambiguous", "A band entry the parser could not read")],
-            filter, parameters, total, ct).ConfigureAwait(false))[0];
+        List<PlanningClassRow> architecture;
+        PlanningClassRow ambiguous;
+        List<PlanningBandRow> lteBands, nrBands;
+        IReadOnlyList<(string Key, string Label)> ambiguity = [("ambiguous", "A band entry the parser could not read")];
 
-        var lteBands = await BandRowsAsync("lte", "r.lte_bands", lte, filter, parameters, total, ct).ConfigureAwait(false);
-        var nrBands = await BandRowsAsync("nr", "r.nr_bands", nr, filter, parameters, total, ct).ConfigureAwait(false);
+        // Unnarrowed, the figures the worker wrote when the run published (analytics migration 032): read
+        // live, they merged every LTE and NR model's states for about 45 s on the department VM.
+        var figures = filter.Any ? [] : await FiguresAsync(run, "bands", ct).ConfigureAwait(false);
+        if (figures.Count > 0)
+        {
+            PlanningClassRow Row((string Key, string Label) c)
+            {
+                var v = figures.GetValueOrDefault(c.Key);
+                return new PlanningClassRow(c.Key, c.Label, v.Numbers, v.Bindings, v.Handsets, Percent(v.Numbers, total));
+            }
+
+            List<PlanningBandRow> Bands(string technology, IReadOnlyList<int> operatorBands) =>
+            [
+                .. figures
+                    .Where(f => f.Key.StartsWith(technology + ":", StringComparison.Ordinal))
+                    .Select(f => new PlanningBandRow(
+                        technology, int.Parse(f.Key[(technology.Length + 1)..], CultureInfo.InvariantCulture),
+                        false, f.Value.Numbers, f.Value.Bindings, f.Value.Handsets, Percent(f.Value.Numbers, total)))
+                    .Select(b => b with { Operator = operatorBands.Contains(b.Band) })
+                    .OrderByDescending(b => b.Numbers).ThenBy(b => b.Band),
+            ];
+
+            architecture = [.. ArchitectureClasses.Select(Row)];
+            ambiguous = Row(ambiguity[0]);
+            lteBands = Bands("lte", lte);
+            nrBands = Bands("nr", nr);
+        }
+        else
+        {
+            architecture = await ModelClassesAsync(
+                ArchitectureExpression, "r.five_g = 1", ArchitectureClasses, filter, parameters, total, ct).ConfigureAwait(false);
+            ambiguous = (await ModelClassesAsync(
+                "'ambiguous'", "notEmpty(r.unparsed)", ambiguity, filter, parameters, total, ct).ConfigureAwait(false))[0];
+            lteBands = await BandRowsAsync("lte", "r.lte_bands", lte, filter, parameters, total, ct).ConfigureAwait(false);
+            nrBands = await BandRowsAsync("nr", "r.nr_bands", nr, filter, parameters, total, ct).ConfigureAwait(false);
+        }
 
         var noData = new List<PlanningNoData>
         {
@@ -403,7 +442,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         string Ntn(string key, string label) => $$"""
             SELECT {{key}} AS k, {{label}}, '', uniqMerge(numbers) AS n, sum(bindings), uniqMerge(handsets)
             FROM (SELECT numbers, bindings, handsets, a1 AS ntn_mode, a2 AS ntn_orbits, a3 AS ntn_bands
-                  FROM ({{ModelRows("r.ntn = 1", match, "r.ntn_mode", "r.ntn_orbits", "r.ntn_bands")}}))
+                  FROM ({{PlanningModelSql.ModelRows("r.ntn = 1", match, "r.ntn_mode", "r.ntn_orbits", "r.ntn_bands")}}))
             GROUP BY k ORDER BY n DESC, k
             """;
 
@@ -628,7 +667,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             source = $$"""
                 SELECT p.tac AS tac, p.subscribers AS numbers, p.bindings AS bindings, p.handsets AS handsets
                 FROM agg_tac_population AS p
-                WHERE p.seq = {seq:UInt16} AND p.tac IN ({{ModelTacs(condition)}})
+                WHERE p.seq = {seq:UInt16} AND p.tac IN ({{PlanningModelSql.ModelTacs(condition)}})
                 """;
         }
         else
@@ -726,15 +765,27 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             return null;
         }
 
-        if (NumbersCondition(view, planningClass, reason, filter) is not { } condition)
-        {
-            return (run, [], 0);
-        }
-
         var parameters = FilterParameters(filter);
         parameters["run"] = Id(run);
         parameters["limit"] = pageSize.ToString(CultureInfo.InvariantCulture);
         parameters["offset"] = ((long)(page - 1) * pageSize).ToString(CultureInfo.InvariantCulture);
+
+        if (filter.Any && run.HasModelIndex)
+        {
+            if (ClassCondition(view, planningClass, reason) is not { } narrowed)
+            {
+                return (run, [], 0);
+            }
+
+            var found = await _query.ExecuteAsync(IndexedPageSql(narrowed), parameters, ct, Budget).ConfigureAwait(false);
+            var holding = await IndexedCountAsync(run.RunId, narrowed, parameters, Budget, ct).ConfigureAwait(false);
+            return (run, [.. found.Rows.Select(Read)], holding);
+        }
+
+        if (NumbersCondition(view, planningClass, reason, filter) is not { } condition)
+        {
+            return (run, [], 0);
+        }
 
         // The page first, its models named after: a total over the window (count() OVER ()) made
         // ClickHouse hold every row of the class with its names mapped before the LIMIT - the ready
@@ -755,15 +806,155 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         var counted = await _query.ExecuteAsync(
             $"SELECT count() FROM planning_number WHERE run_id = {{run:UInt64}} AND {condition}", parameters, ct, Budget).ConfigureAwait(false);
 
-        var list = rows.Rows.Select(r => new PlanningNumberRead(
-            ClickHouseJsonResult.UInt64(r, 0),
-            ClickHouseJsonResult.Int32(r, 1),
-            ClickHouseJsonResult.Int32(r, 2),
-            ClickHouseJsonResult.Int32(r, 3),
-            r[4].EnumerateArray().Select(m => m.GetString() ?? string.Empty).Distinct(StringComparer.Ordinal).ToList())).ToList();
+        var list = rows.Rows.Select(Read).ToList();
         var total = ClickHouseJsonResult.Int64(counted.Rows[0], 0);
 
         return (run, list, total);
+    }
+
+    private static PlanningNumberRead Read(System.Text.Json.JsonElement r) => new(
+        ClickHouseJsonResult.UInt64(r, 0),
+        ClickHouseJsonResult.Int32(r, 1),
+        ClickHouseJsonResult.Int32(r, 2),
+        ClickHouseJsonResult.Int32(r, 3),
+        r[4].EnumerateArray().Select(m => m.GetString() ?? string.Empty).Distinct(StringComparer.Ordinal).ToList());
+
+    /// <inheritdoc />
+    public async Task<bool> CanNarrowAsync(ulong? runId, string view, string planningClass, CancellationToken ct) =>
+        KeepsModels(view, planningClass) || (await RunAsync(runId, ct).ConfigureAwait(false))?.HasModelIndex == true;
+
+    /// <summary>
+    /// Read the index in key order, without buffering ahead of the merge. With ClickHouse's read-ahead
+    /// (<c>read_in_order_use_buffering</c>), a page of the ready class narrowed to Samsung read all 116 M
+    /// rows of the run, taking 7.6 s at 416 MiB, and the whole list failed at the 476 MiB cap. Without
+    /// it, the page read 3.2 M rows in 0.46 s at 77 MiB, and the list streamed in 48 s at 166 MiB (the
+    /// laptop, delivery 246, 2026-11-02).
+    /// </summary>
+    private const string InKeyOrder = "SETTINGS optimize_read_in_order = 1, read_in_order_use_buffering = 0";
+
+    /// <summary>
+    /// One page of a class's numbers holding a model the filter selects, with every model each holds,
+    /// from the run's index of who holds which model (analytics migration 032).
+    /// </summary>
+    /// <remarks>
+    /// First the page's numbers, by a plain read in key order that its LIMIT stops; then the models of
+    /// those numbers alone, by the index's key. Grouping the whole class instead - <c>groupArray</c> over
+    /// every number, kept to those holding a selected model - grew to the API's cap within 5.5 M rows,
+    /// whether it was aggregated in key order or not (the laptop, 2026-11-02).
+    /// </remarks>
+    private static string IndexedPageSql(string classCondition) => $$"""
+        WITH (SELECT (groupArray(tac), groupArray(marketingName)) FROM tac) AS names
+        SELECT msisdn, any(reason) AS r, any(handsets) AS h, any(bindings) AS b,
+               arrayMap(x -> if(x = '', '(unknown device)', transform(x, names.1, names.2, concat('TAC ', x))), groupArray(tac)) AS models
+        FROM planning_number_model
+        WHERE run_id = {run:UInt64} AND msisdn IN (
+            SELECT msisdn FROM planning_number_model
+            WHERE run_id = {run:UInt64} AND {{classCondition}} AND tac IN ({{MatchingTacs}})
+            ORDER BY msisdn
+            LIMIT 1 BY msisdn
+            LIMIT {limit:UInt32} OFFSET {offset:UInt64})
+        GROUP BY msisdn
+        ORDER BY msisdn
+        {{InKeyOrder}}
+        """;
+
+    /// <summary>
+    /// How many numbers of a class hold a model the filter selects: the matching rows grouped by number in
+    /// key order, which keeps no state per number. It reads every row of the class: 10.6 s and 95 MiB for
+    /// the ready class narrowed to Samsung (the laptop, 2026-11-02), hence <see cref="_indexedCounts"/>.
+    /// </summary>
+    private static string IndexedCountSql(string classCondition) => $$"""
+        SELECT count() FROM (
+            SELECT msisdn FROM planning_number_model
+            WHERE run_id = {run:UInt64} AND {{classCondition}} AND tac IN ({{MatchingTacs}})
+            GROUP BY msisdn)
+        SETTINGS optimize_aggregation_in_order = 1
+        """;
+
+    /// <summary>
+    /// Every row of a class in the index, in number order, with its model named and whether the filter
+    /// selects it: the numbers are put together by <see cref="StreamIndexedAsync"/> as their rows pass.
+    /// </summary>
+    private static string IndexedRowsSql(string classCondition) => $$"""
+        WITH (SELECT (groupArray(tac), groupArray(marketingName)) FROM tac) AS names
+        SELECT msisdn, reason, handsets, bindings, tac IN ({{MatchingTacs}}) AS chosen,
+               if(tac = '', '(unknown device)', transform(tac, names.1, names.2, concat('TAC ', tac)))
+        FROM planning_number_model
+        WHERE run_id = {run:UInt64} AND {{classCondition}}
+        ORDER BY msisdn
+        {{InKeyOrder}}
+        """;
+
+    private async Task<long> IndexedCountAsync(
+        ulong runId, string classCondition, Dictionary<string, string> parameters, QueryBudget budget, CancellationToken ct)
+    {
+        var key = string.Join('\u001f', runId.ToString(CultureInfo.InvariantCulture), classCondition,
+            parameters["vendor"], parameters["model"], parameters["type"]);
+        if (_indexedCounts.TryGetValue(key, out var known))
+        {
+            return known;
+        }
+
+        var result = await _query.ExecuteAsync(IndexedCountSql(classCondition), parameters, ct, budget).ConfigureAwait(false);
+        var count = ClickHouseJsonResult.Int64(result.Rows[0], 0);
+
+        // Far more than the two runs kept and the filters anyone tries on them; a bound, not a policy.
+        if (_indexedCounts.Count >= 1024)
+        {
+            _indexedCounts.Clear();
+        }
+
+        _indexedCounts[key] = count;
+        return count;
+    }
+
+    /// <summary>
+    /// A narrowed campaign list: the class's rows streamed in number order, each number handed over once
+    /// its last row has passed, if a model the filter selects is among its own. Nothing is grouped in
+    /// ClickHouse (see <see cref="IndexedPageSql"/>), and one number is held here at a time.
+    /// </summary>
+    private async Task<long> StreamIndexedAsync(
+        string classCondition, IReadOnlyDictionary<string, string> parameters, Func<PlanningNumberRead, ValueTask> onRow,
+        CancellationToken ct)
+    {
+        ulong? number = null;
+        int reasonCode = 0, handsets = 0, bindings = 0;
+        var chosen = false;
+        var models = new List<string>();
+        long handed = 0;
+
+        async ValueTask HandOverAsync()
+        {
+            if (number is { } msisdn && chosen)
+            {
+                await onRow(new PlanningNumberRead(msisdn, reasonCode, handsets, bindings, [.. models.Distinct(StringComparer.Ordinal)]))
+                    .ConfigureAwait(false);
+                handed++;
+            }
+        }
+
+        await _query.StreamLinesAsync(IndexedRowsSql(classCondition), parameters, async line =>
+            {
+                // A TSV field escapes only the backslash, tab and newline, which no marketing name holds.
+                var f = line.Split('\t');
+                var msisdn = ulong.Parse(f[0], CultureInfo.InvariantCulture);
+                if (msisdn != number)
+                {
+                    await HandOverAsync().ConfigureAwait(false);
+                    number = msisdn;
+                    reasonCode = int.Parse(f[1], CultureInfo.InvariantCulture);
+                    handsets = int.Parse(f[2], CultureInfo.InvariantCulture);
+                    bindings = int.Parse(f[3], CultureInfo.InvariantCulture);
+                    chosen = false;
+                    models = [];
+                }
+
+                chosen |= f[4] == "1";
+                models.Add(f[5]);
+            }, ct, StreamBudget).ConfigureAwait(false);
+
+        await HandOverAsync().ConfigureAwait(false);
+        return handed;
     }
 
     /// <inheritdoc />
@@ -776,7 +967,19 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             return null;
         }
 
-        // A class whose numbers keep no models cannot be narrowed: no answer, rather than zero.
+        var parameters = FilterParameters(filter);
+        parameters["run"] = Id(run);
+        if (filter.Any && run.HasModelIndex)
+        {
+            if (ClassCondition(view, planningClass, reason) is not { } narrowed)
+            {
+                return 0;
+            }
+
+            return await IndexedCountAsync(run.RunId, narrowed, parameters, StreamBudget, ct).ConfigureAwait(false);
+        }
+
+        // A class whose numbers keep no models in this run cannot be narrowed: no answer, rather than zero.
         if (filter.Any && !KeepsModels(view, planningClass))
         {
             return null;
@@ -787,8 +990,6 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             return 0;
         }
 
-        var parameters = FilterParameters(filter);
-        parameters["run"] = Id(run);
         var result = await _query.ExecuteAsync(
             $"SELECT count() FROM planning_number WHERE run_id = {{run:UInt64}} AND {condition}", parameters, ct, Budget)
             .ConfigureAwait(false);
@@ -806,24 +1007,37 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         ArgumentNullException.ThrowIfNull(filter);
         ArgumentNullException.ThrowIfNull(onRow);
 
-        if (NumbersCondition(view, planningClass, reason, filter) is not { } condition)
+        var parameters = FilterParameters(filter);
+        parameters["run"] = runId.ToString(CultureInfo.InvariantCulture);
+
+        // A narrowed list from the index when the run holds it; otherwise the class's own rows.
+        if (filter.Any && (await RunAsync(runId, ct).ConfigureAwait(false))?.HasModelIndex == true)
+        {
+            return ClassCondition(view, planningClass, reason) is { } narrowed
+                ? await StreamIndexedAsync(narrowed, parameters, onRow, ct).ConfigureAwait(false)
+                : 0;
+        }
+
+        string sql;
+        if (NumbersCondition(view, planningClass, reason, filter) is { } condition)
+        {
+            // Models joined with a separator no marketing name holds, then split here; a TSV field
+            // escapes only the backslash, tab and newline, which no name holds either.
+            sql = $$"""
+                WITH (SELECT (groupArray(tac), groupArray(marketingName)) FROM tac) AS names
+                SELECT msisdn, reason, handsets, bindings,
+                       arrayStringConcat(arrayDistinct(arrayMap(x -> if(x = '', '(unknown device)', transform(x, names.1, names.2, concat('TAC ', x))), tacs)), '\x1f')
+                FROM planning_number
+                WHERE run_id = {run:UInt64} AND {{condition}}
+                ORDER BY msisdn
+                """;
+        }
+        else
         {
             return 0;
         }
 
-        var parameters = FilterParameters(filter);
-        parameters["run"] = runId.ToString(CultureInfo.InvariantCulture);
-
-        // Models joined with a separator no marketing name holds, then split here; a TSV field
-        // escapes only the backslash, tab and newline, which no name holds either.
-        return await _query.StreamLinesAsync($$"""
-            WITH (SELECT (groupArray(tac), groupArray(marketingName)) FROM tac) AS names
-            SELECT msisdn, reason, handsets, bindings,
-                   arrayStringConcat(arrayDistinct(arrayMap(x -> if(x = '', '(unknown device)', transform(x, names.1, names.2, concat('TAC ', x))), tacs)), '\x1f')
-            FROM planning_number
-            WHERE run_id = {run:UInt64} AND {{condition}}
-            ORDER BY msisdn
-            """, parameters, line =>
+        return await _query.StreamLinesAsync(sql, parameters, line =>
             {
                 var f = line.Split('\t');
                 return onRow(new PlanningNumberRead(
@@ -836,7 +1050,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
     }
 
     /// <summary>The condition that selects one class's numbers, or null when the class is not one of the view's.</summary>
-    private static string? NumbersCondition(string view, string planningClass, string? reason, PlanningFilter filter)
+    private static string? ClassCondition(string view, string planningClass, string? reason)
     {
         var classes = view == "esim" ? EsimClasses : SunsetClasses;
         if (classes.FirstOrDefault(c => c.Key == planningClass) is not { Key: not null } chosen)
@@ -848,6 +1062,20 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         if (view != "esim" && reason is not null && Reasons.FirstOrDefault(r => r.Key == reason) is { Key: not null } why)
         {
             condition += $" AND reason = {why.Code}";
+        }
+
+        return condition;
+    }
+
+    /// <summary>
+    /// The condition on <c>planning_number</c> that selects one class's numbers, narrowed by the models the
+    /// class keeps - or null when the class is not one of the view's, or keeps none to narrow by.
+    /// </summary>
+    private static string? NumbersCondition(string view, string planningClass, string? reason, PlanningFilter filter)
+    {
+        if (ClassCondition(view, planningClass, reason) is not { } condition)
+        {
+            return null;
         }
 
         if (filter.Any)
@@ -877,10 +1105,9 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         """;
 
     /// <summary>
-    /// Whether the numbers of a class keep the models they hold, so that a list of them can be narrowed
-    /// by vendor, model or device type. A ready number does not - 65 million of them, and the models of
-    /// a number that is ready are not what a sunset campaign asks about - and an eSIM class spans ready
-    /// numbers too.
+    /// Whether the numbers of a class keep the models they hold on their own row, so that a list of them
+    /// can be narrowed in a run built before the index of every number's models (analytics migration 032).
+    /// A ready number does not, and an eSIM class spans ready numbers too.
     /// </summary>
     public static bool KeepsModels(string view, string planningClass) =>
         view == "sunset" && planningClass is "ready-lpwan" or "exposed" or "not-assessable";
@@ -926,6 +1153,14 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             .Select(r => (ClickHouseJsonResult.Text(r, 0) ?? string.Empty).Trim('(', ')').Split(',')[0])
             .Select(s => ulong.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : 0)
             .ToHashSet();
+        var indexParts = await _query.ExecuteAsync("""
+            SELECT DISTINCT partition FROM system.parts
+            WHERE database = currentDatabase() AND table = 'planning_number_model' AND active
+            """, NoParameters, ct).ConfigureAwait(false);
+        var indexed = indexParts.Rows
+            .Select(r => (ClickHouseJsonResult.Text(r, 0) ?? string.Empty).Trim('(', ')').Split(',')[0])
+            .Select(s => ulong.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : 0)
+            .ToHashSet();
 
         var result = await _query.ExecuteAsync("""
             SELECT run_id, as_of_seq, toString(as_of_date), toString(updated_at)
@@ -936,7 +1171,8 @@ public sealed class ClickHousePlanningReader : IPlanningReader
 
         return [.. result.Rows.Select(r => new PlanningRunInfo(
             ClickHouseJsonResult.UInt64(r, 0), ClickHouseJsonResult.Int32(r, 1), DateText(ClickHouseJsonResult.Text(r, 2)),
-            ClickHouseJsonResult.Text(r, 3) ?? string.Empty, held.Contains(ClickHouseJsonResult.UInt64(r, 0))))];
+            ClickHouseJsonResult.Text(r, 3) ?? string.Empty, held.Contains(ClickHouseJsonResult.UInt64(r, 0)),
+            indexed.Contains(ClickHouseJsonResult.UInt64(r, 0))))];
     }
 
     private async Task<PlanningRunInfo?> RunAsync(ulong? runId, CancellationToken ct)
@@ -1096,11 +1332,8 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         IReadOnlyDictionary<string, string> parameters, long total, CancellationToken ct)
     {
         var match = filter.Any ? $"AND p.tac IN ({MatchingTacs})" : string.Empty;
-        var result = await _query.ExecuteAsync($$"""
-            SELECT a1 AS k, uniqMerge(numbers), sum(bindings), uniqMerge(handsets)
-            FROM ({{ModelRows(where, match, expression)}})
-            GROUP BY k
-            """, parameters, ct, Budget).ConfigureAwait(false);
+        var result = await _query.ExecuteAsync(
+            PlanningModelSql.ClassRows(expression, where, match), parameters, ct, Budget).ConfigureAwait(false);
 
         var byClass = result.Rows.ToDictionary(
             r => ClickHouseJsonResult.Text(r, 0) ?? string.Empty,
@@ -1120,13 +1353,8 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         IReadOnlyDictionary<string, string> parameters, long total, CancellationToken ct)
     {
         var match = filter.Any ? $"AND p.tac IN ({MatchingTacs})" : string.Empty;
-        var result = await _query.ExecuteAsync($$"""
-            SELECT band, uniqMerge(numbers) AS n, sum(bindings), uniqMerge(handsets)
-            FROM (SELECT numbers, bindings, handsets, arrayJoin(a1) AS band
-                  FROM ({{ModelRows($"notEmpty({column})", match, column)}}))
-            GROUP BY band
-            ORDER BY n DESC, band
-            """, parameters, ct, Budget).ConfigureAwait(false);
+        var result = await _query.ExecuteAsync(
+            PlanningModelSql.BandRows(column, match) + "\n" + "ORDER BY n DESC, band", parameters, ct, Budget).ConfigureAwait(false);
 
         var operatorSet = operatorBands.ToHashSet();
         return [.. result.Rows.Select(r =>
@@ -1136,6 +1364,29 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             return new PlanningBandRow(technology, band, operatorSet.Contains(band), numbers,
                 ClickHouseJsonResult.Int64(r, 2), ClickHouseJsonResult.Int64(r, 3), Percent(numbers, total));
         })];
+    }
+
+    /// <summary>A published run's figures for one view, by item; empty for a run published without them.</summary>
+    private async Task<Dictionary<string, (long Numbers, long Bindings, long Handsets)>> FiguresAsync(
+        PlanningRunInfo run, string view, CancellationToken ct)
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal) { ["run"] = Id(run), ["view"] = view };
+        var result = await _query.ExecuteAsync("""
+            SELECT item, numbers, bindings, handsets FROM planning_model_figure FINAL
+            WHERE run_id = {run:UInt64} AND view = {view:String}
+            """, parameters, ct, Budget).ConfigureAwait(false);
+        var figures = result.Rows.ToDictionary(
+            r => ClickHouseJsonResult.Text(r, 0) ?? string.Empty,
+            r => (ClickHouseJsonResult.Int64(r, 1), ClickHouseJsonResult.Int64(r, 2), ClickHouseJsonResult.Int64(r, 3)),
+            StringComparer.Ordinal);
+
+        // Written last: without it the write was cut short, and a band or a class may be missing.
+        if (!figures.Remove(PlanningModelSql.FiguresComplete))
+        {
+            figures.Clear();
+        }
+
+        return figures;
     }
 
     /// <summary>What no per-model class can place: unknown devices (no TAC) and TACs the catalogue does not hold.</summary>
@@ -1153,46 +1404,6 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             Percent(ClickHouseJsonResult.Int64(unclassified.Rows[0], 0), total));
     }
 
-    /// <summary>
-    /// The delivery's per-model rows (<c>agg_tac_population</c>) for the models <paramref name="condition"/>
-    /// (on <c>r</c>, tac_radio_active) holds of, each with <paramref name="attributes"/> of its profile or
-    /// catalogue record (on <c>r</c> and <c>t</c>) as <c>a1</c>, <c>a2</c>... - looked up by TAC, not joined.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The uniq() states must not pass through a join.</b> Joined to the catalogue for its names, the IoT
-    /// fleet by vendor took 1.84 GiB, and the four NTN classes 796 MiB, over the read path's 476 MiB cap;
-    /// looked up instead, 380 and 386 MiB, and the LTE bands 382 MiB (2026-10-27, delivery 246; turning
-    /// join side-swapping off changed nothing). The profiles of the models in question go into arrays once,
-    /// and each row finds its own with <c>transform</c>.
-    /// </para>
-    /// <para>
-    /// <b>The mart, not the run's breakdown.</b> Both give the same figures - the NTN classes agree to the
-    /// binding - but the mart is ordered by (delivery, TAC), so a TAC condition skips every other model's
-    /// states: 33-46 MiB read. The run's breakdown is ordered by class first, and the IoT fleet read all
-    /// 447 MiB of it and used 597 MiB.
-    /// </para>
-    /// </remarks>
-    private static string ModelRows(string condition, string match, params string[] attributes)
-    {
-        var arrays = string.Concat(attributes.Select(a => $", groupArray({a})"));
-        var columns = string.Concat(attributes.Select((_, n) => $", m.{n + 2}[ix] AS a{n + 1}"));
-        return $$"""
-            WITH (SELECT (groupArray(r.tac){{arrays}})
-                  FROM tac_radio_active AS r LEFT JOIN tac AS t ON t.tac = r.tac
-                  WHERE {{condition}}) AS m
-            SELECT p.tac AS tac, p.subscribers AS numbers, p.bindings AS bindings, p.handsets AS handsets,
-                   transform(p.tac, m.1, arrayEnumerate(m.1), toUInt32(0)) AS ix{{columns}}
-            FROM agg_tac_population AS p
-            WHERE p.seq = {seq:UInt16} AND p.tac IN ({{ModelTacs(condition)}}) {{match}}
-            """;
-    }
-
-    /// <summary>
-    /// The TACs a condition on <c>r</c> holds of, for <c>p.tac IN (...)</c>: on the mart's key, so the
-    /// states of every other model are not read (see ModelRows).
-    /// </summary>
-    private static string ModelTacs(string condition) => $"SELECT r.tac FROM tac_radio_active AS r WHERE {condition}";
 
     /// <summary>
     /// The models of one class of a per-model view, as a condition on <c>r</c>, tac_radio_active - or

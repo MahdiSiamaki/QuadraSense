@@ -6,7 +6,7 @@ import { ref } from 'vue'
   The band (N2) and satellite (N6) tabs show the server's classes. What they must never do: call a
   band the operator's when no list is configured, or fold a satellite radio into 3GPP NTN.
 */
-const run = { runId: 1790000000000, asOfSequence: 246, asOfDate: '2026-10-10', publishedAt: '2026-10-27T05:00:00Z', hasNumbers: true }
+const run = { runId: 1790000000000, asOfSequence: 246, asOfDate: '2026-10-10', publishedAt: '2026-10-27T05:00:00Z', hasNumbers: true, hasModelIndex: false }
 const cls = (c: string, label: string, numbers: number) => ({ class: c, label, numbers, bindings: numbers, handsets: numbers, sharePercent: numbers / 10 })
 const band = (technology: 'lte' | 'nr', b: number, operator: boolean, numbers: number) =>
   ({ technology, band: b, operator, numbers, bindings: numbers, handsets: numbers, sharePercent: numbers / 10 })

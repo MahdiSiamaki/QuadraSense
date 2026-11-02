@@ -52,6 +52,13 @@ public interface IPlanningReader
         ulong? runId, string view, string planningClass, string by, PlanningFilter filter, int limit,
         OperatorBandsOptions bands, CancellationToken ct);
 
+    /// <summary>
+    /// Whether a list of one class can be narrowed by vendor, model or device type in a run (the newest
+    /// when none is named): in any run that holds every number's models, otherwise for the classes whose
+    /// numbers keep theirs.
+    /// </summary>
+    Task<bool> CanNarrowAsync(ulong? runId, string view, string planningClass, CancellationToken ct);
+
     /// <summary>A page of the numbers in one class, ordered by number.</summary>
     Task<(PlanningRunInfo Run, IReadOnlyList<PlanningNumberRead> Rows, long Total)?> ListNumbersAsync(
         ulong? runId, string view, string planningClass, string? reason, PlanningFilter filter, int page, int pageSize, CancellationToken ct);

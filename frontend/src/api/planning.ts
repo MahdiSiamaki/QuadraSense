@@ -18,6 +18,8 @@ export interface PlanningRun {
   publishedAt: string
   /** Only the two newest runs keep their per-number rows; older ones keep their figures for the trend. */
   hasNumbers: boolean
+  /** It holds every number's models: a list of any class can be narrowed by vendor, model or type. */
+  hasModelIndex: boolean
 }
 
 export interface PlanningStatus {

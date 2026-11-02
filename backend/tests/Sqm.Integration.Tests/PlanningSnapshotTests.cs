@@ -47,14 +47,14 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
             }
 
             await QueryAsync($"CREATE DATABASE {_database}");
-            foreach (var table in new[] { "binding_event", "binding_current", "binding_by_imei", "tac_all", "tac_active", "tac_vendor_map" })
+            foreach (var table in new[] { "binding_event", "binding_current", "binding_by_imei", "tac_all", "tac_active", "tac_vendor_map", "agg_tac_population" })
             {
                 await QueryAsync($"CREATE TABLE {_database}.{table} AS sqm.{table}");
             }
 
             await QueryAsync($"CREATE MATERIALIZED VIEW {_database}.mv_by_imei TO {_database}.binding_by_imei AS SELECT imei, msisdn, imsi, active, last_change_seq, last_change_date FROM {_database}.binding_current");
 
-            foreach (var migration in new[] { "022_binding_history.sql", "029_tac_radio.sql", "030_planning_snapshot.sql", "031_planning_lifecycle.sql" })
+            foreach (var migration in new[] { "022_binding_history.sql", "029_tac_radio.sql", "030_planning_snapshot.sql", "031_planning_lifecycle.sql", "032_planning_figures_and_model_index.sql" })
             {
                 foreach (var statement in SqlScript.Split(MigrationText(migration).Replace("sqm.", _database + ".", StringComparison.Ordinal)))
                 {
@@ -232,6 +232,19 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
         Assert.Equal(
             ["35100001|2", "35200001|1", "35200101|1"],
             models.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+
+        // Who holds which model: every number once per model, with its classes, and no number missing.
+        var held = await QueryAsync($"""
+            SELECT concatWithSeparator('|', toString(msisdn), tac, toString(sunset))
+            FROM {_database}.planning_number_model WHERE run_id = {run.RunId} AND msisdn IN (9120000003, 9120000008)
+            ORDER BY msisdn, tac FORMAT TSVRaw
+            """);
+        Assert.Equal(
+            ["9120000003|35000001|1", "9120000003|35100001|1", "9120000008|35200001|3", "9120000008|35200101|3"],
+            held.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+        Assert.Equal(
+            await QueryAsync($"SELECT count() FROM {_database}.planning_number WHERE run_id = {run.RunId}"),
+            await QueryAsync($"SELECT uniqExact(msisdn) FROM {_database}.planning_number_model WHERE run_id = {run.RunId}"));
     }
 
     [Fact]

@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Sqm.Application.Identity;
 using Sqm.Application.Planning;
 using Sqm.Contracts.Planning;
+using Sqm.Infrastructure.ClickHouse;
 
 namespace Sqm.Integration.Tests;
 
@@ -20,13 +21,14 @@ namespace Sqm.Integration.Tests;
 public sealed class PlanningEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private const ulong Number = 9121234567;
-    private static readonly PlanningRunInfo Run = new(1790000000000, 246, "2026-10-10", "2026-10-27T05:00:00Z", true);
+    private static readonly PlanningRunInfo Run = new(1790000000000, 246, "2026-10-10", "2026-10-27T05:00:00Z", true, false);
 
     private readonly WebApplicationFactory<Program> _factory;
     private readonly List<AuditEntry> _audited = [];
     private string[] _held = [Permissions.PlanningView, Permissions.LookupSubscriber];
     private bool _published = true;
     private bool _built = true;
+    private bool _indexed;
 
     public PlanningEndpointTests(WebApplicationFactory<Program> factory) =>
         _factory = factory.WithWebHostBuilder(host => host.ConfigureTestServices(services =>
@@ -46,7 +48,7 @@ public sealed class PlanningEndpointTests : IClassFixture<WebApplicationFactory<
                 _audited.Add((AuditEntry)args[0]!);
                 return Task.CompletedTask;
             }));
-            services.AddSingleton(TestStubs.Create<IPlanningReader>((method, _) => method.Name switch
+            services.AddSingleton(TestStubs.Create<IPlanningReader>((method, args) => method.Name switch
             {
                 "GetStatusAsync" => Task.FromResult(new PlanningStatusResponse(true, [Run], null, null, null)),
                 "GetSunsetAsync" => Task.FromResult<SunsetResponse?>(_published
@@ -54,6 +56,7 @@ public sealed class PlanningEndpointTests : IClassFixture<WebApplicationFactory<
                     : null),
                 "ListNumbersAsync" => Task.FromResult<(PlanningRunInfo, IReadOnlyList<PlanningNumberRead>, long)?>(
                     (Run, [new PlanningNumberRead(Number, 0, 1, 1, ["Nokia 105"])], 1)),
+                "CanNarrowAsync" => Task.FromResult(_indexed || ClickHousePlanningReader.KeepsModels((string)args[1]!, (string)args[2]!)),
                 "GetLifecycleAsync" => Task.FromResult<LifecycleResponse?>(new LifecycleResponse(
                     Run, false, _built, "2026-01", "2026-10", 12, [],
                     [new LifecycleMoveRow("Nokia", "Samsung", 12, 9)], [],
@@ -107,12 +110,18 @@ public sealed class PlanningEndpointTests : IClassFixture<WebApplicationFactory<
     [InlineData("esim", "capable")]
     public async Task A_list_narrowed_by_model_is_refused_for_a_class_that_keeps_no_models(string view, string planningClass)
     {
-        // Answered as an empty list, it would say no ready Samsung number exists.
+        // In a run built before every number's models were kept. Answered as an empty list, it would
+        // say no ready Samsung number exists.
         var (status, body) = await SendAsync(HttpMethod.Post, "/api/v1/planning/numbers", new { view, @class = planningClass, vendor = "Samsung" });
 
         Assert.Equal(HttpStatusCode.BadRequest, status);
-        Assert.Contains("keeps the models", body.GetProperty("errors").GetProperty("vendor")[0].GetString(), StringComparison.Ordinal);
+        Assert.Contains("every number's models were kept", body.GetProperty("errors").GetProperty("vendor")[0].GetString(), StringComparison.Ordinal);
         Assert.Empty(_audited);
+
+        // In a run that holds them, the same list is answered.
+        _indexed = true;
+        var (indexed, _) = await SendAsync(HttpMethod.Post, "/api/v1/planning/numbers", new { view, @class = planningClass, vendor = "Samsung" });
+        Assert.Equal(HttpStatusCode.OK, indexed);
     }
 
     [Fact]

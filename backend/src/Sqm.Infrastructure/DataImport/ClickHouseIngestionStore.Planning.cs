@@ -49,13 +49,15 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
     [
         "planning_handset_stage", "planning_number", "planning_breakdown", "planning_iot_device",
         "planning_spell_stage", "planning_spell", "planning_change", "planning_tenure", "planning_device_age",
+        "planning_number_model",
     ];
 
     /// <inheritdoc />
     public async Task<bool> PlanningDeployedAsync(CancellationToken ct) =>
         await ScalarAsync($"EXISTS TABLE {_database}.planning_run", ct).ConfigureAwait(false) == 1
         && await ScalarAsync($"EXISTS TABLE {_database}.tac_radio_parsed", ct).ConfigureAwait(false) == 1
-        && await ScalarAsync($"EXISTS TABLE {_database}.planning_tenure", ct).ConfigureAwait(false) == 1;
+        && await ScalarAsync($"EXISTS TABLE {_database}.planning_tenure", ct).ConfigureAwait(false) == 1
+        && await ScalarAsync($"EXISTS TABLE {_database}.planning_number_model", ct).ConfigureAwait(false) == 1;
 
     /// <inheritdoc />
     public async Task<PlanningInputs> ReadPlanningInputsAsync(CancellationToken ct)
@@ -186,7 +188,7 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
         if (table == PlanningTable.Numbers)
         {
             var range = await PlanningRangeAsync(run, "msisdn_cuts", "msisdn", chunk, numeric: true, ct).ConfigureAwait(false);
-            foreach (var target in new[] { "planning_handset_stage", "planning_number", "planning_breakdown" })
+            foreach (var target in new[] { "planning_handset_stage", "planning_number", "planning_breakdown", "planning_number_model" })
             {
                 await ExecuteHttpAsync(
                     $"ALTER TABLE {_database}.{target} DROP PARTITION ({run.RunId}, {chunk})", NoParameters, ct).ConfigureAwait(false);
@@ -195,6 +197,28 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
             await ExecuteHttpAsync(StageSql(run, chunk, range), limits, ct).ConfigureAwait(false);
             await ExecuteHttpAsync(NumbersSql(run, chunk), limits, ct).ConfigureAwait(false);
             await ExecuteHttpAsync(BreakdownSql(run, chunk), limits, ct).ConfigureAwait(false);
+            await ExecuteHttpAsync(NumberModelSql(run, chunk), limits, ct).ConfigureAwait(false);
+
+            // One part for the chunk. A narrowed list reads the index in key order, merging every part of
+            // the run: with the four or five parts an insert of 4 M rows leaves (128 for the run), counting
+            // the ready class narrowed to Samsung took 20 s at 323 MiB; with one part a chunk, 10 s at
+            // 95 MiB. The merge costs about 1.2 s a chunk (the laptop, 2026-11-02).
+            await ExecuteHttpAsync(
+                $"OPTIMIZE TABLE {_database}.planning_number_model PARTITION ({run.RunId}, {chunk}) FINAL", NoParameters, ct)
+                .ConfigureAwait(false);
+
+            // Every number of the chunk, and no other, in the index of who holds which model: a list
+            // narrowed from it must be the class's own numbers.
+            var numbers = await ScalarAsync(
+                $"SELECT count() FROM {_database}.planning_number WHERE run_id = {run.RunId} AND chunk = {chunk}", ct).ConfigureAwait(false);
+            var indexed = await ScalarAsync(
+                $"SELECT count() FROM (SELECT msisdn FROM {_database}.planning_number_model WHERE run_id = {run.RunId} AND chunk = {chunk} "
+                + "GROUP BY msisdn) SETTINGS optimize_aggregation_in_order = 1", ct).ConfigureAwait(false);
+            if (numbers != indexed)
+            {
+                throw new InvalidOperationException(string.Create(CultureInfo.InvariantCulture,
+                    $"planning chunk {chunk}: {indexed} numbers in the model index against {numbers} in planning_number"));
+            }
             await ExecuteHttpAsync(
                 $"ALTER TABLE {_database}.planning_handset_stage DROP PARTITION ({run.RunId}, {chunk})", NoParameters, ct).ConfigureAwait(false);
         }
@@ -293,6 +317,17 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
                 FROM {_database}.planning_breakdown WHERE run_id = {run.RunId} GROUP BY esim
             ) AS h ON h.measure = n.measure AND h.class = n.class AND h.reason = n.reason
             """, NoParameters, ct).ConfigureAwait(false);
+
+        // The band view's figures, once. An optimisation, not a condition of publication: without them
+        // the page reads the same figures live, more slowly.
+        try
+        {
+            await WritePlanningFiguresAsync(run, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            LogPlanningFiguresFailed(ex, run.RunId);
+        }
 
         await WritePlanningRunAsync(run, "published", run.Done, "published after coverage, duplicate and input checks", ct).ConfigureAwait(false);
         LogPlanningRun(run.RunId, "published");
@@ -474,6 +509,65 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
             ) AS c ON c.imei = h.imei
             """;
     }
+
+    [LoggerMessage(EventId = 3243, Level = LogLevel.Warning,
+        Message = "Planning snapshot run {RunId}: its band figures were not written; the page reads them live")]
+    private partial void LogPlanningFiguresFailed(Exception exception, ulong runId);
+
+    /// <inheritdoc />
+    public async Task WritePlanningFiguresAsync(PlanningRun run, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+
+        // The API's own statements (PlanningModelSql), run here under the worker's limits. No spill to
+        // disk: an aggregation of uniq() states spilled took 3.2 GiB and 17 minutes where it took 380 MiB
+        // in memory (2026-10-27).
+        var settings = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["param_seq"] = run.AsOfSequence.ToString(CultureInfo.InvariantCulture),
+            ["max_bytes_before_external_group_by"] = "0",
+            ["max_execution_time"] = "1500",
+        };
+
+        foreach (var part in Sqm.Infrastructure.ClickHouse.PlanningModelSql.BandFigureParts())
+        {
+            await ExecuteHttpAsync($"""
+                INSERT INTO {_database}.planning_model_figure (run_id, view, item, numbers, bindings, handsets, written_at)
+                SELECT {run.RunId}, 'bands', item, n, b, h, now64(3) FROM ({part})
+                """, settings, ct).ConfigureAwait(false);
+        }
+
+        // Last: a write that stops part-way leaves no marker, and the page reads the view live rather
+        // than show the parts that were written as the whole.
+        await ExecuteHttpAsync($"""
+            INSERT INTO {_database}.planning_model_figure (run_id, view, item, numbers, bindings, handsets, written_at)
+            VALUES ({run.RunId}, 'bands', '{Sqm.Infrastructure.ClickHouse.PlanningModelSql.FiguresComplete}', 0, 0, 0, now64(3))
+            """, NoParameters, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Who holds which model: one row per (number, model) of the chunk, from its stage, with the number's
+    /// classes and counts - what a list narrowed by vendor, model or device type is read from.
+    /// </summary>
+    /// <remarks>
+    /// A hash aggregation, not one in order. The stage is sorted by (msisdn, imei), so (msisdn, tac) is
+    /// only partly its key, and aggregating that in order cost 486 to 560 s of CPU per chunk where the
+    /// hash takes 3.8 s and 390 MiB. Same rows, same checksum: the laptop, delivery 246, 2026-11-02.
+    /// </remarks>
+    private string NumberModelSql(PlanningRun run, int chunk) => $"""
+        INSERT INTO {_database}.planning_number_model (run_id, chunk, msisdn, tac, sunset, reason, esim, handsets, bindings)
+        SELECT {run.RunId}, {chunk}, s.msisdn, s.tac, n.sunset, n.reason, n.esim, n.handsets, n.bindings
+        FROM (
+            SELECT msisdn, tac FROM {_database}.planning_handset_stage
+            WHERE run_id = {run.RunId} AND chunk = {chunk}
+            GROUP BY msisdn, tac
+        ) AS s
+        INNER JOIN (
+            SELECT msisdn, sunset, reason, esim, handsets, bindings FROM {_database}.planning_number
+            WHERE run_id = {run.RunId} AND chunk = {chunk}
+        ) AS n ON n.msisdn = s.msisdn
+        SETTINGS optimize_aggregation_in_order = 0
+        """;
 
     // ------------------------------------------------------------------ handset lifecycle (N4)
 
