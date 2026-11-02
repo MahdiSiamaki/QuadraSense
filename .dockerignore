@@ -15,6 +15,7 @@
 data/
 _discovery/
 deploy/compose/tls/
+.private/
 
 # Not built from.
 .git/
