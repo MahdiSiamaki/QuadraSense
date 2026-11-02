@@ -209,12 +209,18 @@ public sealed class PlanningRealDataTests
             return;
         }
 
+        // Every class, the largest first: the ready class's 65 M numbers once failed a page at the read
+        // path's memory cap (found on the department VM, 2026-10-30), and exposed used 95% of it.
         var ct = TestContext.Current.CancellationToken;
-        var watch = Stopwatch.StartNew();
-        var deep = await Reader().ListNumbersAsync(null, "sunset", "exposed", null, PlanningFilter.None, 199, 50, ct);
-        Write($"exposed, page 199: {watch.ElapsedMilliseconds} ms, {deep!.Value.Total:N0} in the class");
+        foreach (var (view, planningClass) in new[] { ("sunset", "ready-lte"), ("sunset", "exposed"), ("esim", "not-capable"), ("sunset", "not-assessable") })
+        {
+            var watch = Stopwatch.StartNew();
+            var deep = await Reader().ListNumbersAsync(null, view, planningClass, null, PlanningFilter.None, 199, 50, ct);
+            Write($"{view}/{planningClass}, page 199: {watch.ElapsedMilliseconds} ms, {deep!.Value.Total:N0} in the class");
 
-        Assert.Equal(50, deep.Value.Rows.Count);
-        Assert.True(deep.Value.Rows.Select(r => r.Msisdn).SequenceEqual(deep.Value.Rows.Select(r => r.Msisdn).Order()));
+            Assert.Equal(50, deep.Value.Rows.Count);
+            Assert.True(deep.Value.Rows.Select(r => r.Msisdn).SequenceEqual(deep.Value.Rows.Select(r => r.Msisdn).Order()));
+            Assert.Equal(deep.Value.Total, await Reader().CountNumbersAsync(deep.Value.Run.RunId, view, planningClass, null, PlanningFilter.None, ct));
+        }
     }
 }
