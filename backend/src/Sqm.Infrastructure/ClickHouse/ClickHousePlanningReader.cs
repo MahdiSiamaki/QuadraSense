@@ -735,16 +735,24 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         parameters["limit"] = pageSize.ToString(CultureInfo.InvariantCulture);
         parameters["offset"] = ((long)(page - 1) * pageSize).ToString(CultureInfo.InvariantCulture);
 
+        // The page first, its models named after: a total over the window (count() OVER ()) made
+        // ClickHouse hold every row of the class with its names mapped before the LIMIT - the ready
+        // class's 65 M numbers failed at the 476 MiB cap, and exposed took 452 MiB (2026-10-30).
         var rows = await _query.ExecuteAsync($$"""
             WITH (SELECT (groupArray(tac), groupArray(marketingName)) FROM tac) AS names
             SELECT msisdn, reason, handsets, bindings,
-                   arrayMap(x -> if(x = '', '(unknown device)', transform(x, names.1, names.2, concat('TAC ', x))), tacs),
-                   count() OVER () AS total
-            FROM planning_number
-            WHERE run_id = {run:UInt64} AND {{condition}}
+                   arrayMap(x -> if(x = '', '(unknown device)', transform(x, names.1, names.2, concat('TAC ', x))), tacs)
+            FROM (
+                SELECT msisdn, reason, handsets, bindings, tacs
+                FROM planning_number
+                WHERE run_id = {run:UInt64} AND {{condition}}
+                ORDER BY msisdn
+                LIMIT {limit:UInt32} OFFSET {offset:UInt64}
+            )
             ORDER BY msisdn
-            LIMIT {limit:UInt32} OFFSET {offset:UInt64}
             """, parameters, ct, Budget).ConfigureAwait(false);
+        var counted = await _query.ExecuteAsync(
+            $"SELECT count() FROM planning_number WHERE run_id = {{run:UInt64}} AND {condition}", parameters, ct, Budget).ConfigureAwait(false);
 
         var list = rows.Rows.Select(r => new PlanningNumberRead(
             ClickHouseJsonResult.UInt64(r, 0),
@@ -752,7 +760,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             ClickHouseJsonResult.Int32(r, 2),
             ClickHouseJsonResult.Int32(r, 3),
             r[4].EnumerateArray().Select(m => m.GetString() ?? string.Empty).Distinct(StringComparer.Ordinal).ToList())).ToList();
-        var total = rows.Rows.Count == 0 ? 0 : ClickHouseJsonResult.Int64(rows.Rows[0], 5);
+        var total = ClickHouseJsonResult.Int64(counted.Rows[0], 0);
 
         return (run, list, total);
     }
