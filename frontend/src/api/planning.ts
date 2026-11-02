@@ -303,6 +303,15 @@ export function usePlanningBreakdownExport() {
   })
 }
 
+export type LifecycleTable = 'vendor-moves' | 'model-moves' | 'cohorts' | 'device-age' | 'model-age'
+
+export function useLifecycleExport() {
+  return useMutation({
+    mutationFn: (request: { table: LifecycleTable; runId: number | null } & PlanningFilter) =>
+      api.download('/api/v1/planning/lifecycle/export', request),
+  })
+}
+
 export function usePlanningNumbers() {
   return useMutation({
     mutationFn: (request: { view: 'sunset' | 'esim'; class: string; reason?: string | null; runId: number | null; page: number; pageSize: number } & PlanningFilter) =>

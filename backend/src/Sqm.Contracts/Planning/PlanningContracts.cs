@@ -132,6 +132,15 @@ public sealed record PlanningNumberPage(
 /// <param name="Models">The models it holds, by marketing name where the catalogue has one.</param>
 public sealed record PlanningNumberRow(string Msisdn, string? Reason, int Handsets, int Bindings, IReadOnlyList<string> Models);
 
+/// <summary>One table of the lifecycle view to export as CSV.</summary>
+/// <param name="Table"><c>vendor-moves</c>, <c>model-moves</c>, <c>cohorts</c>, <c>device-age</c> or <c>model-age</c>.</param>
+/// <param name="RunId">The run; the newest when null.</param>
+/// <param name="Vendor">Narrows the moves and ages, as the view does.</param>
+/// <param name="Model">The same, by marketing name.</param>
+/// <param name="DeviceType">The same, by GSMA device type.</param>
+public sealed record PlanningLifecycleExportRequest(
+    string? Table, ulong? RunId, string? Vendor, string? Model, string? DeviceType);
+
 /// <summary>A breakdown to export as CSV.</summary>
 public sealed record PlanningBreakdownRequest(
     string? View, string? Class, string? By, ulong? RunId, string? Vendor, string? Model, string? DeviceType);

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useLifecycle, type PlanningFilter } from '@/api/planning'
+import { saveFile } from '@/api/client'
+import { useLifecycle, useLifecycleExport, type LifecycleTable, type PlanningFilter } from '@/api/planning'
+import Button from '@/design-system/Button.vue'
 import Card from '@/design-system/Card.vue'
 import SegmentedControl from '@/design-system/SegmentedControl.vue'
 import { formatFull, formatPercent } from '@/lib/format'
@@ -17,6 +19,8 @@ import { formatFull, formatPercent } from '@/lib/format'
 const props = defineProps<{
   run: number
   filter: PlanningFilter
+  /** data.export: each table can be saved as CSV. */
+  canExport: boolean
 }>()
 
 const lifecycle = useLifecycle(() => props.run, () => props.filter, true)
@@ -28,6 +32,12 @@ const BY = [
   { value: 'model' as const, label: 'Model' },
 ]
 const moves = computed(() => (by.value === 'vendor' ? data.value?.vendorMoves : data.value?.modelMoves) ?? [])
+
+const exporter = useLifecycleExport()
+async function exportCsv(table: LifecycleTable) {
+  const file = await exporter.mutateAsync({ table, runId: props.run, ...props.filter })
+  saveFile(file, `planning-lifecycle-${table}.csv`)
+}
 
 function pct(value: number | null) {
   return value === null ? '—' : formatPercent(value)
@@ -62,7 +72,11 @@ function pct(value: number | null) {
       </div>
 
       <Card title="Where numbers moved, from and to" subtitle="The largest moves; a number that changed twice is counted twice">
-        <div class="mb-2"><SegmentedControl v-model="by" :options="BY" label="Moves between" /></div>
+        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <SegmentedControl v-model="by" :options="BY" label="Moves between" />
+          <Button v-if="canExport" size="sm" variant="secondary" :pending="exporter.isPending.value"
+                  @click="exportCsv(by === 'vendor' ? 'vendor-moves' : 'model-moves')">Export CSV</Button>
+        </div>
         <div class="overflow-x-auto">
           <table class="w-full text-xs">
             <thead class="bg-[var(--c-surface-sunken)] text-left text-2xs text-[var(--c-text-muted)]">
@@ -93,6 +107,9 @@ function pct(value: number | null) {
         <p v-if="data.filtered" class="py-4 text-xs text-[var(--c-text-secondary)]">
           The cohorts are the whole network's only: a spell is not stored with its model. Clear the filter to see them.
         </p>
+        <div v-else-if="canExport" class="mb-2 flex justify-end">
+          <Button size="sm" variant="secondary" :pending="exporter.isPending.value" @click="exportCsv('cohorts')">Export CSV</Button>
+        </div>
         <div v-else class="overflow-x-auto">
           <table class="w-full text-xs">
             <thead class="bg-[var(--c-surface-sunken)] text-left text-2xs text-[var(--c-text-muted)]">
@@ -132,14 +149,17 @@ function pct(value: number | null) {
       <div class="grid gap-3 lg:grid-cols-2">
         <Card
           v-for="block in [
-            { title: 'Handsets held now, by when the network first saw them', rows: data.deviceAge, note: 'Observed on the network - not a purchase or manufacture date.' },
-            { title: 'Handsets held now, by their model\'s GSMA allocation year', rows: data.modelAge, note: 'The TAC allocation precedes a model\'s release.' },
+            { title: 'Handsets held now, by when the network first saw them', rows: data.deviceAge, note: 'Observed on the network - not a purchase or manufacture date.', table: 'device-age' as const },
+            { title: 'Handsets held now, by their model\'s GSMA allocation year', rows: data.modelAge, note: 'The TAC allocation precedes a model\'s release.', table: 'model-age' as const },
           ]"
           :key="block.title"
           :title="block.title"
           :subtitle="block.note"
           flush
         >
+          <div v-if="canExport && block.rows.length" class="flex justify-end px-4 pt-3">
+            <Button size="sm" variant="secondary" :pending="exporter.isPending.value" @click="exportCsv(block.table)">Export CSV</Button>
+          </div>
           <table class="w-full text-xs">
             <tbody>
               <tr v-for="r in block.rows" :key="r.key" class="border-t first:border-t-0">

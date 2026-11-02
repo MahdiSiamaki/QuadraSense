@@ -308,7 +308,7 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
         // As the page reads it. February's eleven spells: five changed (days 19, 28, 28, 29, 30), six
         // censored (9, 9, 16, 59, 64, 89). Kaplan-Meier: 1 - (7/8)(5/7)(4/5)(3/4) = 62.5% changed within 30
         // days, half by day 29, and no answer at 90: nobody in it was followed that long.
-        var view = (await Reader().GetLifecycleAsync(run.RunId, PlanningFilter.None, ct))!;
+        var view = (await Reader().GetLifecycleAsync(run.RunId, PlanningFilter.None, 50, ct))!;
         Assert.Equal(6, view.Changes);
         Assert.Equal(["newer|5", "older|0", "not-stated|0", "same-model|1"], view.Kinds.Select(k => $"{k.Kind}|{k.Changes}"));
         Assert.Equal(("2026-02", "2026-03"), (view.FirstMonth, view.LastMonth));
@@ -331,7 +331,7 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
             await QueryAsync($"ALTER TABLE {_database}.planning_tenure DROP PARTITION ({run.RunId}, {chunk})");
         }
 
-        var before = (await Reader().GetLifecycleAsync(run.RunId, PlanningFilter.None, ct))!;
+        var before = (await Reader().GetLifecycleAsync(run.RunId, PlanningFilter.None, 50, ct))!;
         Assert.False(before.Built);
         Assert.Equal(0, before.Changes);
         Assert.Contains(before.NoData, n => n.Topic == "This run");

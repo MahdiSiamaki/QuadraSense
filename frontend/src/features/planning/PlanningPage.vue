@@ -430,7 +430,7 @@ const requestLabel = computed(() => {
 
             <!-- ====================================================== N4 -->
             <template v-else-if="tab === 'lifecycle'">
-              <PlanningLifecycleView v-if="run.hasNumbers" :run="run.runId" :filter="filter" />
+              <PlanningLifecycleView v-if="run.hasNumbers" :run="run.runId" :filter="filter" :can-export="can(Permission.DataExport)" />
               <p v-else class="py-10 text-center text-xs text-[var(--c-text-secondary)]">
                 The lifecycle figures are kept for the two newest runs only. Choose a current delivery.
               </p>

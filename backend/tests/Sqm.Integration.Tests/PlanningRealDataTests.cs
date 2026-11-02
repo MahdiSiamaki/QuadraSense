@@ -117,7 +117,7 @@ public sealed class PlanningRealDataTests
 
         var ct = TestContext.Current.CancellationToken;
         var watch = Stopwatch.StartNew();
-        var view = (await Reader().GetLifecycleAsync(null, PlanningFilter.None, ct))!;
+        var view = (await Reader().GetLifecycleAsync(null, PlanningFilter.None, 50, ct))!;
         Write($"lifecycle view: {watch.ElapsedMilliseconds} ms; {view.Changes:N0} changes {view.FirstMonth}..{view.LastMonth}; "
             + string.Join("; ", view.Kinds.Select(k => $"{k.Label} {k.Changes:N0}")) + $"; not assessed {view.NotAssessedNumbers:N0} numbers");
         foreach (var c in view.Cohorts)
@@ -140,7 +140,7 @@ public sealed class PlanningRealDataTests
         Assert.InRange(held, 1, (long)(devices * 1.01));
 
         watch.Restart();
-        var samsung = (await Reader().GetLifecycleAsync(null, new PlanningFilter("Samsung", null, null), ct))!;
+        var samsung = (await Reader().GetLifecycleAsync(null, new PlanningFilter("Samsung", null, null), 50, ct))!;
         Write($"lifecycle narrowed to Samsung: {watch.ElapsedMilliseconds} ms, {samsung.Changes:N0} changes from or to it");
         Assert.InRange(samsung.Changes, 1, view.Changes);
         Assert.Empty(samsung.Cohorts);

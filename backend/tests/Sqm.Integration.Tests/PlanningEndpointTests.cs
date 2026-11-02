@@ -26,6 +26,7 @@ public sealed class PlanningEndpointTests : IClassFixture<WebApplicationFactory<
     private readonly List<AuditEntry> _audited = [];
     private string[] _held = [Permissions.PlanningView, Permissions.LookupSubscriber];
     private bool _published = true;
+    private bool _built = true;
 
     public PlanningEndpointTests(WebApplicationFactory<Program> factory) =>
         _factory = factory.WithWebHostBuilder(host => host.ConfigureTestServices(services =>
@@ -53,6 +54,10 @@ public sealed class PlanningEndpointTests : IClassFixture<WebApplicationFactory<
                     : null),
                 "ListNumbersAsync" => Task.FromResult<(PlanningRunInfo, IReadOnlyList<PlanningNumberRead>, long)?>(
                     (Run, [new PlanningNumberRead(Number, 0, 1, 1, ["Nokia 105"])], 1)),
+                "GetLifecycleAsync" => Task.FromResult<LifecycleResponse?>(new LifecycleResponse(
+                    Run, false, _built, "2026-01", "2026-10", 12, [],
+                    [new LifecycleMoveRow("Nokia", "Samsung", 12, 9)], [],
+                    [new LifecycleCohortRow("2026-02", 100, 12, 88, 5.5, null, null, 3.25, null, null)], null, 0, [], [], [])),
                 _ => throw new NotSupportedException(method.Name),
             }));
         }));
@@ -158,5 +163,45 @@ public sealed class PlanningEndpointTests : IClassFixture<WebApplicationFactory<
         var (status, _) = await SendAsync(HttpMethod.Get, path);
 
         Assert.Equal(HttpStatusCode.BadRequest, status);
+    }
+
+    [Fact]
+    public async Task A_lifecycle_table_exports_as_csv_with_data_export_and_names_nobody()
+    {
+        var (denied, _) = await SendAsync(HttpMethod.Post, "/api/v1/planning/lifecycle/export", new { table = "vendor-moves" });
+        Assert.Equal(HttpStatusCode.Forbidden, denied);
+
+        _held = [Permissions.PlanningView, Permissions.DataExport];
+        using var client = _factory.CreateClient();
+        foreach (var (table, heading, row) in new[]
+                 {
+                     ("vendor-moves", "From,To,Changes", "Nokia,Samsung,12,9,2026-01,2026-10,246,2026-10-10"),
+                     ("cohorts", "Arrived on a number,Handsets on numbers", "2026-02,100,12,88,5.5,,,3.25,,,246,2026-10-10"),
+                 })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/planning/lifecycle/export")
+            {
+                Content = JsonContent.Create(new { table }),
+            };
+            request.Headers.Add("Cookie", "sqm_session=planner; sqm_csrf=t");
+            request.Headers.Add("X-CSRF-Token", "t");
+            using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+            var csv = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.StartsWith(heading, csv.TrimStart('\uFEFF'), StringComparison.Ordinal);
+            Assert.Contains(row, csv, StringComparison.Ordinal);
+        }
+
+        var exports = _audited.Where(a => a.Detail?.ContainsKey("table") == true).ToList();
+        Assert.Equal(["lifecycle|vendor-moves", "lifecycle|cohorts"], exports.Select(a => $"{a.Detail!["view"]}|{a.Detail["table"]}"));
+        Assert.DoesNotContain(_audited, a => JsonSerializer.Serialize(a).Contains("msisdn", StringComparison.OrdinalIgnoreCase));
+
+        var (unknown, _) = await SendAsync(HttpMethod.Post, "/api/v1/planning/lifecycle/export", new { table = "numbers" });
+        Assert.Equal(HttpStatusCode.BadRequest, unknown);
+
+        _built = false;
+        var (notBuilt, _) = await SendAsync(HttpMethod.Post, "/api/v1/planning/lifecycle/export", new { table = "cohorts" });
+        Assert.Equal(HttpStatusCode.Conflict, notBuilt);
     }
 }

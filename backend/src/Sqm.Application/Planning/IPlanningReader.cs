@@ -40,8 +40,8 @@ public interface IPlanningReader
     /// <summary>N6 for a run's delivery.</summary>
     Task<NtnResponse?> GetNtnAsync(ulong? runId, PlanningFilter filter, CancellationToken ct);
 
-    /// <summary>N4 for a run that still holds its rows.</summary>
-    Task<LifecycleResponse?> GetLifecycleAsync(ulong? runId, PlanningFilter filter, CancellationToken ct);
+    /// <summary>N4 for a run that still holds its rows, with the largest <paramref name="moves"/> moves.</summary>
+    Task<LifecycleResponse?> GetLifecycleAsync(ulong? runId, PlanningFilter filter, int moves, CancellationToken ct);
 
     /// <summary>
     /// One class of a view (<c>sunset</c>, <c>esim</c>, <c>iot</c>, <c>bands</c> or <c>ntn</c>) broken

@@ -91,6 +91,7 @@ vi.mock('@/api/planning', () => ({
   useBands: () => query(bands),
   useNtn: () => query(ref(ntn)),
   useLifecycle: () => query(lifecycleView),
+  useLifecycleExport: () => ({ mutateAsync: vi.fn(), isPending: ref(false) }),
 }))
 
 const { default: PlanningBandsView } = await import('@/features/planning/PlanningBandsView.vue')
@@ -136,7 +137,7 @@ describe('Planning satellite view', () => {
 
 describe('Planning lifecycle view', () => {
   it('shows a horizon nobody was followed to as unobservable, and the dump apart from the cohorts', () => {
-    const wrapper = mount(PlanningLifecycleView, { props: { run: run.runId, filter: {} }, global: { stubs } })
+    const wrapper = mount(PlanningLifecycleView, { props: { run: run.runId, filter: {}, canExport: false }, global: { stubs } })
     const cohortRow = wrapper.findAll('tbody tr').find((r) => r.text().startsWith('2026-09'))!
     const cells = cohortRow.findAll('td').map((c) => c.text())
 
@@ -146,6 +147,10 @@ describe('Planning lifecycle view', () => {
     expect(wrapper.findAll('tbody tr').some((r) => r.text().startsWith('dump'))).toBe(false)
     expect(wrapper.text()).toContain('900 handsets were already on their numbers in the initial dump')
     expect(wrapper.text()).toContain('Purchase or manufacture date: no data')
+    expect(wrapper.text()).not.toContain('Export CSV')
+
+    const exporting = mount(PlanningLifecycleView, { props: { run: run.runId, filter: {}, canExport: true }, global: { stubs } })
+    expect(exporting.findAll('button').filter((b) => b.text() === 'Export CSV')).toHaveLength(4)
   })
 })
 
@@ -162,7 +167,7 @@ describe('Planning lifecycle view, a run built before it', () => {
       modelAge: [],
       noData: [{ topic: 'This run', reason: 'It was built before the lifecycle measures existed, so it holds none.' }],
     }
-    const text = mount(PlanningLifecycleView, { props: { run: run.runId, filter: {} }, global: { stubs } }).text()
+    const text = mount(PlanningLifecycleView, { props: { run: run.runId, filter: {}, canExport: false }, global: { stubs } }).text()
     lifecycleView.value = lifecycle
 
     expect(text).toContain('Not built for this delivery yet')

@@ -40,6 +40,7 @@ public static class PlanningEndpoints
         "A list narrowed by vendor, model or device type is kept for the exposed, LTE-M / NB-IoT-only and not-assessable "
         + "classes: the planning run keeps the models of those numbers only. Clear the filter to list this class.";
     private static readonly string[] Breakdowns = ["vendor", "model", "deviceType", "tac"];
+    private static readonly string[] LifecycleTables = ["vendor-moves", "model-moves", "cohorts", "device-age", "model-age"];
 
     /// <summary>Registers the planning routes.</summary>
     public static IEndpointRouteBuilder MapPlanningEndpoints(this IEndpointRouteBuilder app)
@@ -76,6 +77,11 @@ public static class PlanningEndpoints
         builder.MapGet("/lifecycle", LifecycleAsync)
             .WithName("GetPlanningLifecycle")
             .WithSummary("N4: device and model age, changes of handset by kind and between models, and time to a change. Names nobody.");
+
+        builder.MapPost("/lifecycle/export", LifecycleExportAsync)
+            .RequireAuthorization(PermissionPolicyProvider.Prefix + Permissions.DataExport)
+            .WithName("ExportPlanningLifecycle")
+            .WithSummary("One table of the lifecycle view as CSV: the moves, the cohorts or the ages. Names nobody.");
 
         builder.MapGet("/breakdown", BreakdownAsync)
             .WithName("GetPlanningBreakdown")
@@ -121,7 +127,71 @@ public static class PlanningEndpoints
 
     private static async Task<IResult> LifecycleAsync(
         IPlanningReader reader, ulong? run, string? vendor, string? model, string? deviceType, CancellationToken ct) =>
-        Answer(await reader.GetLifecycleAsync(run, new PlanningFilter(vendor, model, deviceType), ct).ConfigureAwait(false));
+        Answer(await reader.GetLifecycleAsync(run, new PlanningFilter(vendor, model, deviceType), 50, ct).ConfigureAwait(false));
+
+    private static async Task<IResult> LifecycleExportAsync(
+        PlanningLifecycleExportRequest request, IPlanningReader reader, HttpContext http, IAuditLog audit, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var table = request.Table ?? string.Empty;
+        if (!LifecycleTables.Contains(table, StringComparer.Ordinal))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                ["table"] = ["One of: " + string.Join(", ", LifecycleTables) + "."],
+            });
+        }
+
+        var filter = new PlanningFilter(request.Vendor, request.Model, request.DeviceType);
+        if (await reader.GetLifecycleAsync(request.RunId, filter, 500, ct).ConfigureAwait(false) is not { } view)
+        {
+            return Unavailable();
+        }
+
+        if (!view.Built)
+        {
+            return Results.Problem(statusCode: StatusCodes.Status409Conflict, title: "Not built for this run",
+                detail: "This run was built before the lifecycle measures existed and holds none. Export from a run built since.");
+        }
+
+        object?[] Run() => [view.Run.AsOfSequence, view.Run.AsOfDate];
+        string[] runHeadings = ["Delivery", "Business date"];
+        static string Cohort(string cohort) => cohort == "dump" ? "Before 2026-01-26 (in the initial dump)" : cohort;
+
+        var csv = table switch
+        {
+            "vendor-moves" or "model-moves" => CsvExport.Write(
+                ["From", "To", "Changes", "Of which to a newer model", "Window from", "Window to", .. runHeadings],
+                (table == "vendor-moves" ? view.VendorMoves : view.ModelMoves).Select(m => (IReadOnlyList<object?>)
+                    [m.From, m.To, m.Changes, m.Upgrades, view.FirstMonth, view.LastMonth, .. Run()])),
+            "cohorts" => CsvExport.Write(
+                ["Arrived on a number", "Handsets on numbers", "Changed", "Censored",
+                 "Changed within 30 days (%, empty = not yet observable)", "Changed within 90 days (%)", "Changed within 180 days (%)",
+                 "Upgraded within 90 days (%)", "Upgraded within 180 days (%)", "Median days to a change (empty = not reached)", .. runHeadings],
+                view.Cohorts.Concat(view.Dump is { } dump ? [dump] : []).Select(c => (IReadOnlyList<object?>)
+                    [Cohort(c.Cohort), c.Spells, c.Changed, c.Censored, c.ChangedBy30, c.ChangedBy90, c.ChangedBy180,
+                     c.UpgradedBy90, c.UpgradedBy180, c.MedianDays, .. Run()])),
+            "device-age" => CsvExport.Write(
+                ["First seen on the network", "Handsets held now", "Share (%)", .. runHeadings],
+                view.DeviceAge.Select(a => (IReadOnlyList<object?>)[a.Label, a.Handsets, a.SharePercent, .. Run()])),
+            _ => CsvExport.Write(
+                ["GSMA allocation year of the model", "Handsets held now", "Share (%)", .. runHeadings],
+                view.ModelAge.Select(a => (IReadOnlyList<object?>)[a.Label, a.Handsets, a.SharePercent, .. Run()])),
+        };
+
+        var user = CurrentUser.Require(http);
+        await audit.WriteAsync(Entry(user, http, Permissions.DataExport, AuditOutcome.Success, new()
+        {
+            ["view"] = "lifecycle",
+            ["table"] = table,
+            ["run"] = view.Run.RunId,
+            ["filter"] = Filter(filter),
+        }), ct).ConfigureAwait(false);
+
+        var name = string.Create(CultureInfo.InvariantCulture,
+            $"planning-lifecycle-{table}-{view.Run.AsOfDate ?? view.Run.AsOfSequence.ToString(CultureInfo.InvariantCulture)}.csv");
+        return Results.File(csv, "text/csv; charset=utf-8", name);
+    }
 
     private static async Task<IResult> BreakdownAsync(
         IPlanningReader reader, IOptionsMonitor<OperatorBandsOptions> bands, string? view, string? @class, string? by, ulong? run,

@@ -450,7 +450,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
     private const string ModelOfTac = "SELECT tac, coalesce(nullIf(marketingName, ''), '(unknown TAC)') AS name FROM tac";
 
     /// <inheritdoc />
-    public async Task<LifecycleResponse?> GetLifecycleAsync(ulong? runId, PlanningFilter filter, CancellationToken ct)
+    public async Task<LifecycleResponse?> GetLifecycleAsync(ulong? runId, PlanningFilter filter, int moves, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(filter);
         if (await RunAsync(runId, ct).ConfigureAwait(false) is not { HasNumbers: true } run)
@@ -460,6 +460,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
 
         var parameters = FilterParameters(filter);
         parameters["run"] = Id(run);
+        parameters["moves"] = Math.Clamp(moves, 1, 500).ToString(CultureInfo.InvariantCulture);
 
         // A run built before the lifecycle measures holds none of them: say so, rather than answer zero
         // changes. Every run since migration 031 writes tenure rows for every chunk.
@@ -496,7 +497,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
                 LEFT JOIN ({{names}}) AS t2 ON t2.tac = c.to_tac
                 GROUP BY a, b
                 ORDER BY n DESC, a, b
-                LIMIT 50
+                LIMIT {moves:UInt32}
                 """, parameters, ct, Budget).ConfigureAwait(false);
             return [.. result.Rows.Select(r => new LifecycleMoveRow(
                 ClickHouseJsonResult.Text(r, 0) ?? string.Empty, ClickHouseJsonResult.Text(r, 1) ?? string.Empty,
