@@ -128,6 +128,21 @@ restored is not a backup.
 
 ---
 
+## Beyond these phases - PI's role in the estate
+
+The operator's estate landscape gives QuadraSense, as its Primary Inventory, more than the phases
+above build. It adds:
+- the eUICC and stock inventory;
+- signalling taps that report on every attach;
+- CRM's declared lifecycle events;
+- a query API for the integration hub;
+- facts for the policy center;
+- the free IMSI and ICCID ranges that key generation draws from.
+
+`20-estate-landscape.md` §4 lists each of these against what is built. **None of them is scheduled.**
+Their order is the owner's to decide, and several depend on feeds the operator does not send today.
+An item moves into a phase here once it is chosen.
+
 ## Dependencies and blockers
 
 ```mermaid

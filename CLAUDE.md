@@ -76,6 +76,21 @@ Do not re-open these without asking:
 - **Device images are proposed, never auto-applied.** Automatic sourcing once put a photograph of
   an office building into the catalogue. Nothing reaches the live image table without a person
   approving it — see `docs/adr/ADR-011-device-image-sourcing.md`.
+- **PI holds key references, never key values** (2026-11-02). It may record which keyset, and which
+  version, a card uses. Key material stays in the HSMs of the systems that use it.
+
+## The estate around it
+
+QuadraSense is the **Primary Inventory (PI)** of the operator's SIM and eSIM estate: the record of
+what is true about a SIM, a handset and the binding between them. `docs/architecture/20-estate-landscape.md`
+gives every neighbouring system's scope, whether it is new or in service, and its interface to PI.
+It also sets what PI does today against what the estate's landscape gives it. Read it before giving
+PI an interface or a responsibility: several responsibilities are claimed by two systems, and those
+are open questions for the owner, not decisions.
+
+The landscape's security internals are kept out of this public repository: key custody, where the
+HSMs sit, and the routes key material takes. They live in `.private/` on the owner's machine. Do not
+add them here.
 
 ## UI
 
