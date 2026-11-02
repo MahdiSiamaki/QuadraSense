@@ -252,9 +252,18 @@ not yet activated.)
 > worse, and nobody looked. The product owner changed the rule; migration 010 relabelled the 60
 > days. The warning count is now the signal, and it needs a threshold to be an alarm.
 
+## PI, and the estate
+
+**Primary Inventory**: QuadraSense's role among the operator's systems. It records what is true
+about a SIM, a handset and the binding between them. Tessera decides what may be done to them,
+Lodestone is how other systems reach either, and only Provisioning writes to the network. PI never
+holds key values, only references to the keyset a card uses. The systems, their scope, and PI's
+built and unbuilt responsibilities are in `20-estate-landscape.md`.
+
 ## Related
 
 - `01-overview.md` — what the system is for
+- `20-estate-landscape.md` — the systems around QuadraSense, and what each one owns
 - `03-data-model.md` — the binding, its lifecycle, and the measured quality rules
 - `09-import-platform.md` — deliveries, the queue, and why days run in order
 - `11-clickhouse-memory.md` — merges, partitions and what they cost on a small node

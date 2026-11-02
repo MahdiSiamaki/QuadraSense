@@ -63,7 +63,7 @@ These are **proposed**, to be ratified once production hardware is known.
 ```mermaid
 flowchart TB
     subgraph ext["External"]
-        SRC["Source system<br/>daily dump-NN batches<br/>CSV + 1.config + 1.done"]
+        SRC["SNQM<br/>daily dump-NN batches<br/>CSV + 1.config + 1.done"]
         GSMA["GSMA TAC<br/>Device Database"]
     end
     subgraph sys["QuadraSense"]
@@ -86,6 +86,11 @@ flowchart TB
     ING --> DB
     ING --> OLTP
 ```
+
+The daily dumps come from the operator's SNQM, its service and network quality management system
+(owner, 2026-11-02). QuadraSense is the Primary Inventory (PI) of the operator's wider SIM and eSIM
+estate. What the systems around it own, and what the estate's landscape expects of PI against what
+is built, are in `20-estate-landscape.md`.
 
 ---
 

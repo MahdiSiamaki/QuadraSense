@@ -1,7 +1,10 @@
 # QuadraSense
 
 **PI — Primary SIM & Device Inventory.** Analytics platform for mobile device / SIM / subscriber
-binding data, enriched with the GSMA TAC device database.
+binding data, enriched with the GSMA TAC device database. Among the operator's SIM and eSIM systems
+it is the Primary Inventory, the record of what is true about a SIM, a handset and the binding
+between them. `docs/architecture/20-estate-landscape.md` covers the systems around it, what each one
+owns, and which of PI's responsibilities are built.
 
 The four identifiers the name points at are MSISDN, IMSI, IMEI and ICCID/EID. The feed carries the
 first three, and they are loaded and queryable. **ICCID is derived, not delivered:** the operator's
@@ -26,8 +29,8 @@ otherwise — see `docs/architecture/03-data-model.md` for what the source deliv
 
 ## What this system does
 
-A mobile operator delivers a daily feed describing which **handset** each **SIM** and **phone
-number** is currently bound to. This platform ingests that feed, enriches it with device metadata
+The operator's quality system (SNQM) delivers a daily feed describing which **handset** each
+**SIM** and **phone number** is currently bound to. This platform ingests that feed, enriches it with device metadata
 from the GSMA TAC database, and answers:
 
 - What is the active device population by manufacturer, model, OS and device type?
@@ -392,6 +395,8 @@ docs/
     16-ui-design-system.md         tokens, components, and the conventions the layout review settled
     17-dashboard-builder.md        dashboards people build from widgets
     18-explorer-modes.md           the Explorer's Simple and Advanced modes, and the derived ICCID
+    19-network-planning.md         network and product planning: sunset, eSIM, bands, lifecycle, campaign lists
+    20-estate-landscape.md         the systems around QuadraSense, what each owns, and PI's role among them
   operations/
     dedicated-hardware.md          every setting chosen because of the laptop, to revisit on real hardware
     deployment/                    the containers, the department VM, MCI's OpenShift, red lines, CI/CD
