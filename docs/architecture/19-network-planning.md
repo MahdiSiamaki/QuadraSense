@@ -220,14 +220,21 @@ assessable** classes. In such a run a narrowed list of another class is refused 
 since an empty list would say no such number exists. The narrowed sunset view still shows the classes,
 from the per-model breakdown. Its figure for handsets assessed through a pair is shown unnarrowed only.
 
-How each list is read, measured on the laptop at delivery 246, 2026-11-02. Unless a row says
-otherwise, the figures are for the ready class narrowed to Samsung: 36,998,031 numbers.
+How each list is read, and what it costs. Unless a row says otherwise, the figures are for the ready
+class narrowed to Samsung: 36,998,031 numbers on the laptop (delivery 246, 2026-11-02), 36,826,686
+on the department VM (delivery 236, the run of 2026-11-03). The VM's figures are ClickHouse's own,
+from its query log, for each statement sent as the API sends it and under the API's limits.
 
-| | How | Cost |
-|---|---|---|
-| A page | Its 50 numbers come from a plain read in key order, which the LIMIT stops. Then only those numbers' models are read. | 0.4 s, 77 MiB, at page 1 or page 199 |
-| Its count | The matching rows, grouped by number in key order. Read once per list and kept for the run, since a published run never changes. | 10.6 s, 95 MiB |
-| A campaign list | Every row of the class in key order, put together into numbers by the API as the rows pass. | 48 s and 166 MiB for the ready class's 105.6 M rows. eSIM-capable narrowed to Samsung: 4,521,947 numbers, exactly the count, in 10.7 s |
+| | How | Laptop | Department VM |
+|---|---|---|---|
+| A page | Its 50 numbers come from a plain read in key order, which the LIMIT stops. Then only those numbers' models are read. | 0.4 s, 77 MiB, at page 1 or page 199 | 0.4-0.5 s, 78 MiB and 3.2 M rows read, at page 1 or page 199 |
+| Its count | The matching rows, grouped by number in key order. Read once per list and kept for the run, since a published run never changes. | 10.6 s, 95 MiB | 15.4 s, 95 MiB |
+| A campaign list | Every row of the class in key order, put together into numbers by the API as the rows pass. | 48 s and 166 MiB for the ready class's 105.6 M rows. eSIM-capable narrowed to Samsung: 4,521,947 numbers, exactly the count, in 10.7 s | 81 s and 162 MiB for 105.6 M rows. eSIM-capable: 4,593,313 numbers, exactly the count, in 15.6 s and 127 MiB |
+
+**The memory is far from the cap; the row budget is nearer.** The index is ordered by (number,
+model), so a condition on the class skips nothing: a count and a campaign list read every row of the
+run's index, 116.6 M on the VM, against the API's budget of 200 M rows a statement. The index reaches
+that budget if the numbers, or the models each holds, grow by about 70%.
 
 Fitting this in the API's 476 MiB took three changes, each measured:
 - **No grouping of the whole class.** `groupArray` over the class grew to the cap within 5.5 M
@@ -246,6 +253,11 @@ Fitting this in the API's 476 MiB took three changes, each measured:
 That figure came only after a fourth trap. Aggregating the index in key order cost **486 to 754 s
 per chunk**, about 4.5 hours a run. The stage is sorted by (number, IMEI), which the (number, model)
 key only partly follows. The hash aggregation gives the same rows, with the same checksum.
+
+On the department VM, the first index the worker wrote on its own (delivery 236, 2026-11-03):
+116,334,195 rows for 74,786,228 numbers, exactly the run's numbers, and 629 MiB in one part per
+chunk. A chunk took 3.2-5.3 s to write (299 MiB at most), 0.9-1.7 s to merge and 0.1-0.3 s to check:
+2.9 minutes a run in all.
 
 ## 4. Campaign lists - the controlled export (built 2026-10-27)
 
@@ -299,12 +311,13 @@ measure again when the catalogue or the network grows.
 worker runs the same statements once, under its own limits. A last row marks the figures complete.
 The page then reads the 115 rows they give:
 
-| | Before | Now |
-|---|---|---|
-| Unnarrowed band view, read | 33 s on the laptop, 42–48 s on the department VM, merged live | 0.2 s |
-| Writing the figures, once per run | – | 41.9 s (LTE bands 24.4 s, NR bands 9.4 s, the 5G architecture classes 5.0 s, the ambiguous models 3.1 s), 381 MiB at most |
+| | Before | Now, laptop | Now, department VM |
+|---|---|---|---|
+| Unnarrowed band view, read | 33 s on the laptop, 42–48 s on the department VM, merged live | 0.2 s | 2-24 ms on the server, for its two statements: the run's total and the 115 rows |
+| Writing the figures, once per run | – | 41.9 s (LTE bands 24.4 s, NR bands 9.4 s, the 5G architecture classes 5.0 s, the ambiguous models 3.1 s), 381 MiB at most | 44.9 s (26.2 s, 10.0 s, 4.6 s and 4.0 s), 420 MiB at most |
 
-Laptop, delivery 246, 2026-11-02.
+Laptop, delivery 246, 2026-11-02. Department VM, delivery 236, the run of 2026-11-03: 64 LTE bands,
+45 NR bands, the four architecture classes and the ambiguous models, then the marker.
 
 This is an optimisation, not a condition of publication. The view is read live in these cases:
 - a run published without the figures: built before them, or whose write failed;
@@ -435,6 +448,11 @@ worker's 1.12 GiB statement limit:
 
 The lifecycle adds about 55 minutes to a run and device age about 8. A run keeps 17.4 M change rows
 (117 MiB), 252,266 tenure rows and 343,829 device-age rows.
+
+On the department VM, under its 2.5 GB statement limit, the run of delivery 236 (as of 2026-10-31,
+built 2026-11-03) spent 66 minutes on the lifecycle and 21 on device age. The stage peaked at
+1.52 GiB a chunk. The run of delivery 217, with 51 fewer days of history, peaked at 1.32 GiB; this
+one read 30% more rows. The stage grows with the history, and `docs/backlog.md` holds the lever.
 
 Three shapes were rejected, each measured on a real chunk first:
 

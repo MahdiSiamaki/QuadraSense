@@ -159,3 +159,9 @@ figures.
 The laptop's run was stopped, fixed and resumed. Chunks already written stand, and an interrupted
 chunk is rebuilt from its partition. Its index was merged to one part per chunk by hand, as the
 worker now does.
+
+**Verified on the department VM, 2026-11-03,** on the first run the worker wrote alone (delivery
+236). It abandoned the stalled run of definition 2, because the fingerprint changed. The index holds
+exactly the run's 74,786,228 numbers, one part per chunk. Definition 3 added 3.7 minutes to the run's
+2 hours 20 minutes of statements. Every narrowed read stayed under 165 MiB, and a campaign list
+streamed exactly its count. `19-network-planning.md` §3 and §5 have the figures.
