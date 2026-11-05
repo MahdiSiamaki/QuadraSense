@@ -198,7 +198,7 @@ watch(ranking, (value) => {
           930px of blank between its chart and its notes (measured at 1920px, 2026-10-07). 14rem keeps
           the longest card level with the chart beside it (472px).
         -->
-        <div class="max-h-[14rem] overflow-y-auto overscroll-contain">
+        <div class="max-h-[14rem] overflow-y-auto">
           <VendorMovementChart
             :rows="data.rows"
             :ranking="ranking"

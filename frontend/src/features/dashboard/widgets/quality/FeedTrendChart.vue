@@ -8,6 +8,7 @@ import { CHECK_LABELS, flaggedDays, type FeedQualityCheck, type FeedQualityDay, 
 import { fillCalendar, isMissing } from '@/lib/calendar'
 import { chartColor } from '@/lib/chart-colors'
 import { tooltipBounds } from '@/lib/chart-tooltip'
+import { leaveWheelToPage } from '@/lib/chart-zoom'
 import { feedQualityMarkArea } from '@/lib/feed-quality-bands'
 import { formatCompact, formatFull, formatPercent } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
@@ -117,6 +118,7 @@ let observer: ResizeObserver | null = null
 onMounted(() => {
   if (!container.value) return
   chart.value = echarts.init(container.value, undefined, { renderer: 'canvas' })
+  leaveWheelToPage(container.value)
   render()
   observer = new ResizeObserver(() => chart.value?.resize())
   observer.observe(container.value)

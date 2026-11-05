@@ -156,7 +156,7 @@ const settingsLine = computed(() => {
       </p>
 
       <div v-if="result" class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-md)] border">
-        <div class="min-h-0 flex-1 overflow-auto overscroll-contain">
+        <div class="min-h-0 flex-1 overflow-auto">
           <table class="w-full text-xs" :aria-busy="list.isPending.value">
             <thead class="sticky top-0 bg-[var(--c-surface-sunken)] text-left text-2xs text-[var(--c-text-muted)]">
               <tr>

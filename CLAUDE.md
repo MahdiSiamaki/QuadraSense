@@ -97,7 +97,7 @@ add them here.
 Professional, modern, enterprise-grade, responsive and accessible. Design tokens live in
 `frontend/src/design-system/`; use them rather than literal colours.
 
-Eight traps that have already cost time, all still live:
+Ten traps that have already cost time, all still live:
 
 - **zrender cannot parse `oklch()`.** Passing a token straight to ECharts yields `undefined` and
   the series disappears on hover. Resolve through `frontend/src/lib/chart-colors.ts`.
@@ -125,6 +125,13 @@ Eight traps that have already cost time, all still live:
 - **A self-sizing chart must not sit in a shrinkable box.** `BarChart height="auto"` sets its own
   height; inside `min-h-0 flex-1` the box shrinks, the canvas does not, and the next element is
   drawn over it - the note under every bar chart in the Add widget preview, 2026-10-20.
+- **`overscroll-contain` holds the wheel on any scroll container.** Since Chrome 144 that includes
+  one with nothing to scroll, so every dashboard card kept the page from moving under the pointer
+  until 2026-11-05. It belongs on overlays only; `tests/unit/lib/wheelTraps.spec.ts` fails on any
+  other use.
+- **ECharts' inside zoom cancels the wheel over the plot**, and `zoomOnMouseWheel: 'ctrl'` does not
+  stop it: in 6.1 the controller cancels the event before it reads that option. A chart with an
+  inside zoom calls `leaveWheelToPage` from `frontend/src/lib/chart-zoom.ts`.
 
 The UI conventions these and the layout review settled are in
 `docs/architecture/16-ui-design-system.md`.

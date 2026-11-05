@@ -98,7 +98,7 @@ function select(value: string) {
           @select="select"
         />
       </div>
-      <div v-else class="min-h-0 flex-1 overflow-auto overscroll-contain">
+      <div v-else class="min-h-0 flex-1 overflow-auto">
         <DimensionTable
           :rows="sorted"
           :header="HEADERS[config.dimension]"

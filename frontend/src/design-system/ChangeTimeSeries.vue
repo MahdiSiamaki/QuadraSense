@@ -18,6 +18,7 @@ import { fillCalendar, isMissing } from '@/lib/calendar'
 import { feedQualityMarkArea, feedQualityTooltip } from '@/lib/feed-quality-bands'
 import type { DailyChange } from '@/api/dashboard'
 import { tooltipBounds } from '@/lib/chart-tooltip'
+import { leaveWheelToPage } from '@/lib/chart-zoom'
 
 echarts.use([
   BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent,
@@ -223,6 +224,7 @@ let observer: ResizeObserver | null = null
 onMounted(() => {
   if (!container.value) return
   chart.value = echarts.init(container.value, undefined, { renderer: 'canvas' })
+  leaveWheelToPage(container.value)
   render()
   observer = new ResizeObserver(() => chart.value?.resize())
   observer.observe(container.value)

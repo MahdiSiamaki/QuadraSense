@@ -61,7 +61,7 @@ const rows = computed(() => {
           <dd class="mt-0.5 text-xs text-[var(--c-text-secondary)]">{{ r.note }}</dd>
         </div>
       </dl>
-      <div v-else class="min-h-0 flex-1 overflow-auto overscroll-contain">
+      <div v-else class="min-h-0 flex-1 overflow-auto">
         <table class="w-full text-xs">
           <thead class="sticky top-0 bg-[var(--c-surface-sunken)] text-left text-2xs text-[var(--c-text-muted)]">
             <tr>

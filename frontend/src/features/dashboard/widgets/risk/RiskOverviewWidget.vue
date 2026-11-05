@@ -59,7 +59,7 @@ const bars = computed(() => {
       <div v-if="instance.config.display === 'bar'" class="relative">
         <BarChart :data="bars" unit="entities listed" height="auto" :selectable="false" />
       </div>
-      <div v-else class="min-h-0 flex-1 overflow-auto overscroll-contain">
+      <div v-else class="min-h-0 flex-1 overflow-auto">
         <table class="w-full text-xs">
           <thead class="sticky top-0 bg-[var(--c-surface-sunken)] text-left text-2xs text-[var(--c-text-muted)]">
             <tr>

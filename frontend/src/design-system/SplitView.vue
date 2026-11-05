@@ -25,7 +25,7 @@ defineProps<{
     </div>
     <aside
       v-if="aside"
-      class="min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100dvh-6rem)] xl:overflow-y-auto xl:overscroll-contain"
+      class="min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100dvh-6rem)] xl:overflow-y-auto"
     >
       <slot name="aside" />
     </aside>

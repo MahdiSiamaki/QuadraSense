@@ -56,7 +56,7 @@ const shown = computed(() => (rows.value ?? []).filter((r) => (config.value.capa
       gap="none"
       @retry="data.refetch()"
     >
-      <div class="min-h-0 flex-1 overflow-auto overscroll-contain">
+      <div class="min-h-0 flex-1 overflow-auto">
         <CapabilityBars :data="shown" />
       </div>
     </AsyncBoundary>
