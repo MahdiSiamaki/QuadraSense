@@ -1,6 +1,7 @@
 # Research: what limits the worker, and what more workers would buy
 
-**Date:** 2026-11-05. **Status:** research for a decision; nothing here is built.
+**Date:** 2026-11-05. **Status:** the owner approved the recommendation on 2026-11-05. Step 1 is built
+(section 5); the rest is not.
 **Asked by:** the product owner: several workers, started according to the machine's resources, running
 what does not conflict, with the number chosen automatically, on the laptop, the department VM and MCI's
 OpenShift.
@@ -67,6 +68,17 @@ disk: `vmstat` showed 117 MB/s and 21% iowait, and `/proc/pressure/io` 25-50%, a
 this test.
 On this VM, several workers scanning at once would divide the same disk.
 
+The same statement on the laptop's NVMe, with nothing else running:
+
+| Threads | Time | Peak memory |
+|---:|---:|---:|
+| 1 | 315 s | 2.04 GiB |
+| 2 | 144 s | not kept |
+| 4 | 125 s | 2.45 GiB |
+
+**A second thread buys 2.2 times the speed there, and two more only 15% on top.** So threads pay on this
+disk and not on the VM's, and past two they stop paying on either.
+
 So the three environments have three different limits: memory on the laptop, disk on the VM, and on
 OpenShift a shared Ceph and limits that are ceilings, not promises. No constant fits all three, which is
 the sound part of the request. The limit has to be read where the system runs.
@@ -88,10 +100,14 @@ the sound part of the request. The limit has to be read where the system runs.
 
 In this order, each measured before the next:
 
-1. **Stop repeating work.** Build the marts from the per-model states: 14 passes become about 2. Four of
-   the 12 are proven above; the class mix, capability and KPI passes need the same comparison. Estimated,
-   not measured: 2 h 12 min to about 25 minutes on the VM, and 928 GiB read to about 130. This also serves
-   the laptop, and leaves the disk free for everything else.
+1. **Stop repeating work. Built 2026-11-05.** The marts are merged from the per-model states: one read of
+   `binding_current` where there were 14. Measured on the laptop, delivery 247, the same machine and
+   the same data: **514 s where it took 50 to 68 minutes, and 55 GiB read where it read 646 to 668.** The
+   read itself is 350 s; nothing else takes more than 19 s or 631 MiB. Every mart's fingerprint came out
+   as it was, but for the `unknown` column of capability: ADR-020 had changed its statement and it had not
+   been refreshed since. The VM's figure comes with its next import; 2 h 12 min to about 25 minutes was the
+   estimate. `MartRefreshScriptTests` holds every mart to a direct read of current state over two
+   deliveries, and fails if a second read of the table comes back.
 2. **Read the capacity at run time.** Threads, memory per statement and the merge cap come from what the
    environment reports (`CGroupMaxCPU`, `CGroupMemoryTotal`), replacing the laptop's constants. The merge
    cap matters most: at 2 GiB, `binding_current` holds 1.26 billion versions, and every `FINAL` pays for
@@ -119,7 +135,7 @@ In this order, each measured before the next:
 
 - Whether two run steps beside each other go twice as fast. The steps read little, so they should, unlike
   the scans of section 3; it needs a test.
-- The same scaling test on the laptop's NVMe, and on Ceph.
+- The same scaling test on Ceph.
 - Whether ClickHouse workloads behave on 25.8 under our limits.
 - What raising the merge cap costs on the VM.
 

@@ -179,3 +179,13 @@ Migration 027's header records "336 s at two threads, 149 MiB peak" for building
 measured on a query whose outer SELECT never read the state columns, so ClickHouse never built them;
 the real figures are in decision 1. 027 is applied and immutable, so the correction is here and in the
 header of 028.
+
+## Since
+
+**2026-11-05.** These states became the source of every snapshot mart, not only of the filtered views.
+Each figure on the dashboard is a property of the TAC or of the whole population, so the KPI row, the
+class mix, capability and the dimensions are all merged from them. `binding_current` is read once per
+refresh, in section 1b, and the 250 s this ADR added is most of what a refresh now costs: 514 s for
+delivery 247 where it took 50 to 68 minutes. `agg_device_daily`, one of the 14 reads and read by nothing
+but its own check, is gone (migration 034). The figures and the method are in
+`docs/research/2026-11-worker-capacity.md`.
