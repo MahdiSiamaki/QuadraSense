@@ -158,6 +158,59 @@ public sealed class ImportQueueTests(ImportQueueFixture fixture) : IClassFixture
         }
     }
 
+    /// <summary>
+    /// A stored file with no job is listed until it gets one - but not while it is being finished.
+    /// </summary>
+    /// <remarks>
+    /// The real table and a real timestamp, because the list's whole value is in its condition: too
+    /// wide and every upload flashes up as stranded, too narrow and the file for 26 October stays
+    /// unseen, as it did for two days.
+    /// </remarks>
+    [Fact]
+    public async Task A_stored_file_with_no_job_is_listed_once_it_has_had_time_to_get_one()
+    {
+        if (!await ReadyAsync())
+        {
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+
+        try
+        {
+            var file = await fixture.Repository.RegisterFileAsync(
+                TestSource, "day.csv", Stored(Hash("unqueued")), "tester", ct);
+
+            Assert.DoesNotContain(await fixture.Repository.GetUnqueuedFilesAsync(ct), f => f.FileId == file.FileId);
+
+            await AgeAsync(file.FileId, ct);
+
+            var listed = Assert.Single(await fixture.Repository.GetUnqueuedFilesAsync(ct), f => f.FileId == file.FileId);
+            Assert.Equal(TestSource, listed.SourceCode);
+            Assert.Equal("day.csv", listed.OriginalFileName);
+            Assert.Equal(1024, listed.SizeBytes);
+            Assert.Equal("tester", listed.UploadedBy);
+
+            await fixture.Repository.EnqueueAsync(TestSource, file.FileId, new DateOnly(2026, 5, 9), "tester", ct: ct);
+
+            Assert.DoesNotContain(await fixture.Repository.GetUnqueuedFilesAsync(ct), f => f.FileId == file.FileId);
+        }
+        finally
+        {
+            await fixture.CleanupAsync(TestSource);
+        }
+    }
+
+    private static async Task AgeAsync(long fileId, CancellationToken ct)
+    {
+        await using var connection = new Npgsql.NpgsqlConnection(ImportQueueFixture.ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var command = new Npgsql.NpgsqlCommand(
+            "UPDATE imports.import_file SET uploaded_at = now() - interval '1 hour' WHERE id = @id", connection);
+        command.Parameters.AddWithValue("id", fileId);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
     [Fact]
     public async Task A_failed_attempt_stops_blocking_once_that_day_lands_another_way()
     {

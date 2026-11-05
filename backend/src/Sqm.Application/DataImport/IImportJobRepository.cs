@@ -37,6 +37,13 @@ public interface IImportJobRepository
         string uploadedBy,
         CancellationToken ct);
 
+    /// <summary>Stored files with no job, oldest first.</summary>
+    /// <remarks>
+    /// Not one still being finished: a file is registered a moment before its job is queued, and
+    /// that moment was 10.8 seconds at worst on a busy disk (2026-11-03). Two minutes clears it.
+    /// </remarks>
+    Task<IReadOnlyList<UnqueuedFile>> GetUnqueuedFilesAsync(CancellationToken ct);
+
     /// <summary>Creates a job for a registered file and puts it in the queue.</summary>
     /// <param name="sourceCode">Data source.</param>
     /// <param name="fileId">The file to import.</param>

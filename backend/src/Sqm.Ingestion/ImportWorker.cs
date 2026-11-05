@@ -61,10 +61,21 @@ public sealed partial class ImportWorker(
                   + "worker as absent while it is in fact running")]
     private partial void LogHeartbeatFailed(Exception exception);
 
+    [LoggerMessage(EventId = 3408, Level = LogLevel.Warning,
+        Message = "The file store cannot be reached; no job is claimed until it returns")]
+    private partial void LogHoldStarted();
+
+    [LoggerMessage(EventId = 3409, Level = LogLevel.Information,
+        Message = "The file store is back; claiming jobs again")]
+    private partial void LogHoldEnded();
+
     private readonly ImportWorkerOptions _options = options.Value;
     private readonly bool _hostedInApi = options.Value.HostedInApi;
     private readonly Dictionary<string, IImportProcessor> _processors =
         processors.ToDictionary(p => p.SourceCode, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Read and written by the claim loop alone.</summary>
+    private bool _holding;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -89,12 +100,22 @@ public sealed partial class ImportWorker(
 
             await slots.WaitAsync(stoppingToken).ConfigureAwait(false);
 
-            ClaimedJob? job;
+            ClaimedJob? job = null;
+            bool holding;
             try
             {
-                job = await repository
-                    .ClaimNextAsync(_options.WorkerId, _options.LeaseDuration, stoppingToken)
-                    .ConfigureAwait(false);
+                // Every job starts by reading its original, so with the store away a claim could
+                // only end in a failure - and a failed day stops every day after it. On the laptop
+                // that store is a USB disk: twice it left with the queue running, and each time the
+                // next day failed for good over a file that was intact. Nothing is claimed until it
+                // returns, and then the queue carries on by itself.
+                holding = await IsHoldingAsync(stoppingToken).ConfigureAwait(false);
+                if (!holding)
+                {
+                    job = await repository
+                        .ClaimNextAsync(_options.WorkerId, _options.LeaseDuration, stoppingToken)
+                        .ConfigureAwait(false);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -113,7 +134,14 @@ public sealed partial class ImportWorker(
                 // behind a failed day. The moment for work no job will do - such as a dashboard
                 // snapshot a run of files deferred and never got to rebuild. Done holding the
                 // slot, so it never runs beside a job of this worker's own.
-                await RunIdleTasksAsync(stoppingToken).ConfigureAwait(false);
+                //
+                // Not during a hold. The work waiting is about to change what these tasks compute,
+                // and the dashboard rebuild cannot be interrupted: on 2026-11-05 a job waited 50
+                // minutes behind one that the jobs after it then made stale.
+                if (!holding)
+                {
+                    await RunIdleTasksAsync(stoppingToken).ConfigureAwait(false);
+                }
 
                 slots.Release();
                 await DelayAsync(_options.PollInterval, stoppingToken).ConfigureAwait(false);
@@ -135,6 +163,28 @@ public sealed partial class ImportWorker(
             Task.Delay(_options.ShutdownGrace, CancellationToken.None)).ConfigureAwait(false);
 
         await heartbeat.ConfigureAwait(false);
+    }
+
+    /// <summary>Whether the file store is away, saying so once rather than every poll.</summary>
+    private async Task<bool> IsHoldingAsync(CancellationToken ct)
+    {
+        var holding = !await fileStore.IsReachableAsync(ct).ConfigureAwait(false);
+
+        if (holding != _holding)
+        {
+            _holding = holding;
+
+            if (holding)
+            {
+                LogHoldStarted();
+            }
+            else
+            {
+                LogHoldEnded();
+            }
+        }
+
+        return holding;
     }
 
     /// <summary>
@@ -333,6 +383,17 @@ public sealed partial class ImportWorker(
     private async Task HandleFailureAsync(ClaimedJob job, Exception exception)
     {
         var (retryable, summary) = ImportFailure.Classify(exception);
+
+        // "Not found" means gone only if the store could have found it. The disk can leave after a
+        // job is claimed and before its file is opened, where the hold cannot see it; the file is
+        // then as intact as it was, and the job waits in the queue for the store like any other.
+        if (ImportFailure.IsFileMissing(exception)
+            && !await fileStore.IsReachableAsync(CancellationToken.None).ConfigureAwait(false))
+        {
+            retryable = true;
+            summary = $"The file store could not be reached; this import runs again when it returns. {summary}";
+        }
+
         var delay = BackoffFor(job.Attempt);
 
         // Recording the failure must not itself be cancellable by the shutdown token: a job that

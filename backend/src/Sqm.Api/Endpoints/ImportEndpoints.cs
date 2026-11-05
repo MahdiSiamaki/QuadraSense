@@ -77,6 +77,16 @@ public static class ImportEndpoints
             .WithName("GetImportBlockages")
             .WithSummary("Failed or cancelled days that hold later queued days back, with nothing queued to land them.");
 
+        group.MapGet("/unqueued-files", GetUnqueuedFilesAsync)
+            .WithName("GetUnqueuedFiles")
+            .WithSummary("Stored files whose upload ended before they reached the queue.");
+
+        // The rest of an upload, so the upload's permission, which the source decides - as for
+        // UploadAsync, it is checked inside the handler.
+        group.MapPost("/{sourceCode}/unqueued-files/{fileId:long}/queue", QueueUnqueuedFileAsync)
+            .WithName("QueueUnqueuedFile")
+            .WithSummary("Queues a stored file that has no import, from the copy already stored.");
+
         group.MapGet("/stage-durations", GetStageDurationsAsync)
             .WithName("GetImportStageDurations")
             .WithSummary("How long each stage usually takes for a source - what the time left is estimated from.");
@@ -135,13 +145,14 @@ public static class ImportEndpoints
         }
 
         var (originalName, stored) = received;
-        return await RespondToIntakeAsync(repository, fileStore, source, originalName, stored, http, ct)
+        return await RespondToIntakeAsync(repository, fileStore, source, originalName, stored, http)
             .ConfigureAwait(false);
     }
 
     /// <summary>
     /// Registers a stored file and queues it, answering as every upload answers: 201 with the job,
-    /// or 409 with the import it duplicates. Shared with resumable uploads (ADR-018).
+    /// or 409 with the import it duplicates. Shared with resumable uploads (ADR-018). Takes no
+    /// token: the file is stored, so it goes on to its job whatever becomes of the request.
     /// </summary>
     internal static async Task<IResult> RespondToIntakeAsync(
         IImportJobRepository repository,
@@ -149,8 +160,7 @@ public static class ImportEndpoints
         string source,
         string originalName,
         StoredFile stored,
-        HttpContext http,
-        CancellationToken ct)
+        HttpContext http)
     {
         ArgumentNullException.ThrowIfNull(stored);
         ArgumentNullException.ThrowIfNull(http);
@@ -158,7 +168,7 @@ public static class ImportEndpoints
         // Registering, the duplicate rule and the queueing are ImportIntake's: --import-file
         // follows the same rules for a file already on the server.
         var intake = await ImportIntake
-            .AcceptAsync(repository, fileStore, source, originalName, stored, CurrentActor(http), http.TraceIdentifier, ct)
+            .AcceptAsync(repository, fileStore, source, originalName, stored, CurrentActor(http), http.TraceIdentifier)
             .ConfigureAwait(false);
         var registered = intake.File;
 
@@ -354,6 +364,42 @@ public static class ImportEndpoints
     private static async Task<IResult> GetBlockagesAsync(IImportJobRepository repository, CancellationToken ct) =>
         Results.Ok(await repository.GetBlockagesAsync(ct).ConfigureAwait(false));
 
+    private static async Task<IResult> GetUnqueuedFilesAsync(IImportJobRepository repository, CancellationToken ct) =>
+        Results.Ok(await repository.GetUnqueuedFilesAsync(ct).ConfigureAwait(false));
+
+    private static async Task<IResult> QueueUnqueuedFileAsync(
+        string sourceCode,
+        long fileId,
+        IImportJobRepository repository,
+        IImportFileStore fileStore,
+        IAuditLog audit,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+
+        var refusal = await RefuseUploadAsync(sourceCode, http, audit, ct).ConfigureAwait(false);
+        if (refusal is not null)
+        {
+            return refusal;
+        }
+
+        var result = await ImportIntake
+            .QueueStoredFileAsync(
+                repository, fileStore, sourceCode.ToUpperInvariant(), fileId, CurrentActor(http), http.TraceIdentifier, ct)
+            .ConfigureAwait(false);
+
+        return result.Outcome switch
+        {
+            ReprocessOutcome.NotFound => Results.NotFound(),
+            ReprocessOutcome.FileGone => Results.Problem(
+                title: "The stored file cannot be read",
+                detail: "It is not where it was recorded: the disk holding the files may be away, or the file was deleted.",
+                statusCode: StatusCodes.Status409Conflict),
+            _ => Results.Created($"/api/v1/imports/{result.QueuedJobId}", new QueuedFileResponse(result.QueuedJobId!.Value, fileId)),
+        };
+    }
+
     private static async Task<IResult> GetStageDurationsAsync(
         string source, IImportJobRepository repository, CancellationToken ct) =>
         string.IsNullOrWhiteSpace(source)
@@ -362,10 +408,11 @@ public static class ImportEndpoints
             : Results.Ok(await repository.GetStageDurationsAsync(source, ct).ConfigureAwait(false));
 
     private static async Task<IResult> GetWorkerHealthAsync(
-        IImportJobRepository repository, CancellationToken ct)
+        IImportJobRepository repository, IImportFileStore fileStore, CancellationToken ct)
     {
         var health = await repository.GetWorkerHealthAsync(ct).ConfigureAwait(false);
-        return Results.Ok(health);
+        var reachable = await fileStore.IsReachableAsync(ct).ConfigureAwait(false);
+        return Results.Ok(health with { StoreReachable = reachable });
     }
 
     /// <summary>
@@ -567,3 +614,8 @@ public sealed record DuplicateUploadResponse(
 /// <param name="JobId">The new job.</param>
 /// <param name="ReprocessOfJobId">The job it re-runs.</param>
 public sealed record ReprocessResponse(long JobId, long ReprocessOfJobId);
+
+/// <summary>A stored file with no job, now queued.</summary>
+/// <param name="JobId">The job it was given.</param>
+/// <param name="FileId">The file.</param>
+public sealed record QueuedFileResponse(long JobId, long FileId);

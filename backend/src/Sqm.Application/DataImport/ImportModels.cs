@@ -384,6 +384,15 @@ public sealed record WorkerHealth(
     /// saying out loud.
     /// </remarks>
     public bool Stalled => Queued > 0 && ActiveWorkers == 0;
+
+    /// <summary>Whether the file store can be reached; while it cannot, the worker claims nothing.</summary>
+    /// <remarks>
+    /// Set by the caller that holds the store, and not a constructor parameter: Dapper builds this
+    /// record from the columns of a query, and this is no column. The API asks its own store, which
+    /// is the worker's: decision D2 has them on one machine, reading one directory. Without it a
+    /// queue held for a missing disk looks exactly like a broken worker.
+    /// </remarks>
+    public bool StoreReachable { get; init; } = true;
 }
 
 /// <summary>A day that did not land and holds the later days of its source back.</summary>
@@ -398,6 +407,27 @@ public sealed record WorkerHealth(
 /// <param name="Status">That job's status: FAILED or CANCELLED.</param>
 /// <param name="Waiting">Later days of the same source queued behind it.</param>
 public sealed record QueueBlockage(string SourceCode, DateOnly BusinessDate, long JobId, string Status, int Waiting);
+
+/// <summary>A stored file with no job: its upload ended before it reached the queue.</summary>
+/// <remarks>
+/// A day with no job blocks nothing and fails nothing, so without this list such a file says nothing
+/// at all. The file for 2026-10-26 sat like this for two days and was found by counting.
+/// </remarks>
+/// <param name="FileId">The file.</param>
+/// <param name="SourceCode">Its source.</param>
+/// <param name="OriginalFileName">The name it arrived under.</param>
+/// <param name="StoredPath">Where it is, relative to the storage root.</param>
+/// <param name="SizeBytes">Its size.</param>
+/// <param name="UploadedBy">Who sent it.</param>
+/// <param name="UploadedAt">When it was registered.</param>
+public sealed record UnqueuedFile(
+    long FileId,
+    string SourceCode,
+    string OriginalFileName,
+    string StoredPath,
+    long SizeBytes,
+    string UploadedBy,
+    DateTimeOffset UploadedAt);
 
 /// <summary>A page of import history.</summary>
 /// <remarks>

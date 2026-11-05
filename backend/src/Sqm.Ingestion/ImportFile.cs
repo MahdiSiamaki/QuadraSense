@@ -62,7 +62,7 @@ internal static class ImportFile
         }
 
         var intake = await ImportIntake
-            .AcceptAsync(repository, files, source, name, stored, Actor, null, ct)
+            .AcceptAsync(repository, files, source, name, stored, Actor, null)
             .ConfigureAwait(false);
 
         Console.WriteLine(intake.QueuedJobId is { } jobId

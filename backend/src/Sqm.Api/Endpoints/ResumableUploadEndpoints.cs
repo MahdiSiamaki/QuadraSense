@@ -82,10 +82,13 @@ public static class ResumableUploadEndpoints
 
         var stored = await fileStore
             .AdoptAsync(source, fileName, uploads.DataPath(uploadId), ct).ConfigureAwait(false);
-        await uploads.ForgetAsync(uploadId, ct).ConfigureAwait(false);
+
+        // Off the request's token from here on: the file has moved into the store, so a client that
+        // leaves now must not stop it short of a job.
+        await uploads.ForgetAsync(uploadId, CancellationToken.None).ConfigureAwait(false);
 
         return await ImportEndpoints
-            .RespondToIntakeAsync(repository, fileStore, source, fileName, stored, http, ct)
+            .RespondToIntakeAsync(repository, fileStore, source, fileName, stored, http)
             .ConfigureAwait(false);
     }
 }

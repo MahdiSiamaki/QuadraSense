@@ -14,7 +14,7 @@ namespace Sqm.Integration.Tests;
 /// </summary>
 /// <remarks>
 /// Against the real ClickHouse, through the real <see cref="ClickHouseIngestionStore"/>, in a scratch
-/// database that migrations 020 and 023 are applied to as they ship. The day is loaded the way the
+/// database that migrations 020, 023 and 033 are applied to as they ship. The day is loaded the way the
 /// import loads it; the dashboard's own mart refresh is the truth the rows are reconciled with.
 /// </remarks>
 [Collection("clickhouse-scratch")]
@@ -57,7 +57,7 @@ public sealed class RiskDayTests : IAsyncLifetime
                 await QueryAsync($"CREATE TABLE {_database}.{table} AS sqm.{table}");
             }
 
-            foreach (var migration in new[] { "020_feed_quality.sql", "023_risk_sim_change_day.sql" })
+            foreach (var migration in new[] { "020_feed_quality.sql", "023_risk_sim_change_day.sql", "033_drop_sim_change_imeis.sql" })
             {
                 foreach (var statement in SqlScript.Split(MigrationText(migration).Replace("sqm.", _database + ".", StringComparison.Ordinal)))
                 {
@@ -166,14 +166,12 @@ public sealed class RiskDayTests : IAsyncLifetime
         await store.RefreshChangeMartsForDayAsync(Day, sequence, ct);
         Assert.Equal("3", await QueryAsync($"SELECT msisdn_changed FROM {_database}.agg_sim_change_daily WHERE data_date = '{Day:yyyy-MM-dd}'"));
 
-        // F gained two SIMs, so which of their IMEIs is shown as "new" is not defined: compared as "either".
         Assert.Equal(
-            "9121000001\t[432110000000102]\t[432110000000101]\t1\t1\t35000000000102\t35000000000101\tnone\n" +
-            "9121000004\t[432110000000402]\t[432110000000401]\t1\t1\t35000000000402\t35000000000401\tmulti_number\n" +
-            "9121000005\t[432110000000502,432110000000503]\t[432110000000501]\t2\t1\teither\t35000000000501\tnone",
+            "9121000001\t[432110000000102]\t[432110000000101]\t1\t1\tnone\n" +
+            "9121000004\t[432110000000402]\t[432110000000401]\t1\t1\tmulti_number\n" +
+            "9121000005\t[432110000000502,432110000000503]\t[432110000000501]\t2\t1\tnone",
             await QueryAsync($"""
-                SELECT msisdn, arraySort(new_imsis), old_imsis, new_count, old_count,
-                       if(new_count = 1, new_imei, 'either'), old_imei, set_aside
+                SELECT msisdn, arraySort(new_imsis), old_imsis, new_count, old_count, set_aside
                 FROM {_database}.risk_sim_change_day ORDER BY msisdn FORMAT TSV
                 """));
 

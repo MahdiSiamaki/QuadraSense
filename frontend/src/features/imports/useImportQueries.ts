@@ -6,6 +6,7 @@ import {
   type ImportHistoryQuery,
   type ImportJobDetail,
   type ImportPage,
+  type UnqueuedFile,
 } from '@/api/imports'
 
 /**
@@ -108,6 +109,15 @@ export function useBlockages(options: { enabled?: MaybeRefOrGetter<boolean> } = 
   })
 }
 
+/** Stored files with no job. Polled with the blockages: both say why a day is not arriving. */
+export function useUnqueuedFiles() {
+  return useQuery({
+    queryKey: ['imports', 'unqueued-files'],
+    queryFn: ({ signal }) => importsApi.unqueuedFiles(signal),
+    refetchInterval: 15000,
+  })
+}
+
 /**
  * How long each stage usually takes for a source - what the time left is estimated from.
  *
@@ -124,9 +134,9 @@ export function useStageDurations(source: MaybeRefOrGetter<string | null | undef
 }
 
 /**
- * Cancel and reprocess.
+ * Cancel, reprocess, and queueing a stored file.
  *
- * Both invalidate the import queries rather than patching the cache by hand. The server
+ * All invalidate the import queries rather than patching the cache by hand. The server
  * decides what a cancellation actually did — a queued job stops immediately, a running one only
  * gets a flag — and guessing that in the client would show the operator an outcome the backend
  * had not agreed to.
@@ -145,5 +155,10 @@ export function useImportActions() {
     onSuccess: invalidate,
   })
 
-  return { cancel, reprocess, invalidate }
+  const queueFile = useMutation({
+    mutationFn: (file: UnqueuedFile) => importsApi.queueFile(file),
+    onSuccess: invalidate,
+  })
+
+  return { cancel, reprocess, queueFile, invalidate }
 }

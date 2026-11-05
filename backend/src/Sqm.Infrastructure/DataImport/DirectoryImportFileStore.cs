@@ -217,6 +217,14 @@ public sealed partial class DirectoryImportFileStore : IImportFileStore
     public Task<bool> ExistsAsync(string storedPath, CancellationToken ct) =>
         Task.FromResult(File.Exists(Resolve(storedPath)));
 
+    /// <remarks>
+    /// The root, not a stored file: it exists from the moment this store is built, so its absence
+    /// can only mean the volume under it has left. Read, never recreated - creating it again would
+    /// fail on a drive that is gone, and on a mount point it would quietly start a new, empty store.
+    /// </remarks>
+    public Task<bool> IsReachableAsync(CancellationToken ct) =>
+        Task.FromResult(Directory.Exists(_root));
+
     public Task DeleteAsync(string storedPath, CancellationToken ct)
     {
         var path = Resolve(storedPath);

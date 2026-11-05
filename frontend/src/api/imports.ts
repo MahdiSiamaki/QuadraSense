@@ -213,6 +213,8 @@ export interface WorkerHealth {
   /** Work is waiting and nothing is alive to take it. */
   stalled: boolean
   staleLeases: number
+  /** False while the file store cannot be reached: the worker claims nothing until it returns. */
+  storeReachable: boolean
 }
 
 /** A day that did not land and holds the later days of its source back. */
@@ -224,6 +226,16 @@ export interface QueueBlockage {
   status: 'FAILED' | 'CANCELLED'
   /** Later days of the same source queued behind it. */
   waiting: number
+}
+
+/** A stored file with no job: its upload ended before it reached the queue. */
+export interface UnqueuedFile {
+  fileId: number
+  sourceCode: string
+  originalFileName: string
+  sizeBytes: number
+  uploadedBy: string
+  uploadedAt: string
 }
 
 export interface ImportHistoryQuery {
@@ -259,6 +271,15 @@ export const importsApi = {
 
   blockages: (signal?: AbortSignal) =>
     api.get<QueueBlockage[]>('/api/v1/imports/blockages', undefined, signal),
+
+  unqueuedFiles: (signal?: AbortSignal) =>
+    api.get<UnqueuedFile[]>('/api/v1/imports/unqueued-files', undefined, signal),
+
+  queueFile: (file: Pick<UnqueuedFile, 'sourceCode' | 'fileId'>) =>
+    api.post<{ jobId: number; fileId: number }>(
+      `/api/v1/imports/${file.sourceCode}/unqueued-files/${file.fileId}/queue`,
+      {},
+    ),
 
   stageDurations: (source: string, signal?: AbortSignal) =>
     api.get<StageDuration[]>('/api/v1/imports/stage-durations', { source }, signal),

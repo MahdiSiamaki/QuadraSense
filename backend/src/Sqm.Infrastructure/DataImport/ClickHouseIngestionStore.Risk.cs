@@ -58,22 +58,18 @@ public sealed partial class ClickHouseIngestionStore
 
             $$"""
             INSERT INTO {{_database}}.risk_sim_change_day
-                (data_date, msisdn, new_imsis, old_imsis, new_count, old_count, new_imei, old_imei, set_aside, computed_at)
+                (data_date, msisdn, new_imsis, old_imsis, new_count, old_count, set_aside, computed_at)
             SELECT {businessDate:Date}, msisdn,
                    groupArrayIf(5)(imsi, added AND NOT removed),
                    groupArrayIf(5)(imsi, removed),
                    countIf(added AND NOT removed),
                    countIf(removed),
-                   anyIf(add_imei, added AND NOT removed),
-                   anyIf(remove_imei, removed),
                    {{setAside}},
                    now64(3)
             FROM (
                 SELECT msisdn, imsi,
                        max(label = 'add')            AS added,
                        max(label = 'remove')         AS removed,
-                       anyIf(imei, label = 'add')    AS add_imei,
-                       anyIf(imei, label = 'remove') AS remove_imei,
                        {{multi}}                      AS multi
                 FROM {{_database}}.binding_event
                 WHERE data_date = {businessDate:Date}

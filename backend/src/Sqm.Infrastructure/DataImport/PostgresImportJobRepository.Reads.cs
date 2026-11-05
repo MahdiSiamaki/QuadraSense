@@ -485,6 +485,28 @@ public sealed partial class PostgresImportJobRepository
             Command(Sql, new { source = sourceCode.ToUpperInvariant() }, ct)).ConfigureAwait(false)];
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<UnqueuedFile>> GetUnqueuedFilesAsync(CancellationToken ct)
+    {
+        const string Sql = """
+            SELECT f.id                 AS FileId,
+                   f.source_code        AS SourceCode,
+                   f.original_file_name AS OriginalFileName,
+                   f.stored_path        AS StoredPath,
+                   f.file_bytes         AS SizeBytes,
+                   f.uploaded_by        AS UploadedBy,
+                   f.uploaded_at        AS UploadedAt
+              FROM imports.import_file f
+             WHERE f.is_blob_present
+               AND f.uploaded_at < now() - interval '2 minutes'
+               AND NOT EXISTS (SELECT 1 FROM imports.import_job j WHERE j.file_id = f.id)
+             ORDER BY f.uploaded_at
+            """;
+
+        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
+        return [.. await connection.QueryAsync<UnqueuedFile>(Command(Sql, null, ct)).ConfigureAwait(false)];
+    }
+
     public async Task<IReadOnlyList<QueueBlockage>> GetBlockagesAsync(CancellationToken ct)
     {
         // The claim's own rule, asked the other way round: an earlier day with no landed job holds
