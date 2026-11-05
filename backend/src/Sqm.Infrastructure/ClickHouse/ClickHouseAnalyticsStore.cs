@@ -183,10 +183,9 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
     /// The unfiltered KPI row, read straight from the pre-computed mart.
     /// </summary>
     /// <remarks>
-    /// The distinct counts here cannot be derived from the TAC rollup — one subscriber holds bindings
-    /// across several TACs, so distinct MSISDNs per TAC do not sum to distinct MSISDNs overall. They are
-    /// computed once at ingest over the whole population and stored, which is why this table exists
-    /// separately from <c>agg_device_daily</c>.
+    /// The distinct counts here cannot be summed from the per-model figures — one subscriber holds
+    /// bindings across several TACs, so distinct MSISDNs per TAC do not add up to distinct MSISDNs
+    /// overall. The refresh merges every model's uniq() state into them once and stores the result.
     /// </remarks>
     private async Task<KpiSummary> GetKpiFromMartAsync(CancellationToken ct)
     {

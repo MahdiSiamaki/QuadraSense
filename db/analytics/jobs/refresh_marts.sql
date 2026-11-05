@@ -3,6 +3,13 @@
 --
 -- Run after each delivery is folded in.
 --
+-- ONE READ OF binding_current. Section 1b groups it by TAC and keeps the distinct counts as
+-- uniq() states, and everything else is merged from those. Every dashboard figure is a property
+-- of the TAC or of the whole population, so nothing needs the table twice. It used to be read 14
+-- times, 66 GiB and about 9 minutes each on the department VM: 2 h 12 min of an import
+-- (`docs/research/2026-11-worker-capacity.md`). Merged, the marts came out identical to the digit
+-- on both machines' data, and a whole refresh took 514 s on the laptop where it took 50-68 minutes.
+--
 -- IDEMPOTENCY. Each mart is partitioned by `seq`, and every section below drops that
 -- partition before inserting. Re-running a delivery therefore produces the same result
 -- instead of adding to it.
@@ -28,30 +35,14 @@
 -- screen. This project has already shipped that bug once, when an insert-only mart refresh
 -- doubled agg_device_daily to 251,879,046 against a real 125,939,523.
 --
--- FINAL costs a merge-on-read over ~295M rows. These marts are built once per delivery, so the
--- trade is a slower daily job against figures that cannot silently double. It is not close.
+-- FINAL costs a merge-on-read over every version of every binding. It is paid once per delivery,
+-- against figures that cannot silently double. It is not close.
 -- --------------------------------------------------------------------------
 
-ALTER TABLE sqm.agg_device_daily DROP PARTITION {seq:UInt16};
 ALTER TABLE sqm.agg_kpi_daily    DROP PARTITION {seq:UInt16};
 ALTER TABLE sqm.agg_device_model DROP PARTITION {seq:UInt16};
 ALTER TABLE sqm.agg_tac_population DROP PARTITION {seq:UInt16};
 ALTER TABLE sqm.agg_filter_population DROP PARTITION {seq:UInt16};
-
--- --------------------------------------------------------------------------
--- 1. Device rollup: one row per (seq, tac, active).
---    ~95,000 rows per delivery. This is what every vendor / model / OS / type
---    widget reads, instead of scanning 126M rows.
--- --------------------------------------------------------------------------
-INSERT INTO sqm.agg_device_daily (seq, data_date, tac, active, n)
-SELECT
-    {seq:UInt16}  AS seq,
-    NULL          AS data_date,   -- no source dates yet; backfilled when supplied
-    tac,
-    active,
-    count()       AS n
-FROM sqm.binding_current FINAL
-GROUP BY tac, active;
 
 -- --------------------------------------------------------------------------
 -- 1b. Device model rollup: one row per (seq, tac), active bindings only.
@@ -60,8 +51,8 @@ GROUP BY tac, active;
 --     paging a device catalogue is a scan of something tiny instead of a 2.35 s
 --     aggregate over 295M rows per keystroke.
 --
---     It carries four counts rather than the rollup above's one, because the
---     distinct ones cannot be derived later: handsets, SIMs and subscribers do
+--     It carries four counts, and the distinct ones cannot be summed later:
+--     handsets, SIMs and subscribers do
 --     not sum across models. Someone who owns two phones is one subscriber of
 --     each model and one subscriber overall, and no arithmetic on per-model
 --     totals recovers that.
@@ -251,8 +242,8 @@ WHERE b.seq = {seq:UInt16} AND b.tac != ''
 GROUP BY value;
 
 -- --------------------------------------------------------------------------
--- 2. Headline counters, including the distinct counts that cannot be derived
---    from the rollup above.
+-- 2. Headline counters. A merge of every model's states is uniq() over the union:
+--    the same estimator, and the same figure to the digit (2026-11-05).
 --
 --    uniq() is a HyperLogLog estimate with ~0.5% error. On a KPI card reading
 --    "79.5M" that is invisible, and it is three orders of magnitude cheaper than
@@ -264,18 +255,19 @@ INSERT INTO sqm.agg_kpi_daily
 SELECT
     {seq:UInt16} AS seq,
     NULL         AS data_date,
-    count()                                          AS active_bindings,
-    uniq(msisdn)                                     AS distinct_subscribers,
-    -- Real devices only. '000000' is one literal value shared by 8.8M bindings, so
-    -- counting it would add exactly one phantom handset to the device total.
-    uniqIf(imei, length(imei) = 14)                  AS distinct_devices,
-    countIf(imei = '000000')                         AS unknown_device_bindings,
+    sum(b.bindings)                                  AS active_bindings,
+    uniqMerge(b.subscribers)                         AS distinct_subscribers,
+    -- Real devices only: the states hold 14-digit IMEIs, so '000000', one literal value shared by
+    -- millions of rows, adds no phantom handset to the total.
+    uniqMerge(b.handsets)                            AS distinct_devices,
+    sum(b.unknown_device)                            AS unknown_device_bindings,
     -- Numeric but not 14 digits, so no TAC can be derived. A defect, unlike the sentinel above.
-    countIf(length(imei) != 14 AND imei != '000000')  AS malformed_imei_bindings,
-    countIf(tac != '' AND tac IN (SELECT tac FROM sqm.tac)) AS tac_matched_bindings,
-    uniq(imsi)                                       AS distinct_sims
-FROM sqm.binding_current FINAL
-WHERE active = 1;
+    sum(b.malformed_imei)                            AS malformed_imei_bindings,
+    sumIf(b.bindings, b.tac != '' AND b.tac IN (SELECT tac FROM sqm.tac)) AS tac_matched_bindings,
+    uniqMerge(b.sims)                                AS distinct_sims
+FROM sqm.agg_tac_population AS b
+-- b.seq, not seq: "AS seq" above would win, and the condition would be 247 = 247 for every delivery.
+WHERE b.seq = {seq:UInt16};
 
 -- --------------------------------------------------------------------------
 -- 3. Capability flags per TAC.
@@ -316,34 +308,21 @@ FROM sqm.tac_radio_active;
 ALTER TABLE sqm.agg_device_class_daily DROP PARTITION {seq:UInt16};
 
 INSERT INTO sqm.agg_device_class_daily (seq, data_date, measure, device_class, n)
-SELECT
-    {seq:UInt16}, NULL, 'bindings',
-    multiIf(b.tac = '', 'Unknown device', r.tac = '', 'Unregistered TAC', r.device_class) AS device_class,
-    count() AS n
-FROM sqm.binding_current AS b FINAL
-LEFT JOIN (SELECT tac, device_class FROM sqm.tac_radio_active) AS r ON r.tac = b.tac
-WHERE b.active = 1
-GROUP BY device_class;
-
-INSERT INTO sqm.agg_device_class_daily (seq, data_date, measure, device_class, n)
-SELECT
-    {seq:UInt16}, NULL, 'subscribers',
-    multiIf(b.tac = '', 'Unknown device', r.tac = '', 'Unregistered TAC', r.device_class) AS device_class,
-    uniq(b.msisdn) AS n
-FROM sqm.binding_current AS b FINAL
-LEFT JOIN (SELECT tac, device_class FROM sqm.tac_radio_active) AS r ON r.tac = b.tac
-WHERE b.active = 1
-GROUP BY device_class;
-
-INSERT INTO sqm.agg_device_class_daily (seq, data_date, measure, device_class, n)
-SELECT
-    {seq:UInt16}, NULL, 'handsets',
-    multiIf(b.tac = '', 'Unknown device', r.tac = '', 'Unregistered TAC', r.device_class) AS device_class,
-    uniqIf(b.imei, length(b.imei) = 14) AS n
-FROM sqm.binding_current AS b FINAL
-LEFT JOIN (SELECT tac, device_class FROM sqm.tac_radio_active) AS r ON r.tac = b.tac
-WHERE b.active = 1
-GROUP BY device_class;
+WITH (SELECT (groupArray(tac), groupArray(device_class)) FROM sqm.tac_radio_active) AS m
+SELECT {seq:UInt16}, NULL, measure, device_class, n
+FROM (
+    SELECT
+        multiIf(b.tac = '', 'Unknown device', transform(b.tac, m.1, m.2, 'Unregistered TAC')) AS device_class,
+        toUInt64(sum(b.bindings))       AS by_bindings,
+        uniqMerge(b.subscribers)        AS by_subscribers,
+        uniqMerge(b.handsets)           AS by_handsets
+    FROM sqm.agg_tac_population AS b
+    WHERE b.seq = {seq:UInt16}
+    GROUP BY device_class
+)
+ARRAY JOIN
+    ['bindings', 'subscribers', 'handsets'] AS measure,
+    [by_bindings, by_subscribers, by_handsets] AS n;
 
 -- --------------------------------------------------------------------------
 -- 5. Network / SIM capability, per measure.
@@ -360,99 +339,69 @@ GROUP BY device_class;
 --    2 rows of 270,166, and the IMS columns describe emergency calling, a different
 --    capability, 'Not Known' for 94% of TACs.
 --
---    ONE SCAN PER MEASURE. All four capabilities are aggregated in a single pass and then
---    expanded into rows with arrayJoin. Written as four statements it was four full scans
---    of 126M rows per measure - twelve in total.
+--    One statement: each model's four flags are looked up by TAC, and the twelve figures of
+--    each measure are conditional merges of the states. A flag of 9 is a TAC with no record.
 -- --------------------------------------------------------------------------
 ALTER TABLE sqm.agg_capability_daily DROP PARTITION {seq:UInt16};
 
 INSERT INTO sqm.agg_capability_daily
     (seq, data_date, measure, capability, supported, unsupported, unknown)
-SELECT {seq:UInt16}, NULL, 'bindings', row.1, row.2, row.3, row.4
+WITH (
+    SELECT (groupArray(tac), groupArray(has_lte), groupArray(has_5g), groupArray(has_esim), groupArray(ims_emergency))
+    FROM sqm.tac_capability
+) AS m
+SELECT {seq:UInt16}, NULL, row.1, row.2, row.3, row.4, row.5
 FROM (
     SELECT arrayJoin([
-            ('LTE', s0, u0, x0),
-            ('5G', s1, u1, x1),
-            ('eSIM', s2, u2, x2),
-            ('IMS emergency calling', s3, u3, x3)
+            ('bindings', 'LTE', bs0, bu0, bx0),
+            ('bindings', '5G', bs1, bu1, bx1),
+            ('bindings', 'eSIM', bs2, bu2, bx2),
+            ('bindings', 'IMS emergency calling', bs3, bu3, bx3),
+            ('subscribers', 'LTE', ss0, su0, sx0),
+            ('subscribers', '5G', ss1, su1, sx1),
+            ('subscribers', 'eSIM', ss2, su2, sx2),
+            ('subscribers', 'IMS emergency calling', ss3, su3, sx3),
+            ('handsets', 'LTE', hs0, hu0, hx0),
+            ('handsets', '5G', hs1, hu1, hx1),
+            ('handsets', 'eSIM', hs2, hu2, hx2),
+            ('handsets', 'IMS emergency calling', hs3, hu3, hx3)
     ]) AS row
     FROM (
         SELECT
-            countIf(c.tac != '' AND c.has_lte = 1) AS s0,
-            countIf(c.tac != '' AND c.has_lte = 0) AS u0,
-            countIf(b.tac != '' AND (c.tac = '' OR c.has_lte = 2)) AS x0,
-            countIf(c.tac != '' AND c.has_5g = 1) AS s1,
-            countIf(c.tac != '' AND c.has_5g = 0) AS u1,
-            countIf(b.tac != '' AND (c.tac = '' OR c.has_5g = 2)) AS x1,
-            countIf(c.tac != '' AND c.has_esim = 1) AS s2,
-            countIf(c.tac != '' AND c.has_esim = 0) AS u2,
-            countIf(b.tac != '' AND (c.tac = '' OR c.has_esim = 2)) AS x2,
-            countIf(c.tac != '' AND c.ims_emergency = 1) AS s3,
-            countIf(c.tac != '' AND c.ims_emergency = 0) AS u3,
-            countIf(b.tac != '' AND (c.tac = '' OR c.ims_emergency = 2)) AS x3
-        FROM sqm.binding_current AS b FINAL
-        LEFT JOIN sqm.tac_capability AS c ON c.tac = b.tac
-        WHERE b.active = 1
-    )
-);
-
-INSERT INTO sqm.agg_capability_daily
-    (seq, data_date, measure, capability, supported, unsupported, unknown)
-SELECT {seq:UInt16}, NULL, 'subscribers', row.1, row.2, row.3, row.4
-FROM (
-    SELECT arrayJoin([
-            ('LTE', s0, u0, x0),
-            ('5G', s1, u1, x1),
-            ('eSIM', s2, u2, x2),
-            ('IMS emergency calling', s3, u3, x3)
-    ]) AS row
-    FROM (
-        SELECT
-            uniqIf(b.msisdn, c.tac != '' AND c.has_lte = 1) AS s0,
-            uniqIf(b.msisdn, c.tac != '' AND c.has_lte = 0) AS u0,
-            uniqIf(b.msisdn, b.tac != '' AND (c.tac = '' OR c.has_lte = 2)) AS x0,
-            uniqIf(b.msisdn, c.tac != '' AND c.has_5g = 1) AS s1,
-            uniqIf(b.msisdn, c.tac != '' AND c.has_5g = 0) AS u1,
-            uniqIf(b.msisdn, b.tac != '' AND (c.tac = '' OR c.has_5g = 2)) AS x1,
-            uniqIf(b.msisdn, c.tac != '' AND c.has_esim = 1) AS s2,
-            uniqIf(b.msisdn, c.tac != '' AND c.has_esim = 0) AS u2,
-            uniqIf(b.msisdn, b.tac != '' AND (c.tac = '' OR c.has_esim = 2)) AS x2,
-            uniqIf(b.msisdn, c.tac != '' AND c.ims_emergency = 1) AS s3,
-            uniqIf(b.msisdn, c.tac != '' AND c.ims_emergency = 0) AS u3,
-            uniqIf(b.msisdn, b.tac != '' AND (c.tac = '' OR c.ims_emergency = 2)) AS x3
-        FROM sqm.binding_current AS b FINAL
-        LEFT JOIN sqm.tac_capability AS c ON c.tac = b.tac
-        WHERE b.active = 1
-    )
-);
-
-INSERT INTO sqm.agg_capability_daily
-    (seq, data_date, measure, capability, supported, unsupported, unknown)
-SELECT {seq:UInt16}, NULL, 'handsets', row.1, row.2, row.3, row.4
-FROM (
-    SELECT arrayJoin([
-            ('LTE', s0, u0, x0),
-            ('5G', s1, u1, x1),
-            ('eSIM', s2, u2, x2),
-            ('IMS emergency calling', s3, u3, x3)
-    ]) AS row
-    FROM (
-        SELECT
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.has_lte = 1)) AS s0,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.has_lte = 0)) AS u0,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac = '' OR c.has_lte = 2)) AS x0,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.has_5g = 1)) AS s1,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.has_5g = 0)) AS u1,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac = '' OR c.has_5g = 2)) AS x1,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.has_esim = 1)) AS s2,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.has_esim = 0)) AS u2,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac = '' OR c.has_esim = 2)) AS x2,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.ims_emergency = 1)) AS s3,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac != '' AND c.ims_emergency = 0)) AS u3,
-            uniqIf(b.imei, length(b.imei) = 14 AND (c.tac = '' OR c.ims_emergency = 2)) AS x3
-        FROM sqm.binding_current AS b FINAL
-        LEFT JOIN sqm.tac_capability AS c ON c.tac = b.tac
-        WHERE b.active = 1
+            toUInt64(sumIf(bindings, f0 = 1)) AS bs0, toUInt64(sumIf(bindings, f0 = 0)) AS bu0,
+            toUInt64(sumIf(bindings, tac != '' AND f0 >= 2)) AS bx0,
+            toUInt64(sumIf(bindings, f1 = 1)) AS bs1, toUInt64(sumIf(bindings, f1 = 0)) AS bu1,
+            toUInt64(sumIf(bindings, tac != '' AND f1 >= 2)) AS bx1,
+            toUInt64(sumIf(bindings, f2 = 1)) AS bs2, toUInt64(sumIf(bindings, f2 = 0)) AS bu2,
+            toUInt64(sumIf(bindings, tac != '' AND f2 >= 2)) AS bx2,
+            toUInt64(sumIf(bindings, f3 = 1)) AS bs3, toUInt64(sumIf(bindings, f3 = 0)) AS bu3,
+            toUInt64(sumIf(bindings, tac != '' AND f3 >= 2)) AS bx3,
+            uniqMergeIf(subscribers, f0 = 1) AS ss0, uniqMergeIf(subscribers, f0 = 0) AS su0,
+            uniqMergeIf(subscribers, tac != '' AND f0 >= 2) AS sx0,
+            uniqMergeIf(subscribers, f1 = 1) AS ss1, uniqMergeIf(subscribers, f1 = 0) AS su1,
+            uniqMergeIf(subscribers, tac != '' AND f1 >= 2) AS sx1,
+            uniqMergeIf(subscribers, f2 = 1) AS ss2, uniqMergeIf(subscribers, f2 = 0) AS su2,
+            uniqMergeIf(subscribers, tac != '' AND f2 >= 2) AS sx2,
+            uniqMergeIf(subscribers, f3 = 1) AS ss3, uniqMergeIf(subscribers, f3 = 0) AS su3,
+            uniqMergeIf(subscribers, tac != '' AND f3 >= 2) AS sx3,
+            uniqMergeIf(handsets, f0 = 1) AS hs0, uniqMergeIf(handsets, f0 = 0) AS hu0,
+            uniqMergeIf(handsets, f0 >= 2) AS hx0,
+            uniqMergeIf(handsets, f1 = 1) AS hs1, uniqMergeIf(handsets, f1 = 0) AS hu1,
+            uniqMergeIf(handsets, f1 >= 2) AS hx1,
+            uniqMergeIf(handsets, f2 = 1) AS hs2, uniqMergeIf(handsets, f2 = 0) AS hu2,
+            uniqMergeIf(handsets, f2 >= 2) AS hx2,
+            uniqMergeIf(handsets, f3 = 1) AS hs3, uniqMergeIf(handsets, f3 = 0) AS hu3,
+            uniqMergeIf(handsets, f3 >= 2) AS hx3
+        FROM (
+            SELECT
+                tac, bindings, subscribers, handsets,
+                transform(tac, m.1, m.2, toUInt8(9)) AS f0,
+                transform(tac, m.1, m.3, toUInt8(9)) AS f1,
+                transform(tac, m.1, m.4, toUInt8(9)) AS f2,
+                transform(tac, m.1, m.5, toUInt8(9)) AS f3
+            FROM sqm.agg_tac_population
+            WHERE seq = {seq:UInt16}
+        )
     )
 );
 
@@ -460,106 +409,87 @@ FROM (
 -- 6. Per-dimension counts, three ways.
 --
 --    Distinct counts cannot be derived at query time (see migration 009), so they are
---    materialised here for every dimension a breakdown can group by.
+--    materialised here for every dimension a breakdown can group by, merged from the states
+--    the way section 1c is: each model's value looked up by TAC, no join carrying the states.
 --
---    ONE STATEMENT PER DIMENSION, deliberately. Computing all six in a single query with
---    UNION ALL keeps six HyperLogLog aggregation states alive at once and exhausted a 3 GB
---    server. Sequential statements re-scan the table but keep peak memory flat, which is
---    the right trade for a job that runs once a day on hardware we do not control.
+--    One statement per dimension, so each keeps a hash table of its own values only.
 --
 --    The '(unknown device)' and '(unknown TAC)' labels are produced here rather than in the
 --    API, so every consumer of this table sees the same buckets.
---    MEMORY. These group by up to 95,572 distinct TACs, each holding two HyperLogLog
---    states. run_refresh.sh applies the per-query ceiling and spill settings that keep
---    that within a modest server's budget - see the note there.
 -- --------------------------------------------------------------------------
 ALTER TABLE sqm.agg_dimension_daily DROP PARTITION {seq:UInt16};
 
 INSERT INTO sqm.agg_dimension_daily
     (seq, data_date, dimension, dim_value, bindings, subscribers, handsets)
+WITH (
+    SELECT (groupArray(t.tac),
+            groupArray(coalesce(coalesce(nullIf(v.vendor_canonical, ''), nullIf(t.manufacturer, '')), '(unknown TAC)')))
+    FROM sqm.tac AS t
+    LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
+) AS m
 SELECT
     {seq:UInt16}, NULL, 'vendor',
-    multiIf(b.tac = '', '(unknown device)',
-            t.tac = '',  '(unknown TAC)',
-            coalesce(coalesce(nullIf(v.vendor_canonical, ''), nullIf(t.manufacturer, '')), '(unknown TAC)')) AS dim_value,
-    count()                        AS bindings,
-    uniq(b.msisdn)                 AS subscribers,
-    uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current AS b FINAL
-LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
-WHERE b.active = 1
+    multiIf(b.tac = '', '(unknown device)', transform(b.tac, m.1, m.2, '(unknown TAC)')) AS dim_value,
+    sum(b.bindings)                AS bindings,
+    uniqMerge(b.subscribers)       AS subscribers,
+    uniqMerge(b.handsets)          AS handsets
+FROM sqm.agg_tac_population AS b
+WHERE b.seq = {seq:UInt16}
 GROUP BY dim_value;
 
 INSERT INTO sqm.agg_dimension_daily
     (seq, data_date, dimension, dim_value, bindings, subscribers, handsets)
+WITH (SELECT (groupArray(tac), groupArray(coalesce(nullIf(manufacturer, ''), '(unknown TAC)'))) FROM sqm.tac) AS m
 SELECT
     {seq:UInt16}, NULL, 'manufacturer',
-    multiIf(b.tac = '', '(unknown device)',
-            t.tac = '',  '(unknown TAC)',
-            coalesce(nullIf(t.manufacturer, ''), '(unknown TAC)')) AS dim_value,
-    count()                        AS bindings,
-    uniq(b.msisdn)                 AS subscribers,
-    uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current AS b FINAL
-LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
-WHERE b.active = 1
+    multiIf(b.tac = '', '(unknown device)', transform(b.tac, m.1, m.2, '(unknown TAC)')) AS dim_value,
+    sum(b.bindings)                AS bindings,
+    uniqMerge(b.subscribers)       AS subscribers,
+    uniqMerge(b.handsets)          AS handsets
+FROM sqm.agg_tac_population AS b
+WHERE b.seq = {seq:UInt16}
 GROUP BY dim_value;
 
 INSERT INTO sqm.agg_dimension_daily
     (seq, data_date, dimension, dim_value, bindings, subscribers, handsets)
+WITH (SELECT (groupArray(tac), groupArray(coalesce(nullIf(marketingName, ''), '(unknown TAC)'))) FROM sqm.tac) AS m
 SELECT
     {seq:UInt16}, NULL, 'model',
-    multiIf(b.tac = '', '(unknown device)',
-            t.tac = '',  '(unknown TAC)',
-            coalesce(nullIf(t.marketingName, ''), '(unknown TAC)')) AS dim_value,
-    count()                        AS bindings,
-    uniq(b.msisdn)                 AS subscribers,
-    uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current AS b FINAL
-LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
-WHERE b.active = 1
+    multiIf(b.tac = '', '(unknown device)', transform(b.tac, m.1, m.2, '(unknown TAC)')) AS dim_value,
+    sum(b.bindings)                AS bindings,
+    uniqMerge(b.subscribers)       AS subscribers,
+    uniqMerge(b.handsets)          AS handsets
+FROM sqm.agg_tac_population AS b
+WHERE b.seq = {seq:UInt16}
 GROUP BY dim_value;
 
 INSERT INTO sqm.agg_dimension_daily
     (seq, data_date, dimension, dim_value, bindings, subscribers, handsets)
+WITH (SELECT (groupArray(tac), groupArray(coalesce(nullIf(deviceType, ''), '(unknown TAC)'))) FROM sqm.tac) AS m
 SELECT
     {seq:UInt16}, NULL, 'deviceType',
-    multiIf(b.tac = '', '(unknown device)',
-            t.tac = '',  '(unknown TAC)',
-            coalesce(nullIf(t.deviceType, ''), '(unknown TAC)')) AS dim_value,
-    count()                        AS bindings,
-    uniq(b.msisdn)                 AS subscribers,
-    uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current AS b FINAL
-LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
-WHERE b.active = 1
+    multiIf(b.tac = '', '(unknown device)', transform(b.tac, m.1, m.2, '(unknown TAC)')) AS dim_value,
+    sum(b.bindings)                AS bindings,
+    uniqMerge(b.subscribers)       AS subscribers,
+    uniqMerge(b.handsets)          AS handsets
+FROM sqm.agg_tac_population AS b
+WHERE b.seq = {seq:UInt16}
 GROUP BY dim_value;
 
 INSERT INTO sqm.agg_dimension_daily
     (seq, data_date, dimension, dim_value, bindings, subscribers, handsets)
+WITH (SELECT (groupArray(tac), groupArray(coalesce(nullIf(trim(operatingSystem), ''), '(unknown TAC)'))) FROM sqm.tac) AS m
 SELECT
     {seq:UInt16}, NULL, 'os',
-    multiIf(b.tac = '', '(unknown device)',
-            t.tac = '',  '(unknown TAC)',
-            coalesce(nullIf(trim(t.operatingSystem), ''), '(unknown TAC)')) AS dim_value,
-    count()                        AS bindings,
-    uniq(b.msisdn)                 AS subscribers,
-    uniqIf(b.imei, length(b.imei) = 14) AS handsets
-FROM sqm.binding_current AS b FINAL
-LEFT JOIN sqm.tac AS t ON t.tac = b.tac
-LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
-WHERE b.active = 1
+    multiIf(b.tac = '', '(unknown device)', transform(b.tac, m.1, m.2, '(unknown TAC)')) AS dim_value,
+    sum(b.bindings)                AS bindings,
+    uniqMerge(b.subscribers)       AS subscribers,
+    uniqMerge(b.handsets)          AS handsets
+FROM sqm.agg_tac_population AS b
+WHERE b.seq = {seq:UInt16}
 GROUP BY dim_value;
 
--- The TAC slice is the one dimension that is NOT a fresh aggregate over 295M rows.
--- Section 1b has already grouped current state by TAC with the same filter and the same
--- estimator, so this reads 98,000 rows instead of repeating the pass. Two statements
--- computing the same per-TAC counts from the same source could only ever agree or be a
--- bug; one statement cannot disagree with itself.
+-- The TAC slice needs no merge: section 1b has already grouped by TAC.
 INSERT INTO sqm.agg_dimension_daily
     (seq, data_date, dimension, dim_value, bindings, subscribers, handsets)
 SELECT

@@ -128,7 +128,7 @@ October, still 55–61 times ordinary. Both are above their ×5 thresholds (0.44
 SIMs) on every one of those days. 2–6 October were measured against v2026.10.04, the version active
 when they were measured; the days before, against v2026.09.16.
 
-**Since then (measured 2026-11-05 from `dq_daily` on the laptop, through 31 October).** Shifted IMEIs
+**Since then (measured 2026-11-05 from `dq_daily` on both machines, through 31 October).** Shifted IMEIs
 ended on 20 October. They were 20.99-22.84% of rows from 11 to 19 October, 9.45% on the 20th, and
 0.08-0.10% on every day from the 21st to the 31st: 5,300-8,200 rows, the ordinary level, under the ×5
 threshold. Unknown-TAC rows fell with them, from 1.9-2.3 million a day to 21,000-25,000. The file of the

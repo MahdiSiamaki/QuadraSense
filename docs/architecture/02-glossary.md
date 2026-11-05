@@ -130,8 +130,8 @@ Why they exist, measured on this system:
 
 ### Snapshot marts
 
-`agg_device_model`, `agg_kpi_daily`, `agg_device_daily`, `agg_dimension_daily`,
-`agg_capability_daily`, `agg_device_class_daily`.
+`agg_tac_population`, `agg_device_model`, `agg_filter_population`, `agg_kpi_daily`,
+`agg_dimension_daily`, `agg_capability_daily`, `agg_device_class_daily`.
 
 Each answers *"what did the whole network look like at delivery N"*, and each is built by
 aggregating `binding_current` **as it stands when the mart runs**. That is delivery N's state only

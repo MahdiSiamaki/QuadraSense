@@ -48,7 +48,7 @@ public sealed class TacRadioStoreTests : IAsyncLifetime
             }
 
             await QueryAsync($"CREATE DATABASE {_database}");
-            foreach (var table in new[] { "tac_all", "tac_active", "binding_current", "agg_capability_daily" })
+            foreach (var table in new[] { "tac_all", "tac_active", "binding_current", "agg_tac_population", "agg_capability_daily" })
             {
                 await QueryAsync($"CREATE TABLE {_database}.{table} AS sqm.{table}");
             }
@@ -166,19 +166,20 @@ public sealed class TacRadioStoreTests : IAsyncLifetime
 
         await Store().ParseRadioAsync(1, ct);
 
-        // The refresh's own statements for the capability flags and the bindings measure, as they ship.
+        // The refresh's own statements for the capability flags and the mart, as they ship, and the
+        // pass over current state that the mart is merged from.
         var statements = SqlScript.Split(MigrationText("jobs", "refresh_marts.sql"))
             .Where(s => SqlScript.Label(s, 0) switch
             {
+                var l when l.StartsWith("INSERT INTO sqm.agg_tac_population", StringComparison.Ordinal) => true,
                 var l when l.StartsWith("TRUNCATE TABLE sqm.tac_capability", StringComparison.Ordinal) => true,
                 var l when l.StartsWith("INSERT INTO sqm.tac_capability", StringComparison.Ordinal) => true,
                 var l when l.StartsWith("ALTER TABLE sqm.agg_capability_daily DROP PARTITION", StringComparison.Ordinal) => true,
-                var l when l.StartsWith("INSERT INTO sqm.agg_capability_daily", StringComparison.Ordinal) =>
-                    s.Contains("'bindings'", StringComparison.Ordinal),
+                var l when l.StartsWith("INSERT INTO sqm.agg_capability_daily", StringComparison.Ordinal) => true,
                 _ => false,
             })
             .ToList();
-        Assert.Equal(4, statements.Count);
+        Assert.Equal(5, statements.Count);
 
         foreach (var statement in statements)
         {

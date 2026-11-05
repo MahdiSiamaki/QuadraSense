@@ -11,7 +11,7 @@ namespace Sqm.Ingestion.Processing;
 /// <remarks>
 /// <para>
 /// The change marts are day-partitioned and rebuilt per day by the importer. These are the other
-/// half: the KPI counters, the device rollup, the capability and dimension marts - a snapshot of
+/// half: the KPI counters, the per-model marts, the capability and dimension marts - a snapshot of
 /// current state per delivery, partitioned by <c>seq</c>.
 /// </para>
 /// <para>
@@ -97,7 +97,7 @@ internal sealed partial class MartRefresh(
     /// <param name="onProgress">Messages worth putting on the job's timeline.</param>
     /// <param name="onStatement">
     /// Before each statement and once at the end: how many are done of how many - so an import's
-    /// page can count through the half hour this takes instead of showing one step that stands
+    /// page can count through the minutes this takes instead of showing one step that stands
     /// still. A retried pass counts from zero again.
     /// </param>
     /// <param name="ct">Cancellation.</param>
@@ -248,7 +248,6 @@ internal sealed partial class MartRefresh(
     /// </remarks>
     private static readonly (string Table, string Key)[] UniqueWithinDelivery =
     [
-        ("agg_device_daily", "tac, active"),
         ("agg_device_model", "tac"),
         ("agg_tac_population", "tac"),
         ("agg_filter_population", "dimension, value"),

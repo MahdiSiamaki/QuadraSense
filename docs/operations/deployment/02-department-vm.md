@@ -200,7 +200,7 @@ Then `https://<the VM's name>/` and sign in.
 | Way | How | Time | Use it for |
 |---|---|---|---|
 | **A. Copy the stores** | ClickHouse: stop it on the laptop, archive the `bench_chdata` volume, restore it as `quadrasense_clickhouse-data` (same 25.8 version, so the files are compatible); or `BACKUP`/`RESTORE` to a disk. PostgreSQL: `pg_dump -Fc` / `pg_restore` | the time to move ~185 GiB | **the first load** - exact, fastest |
-| B. Replay the originals | Load the dump (`--load-dump`, below), then upload every daily file through the Import Center, oldest first | measured on the laptop: a delivery's mart refresh alone 63 min; ~250 deliveries | proving the archive restores the system - once, later |
+| B. Replay the originals | Load the dump (`--load-dump`, below), then upload every daily file through the Import Center, oldest first | measured on the laptop: a delivery's mart refresh alone 9 min since 2026-11-05, 63 min before; ~250 deliveries | proving the archive restores the system - once, later |
 | C. A sample | The dump and the first days or weeks after it (a sample without the dump is wrong from the first remove) | minutes to hours | testing the deployment and the pipeline; every count is of the sample only |
 
 Recommended: **A**, then daily files through the Import Center as they arrive.
@@ -292,7 +292,7 @@ Each is a measurement to record in `docs/operations/dedicated-hardware.md` besid
 | 5 | The dashboard against the laptop's for the same delivery | identical figures |
 | 6 | `dotnet test backend/Sqm.slnx` from a machine that can reach the stores, or the integration tests pointed at them | the real-data tests' timing bounds hold |
 | 7 | `SELECT count() FROM sqm.binding_current FINAL` and the filtered KPI | the laptop: 74 s and 100 s (ADR-017); disk speed decides the VM's |
-| 8 | A full mart refresh (`--refresh-dashboard`, in the worker image) | the laptop: 63 min for delivery 246 |
+| 8 | A full mart refresh (`--refresh-dashboard`, in the worker image) | the laptop: 514 s for delivery 247 |
 | 9 | `docker compose restart clickhouse` while idle; then under an import | comes back healthy; the import resumes from its lease |
 | 10 | Restore last night's PostgreSQL dump into a scratch container | it restores |
 

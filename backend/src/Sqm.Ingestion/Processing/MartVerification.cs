@@ -9,8 +9,8 @@ namespace Sqm.Ingestion.Processing;
 /// <remarks>
 /// <para>
 /// This exists because "the partition exists" is a much weaker statement than it sounds, and
-/// believing otherwise produced a wrong report in this project. The refresh writes 15 INSERTs
-/// across 6 marts - three measures into the device-class mart, three into the capability mart,
+/// believing otherwise produced a wrong report in this project. The refresh writes many INSERTs
+/// across its marts - three measures into the device-class mart, three into the capability mart,
 /// six dimensions into the dimension mart - so a run where a third of them failed still leaves
 /// every mart holding rows for the delivery.
 /// </para>
@@ -58,10 +58,10 @@ internal static class MartVerification
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"  agg_kpi_daily        active_bindings = {active:N0}"));
 
-        // The device rollup is what every vendor, model, OS and type widget reads. If its total
-        // disagrees with the KPI card, two numbers on the same screen contradict each other.
-        await CheckTotalAsync(analytics, problems, "agg_device_daily",
-            $"SELECT sum(n) FROM sqm.agg_device_daily WHERE seq = {sequence} AND active = 1",
+        // The per-model mart is what every other mart is merged from. If its total disagrees with
+        // the KPI card, two numbers on the same screen contradict each other.
+        await CheckTotalAsync(analytics, problems, "agg_tac_population",
+            $"SELECT sum(bindings) FROM sqm.agg_tac_population WHERE seq = {sequence}",
             active.Value, ct).ConfigureAwait(false);
 
         foreach (var measure in Measures)

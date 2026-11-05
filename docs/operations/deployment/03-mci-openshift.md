@@ -1,6 +1,7 @@
 # Stage 2 - Quadrasense on MCI's OpenShift
 
-**Status:** plan, written 2026-10-22. Nothing here has run on MCI's platform; every statement about
+**Status:** plan, written 2026-10-22; the project's clusters, registries and GitLab were delivered on
+2026-10-31 (section 1a). Nothing here has run on MCI's platform yet; every statement about
 the platform comes from MCI's *Comprehensive guide to interacting with the DevOps infrastructure
 (Kubernetes / OpenShift)*, version 1.5, which the product owner holds. Cite it by section; this
 repository is public, and the guide is MCI's internal document, so its addresses, hostnames,
@@ -29,6 +30,37 @@ full), `01-container-images.md` (the images this stage deploys), ADR-007.
 | Monitoring | No Prometheus per project. The platform collects every namespace's metrics; a per-project token reads them through Thanos; Grafana is available as an operator for the project's own dashboards. Alerting is the project's | Section 6 |
 | Logging | Forwarding to central Elasticsearch/ELK or Kafka by ticket, or an ECK stack in the namespace through its operator | Section 6 |
 | Operators and Helm | **No cluster-scope permissions for projects.** Operators are installed by DevOps after review (Redis, Elastic, Kafka/Strimzi, Grafana are offered); **PostgreSQL and MongoDB operators are not installed - the project runs those databases itself.** A Helm chart that needs ClusterRoles must be stripped to namespace Roles and applied through ArgoCD | Plain manifests, namespace-scoped. ClickHouse and PostgreSQL as StatefulSets we maintain |
+
+## 1a. What MCI delivered (2026-10-31)
+
+Section 1 calls the delivery e-mail the reference for every address and credential. It is kept outside
+this public repository, in `.private/mci-openshift-delivery.md` on the owner's machine, and the
+placeholders here stand for its values.
+
+| Placeholder | What | Namespaces |
+|---|---|---|
+| `<ocp-nonprod>` | Development and test, at the first site | `quadrasense-dev`, `quadrasense-uat` |
+| `<ocp-main>` | Production, at the second site | `quadrasense-prd` |
+| `<ocp-dr>` | Disaster recovery, at the first site, on a cluster of its own | `quadrasense-prd` |
+| `<nexus-nonprod>`, `<nexus-main>` | A Nexus at each site, for these clusters only, with a push port of its own and names reached through hosts entries | |
+| `<ocp-gitlab>` | A GitLab for these clusters only, with the project's group | |
+
+Sign-in to the consoles and that GitLab is a personal account in MCI's service domain with a one-time
+password. Each Nexus has a password sent by SMS. Neither is written down anywhere.
+
+None of the department's infrastructure carries over: its GitLab, Nexus and runners (`05-…`) stop at the
+VM. Each `oc` binary comes from its own cluster.
+
+| What the delivery says | What it means for us |
+|---|---|
+| Only rootless containers | Already how the images run (ADR-007); `deploy/compose` enforces it |
+| Limits and requests on every workload, with requests as low as possible | The manifests set both. A low request makes a limit a ceiling and not a promise: on a busy node a pod can get less than its limit. So nothing may treat the limit as capacity it owns |
+| Production images use the `prd` tag; any other tag is deleted periodically | Section 3's tags by git sha will not last. With one moving tag a rollback has nothing to point at. **To ask MCI's DevOps team:** does a pin by digest survive, or may a tag like `prd-<sha>` stay? |
+| Access may have to be asked of the network team | Part of step 2 of section 7 |
+| Sign in to the GitLab once, to create the profile | Before step 4 of section 7 |
+
+The delivery does not mention a storage quota, a GitLab runner, an ingress IP or egress: section 7 still
+requests them.
 
 ## 2. Quadrasense as OpenShift objects
 
@@ -84,7 +116,7 @@ isolates by network, not by port.)
 | Build | The project's runner | The two Dockerfiles, with `NUGET_SOURCE`, `NPM_REGISTRY` and the base-image arguments pointing at MCI's Nexus proxies |
 | Tests | The runner | `dotnet test backend/Sqm.slnx` (190 pass, 34 skip without a database - CLAUDE.md), `npm test`, `npm run build`. A failed test fails the pipeline |
 | Scan | The runner | An image scanner (Trivy or what the security office uses) - red lines §1-1 row 5 |
-| Push | The hosted Nexus repository | `<registry>:<port>/<project>/<image>:<git sha>` - never `latest` |
+| Push | The hosted Nexus repository | `<registry>:<port>/<project>/<image>:<git sha>` - never `latest`. Production images must carry the `prd` tag, and other tags are deleted periodically (section 1a), so how a release stays pinned is an open question |
 | Deploy | ArgoCD | The overlay's image tags are bumped by commit; ArgoCD syncs dev automatically, uat and prd by hand |
 
 ## 4. Storage
@@ -150,7 +182,7 @@ Each step names what it is - **T** technical/infrastructure, **P** programming, 
 |---|---|---|---|
 | 1 | Settle the five decisions in `04-…` and the README's list (ClickHouse approval, captcha, HA, synthetic data, intake path) | R | The owner; the security office |
 | 2 | Domain accounts, PAM and terminal-server access for whoever deploys; `oc`/`kubectl` on the terminal server | R | 1 |
-| 3 | Request namespaces dev, uat, prd with the storage of section 4; a GitLab group and runner; Nexus hosted repository | R | 1 |
+| 3 | Request namespaces dev, uat, prd with the storage of section 4; a GitLab group and runner; Nexus hosted repository. **Namespaces, GitLab group and Nexus delivered 2026-10-31 (section 1a)**; storage and the runner are still to confirm | R | 1 |
 | 4 | Source into MCI GitLab; `.gitlab-ci.yml` (section 3) | T | 3 |
 | 5 | Kustomize manifests (section 2), NetworkPolicies from the traffic-flow table; ArgoCD application for dev | T | 3 |
 | 6 | Synthetic data generator, and a data set from it | P | - |
