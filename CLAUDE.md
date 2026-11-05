@@ -78,6 +78,10 @@ Do not re-open these without asking:
   approving it — see `docs/adr/ADR-011-device-image-sourcing.md`.
 - **PI holds key references, never key values** (2026-11-02). It may record which keyset, and which
   version, a card uses. Key material stays in the HSMs of the systems that use it.
+- **Rows with no handset are left out of every count** (2026-11-05, ADR-020). An IMEI of `000000`, or
+  one that is not 14 digits, is stored and shown only on Data quality, in Explorer and in a person's
+  lookup. Measured: 99.9% are leftovers of the January dump, on SIMs with a real handset. Each read
+  path carries the rule itself, so a new one must too.
 
 ## The estate around it
 
@@ -138,7 +142,8 @@ The UI conventions these and the layout review settled are in
 
 ## Counting rules
 
-The grain is a **binding** — `(msisdn, imsi, imei)`. A number, a SIM and a handset.
+The grain is a **binding** — `(msisdn, imsi, imei)`. A number, a SIM and a handset. A row with no
+handset is not one, and is not counted (ADR-020).
 
 Never write "users" or "devices" without saying which unit. Samsung is 52,704,438 bindings,
 40,070,800 subscribers or 39,320,516 handsets, and all three are right answers to different

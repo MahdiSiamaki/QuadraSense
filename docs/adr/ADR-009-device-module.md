@@ -230,6 +230,9 @@ target descriptor, because both tables exist for the same reason and fail in the
 The IMEI run copied 295,013,916 rows in 629 s with zero chunk failures, compacted 301 parts to 5,
 and reconciled exactly: **0 rows difference, 0 active difference**.
 
+> **SUPERSEDED (2026-11-05, ADR-020).** The catalogue now lists this bucket only to someone who searches
+> for 000000.
+
 **The unknown-device bucket is in the catalogue, labelled.** 5,557,995 bindings whose IMEI
 identifies no model — 4.9% of the network. It is the largest row in the list. It has no detail
 page, because it has no TAC, and its identifiers cannot be listed, because a prefix range needs a

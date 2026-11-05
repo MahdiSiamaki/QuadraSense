@@ -222,14 +222,19 @@ catalogue and names nobody, while `device.identifiers` lists everyone who owns a
 
 ## The unknown-device bucket
 
-`000000` is what the source writes when it does not know the handset, and roughly 3.6% of IMEIs
-are malformed in other ways. Together they are **5.5 million bindings — 4.8% of the network** —
-with no TAC and therefore no model.
+`000000` is what the source writes when it does not know the handset, and a few thousand IMEIs a day
+are malformed in other ways. Together they were **5.4 million active rows at delivery 247**, with no
+TAC and therefore no model.
 
-They are shown, labelled `(unknown device)`, and never silently dropped: hiding them would
-understate every device total by about a twentieth. They are the largest single row in the Devices
-catalogue, and the one row there that has no detail page, because it is the *absence* of a device
-rather than a nameless one.
+**They are stored, and left out of every count** (ADR-020). A binding is a number, a SIM and a handset,
+and these have no handset. Measured on 2026-11-05: 99.9% came from the initial dump and no daily file
+has touched them since, and 93% are on a SIM with a real handset now. They are what is left of the
+dump, not subscribers with an unknown phone. The Enrichment breakdown and Data quality show them; so
+do Explorer and a person's lookup, and `Show unknown devices` puts them back in the dashboard's figures.
+
+> **SUPERSEDED (2026-11-05).** This used to read: "They are shown, labelled `(unknown device)`, and
+> never silently dropped: hiding them would understate every device total by about a twentieth." The
+> argument assumed they were people, and had not been measured.
 
 ## Quarantine, and "partially completed"
 
