@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# Installs the GitLab runner that deploys QuadraSense on this server - the CD half of the
+# Installs the GitLab runner that deploys Quadrasense on this server - the CD half of the
 # department pipeline (docs/operations/deployment/05-department-ci-cd.md):
 #
 #   sudo GITLAB_URL=https://<gitlab>/ bash deploy/host/install-deploy-runner.sh
 #
-# Before running it, create the runner in GitLab: the QuadraSense group -> Settings -> CI/CD ->
+# Before running it, create the runner in GitLab: the Quadrasense group -> Settings -> CI/CD ->
 # Runners -> New group runner; tag `quadrasense-deploy`; untick "Run untagged jobs"; tick
 # "Protected". GitLab then shows a `glrt-...` token. This script asks for it at a hidden prompt: it
 # is never an argument, never in shell history, never in a chat - it is the runner's identity, and

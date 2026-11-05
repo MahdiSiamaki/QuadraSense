@@ -1,6 +1,6 @@
 <clickhouse>
   <!--
-    Users for a deployed QuadraSense. Every password comes from the environment (from_env), so this
+    Users for a deployed Quadrasense. Every password comes from the environment (from_env), so this
     file is safe to commit and the same file serves the department VM and OpenShift - where the
     variables come from a Secret.
 

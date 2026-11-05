@@ -79,7 +79,7 @@ function height(widget: WidgetInstance) {
     <header class="flex flex-col gap-1 border-b pb-3">
       <h1 class="text-xl font-semibold tracking-tight">{{ name }}</h1>
       <p class="text-xs text-[var(--c-text-secondary)]">
-        Prepared {{ formatDateTime(snapshot.preparedAt) }} by QuadraSense<template v-if="page && page.count > 1"> · page {{ page.index }} of {{ page.count }}</template>.
+        Prepared {{ formatDateTime(snapshot.preparedAt) }} by Quadrasense<template v-if="page && page.count > 1"> · page {{ page.index }} of {{ page.count }}</template>.
         Each card says what its own data is as of: the sources are refreshed at different times.
       </p>
       <p class="text-xs text-[var(--c-text-secondary)]">{{ lensWords }}</p>

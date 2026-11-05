@@ -54,8 +54,8 @@ const missing = computed(() => requiredPermissions(props.widget.type, props.widg
 
 /** Why the widget cannot be drawn, or null when it can. */
 const blocked = computed<string | null>(() => {
-  if (!definition.value || !spec.value) return 'This widget type is not available in this version of QuadraSense.'
-  if (props.widget.configVersion > spec.value.configVersion) return 'These settings were saved by a newer version of QuadraSense.'
+  if (!definition.value || !spec.value) return 'This widget type is not available in this version of Quadrasense.'
+  if (props.widget.configVersion > spec.value.configVersion) return 'These settings were saved by a newer version of Quadrasense.'
   if (props.widget.configVersion < spec.value.configVersion) return 'These settings are from an older version and could not be upgraded.'
   if (missing.value.length) return `Needs ${missing.value.join(', ')} - ask an administrator if you should have it.`
   return null

@@ -120,7 +120,7 @@ const unknownTemplate = computed(() => target.value?.kind === 'template' && !tem
 watch(
   [name, () => route.fullPath],
   ([value]) => {
-    if (value) document.title = `${value} · QuadraSense`
+    if (value) document.title = `${value} · Quadrasense`
   },
   { immediate: true, flush: 'post' },
 )

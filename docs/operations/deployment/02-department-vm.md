@@ -1,4 +1,4 @@
-# Stage 1 - QuadraSense on the department VM
+# Stage 1 - Quadrasense on the department VM
 
 **Status:** runbook, written 2026-10-22. **Running on the VM since 2026-10-24**, from
 `/opt/quadrasense`: the one-month dump, GSMA TAC version v2026.10.04 and the daily files to 2026-02-28,
@@ -12,9 +12,9 @@ OpenShift - the containers run here exactly as OpenShift will run them.
 
 ---
 
-## 1. The VM, and what QuadraSense needs from it
+## 1. The VM, and what Quadrasense needs from it
 
-| | The VM | QuadraSense needs | |
+| | The VM | Quadrasense needs | |
 |---|---|---|---|
 | CPU | 8 vCPU, Xeon Gold 6148 | 6 for ClickHouse at peak, 2 each for API and worker; limits, not reservations | enough |
 | Memory | 15 GiB usable, 2 GiB swap | 12.75 GiB of container limits (below), ~2 GiB for the host | enough, barely |
@@ -98,7 +98,7 @@ Once, as the operator, a checkout of the branch being deployed, with its configu
 
 ```bash
 git clone --branch deploy/containers-and-openshift \
-  https://github.com/MahdiSiamaki/QuadraSense.git /opt/quadrasense/repo
+  https://github.com/MahdiSiamaki/Quadrasense.git /opt/quadrasense/repo
 cd /opt/quadrasense/repo/deploy/compose
 ln -s /opt/quadrasense/config/.env .env && ln -s /opt/quadrasense/config/tls tls
 ```

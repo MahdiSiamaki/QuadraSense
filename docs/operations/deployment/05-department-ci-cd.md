@@ -2,7 +2,7 @@
 
 **Status:** written 2026-10-24 from the department's own guides - "Nexus Repository" and "GitLab
 Runner", usage guides from its Confluence, provided by the product owner - and from measurements on
-the QuadraSense server the same day. The git routine of section 6 runs today, and breaks one of the
+the Quadrasense server the same day. The git routine of section 6 runs today, and breaks one of the
 department's rules (section 1) - since 2026-10-26 it is the fallback only. **The pipeline of section 7
 deploys**: pipeline 370, 2026-10-26, tested, built and deployed `5ea39f54` to `<server>` with no one
 involved, the first to do so (section 4). Every push of `main` now does the same, with no one asked -
@@ -18,7 +18,7 @@ department. No password or token is written in either place (section 5).
 
 | Placeholder | What it is |
 |---|---|
-| `<server>` | the department VM that runs QuadraSense (stage 1) |
+| `<server>` | the department VM that runs Quadrasense (stage 1) |
 | `<gitlab>` | the department's GitLab instance |
 | `<nexus>` | the department's Nexus (OSS): console, Maven, npm, apt |
 | `<nexus-pull>` | the Docker **group** endpoint (proxy + hosted), for pulling |
@@ -44,9 +44,9 @@ Why:
 - one place for every kind of artifact - Docker, Maven, npm, apt;
 - it holds the projects' own images, so staging and production deploy from one source.
 
-What that means for QuadraSense - **its builds break this rule today**:
+What that means for Quadrasense - **its builds break this rule today**:
 
-| QuadraSense needs | Through Nexus? |
+| Quadrasense needs | Through Nexus? |
 |---|---|
 | Docker Hub images: `node`, `nginx-unprivileged`, `clickhouse-server`, `postgres` | yes - `<nexus-pull>` proxies Docker Hub |
 | Microsoft's .NET images (`mcr.microsoft.com/dotnet/sdk`, `…/aspnet`) | **no** - Nexus's only Docker proxy is Docker Hub's: request 1 (section 8) |
@@ -148,7 +148,7 @@ image traces to exactly one commit. Version numbers belong in a release file:
 `releases/production.env` in the group's `<infra-repo>`.
 
 **Cleanup policy: images that no `releases/*.env` names, and that are more than 30 days old, are
-deleted.** For QuadraSense: every tag a server runs must be in a release file, or a month later the
+deleted.** For Quadrasense: every tag a server runs must be in a release file, or a month later the
 server cannot pull it again - after a host rebuild, say.
 
 ### When Nexus goes wrong
@@ -347,10 +347,10 @@ It pulls the branch, builds the four application images on the server tagged wit
 records the tag in `.env` and starts them (`02-…` §3). Against section 1 it fails twice: its builds
 reach the internet directly, and nothing tests a commit before it runs. It stays as the fallback.
 
-## 7. QuadraSense on the department's pipeline
+## 7. Quadrasense on the department's pipeline
 
 **Decided by the product owner (2026-10-24):** CI on the department's **instance runner**
-(`docker-global`); CD on **a new Group runner of QuadraSense's own, shell executor, with its own tag**,
+(`docker-global`); CD on **a new Group runner of Quadrasense's own, shell executor, with its own tag**,
 for deploying only. The repository is `quadrasense/quadrasense` on `<gitlab>`.
 
 ```
@@ -365,7 +365,7 @@ push to the default branch of <gitlab>
 | **Build without a socket** | `docker-global` has no Docker socket (section 3), so `docker build` cannot run there. kaniko builds the same Dockerfiles in user space inside the job's container and pushes the image itself. Base images from Docker Hub come through `<nexus-pull>` (`--registry-mirror`) | `deploy/ci/kaniko-build.sh`; image `martizih/kaniko:v1.28.6-debug` (Docker Hub, so through Nexus) |
 | Tests | `dotnet restore` from Nexus's NuGet group, `dotnet test`; the frontend's `npm ci` from Nexus's npm group, `npm test`, `npm run build` | `.gitlab-ci.yml` |
 | Images | `<nexus-push>/quadrasense/{api,worker,migrator,web}:<short sha>` - default branch only | |
-| **Deploy runner** | shell executor on `<server>`, Group runner of the QuadraSense group, tag `quadrasense-deploy`, Protected; `gitlab-runner` in `docker` and `deploy` | `deploy/host/install-deploy-runner.sh` |
+| **Deploy runner** | shell executor on `<server>`, Group runner of the Quadrasense group, tag `quadrasense-deploy`, Protected; `gitlab-runner` in `docker` and `deploy` | `deploy/host/install-deploy-runner.sh` |
 | Deploy | each commit gets `/opt/quadrasense/releases/<sha>` (its compose files and grants), `.env` and `tls/` linked from `/opt/quadrasense/config`; pull the four images by tag; wait while an import is being processed (up to 90 minutes - the job's timeout is 2 h); point `current` at the release and `docker compose up -d --no-build` **from `current`**, back to the previous release if that fails; wait for the API and web to report healthy (5 minutes, else the job fails); record the tag in `.env`; five releases kept | `deploy/compose/deploy-release.sh` |
 | Why from `current` | ClickHouse mounts its config files by relative path, and Compose hashes the resolved path: from each release's own directory every deploy would have recreated ClickHouse. Measured on `<server>` 2026-10-26 - the hash differed for every directory and stayed the same through a symlink, whatever it pointed at; Postgres mounts no files and was never affected. The first pipeline deploy recreates ClickHouse once (from the checkout's directory to `current`), never again | |
 | **.NET base images through Nexus** | `mirror:dotnet` copies `dotnet/sdk` and `dotnet/aspnet` (linux/amd64 only) from MCR to `<nexus-push>/quadrasense/dotnet/…` with regctl, on every pipeline of `main`, before the tests. It copies only what Nexus lacks - after the first run, two manifest checks - and so also puts the copies back if the 30-day cleanup removes them. The builds take them from `<nexus-pull>` (`SDK_IMAGE`, `RUNTIME_IMAGE`). Allowed to fail, so an unreachable MCR stops nothing once the copies exist. Checked on the laptop against a local registry: the first copy moved the layers and left a single-platform manifest; the second moved nothing. A stopgap for request 1 (section 8): it still reaches MCR itself | `.gitlab-ci.yml`; image `regclient/regctl:v0.11.6-alpine` (Docker Hub, so through Nexus) |
@@ -388,7 +388,7 @@ build script's new check, under dash and busybox `sh`: two passwords missing - i
 stops; all four present - it goes on. **On `<gitlab>`**, pipeline 370 ran all of it end to end
 (section 4).
 
-### CI/CD variables - on the QuadraSense group (Settings → CI/CD → Variables); the two passwords on the project
+### CI/CD variables - on the Quadrasense group (Settings → CI/CD → Variables); the two passwords on the project
 
 | Variable | Value | Flags |
 |---|---|---|
@@ -401,7 +401,7 @@ stops; all four present - it goes on. **On `<gitlab>`**, pipeline 370 ran all of
 | `NEXUS_PULL_USER`, `NEXUS_PULL_PASS` | `<pull-user>` and its password | Protected; the password also Masked and hidden (a name under 8 characters cannot be masked, and is not a secret) |
 | `NEXUS_PUSH_USER`, `NEXUS_PUSH_PASS` | `<push-user>` and its password | Protected; the password also Masked and hidden |
 | `DOCKER_AUTH_CONFIG` | **not needed** - `docker-global` pulls job images from `<nexus-pull>` with its host's own login (section 4) | - |
-| `DOTNET_SDK_VERSION`, `ASPNET_VERSION`, `SDK_IMAGE`, `RUNTIME_IMAGE`, `DOTNET_SDK_IMAGE` | **in `.gitlab-ci.yml`, not here**: the image builds take the .NET base images from QuadraSense's copies in Nexus (`mirror:dotnet`, below); the test job's image still from MCR, pulled by the runner's daemon. All point at Nexus's proxy once request 1 is met | - |
+| `DOTNET_SDK_VERSION`, `ASPNET_VERSION`, `SDK_IMAGE`, `RUNTIME_IMAGE`, `DOTNET_SDK_IMAGE` | **in `.gitlab-ci.yml`, not here**: the image builds take the .NET base images from Quadrasense's copies in Nexus (`mirror:dotnet`, below); the test job's image still from MCR, pulled by the runner's daemon. All point at Nexus's proxy once request 1 is met | - |
 
 Protected variables reach only protected branches: the default branch is protected by GitLab already;
 a test pipeline on another branch gets empty credentials - `username is empty` (section 2).
@@ -426,11 +426,11 @@ a test pipeline on another branch gets empty credentials - `username is empty` (
 
 | # | Item | State |
 |---|---|---|
-| 1 | **Request to the department: a proxy of Microsoft's registry (MCR)** in Nexus, in the docker group. NuGet is there already; MCR is not, and every .NET build and test needs the SDK and runtime images | **open, and now with evidence**: from this network MCR transfers are cut (pipeline 368, section 4). Until the proxy exists, `mirror:dotnet` copies the two images into QuadraSense's space in Nexus, and the test job's image still comes from MCR through the runner's daemon - both still reach MCR, which the "Nexus only" rule does not allow |
+| 1 | **Request to the department: a proxy of Microsoft's registry (MCR)** in Nexus, in the docker group. NuGet is there already; MCR is not, and every .NET build and test needs the SDK and runtime images | **open, and now with evidence**: from this network MCR transfers are cut (pipeline 368, section 4). Until the proxy exists, `mirror:dotnet` copies the two images into Quadrasense's space in Nexus, and the test job's image still comes from MCR through the runner's daemon - both still reach MCR, which the "Nexus only" rule does not allow |
 | 2 | Where the code lives | **decided**: `quadrasense/quadrasense` on `<gitlab>`. GitHub (public) remains the mirror for now; making it private, or retiring it, is still recommended |
 | 3 | Which runner builds | **decided**: the instance runner, `docker-global`, with kaniko (it has no socket) |
 | 4 | **Release files** - where the deployed tag of each environment is recorded, and so what Nexus's cleanup keeps (section 2: images in no `releases/*.env`, older than 30 days, are deleted) | **open**: ask the department how its cleanup reads them; until then the server records the running tag in `/opt/quadrasense/current.sha` |
-| 5 | The deploy runner | **decided**: a Group runner of QuadraSense's group, shell, tag `quadrasense-deploy`, Protected, on `<server>` |
+| 5 | The deploy runner | **decided**: a Group runner of Quadrasense's group, shell, tag `quadrasense-deploy`, Protected, on `<server>` |
 | 6 | Which branch deploys | the default branch, protected |
 | 7 | **How GitHub's `main` reaches `<gitlab>`** after a pull request is merged. The owner's routine (2026-10-26): new code lands on the laptop; the laptop session pushes, opens the pull request, merges it once verified, and pushes `main` to `<gitlab>` over HTTPS - way (c) below, which is now the routine rather than a stopgap (`CLAUDE.md`, Git); the runners build and deploy | **decided 2026-10-26: (c)**. A cloud session does not merge, so nothing but the laptop moves `main`. Before that: The owner chose a timer on `<server>` pushing to `<gitlab>` over SSH with a write deploy key - and it is not built: the red lines say git over HTTPS, not SSH, and *servers pull* (`04-…`, §2-2 row 2), and section 5 gives a server read-only access only. Compliant ways: **(a)** `<gitlab>`'s own pull mirror from the public GitHub URL (Settings → Repository → Mirroring repositories; a paid GitLab feature, and `<gitlab>` must reach github.com); **(b)** a scheduled pipeline that fetches GitHub and pushes with the job token (the instance runner must reach github.com; the probe says); **(c)** the developer pushes from the laptop, over HTTPS with their own credential. (a) and (b) would matter only if `main` could move anywhere but the laptop |
 | 8 | **`<gitlab>`'s `main` held only GitLab's template README** (`Initial commit`, by the project's creator, 2026-10-24), with no history in common with the code | **Done 2026-10-26**: the owner allowed one force push on `main`, and `main` became GitHub's (`654018b`, pushed with `-o ci.skip`); merge request !1 was closed by the owner, and the project's page shows the project's own README. The owner turns force pushes off again. Nothing else on `<gitlab>` is lost by it - checked 2026-10-25: of its commits, only that README and six on two `wip/` branches are missing from GitHub, and the six are already on GitHub's `main` as the same changes (`git cherry`) and on the laptop's branches |

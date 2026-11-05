@@ -1,5 +1,5 @@
 #!/bin/bash
-# Setup script for the QuadraSense cloud environment.
+# Setup script for the Quadrasense cloud environment.
 #
 # Paste the whole file into the "Setup script" field of the environment at claude.ai/code.
 # It runs once, as root on Ubuntu 24.04, before Claude starts, and the result is cached for

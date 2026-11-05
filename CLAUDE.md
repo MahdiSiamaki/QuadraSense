@@ -81,7 +81,7 @@ Do not re-open these without asking:
 
 ## The estate around it
 
-QuadraSense is the **Primary Inventory (PI)** of the operator's SIM and eSIM estate: the record of
+Quadrasense is the **Primary Inventory (PI)** of the operator's SIM and eSIM estate: the record of
 what is true about a SIM, a handset and the binding between them. `docs/architecture/20-estate-landscape.md`
 gives every neighbouring system's scope, whether it is new or in service, and its interface to PI.
 It also sets what PI does today against what the estate's landscape gives it. Read it before giving

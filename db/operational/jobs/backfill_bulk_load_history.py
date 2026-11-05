@@ -16,8 +16,8 @@ answer "you already have this" instead of importing it twice.
 
 Usage:
     backfill_bulk_load_history.py --container sqm-postgres \\
-        --daily "E:/job/QuadraSense/SQM/New CDR/New CDR" \\
-        [--dump "E:/job/QuadraSense/SQM/1 Month/dump_....csv"] [--tac "E:/job/QuadraSense/TAC/DeviceDatabase_TAC1Sep2026.csv"] \\
+        --daily "E:/job/Quadrasense/SQM/New CDR/New CDR" \\
+        [--dump "E:/job/Quadrasense/SQM/1 Month/dump_....csv"] [--tac "E:/job/Quadrasense/TAC/DeviceDatabase_TAC1Sep2026.csv"] \\
         [--dates-only]
 """
 

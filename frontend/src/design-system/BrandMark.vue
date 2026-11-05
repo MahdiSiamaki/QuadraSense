@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The QuadraSense mark: a ring cut by a rising bar.
+ * The Quadrasense mark: a ring cut by a rising bar.
  *
  * Drawn as SVG rather than shipped as a raster, for the reasons any mark in an application
  * interface should be: it is crisp at 20px in a header and at 64px on the sign-in page from one
@@ -25,7 +25,7 @@ withDefaults(defineProps<{ size?: number }>(), { size: 28 })
     viewBox="0 0 64 64"
     fill="none"
     role="img"
-    aria-label="QuadraSense"
+    aria-label="Quadrasense"
     class="shrink-0"
   >
     <defs>

@@ -1,6 +1,6 @@
 # Moving to dedicated hardware — every compromise the laptop forced
 
-**Status:** living document, started 2026-10-20 at the product owner's request. QuadraSense runs on
+**Status:** living document, started 2026-10-20 at the product owner's request. Quadrasense runs on
 the owner's laptop today and will move to dedicated hardware. Every setting, workaround or design
 choice made *because of the laptop* is listed here, with what to do on the new machine and how to
 check it. **Any change made for the laptop adds its row here in the same commit.**

@@ -318,6 +318,6 @@ setUnauthenticatedHandler(() => {
 
 router.afterEach((to) => {
   document.title = to.meta['title']
-    ? `${to.meta['title']} · QuadraSense`
-    : 'QuadraSense'
+    ? `${to.meta['title']} · Quadrasense`
+    : 'Quadrasense'
 })

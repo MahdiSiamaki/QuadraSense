@@ -55,7 +55,7 @@ export function migrateDefinition(raw: unknown, migrations: ConfigMigrations = C
     return {
       definition: raw as unknown as DashboardDefinition,
       changed: false,
-      problems: ['This dashboard was saved by a newer version of QuadraSense.'],
+      problems: ['This dashboard was saved by a newer version of Quadrasense.'],
     }
   }
 

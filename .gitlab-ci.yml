@@ -1,4 +1,4 @@
-# QuadraSense on the department's GitLab - docs/operations/deployment/05-department-ci-cd.md.
+# Quadrasense on the department's GitLab - docs/operations/deployment/05-department-ci-cd.md.
 #
 #   prepare the .NET base images copied from MCR into Nexus   instance runner  (docker-global)
 #   test    backend and frontend tests                        instance runner  (docker-global)
@@ -9,7 +9,7 @@
 # images are built with kaniko, not `docker build`. Deploys happen only from the default branch,
 # on a Protected runner that sits on the server it deploys to.
 #
-# Addresses and credentials are CI/CD variables of the QuadraSense group (05, section 7), not
+# Addresses and credentials are CI/CD variables of the Quadrasense group (05, section 7), not
 # written here: this file is also in a public mirror.
 
 stages: [prepare, test, build, deploy]
@@ -22,7 +22,7 @@ variables:
   # The test job's image is pulled by the runner's own Docker daemon, which retries a cut download
   # and keeps the image; it comes from MCR until Nexus proxies it (05, request 1).
   DOTNET_SDK_IMAGE: mcr.microsoft.com/dotnet/sdk:$DOTNET_SDK_VERSION
-  # The image builds take the .NET base images from QuadraSense's copies in Nexus (mirror:dotnet).
+  # The image builds take the .NET base images from Quadrasense's copies in Nexus (mirror:dotnet).
   SDK_IMAGE: $REGISTRY_PULL/$IMAGE_PREFIX/dotnet/sdk:$DOTNET_SDK_VERSION
   RUNTIME_IMAGE: $REGISTRY_PULL/$IMAGE_PREFIX/dotnet/aspnet:$ASPNET_VERSION
   KANIKO_IMAGE: martizih/kaniko:v1.28.6-debug
@@ -30,7 +30,7 @@ variables:
 default:
   tags: [docker-global]
 
-# Copies the two .NET base images from Microsoft's registry into QuadraSense's space in Nexus, and the
+# Copies the two .NET base images from Microsoft's registry into Quadrasense's space in Nexus, and the
 # image builds take them from there. kaniko fetched them from MCR itself, and from this network those
 # transfers were cut: in pipeline 368 two of the three backend builds failed on one - the SDK after
 # 12 minutes, the runtime's layers while pushing the api image after 18. Nexus does not proxy MCR yet

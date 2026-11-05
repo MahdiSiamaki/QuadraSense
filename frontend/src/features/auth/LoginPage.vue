@@ -90,7 +90,7 @@ async function submit() {
       <div class="mb-7 flex items-center gap-2.5">
         <BrandMark :size="34" />
         <div>
-          <h1 class="text-base font-semibold tracking-tight">QuadraSense</h1>
+          <h1 class="text-base font-semibold tracking-tight">Quadrasense</h1>
           <p class="text-xs text-[var(--c-text-muted)]">
             Primary SIM &amp; Device Inventory
           </p>

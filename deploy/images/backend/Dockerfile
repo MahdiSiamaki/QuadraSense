@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# The three .NET processes of QuadraSense, from one build:
+# The three .NET processes of Quadrasense, from one build:
 #
 #   docker build -f deploy/images/backend/Dockerfile --target api      -t quadrasense/api:<tag>      .
 #   docker build -f deploy/images/backend/Dockerfile --target worker   -t quadrasense/worker:<tag>   .
