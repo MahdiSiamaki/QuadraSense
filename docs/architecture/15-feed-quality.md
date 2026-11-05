@@ -14,7 +14,7 @@ wrong, and that is what the operator sent for weeks:
 |---|---|---:|---:|
 | 2026-07-27 | SIMs carrying more than one phone number on the same day | 500–900 SIMs | 383,000 SIMs (Sep 21) |
 | 2026-08-25/26 | IMEIs cut to eight digits | ~3,500 rows | 793,475 rows (10% of Aug 25) |
-| 2026-09-15 | IMEIs with the first digit dropped and a 0 added — in most cases another subscriber's handset; still present on 6 Oct | ~7,000 rows (0.1%) | 3.16 million rows (25% of Sep 22) |
+| 2026-09-15 | IMEIs with the first digit dropped and a 0 added — in most cases another subscriber's handset; ended 20 Oct | ~7,000 rows (0.1%) | 3.16 million rows (25% of Sep 22) |
 
 Together they inflated the dashboard's SIM changes about 15-fold and handset changes about 5-fold, and
 they were found because a chart looked wrong — weeks after the first file. Every one of them was in the
@@ -127,6 +127,21 @@ to 6 October. Multi-number SIMs fell from 2.6–4.2% of SIMs in late September t
 October, still 55–61 times ordinary. Both are above their ×5 thresholds (0.445% of rows and 0.055% of
 SIMs) on every one of those days. 2–6 October were measured against v2026.10.04, the version active
 when they were measured; the days before, against v2026.09.16.
+
+**Since then (measured 2026-11-05 from `dq_daily` on the laptop, through 31 October).** Shifted IMEIs
+ended on 20 October. They were 20.99-22.84% of rows from 11 to 19 October, 9.45% on the 20th, and
+0.08-0.10% on every day from the 21st to the 31st: 5,300-8,200 rows, the ordinary level, under the ×5
+threshold. Unknown-TAC rows fell with them, from 1.9-2.3 million a day to 21,000-25,000. The file of the
+20th listed 8.17 million removals, against 4.1-5.6 million on the four days before, and from the 21st
+the files hold 6.1-8.2 million rows instead of about 10 million, because the daily churn of shifted
+handsets stopped. Numbers with a handset change went from 547,516 on 19 October to 153,140 on the 21st,
+back to the level before 15 September (172,721 on 10 September). Why it stopped, and whether it stays
+stopped, is a question for the operator. The days already delivered are not corrected.
+
+Multi-number SIMs have not ended. They fell to 0.40% of SIMs on 21 October and rose again to 1.25% on the
+30th, about 114 times ordinary, so they are flagged on every day and every window that ends today stays
+capped at Anomaly (ADR-014). On the 30th they set aside 25,946 of 29,615 SIM changes.
+
 ## Where it shows
 
 - **On the import.** Each flagged check is a warning note on the job's timeline; an ordinary day gets one
