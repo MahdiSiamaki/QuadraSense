@@ -210,7 +210,7 @@ public sealed class DashboardSnapshotTests
             OwedSince = OwedAt,
 
             // The first check of the first pass finds the device mart doubled; after that, clean.
-            Duplicates = sql => Interlocked.Increment(ref checks) == 1 && sql.Contains("agg_device_daily", StringComparison.Ordinal)
+            Duplicates = sql => Interlocked.Increment(ref checks) == 1 && sql.Contains("agg_device_model", StringComparison.Ordinal)
                 ? 431_189
                 : 0,
         };
@@ -221,7 +221,7 @@ public sealed class DashboardSnapshotTests
         Assert.True(statementsPerPass > 0);
         Assert.Equal(1, run.Calls.Count(c => c == "marts ready 7 True"));
         Assert.Equal($"settle SQM {OwedAt:O}", run.Calls[^1]);
-        Assert.Contains(run.Notes, n => n.Contains("Not published: agg_device_daily has 431,189 duplicate row(s)", StringComparison.Ordinal));
+        Assert.Contains(run.Notes, n => n.Contains("Not published: agg_device_model has 431,189 duplicate row(s)", StringComparison.Ordinal));
     }
 
     [Fact]
