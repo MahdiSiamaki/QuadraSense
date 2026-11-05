@@ -98,7 +98,7 @@ async function open(maxWidgets = 24) {
   })
   // As the app's own router does: every navigation resets the tab's title to the route's.
   router.afterEach(() => {
-    document.title = 'QuadraSense'
+    document.title = 'Quadrasense'
   })
   vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
     if (path === '/api/v1/dashboards') return list(maxWidgets) as never
@@ -218,11 +218,11 @@ describe('the dashboard page', () => {
 
   it("names the tab after the dashboard, and again after a navigation reset it", async () => {
     const { router } = await open()
-    expect(document.title).toBe('Operations · QuadraSense')
+    expect(document.title).toBe('Operations · Quadrasense')
 
     // A lens change is a navigation: the router's afterEach resets the title before the page sees it.
     await router.push({ name: 'dashboard-view', params: { id: 7 }, query: { countBy: 'handsets' } })
     await flushPromises()
-    expect(document.title).toBe('Operations · QuadraSense')
+    expect(document.title).toBe('Operations · Quadrasense')
   })
 })

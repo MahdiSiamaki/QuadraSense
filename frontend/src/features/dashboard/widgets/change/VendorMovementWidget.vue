@@ -85,7 +85,7 @@ function signed(value: number | null, digits = 0, suffix = ''): string {
       gap="none"
       @retry="movement.refetch()"
     >
-      <div v-if="data" class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div v-if="data" class="min-h-0 flex-1 overflow-y-auto">
         <VendorMovementChart
           v-if="config.display === 'chart'"
           :rows="data.rows"

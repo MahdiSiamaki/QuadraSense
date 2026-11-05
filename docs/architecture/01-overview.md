@@ -66,7 +66,7 @@ flowchart TB
         SRC["SNQM<br/>daily dump-NN batches<br/>CSV + 1.config + 1.done"]
         GSMA["GSMA TAC<br/>Device Database"]
     end
-    subgraph sys["QuadraSense"]
+    subgraph sys["Quadrasense"]
         ING["Ingestion service<br/>watch · validate · load"]
         DB[("Analytics store<br/>events · state · marts")]
         OLTP[("Operational store<br/>users · jobs · audit")]
@@ -88,7 +88,7 @@ flowchart TB
 ```
 
 The daily dumps come from the operator's SNQM, its service and network quality management system
-(owner, 2026-11-02). QuadraSense is the Primary Inventory (PI) of the operator's wider SIM and eSIM
+(owner, 2026-11-02). Quadrasense is the Primary Inventory (PI) of the operator's wider SIM and eSIM
 estate. What the systems around it own, and what the estate's landscape expects of PI against what
 is built, are in `20-estate-landscape.md`.
 

@@ -88,7 +88,7 @@ async function signOut() {
         <RouterLink to="/" class="flex shrink-0 items-center gap-2">
           <BrandMark :size="26" />
           <span class="hidden text-sm font-semibold tracking-tight sm:inline">
-            QuadraSense
+            Quadrasense
           </span>
         </RouterLink>
 

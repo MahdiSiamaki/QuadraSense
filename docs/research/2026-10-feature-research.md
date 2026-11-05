@@ -1,4 +1,4 @@
-# Research: what QuadraSense could do next
+# Research: what Quadrasense could do next
 
 **Date:** 2026-10-21, on the data through 2026-10-10 (delivery 246).
 **Status:** Research for the product owner's decision. **Nothing here is built or approved.** Each idea

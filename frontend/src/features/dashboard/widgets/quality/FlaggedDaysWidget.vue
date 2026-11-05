@@ -89,7 +89,7 @@ const failed = computed(() => (wantFlagged.value && feed.isError.value ? feed : 
       gap="none"
       @retry="failed?.refetch()"
     >
-      <ul class="min-h-0 flex-1 divide-y overflow-auto overscroll-contain text-xs">
+      <ul class="min-h-0 flex-1 divide-y overflow-auto text-xs">
         <li v-for="e in shown" :key="`${e.kind}:${e.date}`" class="flex gap-3 py-1.5">
           <span class="tabular w-24 shrink-0 whitespace-nowrap">{{ formatDate(e.date) }}</span>
           <span class="min-w-0 flex-1">

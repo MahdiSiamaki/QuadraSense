@@ -138,7 +138,7 @@ const scope = computed(() => {
       <div v-if="bars" class="relative">
         <BarChart :data="bars.rows" :unit="bars.unit" height="auto" :selectable="false" />
       </div>
-      <div v-else-if="result" class="min-h-0 flex-1 overflow-auto overscroll-contain rounded-[var(--radius-md)] border">
+      <div v-else-if="result" class="min-h-0 flex-1 overflow-auto rounded-[var(--radius-md)] border">
         <table class="w-full text-xs" :aria-busy="run.isPending.value">
           <thead class="sticky top-0 bg-[var(--c-surface-sunken)] text-left text-2xs text-[var(--c-text-muted)]">
             <tr>

@@ -117,10 +117,10 @@ describe('templates', () => {
   it('Device Population is the old page: freshness, the KPI row, then the cards in page order', () => {
     const ordered = [...devicePopulation.definition.widgets].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)
 
-    // The KPI row is one widget, as it was one row: one menu and one export, not six.
+    // The KPI row is one widget, as it was one row: one menu and one export, not one per figure.
     const row = ordered[1]!
     expect(row.type).toBe('metric.kpiSummary')
-    expect(row.config.metrics).toEqual(['activeBindings', 'distinctSubscribers', 'distinctSims', 'distinctDevices', 'unknownDeviceBindings', 'tacCoveragePercent'])
+    expect(row.config.metrics).toEqual(['activeBindings', 'distinctSubscribers', 'distinctSims', 'distinctDevices', 'tacCoveragePercent'])
     expect(ordered.filter((w) => w.type === 'metric.kpi')).toEqual([])
 
     expect(ordered.map((w) => w.title)).toEqual([
@@ -132,7 +132,6 @@ describe('templates', () => {
       'Network & SIM capability',
       'Top vendors', 'Top models',
       'Device types', 'Operating systems',
-      'Enrichment breakdown',
     ])
   })
 

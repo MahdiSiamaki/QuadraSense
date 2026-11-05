@@ -16,12 +16,11 @@ import { useKept } from '../overview/shared/useKept'
 /**
  * The largest values of a device dimension: vendors, manufacturers, models or TACs.
  *
- * `excludeUnknownBucket` leaves out the unknown-device bucket whatever the dashboard's view, and the
- * Top models preset turns it on. Not a cosmetic choice: "(unknown device)" is 8.8M bindings - larger
- * than every real model - so including it dwarfs the bars and makes the models incomparable, which is
+ * `excludeUnknownBucket` leaves out the unknown-device bucket even when the dashboard shows unknown
+ * devices, and the Top models preset turns it on. Not a cosmetic choice: "(unknown device)" is larger
+ * than every real model, so including it dwarfs the bars and makes the models incomparable, which is
  * the one thing that chart exists to do. And it is not an answer to "which models are popular": it is
- * the absence of one. The count is not hidden: it stays in the KPIs, the class mix and the device-type
- * table, where it is a category.
+ * the absence of one.
  */
 const props = defineProps<WidgetViewProps<TopConfig>>()
 
@@ -54,7 +53,7 @@ const drillable = computed(() => DRILL[config.value.dimension] !== null && canDr
 
 const caption = computed(() => {
   const parts = [countedBy(countBy.value)]
-  if (config.value.excludeUnknownBucket) parts.push('Excludes unknown devices.')
+  if (config.value.excludeUnknownBucket && props.lens.includeUnknownDevice) parts.push('Excludes unknown devices.')
   if (drillable.value) parts.push(config.value.display === 'bar' ? 'Click a bar to filter.' : 'Click a row to filter.')
   return parts.join(' ')
 })
@@ -98,7 +97,7 @@ function select(value: string) {
           @select="select"
         />
       </div>
-      <div v-else class="min-h-0 flex-1 overflow-auto overscroll-contain">
+      <div v-else class="min-h-0 flex-1 overflow-auto">
         <DimensionTable
           :rows="sorted"
           :header="HEADERS[config.dimension]"

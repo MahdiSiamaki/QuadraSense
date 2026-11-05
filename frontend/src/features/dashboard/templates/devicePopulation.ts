@@ -9,21 +9,21 @@ import type { DashboardTemplate } from './types'
  */
 export const devicePopulation: DashboardTemplate = {
   key: 'device-population',
-  version: 3,
+  version: 4,
   name: 'Device population',
   description: 'Active device–SIM bindings across the network, enriched with GSMA device data.',
   definition: {
     schemaVersion: 1,
-    defaults: { countBy: 'bindings', includeUnknownDevice: true, range: 'all' },
+    defaults: { countBy: 'bindings', includeUnknownDevice: false, range: 'all' },
     refreshMinutes: 0,
     widgets: [
       { id: 'w_dpfreshness', type: 'ops.freshness', configVersion: 1, title: 'Data freshness', subtitle: null,
         config: { showPipeline: true, showTac: true }, overrides: {}, layout: { x: 0, y: 0, w: 12, h: 4 } },
 
-      // The page's KPI row: one card, one menu, the six figures side by side as they always were.
+      // The page's KPI row: one card, one menu, its figures side by side.
       { id: 'w_dpkpirow', type: 'metric.kpiSummary', configVersion: 1, title: 'Key figures', subtitle: null,
         config: {
-          metrics: ['activeBindings', 'distinctSubscribers', 'distinctSims', 'distinctDevices', 'unknownDeviceBindings', 'tacCoveragePercent'],
+          metrics: ['activeBindings', 'distinctSubscribers', 'distinctSims', 'distinctDevices', 'tacCoveragePercent'],
           numberFormat: 'compact', precision: 1, showDefinition: true,
         },
         overrides: {}, layout: { x: 0, y: 4, w: 12, h: 3 } },
@@ -59,9 +59,6 @@ export const devicePopulation: DashboardTemplate = {
       { id: 'w_dposes', type: 'device.distribution', configVersion: 1, title: 'Operating systems', subtitle: null,
         config: { dimension: 'operatingSystem', limit: 10, display: 'table', showPercent: true, clickToFilter: true },
         overrides: {}, layout: { x: 6, y: 46, w: 6, h: 9 } },
-
-      { id: 'w_dpenrichment', type: 'quality.enrichment', configVersion: 1, title: 'Enrichment breakdown', subtitle: null,
-        config: { display: 'figures' }, overrides: {}, layout: { x: 0, y: 55, w: 12, h: 5 } },
     ],
   },
 }

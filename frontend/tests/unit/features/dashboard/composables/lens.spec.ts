@@ -19,7 +19,7 @@ describe('effective lens', () => {
   it('L1: the URL wins over the defaults for a field the type supports', () => {
     expect(effectiveLens(spec('device.top'), { countBy: 'handsets', vendor: 'Samsung' }, { vendor: 'Apple' }, {})).toEqual({
       countBy: 'handsets',
-      includeUnknownDevice: true,
+      includeUnknownDevice: false,
       vendor: 'Apple',
     })
   })

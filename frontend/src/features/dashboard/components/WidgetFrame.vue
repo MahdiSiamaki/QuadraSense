@@ -111,7 +111,7 @@ onBeforeUnmount(() => {
       <ActionMenu v-if="menu.length" :label="`Actions for ${title}`" :items="menu" class="-mr-1.5 shrink-0" @select="emit('action', $event)" />
     </header>
 
-    <div class="min-h-0 flex-1 overflow-auto overscroll-contain px-4 py-3">
+    <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
       <div v-if="fit" ref="fitContent" data-fit-content><slot /></div>
       <slot v-else />
     </div>

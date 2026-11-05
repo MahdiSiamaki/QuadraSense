@@ -196,6 +196,8 @@ Active bindings per MSISDN in the final state: 65.2% have exactly 1, 13.4% have 
 
 `000000` is a **sentinel for "device unknown"**, not a parse error. At ~7% of the initial dump it is material: these rows can never be TAC-enriched and must be modelled as an explicit "Unknown device" bucket rather than dropped or left NULL.
 
+> **SUPERSEDED in part (2026-11-05, ADR-020).** The rows are kept, as this says. They are no longer counted: measured against the daily files, what remains of them is left over from this dump.
+
 Other malformed IMEI values observed: `000100` (25,562), `000510` (1,785), `501515014` (1,052), `000400`, `100010`, `601461400`, `6015404`, `00000030`, `000000301000`.
 
 IMEIs are **14 digits = TAC(8) + serial(6)**; the Luhn check digit is already stripped. No IMEI is 15 or 16 digits, so no IMEI/IMEISV normalisation is required — but a `length = 14` guard is mandatory before `substr(imei, 1, 8)`.

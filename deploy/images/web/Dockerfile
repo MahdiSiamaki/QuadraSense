@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# The frontend, and the one door into QuadraSense:
+# The frontend, and the one door into Quadrasense:
 #
 #   docker build -f deploy/images/web/Dockerfile -t quadrasense/web:<tag> .
 #

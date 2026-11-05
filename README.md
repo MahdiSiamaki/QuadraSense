@@ -1,4 +1,4 @@
-# QuadraSense
+# Quadrasense
 
 **PI — Primary SIM & Device Inventory.** Analytics platform for mobile device / SIM / subscriber
 binding data, enriched with the GSMA TAC device database. Among the operator's SIM and eSIM systems
@@ -396,7 +396,7 @@ docs/
     17-dashboard-builder.md        dashboards people build from widgets
     18-explorer-modes.md           the Explorer's Simple and Advanced modes, and the derived ICCID
     19-network-planning.md         network and product planning: sunset, eSIM, bands, lifecycle, campaign lists
-    20-estate-landscape.md         the systems around QuadraSense, what each owns, and PI's role among them
+    20-estate-landscape.md         the systems around Quadrasense, what each owns, and PI's role among them
   operations/
     dedicated-hardware.md          every setting chosen because of the laptop, to revisit on real hardware
     deployment/                    the containers, the department VM, MCI's OpenShift, red lines, CI/CD
@@ -459,6 +459,7 @@ tools/
 | [ADR-016](docs/adr/ADR-016-dashboard-builder.md) | The dashboard builder: one JSONB definition per dashboard; each widget reads an endpoint that already exists, under its permission | Accepted |
 | [ADR-017](docs/adr/ADR-017-filtered-dashboard-views.md) | Filtered dashboard views read per-model population marts, and abandoned reads are killed | Accepted |
 | [ADR-018](docs/adr/ADR-018-resumable-uploads.md) | Uploads resume after a broken connection, with the tus protocol | Accepted |
+| [ADR-020](docs/adr/ADR-020-rows-with-no-handset.md) | Rows with no handset stay stored and are left out of every count | Accepted |
 | [ADR-019](docs/adr/ADR-019-planning-snapshot.md) | Network planning: each number classed once per delivery by an idle-time snapshot, from parsed radio profiles | Accepted |
 
 Every one of these was decided against measurement on the real dataset, not on reputation. Where a
@@ -474,5 +475,5 @@ python tools/profiling/to_parquet_base.py
 python tools/profiling/q.py tools/profiling/a1.py
 ```
 
-Scripts read from `E:\job\QuadraSense\SQM` and `E:\job\QuadraSense\TAC` and write working Parquet
-projections outside the repository, under `E:\job\QuadraSense\_sqm_discovery`.
+Scripts read from `E:\job\Quadrasense\SQM` and `E:\job\Quadrasense\TAC` and write working Parquet
+projections outside the repository, under `E:\job\Quadrasense\_sqm_discovery`.

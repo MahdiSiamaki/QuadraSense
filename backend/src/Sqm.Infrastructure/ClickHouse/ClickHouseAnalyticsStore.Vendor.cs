@@ -71,7 +71,7 @@ public sealed partial class ClickHouseAnalyticsStore
                            sumIf(bindings, seq = (SELECT min(seq) FROM sqm.mart_ready)) AS at_start,
                            sumIf(bindings, seq = (SELECT max(seq) FROM sqm.mart_ready)) AS at_end
                     FROM sqm.agg_dimension_daily
-                    WHERE dimension = 'vendor'
+                    WHERE dimension = 'vendor' AND dim_value != {unknown_device:String}
                     GROUP BY k
                 ),
                 movement AS (

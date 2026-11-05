@@ -1036,6 +1036,26 @@ the pause notice and the list not showing, the button doing nothing, and a refus
 
 ---
 
+### D17 - "With warnings" is off the Import pages, for now (2026-11-05)
+
+The product owner's decision: until data quality is settled, a day whose every row landed reads
+**Completed**, with its attempt when there was more than one. "With warnings" beside the status read
+as if the import had a problem, and it was on every daily file.
+
+**Off:** the label on the history list and on the import's own page, and the count in the timeline's
+closing line. `EventTimeline.vue` drops that count when it draws the line, so old imports read the
+same as new ones, and the event keeps what the worker wrote.
+
+**Kept:** `warning_count`, the job's quarantine with its rules and samples, the Quarantined column,
+and the status rule of 2026-09-24.
+
+**The cost:** a day like 25 and 26 August, with about 10% of rows carrying IMEIs cut to eight digits,
+no longer shows on the Import pages at all. It shows on Data quality, whose default threshold
+flagged both days (`15-feed-quality.md`).
+
+**To bring it back:** restore the two labels and remove `WARNED`.
+`ImportWarningsWording.spec.ts` holds the decision and fails until it is changed.
+
 ## 13. Still open
 
 **A second TAC file.** One sound file exists (`DeviceDatabase_TAC1Sep2026.csv`, 270,166 records,

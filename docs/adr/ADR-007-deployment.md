@@ -8,7 +8,7 @@
 
 ## Context
 
-Until now QuadraSense ran only on the owner's laptop: ClickHouse and PostgreSQL in Docker
+Until now Quadrasense ran only on the owner's laptop: ClickHouse and PostgreSQL in Docker
 (`infra/docker-compose.yml`), the API with `dotnet run` (hosting the import worker in-process,
 `Import:RunWorkerInProcess`), the frontend with `npm run dev`. Nothing was packaged.
 

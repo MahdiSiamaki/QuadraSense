@@ -149,6 +149,7 @@ public sealed partial class ClickHouseAnalyticsStore
         // from agg_device_model, because agg_device_model is built per delivery from CURRENT state
         // and therefore cannot describe a delivery that has already passed. The dimension mart has
         // held a per-TAC slice at the first delivery since before this module existed.
+        // The network figures leave out the rows with no handset, as every count does.
         const string Sql = """
             SELECT
                 d.tac,
@@ -165,9 +166,11 @@ public sealed partial class ClickHouseAnalyticsStore
                  WHERE dimension = 'tac' AND seq = (SELECT min(seq) FROM sqm.mart_ready)
                    AND dim_value = {tac:String})                       AS bindings_at_start,
                 (SELECT sum(bindings) FROM sqm.agg_dimension_daily
-                 WHERE dimension = 'tac' AND seq = (SELECT max(seq) FROM sqm.mart_ready)) AS network_now,
+                 WHERE dimension = 'tac' AND seq = (SELECT max(seq) FROM sqm.mart_ready)
+                   AND dim_value != '(unknown device)')                AS network_now,
                 (SELECT sum(bindings) FROM sqm.agg_dimension_daily
-                 WHERE dimension = 'tac' AND seq = (SELECT min(seq) FROM sqm.mart_ready)) AS network_start,
+                 WHERE dimension = 'tac' AND seq = (SELECT min(seq) FROM sqm.mart_ready)
+                   AND dim_value != '(unknown device)')                AS network_start,
                 t.tac != ''                                            AS known_to_gsma,
                 (SELECT version_id FROM sqm.tac_active FINAL
                  ORDER BY activated_at DESC LIMIT 1)                   AS tac_version
@@ -620,6 +623,12 @@ public sealed partial class ClickHouseAnalyticsStore
             // bound as an array parameter rather than interpolated.
             clauses.Add("AND d.tac IN {tacs:Array(String)}");
             parameters["tacs"] = "['" + string.Join("','", tacs) + "']";
+        }
+        else
+        {
+            // The empty TAC is the rows with no handset, not a model: the catalogue lists it only
+            // for someone who searched for 000000 and so asked about exactly those.
+            clauses.Add("AND d.tac != ''");
         }
 
         return clauses.Count == 0 ? string.Empty : string.Join("\n            ", clauses);

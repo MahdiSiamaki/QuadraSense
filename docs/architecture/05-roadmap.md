@@ -130,7 +130,7 @@ restored is not a backup.
 
 ## Beyond these phases - PI's role in the estate
 
-The operator's estate landscape gives QuadraSense, as its Primary Inventory, more than the phases
+The operator's estate landscape gives Quadrasense, as its Primary Inventory, more than the phases
 above build. It adds:
 - the eUICC and stock inventory;
 - signalling taps that report on every attach;

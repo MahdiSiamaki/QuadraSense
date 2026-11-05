@@ -157,7 +157,7 @@ public sealed partial class DashboardWidgetDataLoader : IWidgetDataLoader
 
     /// <summary>From the exact counts, never from the rounded coverage percentage.</summary>
     private static double UnregisteredTac(KpiSummary k) =>
-        k.ActiveBindings - k.TacMatchedBindings - k.UnknownDeviceBindings - k.MalformedImeiBindings;
+        k.ActiveBindings + k.SetAsideBindings - k.TacMatchedBindings - k.UnknownDeviceBindings - k.MalformedImeiBindings;
 
     private async Task<WidgetDataResult> KpiAsync(Config c, DashboardLens lens, IReadOnlyList<string> metrics, CancellationToken ct)
     {
@@ -198,7 +198,7 @@ public sealed partial class DashboardWidgetDataLoader : IWidgetDataLoader
     private async Task<WidgetDataResult> TopAsync(Config c, DashboardLens lens, CancellationToken ct)
     {
         var dimension = Enum.Parse<AnalyticsDimension>(c.Str("dimension"), ignoreCase: true);
-        var filter = Filter(lens) with { IncludeUnknownDevice = !c.Bool("excludeUnknownBucket") && (lens.IncludeUnknownDevice ?? true) };
+        var filter = Filter(lens) with { IncludeUnknownDevice = !c.Bool("excludeUnknownBucket") && (lens.IncludeUnknownDevice ?? false) };
         var limit = c.Int("limit", 10);
         var rows = await _analytics.GetTopDimensionAsync(dimension, filter, limit, CountOf(lens), ct).ConfigureAwait(false);
         // Alphabetical as the card sorts it: case-insensitive, ties broken by the exact text.
@@ -511,7 +511,7 @@ public sealed partial class DashboardWidgetDataLoader : IWidgetDataLoader
 
     private static DashboardFilter Filter(DashboardLens lens) => new(
         VendorCanonical: lens.Vendor, DeviceType: lens.DeviceType, OperatingSystem: lens.OperatingSystem, Tac: lens.Tac,
-        IncludeUnknownDevice: lens.IncludeUnknownDevice ?? true);
+        IncludeUnknownDevice: lens.IncludeUnknownDevice ?? false);
 
     private static CountBy CountOf(DashboardLens lens) => lens.CountBy switch
     {

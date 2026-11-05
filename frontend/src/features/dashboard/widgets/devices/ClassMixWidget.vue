@@ -42,7 +42,7 @@ const { value: rows, loading, updating } = useKept(data)
       @retry="data.refetch()"
     >
       <CompositionBar v-if="instance.config.display === 'composition'" :data="rows ?? []" />
-      <div v-else class="min-h-0 flex-1 overflow-auto overscroll-contain">
+      <div v-else class="min-h-0 flex-1 overflow-auto">
         <DimensionTable :rows="rows ?? []" header="Device class" :unit="countUnit(countBy)" :selectable="false" />
       </div>
     </AsyncBoundary>

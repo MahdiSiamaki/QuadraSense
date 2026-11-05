@@ -28,7 +28,7 @@ public sealed class DashboardLensAndAccessTests
         var lens = DashboardLensResolver.Effective(
             Spec("device.top"), new DashboardLens(CountBy: "handsets", Vendor: "Samsung"), new DashboardLens(Vendor: "Apple"), new DashboardLens());
 
-        Assert.Equal(new DashboardLens(CountBy: "handsets", IncludeUnknownDevice: true, Vendor: "Apple"), lens);
+        Assert.Equal(new DashboardLens(CountBy: "handsets", IncludeUnknownDevice: false, Vendor: "Apple"), lens);
     }
 
     [Fact]

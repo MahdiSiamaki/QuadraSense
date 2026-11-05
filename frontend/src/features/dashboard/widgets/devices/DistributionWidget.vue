@@ -55,7 +55,7 @@ const header = computed(() => (config.value.dimension === 'deviceType' ? 'Device
       gap="none"
       @retry="data.refetch()"
     >
-      <div v-if="config.display === 'table'" class="min-h-0 flex-1 overflow-auto overscroll-contain">
+      <div v-if="config.display === 'table'" class="min-h-0 flex-1 overflow-auto">
         <DimensionTable
           :rows="shown"
           :header="header"

@@ -84,7 +84,7 @@ beside it showed 20 rows. The rules:
 1. **Pair like with like.** Two charts, two tables of the same row count (Operating systems now
    lists 10 rows, as Device types beside it does).
 2. **A variable-length list beside a fixed-height chart scrolls inside a cap** (`max-h-[14rem]
-   overflow-y-auto overscroll-contain` on the Vendors list; `max-h-[20rem]` on a risk list's
+   overflow-y-auto` on the Vendors list; `max-h-[20rem]` on a risk list's
    device-type breakdown; `max-h-[28rem]` on relationship lists).
 3. **When the two do not belong side by side, stack them** (Data quality: sequences above the
    period-length chart, instead of a 127px-blank card beside it).
@@ -105,6 +105,38 @@ Explorer's results and entity panel, the Risk page's lists and entity card.
 - The Explorer keeps its last result on screen while the next page or sort runs (it used to unmount
   and empty the column), clears it when a run is refused, and ignores paging/sorting of the old grid
   while a new run is pending.
+
+## The page keeps the wheel
+
+A page that scrolls owns the mouse wheel. Something inside it may scroll too, but it hands the wheel
+back at its end, and something with nothing to scroll never takes it.
+
+- **`overscroll-contain` is for overlays**: dialogs, menus and popovers, where the page behind must
+  not move. Since Chrome 144 it holds the wheel on any scroll container, overflowing or not. Every
+  dashboard card had it, and at 1280px one of the 26 scroll containers in the cards overflowed, so
+  the page stopped under the pointer on all twelve. `tests/unit/lib/wheelTraps.spec.ts` fails on it
+  anywhere else.
+- **A chart zooms on Ctrl + wheel**, or a touchpad's pinch, which the browser sends as the same
+  event. ECharts' inside zoom cancels every wheel event over the plot, and `zoomOnMouseWheel: 'ctrl'`
+  does not help: in 6.1 the roam controller runs with every behaviour on and cancels the event before
+  it reads the option. So `leaveWheelToPage` (`lib/chart-zoom.ts`) stops a plain wheel on its way
+  down, before it reaches the chart. Dragging still pans, and sliders stay.
+- **A list that overflows scrolls first.** It runs to its end, and the next turn of the wheel moves
+  the page. That is the browser's own behaviour. Taking the wheel from such a list until it is
+  clicked was considered and not built: a scrollable list that ignores the wheel is a surprise of
+  its own, and one card in twelve overflowed.
+
+Measured on the real dashboard on 2026-11-05, Chromium 152 at 1280x800, real wheel events:
+
+| Pointer over | Before | After |
+|---|---:|---:|
+| Top vendors: a bar chart with nothing to scroll | page moved 0 px | 300 px |
+| Daily change: a chart with an inside zoom | page moved 0 px | 300 px, chart not zoomed |
+
+With `overscroll-behavior` switched to `auto` by hand and nothing else changed, the first row went
+from 0 to 300 px, which is what names the cause. Ctrl + wheel on Daily change moved the zoom from 62.6
+to 58.8 and left the page where it was. On Enrichment breakdown, 38 px of overflow, the first wheel
+took the list to its end with the page still, and the second moved the page.
 
 ## Charts (ECharts 6)
 
@@ -392,3 +424,4 @@ Design audit, Phase 3 (`feature/design-audit-phase3`):
 | 2026-10-08 | Theme switch in one frame; first paint in the reader's theme; gear and icon timings | b7d7c0e |
 | 2026-10-08 | Rows, nav links and chart bars change at once; busy dims fade | 1a2f537 |
 | 2026-10-08 | Drop zone no longer flickers under a dragged file | db0c70a |
+| 2026-11-05 | The page keeps the wheel: containment on overlays only, charts zoom on Ctrl + wheel | see git log |

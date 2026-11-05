@@ -49,10 +49,16 @@ public sealed class MartRoutingSingleFilterTests
     }
 
     [Fact]
-    public void No_filter_is_not_a_row_of_this_table()
+    public void Counting_every_row_is_not_a_row_of_this_table()
     {
-        // Unfiltered figures come from the KPI mart, which this table does not replace.
-        Assert.Null(MartRouting.SingleFilter(new DashboardFilter()));
+        // Those figures come from the KPI mart, which this table does not replace.
+        Assert.Null(MartRouting.SingleFilter(new DashboardFilter(IncludeUnknownDevice: true)));
+    }
+
+    [Fact]
+    public void Leaving_out_the_rows_with_no_handset_is_the_default()
+    {
+        Assert.Equal(("knownDevice", ""), MartRouting.SingleFilter(new DashboardFilter()));
     }
 
     [Fact]
@@ -71,6 +77,6 @@ public sealed class MartRoutingSingleFilterTests
         Assert.Null(MartRouting.SingleFilter(new DashboardFilter(IncludeUnknownDevice: false, MsisdnPrefix: "912")));
 
         // Blank is no filter, not a filter on ''.
-        Assert.Null(MartRouting.SingleFilter(new DashboardFilter(DeviceType: "   ")));
+        Assert.Null(MartRouting.SingleFilter(new DashboardFilter(DeviceType: "   ", IncludeUnknownDevice: true)));
     }
 }

@@ -222,14 +222,19 @@ catalogue and names nobody, while `device.identifiers` lists everyone who owns a
 
 ## The unknown-device bucket
 
-`000000` is what the source writes when it does not know the handset, and roughly 3.6% of IMEIs
-are malformed in other ways. Together they are **5.5 million bindings — 4.8% of the network** —
-with no TAC and therefore no model.
+`000000` is what the source writes when it does not know the handset, and a few thousand IMEIs a day
+are malformed in other ways. Together they were **5.4 million active rows at delivery 247**, with no
+TAC and therefore no model.
 
-They are shown, labelled `(unknown device)`, and never silently dropped: hiding them would
-understate every device total by about a twentieth. They are the largest single row in the Devices
-catalogue, and the one row there that has no detail page, because it is the *absence* of a device
-rather than a nameless one.
+**They are stored, and left out of every count** (ADR-020). A binding is a number, a SIM and a handset,
+and these have no handset. Measured on 2026-11-05: 99.9% came from the initial dump and no daily file
+has touched them since, and 93% are on a SIM with a real handset now. They are what is left of the
+dump, not subscribers with an unknown phone. The Enrichment breakdown and Data quality show them; so
+do Explorer and a person's lookup, and `Show unknown devices` puts them back in the dashboard's figures.
+
+> **SUPERSEDED (2026-11-05).** This used to read: "They are shown, labelled `(unknown device)`, and
+> never silently dropped: hiding them would understate every device total by about a twentieth." The
+> argument assumed they were people, and had not been measured.
 
 ## Quarantine, and "partially completed"
 
@@ -237,10 +242,10 @@ A row that fails a validation rule is **quarantined** — recorded with its rule
 count — rather than silently dropped or allowed to fail the import.
 
 A daily import finishes as `PARTIALLY_COMPLETED` when rows were **rejected** — not imported, and so
-missing from the data. A file whose every row landed is `COMPLETED`, and if validation raised
-warnings on some rows the status reads **Completed · with warnings**; the job's quarantine lists
-the rules, the counts and samples. (A TAC snapshot uses `PARTIALLY_COMPLETED` differently: loaded,
-not yet activated.)
+missing from the data. A file whose every row landed is `COMPLETED`. If validation raised warnings
+on some rows, the job's quarantine lists the rules, the counts and samples; the status no longer
+says so (`09-import-platform.md`, D17). (A TAC snapshot uses `PARTIALLY_COMPLETED` differently:
+loaded, not yet activated.)
 
 > **SUPERSEDED (2026-09-24).** This used to read: `PARTIALLY_COMPLETED` when *anything* was
 > rejected or warned, kept deliberately so that "if that figure ever jumps from thousands to
@@ -254,7 +259,7 @@ not yet activated.)
 
 ## PI, and the estate
 
-**Primary Inventory**: QuadraSense's role among the operator's systems. It records what is true
+**Primary Inventory**: Quadrasense's role among the operator's systems. It records what is true
 about a SIM, a handset and the binding between them. Tessera decides what may be done to them,
 Lodestone is how other systems reach either, and only Provisioning writes to the network. PI never
 holds key values, only references to the keyset a card uses. The systems, their scope, and PI's
@@ -263,7 +268,7 @@ built and unbuilt responsibilities are in `20-estate-landscape.md`.
 ## Related
 
 - `01-overview.md` — what the system is for
-- `20-estate-landscape.md` — the systems around QuadraSense, and what each one owns
+- `20-estate-landscape.md` — the systems around Quadrasense, and what each one owns
 - `03-data-model.md` — the binding, its lifecycle, and the measured quality rules
 - `09-import-platform.md` — deliveries, the queue, and why days run in order
 - `11-clickhouse-memory.md` — merges, partitions and what they cost on a small node

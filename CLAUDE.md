@@ -78,10 +78,14 @@ Do not re-open these without asking:
   approving it — see `docs/adr/ADR-011-device-image-sourcing.md`.
 - **PI holds key references, never key values** (2026-11-02). It may record which keyset, and which
   version, a card uses. Key material stays in the HSMs of the systems that use it.
+- **Rows with no handset are left out of every count** (2026-11-05, ADR-020). An IMEI of `000000`, or
+  one that is not 14 digits, is stored and shown only on Data quality, in Explorer and in a person's
+  lookup. Measured: 99.9% are leftovers of the January dump, on SIMs with a real handset. Each read
+  path carries the rule itself, so a new one must too.
 
 ## The estate around it
 
-QuadraSense is the **Primary Inventory (PI)** of the operator's SIM and eSIM estate: the record of
+Quadrasense is the **Primary Inventory (PI)** of the operator's SIM and eSIM estate: the record of
 what is true about a SIM, a handset and the binding between them. `docs/architecture/20-estate-landscape.md`
 gives every neighbouring system's scope, whether it is new or in service, and its interface to PI.
 It also sets what PI does today against what the estate's landscape gives it. Read it before giving
@@ -97,7 +101,7 @@ add them here.
 Professional, modern, enterprise-grade, responsive and accessible. Design tokens live in
 `frontend/src/design-system/`; use them rather than literal colours.
 
-Eight traps that have already cost time, all still live:
+Ten traps that have already cost time, all still live:
 
 - **zrender cannot parse `oklch()`.** Passing a token straight to ECharts yields `undefined` and
   the series disappears on hover. Resolve through `frontend/src/lib/chart-colors.ts`.
@@ -125,13 +129,21 @@ Eight traps that have already cost time, all still live:
 - **A self-sizing chart must not sit in a shrinkable box.** `BarChart height="auto"` sets its own
   height; inside `min-h-0 flex-1` the box shrinks, the canvas does not, and the next element is
   drawn over it - the note under every bar chart in the Add widget preview, 2026-10-20.
+- **`overscroll-contain` holds the wheel on any scroll container.** Since Chrome 144 that includes
+  one with nothing to scroll, so every dashboard card kept the page from moving under the pointer
+  until 2026-11-05. It belongs on overlays only; `tests/unit/lib/wheelTraps.spec.ts` fails on any
+  other use.
+- **ECharts' inside zoom cancels the wheel over the plot**, and `zoomOnMouseWheel: 'ctrl'` does not
+  stop it: in 6.1 the controller cancels the event before it reads that option. A chart with an
+  inside zoom calls `leaveWheelToPage` from `frontend/src/lib/chart-zoom.ts`.
 
 The UI conventions these and the layout review settled are in
 `docs/architecture/16-ui-design-system.md`.
 
 ## Counting rules
 
-The grain is a **binding** — `(msisdn, imsi, imei)`. A number, a SIM and a handset.
+The grain is a **binding** — `(msisdn, imsi, imei)`. A number, a SIM and a handset. A row with no
+handset is not one, and is not counted (ADR-020).
 
 Never write "users" or "devices" without saying which unit. Samsung is 52,704,438 bindings,
 40,070,800 subscribers or 39,320,516 handsets, and all three are right answers to different

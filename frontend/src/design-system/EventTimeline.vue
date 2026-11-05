@@ -24,9 +24,17 @@ function toggle(index: number) {
   expanded.value = next
 }
 
+/*
+  The closing line counts the rows that raised warnings, and the product owner took that wording off
+  the Import pages on 2026-11-05, until data quality is settled: every row landed, and it read as if
+  the import had a problem. The event keeps what the worker wrote, so taking this out brings it back.
+*/
+const WARNED = /(?:; |, )[\d,]+ imported with warnings(?=\.$)/
+
 const rows = computed(() =>
   props.events.map((event, index) => ({
     ...event,
+    message: event.message.replace(WARNED, ''),
     index,
     detail: prettyDetail(event.detailJson),
   })),

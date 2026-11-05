@@ -193,9 +193,10 @@ public sealed class TacRadioStoreTests : IAsyncLifetime
 
         // 5G: the A54's two and the NTN phone's one. The feature phone's option is not a band.
         // eSIM: the "00" records are not stated, so the A54's two are the only "no".
-        // Unknown always holds the unknown device and the TAC the catalogue lacks.
+        // Unknown always holds the TAC the catalogue lacks. A row with no handset is in no column: it
+        // has no capability to know, and no count includes it (ADR-020).
         Assert.Equal(
-            ["5G|3|4|3", "LTE|6|1|3", "eSIM|1|2|7"],
+            ["5G|3|4|2", "LTE|6|1|2", "eSIM|1|2|6"],
             figures.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
     }
 

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
   <!--
-    The QuadraSense mark, drawn for a browser tab.
+    The Quadrasense mark, drawn for a browser tab.
 
     NOT the header mark scaled down. A favicon is read at 16 pixels, where the application mark's
     proportions fall apart: its ring stroke lands on 1.5 px and the gap between ring and bar on a

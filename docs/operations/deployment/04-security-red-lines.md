@@ -1,10 +1,10 @@
-# MCI security red lines, against QuadraSense
+# MCI security red lines, against Quadrasense
 
 **Status:** written 2026-10-22, from the MCI network-security form *Red lines and security
 requirements* (FR-NSM-204/00, revision 00, dated 1404/01/08). Re-check every row when the form is
 revised.
 
-**What this is.** Each requirement of the form, in our own words, set against what QuadraSense does
+**What this is.** Each requirement of the form, in our own words, set against what Quadrasense does
 today, and what has to happen for it. The form says its red lines must be studied and met **before a
 project starts**, and its appendices while it is built; MCI's security office approves a system on a
 test bed before it goes into production (§1-3). This table is the starting point for that review,
@@ -36,7 +36,7 @@ Five rows below cannot be closed by engineering alone. They are repeated in `REA
    This is the largest architecture change in the list - see `03-mci-openshift.md`, "High
    availability".
 4. **Real data on test servers is forbidden** (§1-3): the security test bed must hold made-up data.
-   QuadraSense has no synthetic data set; one has to be built before the security review.
+   Quadrasense has no synthetic data set; one has to be built before the security review.
 5. **Docker on a standalone server** (§1-1): a containerised system is to run on MCI's own container
    platform, not on Docker installed on a separate machine. Whether the department VM - stage 1 - is
    inside the scope of this form is a question for the owner and the department, not for code.
@@ -47,7 +47,7 @@ Five rows below cannot be closed by engineering alone. They are repeated in `REA
 
 ### §1-1 Platform and applications
 
-| # | Requirement | QuadraSense today | Action | Stage | |
+| # | Requirement | Quadrasense today | Action | Stage | |
 |---|---|---|---|---|---|
 | 1 | Install the OS, databases and services minimally; remove everything not used | Images hold the application and its runtime only; ClickHouse and PostgreSQL are their official images (Ubuntu / Debian userland). The VM's OS is the department's | Decide the base images (below, row 3). On the VM, minimal OS install is the department's | 1, 2 | partly |
 | 2 | Application and database on separate servers; monitoring on its own server too | Stage 1 runs everything on one VM. On OpenShift each is its own pod | Stage 1: a known deviation for a test environment - confirm it is acceptable. Stage 2: ask the security office whether separate pods (with anti-affinity onto different nodes) satisfy "separate servers" | 1, 2 | decide |
@@ -63,7 +63,7 @@ Five rows below cannot be closed by engineering alone. They are repeated in `REA
 
 ### §1-1 (continued) SFTP servers
 
-Applies only if the operator's daily files reach QuadraSense by SFTP. Today they are uploaded through
+Applies only if the operator's daily files reach Quadrasense by SFTP. Today they are uploaded through
 the Import Center in a browser.
 
 | # | Requirement | Action | |
@@ -75,7 +75,7 @@ the Import Center in a browser.
 
 ### §1-2 Network access
 
-| # | Requirement | QuadraSense today | Action | Stage | |
+| # | Requirement | Quadrasense today | Action | Stage | |
 |---|---|---|---|---|---|
 | 1 | Administration panel deployed apart from the user panel; reachable only from the internal network or through PAM | One application: user, role and audit administration are pages of it, behind permissions (ADR-006). The whole system is internal-only | Either a second entry point for the administration API paths, reachable only from PAM's address range (nginx can split by path and source address with no code change), or the security office accepts in-app RBAC on an internal-only system | 2 | decide |
 | 2 | No management protocols (SSH, RDP) between servers; manage through PAM or Ansible Tower | No SSH in any container. VM administration is the department's | - | 1 | met |
@@ -85,7 +85,7 @@ the Import Center in a browser.
 
 ### §1-3 Security evaluation and hardening
 
-| # | Requirement | QuadraSense today | Action | Stage | |
+| # | Requirement | Quadrasense today | Action | Stage | |
 |---|---|---|---|---|---|
 | 1 | Evaluation on a test bed with the production architecture on minimal hardware; one test server per kind of server, two behind a load balancer if production has one | OpenShift's UAT namespace is that test bed | Deploy UAT from the same manifests as production (GitOps) | 2 | planned |
 | 2 | **Test-bed data is made up and sample-sized, never real** | **No synthetic data exists.** Every test so far used the real dump | Build a generator for operator-format daily files and a TAC file, with the shapes the pipeline depends on (dual-SIM pairs, the 15 September shift, invalid identifiers) | 2 | gap |
@@ -94,7 +94,7 @@ the Import Center in a browser.
 
 ### §1-4 The central container service
 
-| # | Requirement | QuadraSense today | Action | Stage | |
+| # | Requirement | Quadrasense today | Action | Stage | |
 |---|---|---|---|---|---|
 | 1 | Pod Security Admission enforced | Every container runs non-root, read-only, no capabilities, no privilege escalation - the `restricted` profile's terms (`01-…`, "Verified") | Confirm on the cluster | 2 | met by design |
 | 2 | One namespace per project, no access between namespaces | The platform's | - | 2 | met by design |
@@ -114,7 +114,7 @@ the Import Center in a browser.
 
 ### §2-1 Platform basics
 
-| # | Requirement | QuadraSense today | Action | |
+| # | Requirement | Quadrasense today | Action | |
 |---|---|---|---|---|
 | 1 | Packages and images from MCI's central repositories: a proxy of the public ones, and a hosted one for the project's own | The Dockerfiles take the NuGet feed, the npm registry and every base image as build arguments | Point them at the Nexus proxies in CI | met by design |
 | 2 | Central DNS | Infrastructure | - | n/a |
@@ -129,7 +129,7 @@ the Import Center in a browser.
 
 ### §2-2 Network basics
 
-| # | Requirement | QuadraSense today | |
+| # | Requirement | Quadrasense today | |
 |---|---|---|---|
 | 1 | People reach services and servers through PAM, except where approved | Infrastructure | n/a |
 | 2 | Git over HTTPS, not SSH; developers push from VDI, servers pull | The repository is used over HTTPS | met |
@@ -138,7 +138,7 @@ the Import Center in a browser.
 
 ### §2-3 Evaluation and hardening basics
 
-| # | Requirement | QuadraSense today | Action | |
+| # | Requirement | Quadrasense today | Action | |
 |---|---|---|---|---|
 | 1 | **A system identification document, its architecture and its traffic-flow map, approved by the security office** | `docs/architecture/` describes the system; the traffic-flow table is in `03-…` | Assemble them in the office's format | gap |
 | 2 | SMS one-time passwords: six digits, random, void after five failures, expire in ten minutes | No OTP. MFA is recorded as not built (`docs/backlog.md`) | Follow these terms if MFA is ever added | n/a |
@@ -154,11 +154,11 @@ the Import Center in a browser.
 
 ### §2-4 Backup and incidents
 
-| # | Requirement | QuadraSense today | Action | |
+| # | Requirement | Quadrasense today | Action | |
 |---|---|---|---|---|
 | 1 | Logs of every OS, application, database and service reach the SOC's collectors | Every container logs to stdout (the API and worker as JSON; nginx as JSON; ClickHouse once `logging.xml` stopped it writing files). The application's own audit trail is a PostgreSQL table | Platform log forwarding (stage 2, a ticket); an export of the audit table to the SOC - which events, in which format, is for the SOC to say | gap |
 | 2 | Backups of sensitive data and configuration, coordinated with the infrastructure team | None, beyond the originals kept forever (CLAUDE.md, retention) | `02-…`, "Backups"; `03-…`, "Backup" | gap |
 
 ### §2-5 APN, §3 Android, §4 iOS
 
-Not applicable: QuadraSense is not reached over an APN and has no mobile application.
+Not applicable: Quadrasense is not reached over an APN and has no mobile application.

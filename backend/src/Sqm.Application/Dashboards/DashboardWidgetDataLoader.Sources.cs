@@ -266,19 +266,20 @@ public sealed partial class DashboardWidgetDataLoader
     private async Task<WidgetDataResult> EnrichmentAsync(DashboardLens lens, CancellationToken ct)
     {
         var kpi = await KpiSummaryAsync(Filter(lens), ct).ConfigureAwait(false);
-        double Share(double n) => kpi.ActiveBindings == 0 ? 0 : 100.0 * n / kpi.ActiveBindings;
+        var rows = kpi.ActiveBindings + kpi.SetAsideBindings;
+        double Share(double n) => rows == 0 ? 0 : 100.0 * n / rows;
         var unregistered = UnregisteredTac(kpi);
 
         return Done(
-            Data(("kpi", kpi)), Iso(kpi.DeliveryDate), ["The four categories sum exactly to the active bindings; only a malformed IMEI is a defect."],
-            Table(["Category", "Bindings", "Percent of active bindings"],
+            Data(("kpi", kpi)), Iso(kpi.DeliveryDate), ["The four categories sum exactly to the active rows. A row with no handset, 000000 or malformed, is left out of every count."],
+            Table(["Category", "Rows", "Percent of active rows"],
             [
                 Row("Enriched from GSMA", kpi.TacMatchedBindings, Share(kpi.TacMatchedBindings)),
                 Row("Unknown device (000000)", kpi.UnknownDeviceBindings, Share(kpi.UnknownDeviceBindings)),
                 Row("Malformed IMEI", kpi.MalformedImeiBindings, Share(kpi.MalformedImeiBindings)),
                 Row("Unregistered TAC", unregistered, Share(unregistered)),
-                Row("Active bindings", kpi.ActiveBindings, 100.0),
-            ], Full, "Every active binding."));
+                Row("Active rows", rows, 100.0),
+            ], Full, "Every active row."));
     }
 
     private async Task<WidgetDataResult> FeedTrendAsync(Config c, DashboardLens lens, WidgetLoadContext context, CancellationToken ct)

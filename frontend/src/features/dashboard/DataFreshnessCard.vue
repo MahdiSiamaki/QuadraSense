@@ -47,9 +47,9 @@ const pendingTac = computed(() => tacVersions.data.value?.filter((v) => v.status
   Deliberately the unfiltered KPI - the served delivery does not depend on what the reader has
   drilled into - and deliberately spelled the same way the page spells "no filter", so the two
   share one cache entry instead of issuing the identical request twice. `{}` and
-  `{ includeUnknownDevice: true }` mean the same thing to the API and are different query keys.
+  `{ includeUnknownDevice: false }` mean the same thing to the API and are different query keys.
 */
-const kpi = useKpiSummary(() => ({ includeUnknownDevice: true }))
+const kpi = useKpiSummary(() => ({ includeUnknownDevice: false }))
 
 const martBehind = computed(() => {
   const served = kpi.data.value?.deliveryDate ?? null

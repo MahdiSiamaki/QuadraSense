@@ -36,7 +36,7 @@ const total = computed(() => blockages.data.value?.length ?? 0)
       gap="none"
       @retry="blockages.refetch()"
     >
-      <ul class="min-h-0 flex-1 divide-y overflow-auto overscroll-contain text-xs">
+      <ul class="min-h-0 flex-1 divide-y overflow-auto text-xs">
         <li v-for="b in rows" :key="`${b.sourceCode}:${b.businessDate}`" class="flex items-baseline gap-3 py-1.5">
           <span class="tabular w-24 shrink-0 font-medium">{{ formatDate(b.businessDate) }}</span>
           <span class="min-w-0 flex-1 text-[var(--c-text-secondary)]">

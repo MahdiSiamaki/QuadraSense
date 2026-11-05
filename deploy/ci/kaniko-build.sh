@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Builds one QuadraSense image with kaniko and pushes it to Nexus - the CI build, on the
+# Builds one Quadrasense image with kaniko and pushes it to Nexus - the CI build, on the
 # department's instance runner. That runner has no Docker socket, deliberately (the department's
 # runner guide: the socket is root on the machine Nexus runs on, and an instance runner is open to
 # every project), so `docker build` cannot run there; kaniko builds the Dockerfile in user space

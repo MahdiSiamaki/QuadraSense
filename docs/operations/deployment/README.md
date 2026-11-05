@@ -1,4 +1,4 @@
-# Deploying QuadraSense - from the laptop to MCI's OpenShift
+# Deploying Quadrasense - from the laptop to MCI's OpenShift
 
 **Status:** started 2026-10-22, at the product owner's request: package the whole system as Docker
 Compose that is also fit for OpenShift (non-root), deploy it first on the department's VM, then on
@@ -18,8 +18,8 @@ The decision behind the shape of it is **ADR-007**.
 |---|---|
 | `01-container-images.md` | The images: what each is, the rules that make them run on OpenShift unchanged, how to build them, what was verified |
 | `02-department-vm.md` | Stage 1: what the VM lacks, what to ask the department for, the runbook, the acceptance checks |
-| `03-mci-openshift.md` | Stage 2: how MCI's platform works, QuadraSense as OpenShift objects, traffic flow, storage, HA, backup, monitoring, and the ordered work |
-| `04-security-red-lines.md` | MCI's security red lines (FR-NSM-204/00), row by row, against QuadraSense today |
+| `03-mci-openshift.md` | Stage 2: how MCI's platform works, Quadrasense as OpenShift objects, traffic flow, storage, HA, backup, monitoring, and the ordered work |
+| `04-security-red-lines.md` | MCI's security red lines (FR-NSM-204/00), row by row, against Quadrasense today |
 | `05-department-ci-cd.md` | The department's infrastructure (Nexus, the server) and the CI/CD pipeline to build on it: today's git routine, credentials, the target pipeline, the decisions it needs |
 
 ## The files

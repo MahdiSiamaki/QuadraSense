@@ -58,7 +58,7 @@ import urllib.parse
 HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCES_FILE = os.path.join(HERE, "device_image_sources.json")
 
-UA = "QuadraSense-device-catalogue/2.0 (internal telecom device inventory)"
+UA = "Quadrasense-device-catalogue/2.0 (internal telecom device inventory)"
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 
 CLICKHOUSE = ("http://localhost:18123/?database=sqm", "sqm_app", "sqm_dev")

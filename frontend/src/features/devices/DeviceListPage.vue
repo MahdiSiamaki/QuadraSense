@@ -202,10 +202,9 @@ function sortMark(column: DeviceSort): string {
 /**
  * The name to show. Marketing name first, because that is what a device is called.
  *
- * The empty TAC is not a nameless device, it is the *absence* of one: 5.5 million bindings whose
- * IMEI is the source's `000000` sentinel or otherwise malformed. Labelling it the way the
- * dashboard already does keeps one vocabulary across the product, and stops the largest row in
- * the catalogue rendering as a line of blanks.
+ * The empty TAC is not a nameless device, it is the *absence* of one: the rows whose IMEI is the
+ * source's `000000` sentinel or otherwise malformed. The catalogue lists it only to someone who
+ * searched for 000000, labelled the way the dashboard labels it.
  */
 function displayName(d: DeviceSummary): string {
   if (!d.tac) return '(unknown device)'

@@ -1,4 +1,4 @@
-# QuadraSense: the whole system as containers.
+# Quadrasense: the whole system as containers.
 #
 # For the department VM (stage 1), and the rehearsal for MCI's OpenShift (stage 2): every service
 # here runs the way OpenShift's restricted-v2 SCC will run it - an arbitrary non-root UID in

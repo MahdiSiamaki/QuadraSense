@@ -246,7 +246,7 @@ Added 2026-10-08. The evidence is `04-handset-changes-from-2026-09-15.md`. In sh
 These are non-blocking; I have picked a sensible default and will document it. Tell me if any is wrong.
 
 1. **Single tenant.** All data is MCC/MNC 43211 (MCI), so no multi-tenancy is built in — though the schema will carry an operator dimension so it is not painful to add later.
-2. **`000000` is "device unknown"**, a legitimate business category, not a defect to be filtered away. It will be surfaced as an explicit bucket and tracked as a data-quality KPI.
+2. **`000000` is "device unknown"**, a legitimate business category, not a defect to be filtered away. It will be surfaced as an explicit bucket and tracked as a data-quality KPI. **SUPERSEDED (2026-11-05, ADR-020):** measured, these rows are leftovers of the dump, and they are stored and left out of every count.
 3. **`(msisdn, imsi, imei)` is the natural key** for a binding, supported by 0 duplicates in 125.9M rows.
 4. **TAC is derived as `substr(imei, 1, 8)` guarded by `length(imei) = 14`**, and is stored as TEXT to preserve leading zeros.
 5. **Repeated `remove` is an idempotent no-op** — counted and reported, never an error. Justified by 0 double-adds across 8M transitions.

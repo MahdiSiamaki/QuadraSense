@@ -1,4 +1,4 @@
-# Stage 2 - QuadraSense on MCI's OpenShift
+# Stage 2 - Quadrasense on MCI's OpenShift
 
 **Status:** plan, written 2026-10-22. Nothing here has run on MCI's platform; every statement about
 the platform comes from MCI's *Comprehensive guide to interacting with the DevOps infrastructure
@@ -11,7 +11,7 @@ full), `01-container-images.md` (the images this stage deploys), ADR-007.
 
 ---
 
-## 1. How MCI's platform works, as far as it shapes QuadraSense
+## 1. How MCI's platform works, as far as it shapes Quadrasense
 
 | Area | What the guide says | What it means for us |
 |---|---|---|
@@ -30,7 +30,7 @@ full), `01-container-images.md` (the images this stage deploys), ADR-007.
 | Logging | Forwarding to central Elasticsearch/ELK or Kafka by ticket, or an ECK stack in the namespace through its operator | Section 6 |
 | Operators and Helm | **No cluster-scope permissions for projects.** Operators are installed by DevOps after review (Redis, Elastic, Kafka/Strimzi, Grafana are offered); **PostgreSQL and MongoDB operators are not installed - the project runs those databases itself.** A Helm chart that needs ClusterRoles must be stripped to namespace Roles and applied through ArgoCD | Plain manifests, namespace-scoped. ClickHouse and PostgreSQL as StatefulSets we maintain |
 
-## 2. QuadraSense as OpenShift objects
+## 2. Quadrasense as OpenShift objects
 
 The compose file (`deploy/compose/compose.yaml`) is the specification; each service maps to an
 object, and everything it sets has a Kubernetes equivalent.
@@ -72,7 +72,7 @@ NetworkPolicies. Nothing else is allowed.
 | Platform monitoring | every pod | metrics port (once one exists) | Section 6 |
 | *(future)* `api` | internal mail server | SMTP | Alerts (research item X1) - needs an egress IP |
 
-ClickHouse's native (9000) and inter-server (9009) ports are used by nothing in QuadraSense; the
+ClickHouse's native (9000) and inter-server (9009) ports are used by nothing in Quadrasense; the
 NetworkPolicies open only 8123. (Inside compose's `data` network they are reachable - compose
 isolates by network, not by port.)
 

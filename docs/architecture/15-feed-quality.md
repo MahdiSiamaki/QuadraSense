@@ -104,7 +104,7 @@ own, and a high percentile lands exactly on them:
 | Shifted IMEIs | 0.089% of rows | nothing unusual (max 0.124%) |
 | Multi-number SIMs | 0.011% of SIMs | 0.2–0.39% on 25 days, 14 April – 7 May |
 | Malformed IMEIs | 0.028% of rows | 4.6–4.8% on 2–3 May |
-| Unknown device (`000000`) | 0.005% of rows | 10–13% until late February |
+| Unknown device (`000000`) | 0.005% of rows | 10–13% until late February. Left out of every count since 2026-11-05 (ADR-020) |
 
 A minority of odd days cannot move a median. What the median rule flags over all 233 days:
 

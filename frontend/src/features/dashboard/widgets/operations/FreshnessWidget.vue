@@ -35,7 +35,7 @@ const active = useQueryActive(props)
 const freshnessQuery = useFreshness({ enabled: active })
 const healthQuery = useWorkerHealth({ enabled: () => active.value && config.value.showPipeline })
 const tacQuery = useTacVersions({ enabled: () => active.value && config.value.showTac })
-const kpiQuery = useKpiSummary(() => ({ includeUnknownDevice: true }), { enabled: active })
+const kpiQuery = useKpiSummary(() => ({ includeUnknownDevice: false }), { enabled: active })
 
 const freshness = useWidgetData(props, freshnessQuery, (raw) => (raw as Snapshot).freshness)
 const health = useWidgetData(props, healthQuery, (raw) => (raw as Snapshot).workerHealth)
