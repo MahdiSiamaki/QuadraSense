@@ -63,9 +63,9 @@ public static class ValidationRules
     /// The severity of each rule.
     /// </summary>
     /// <remarks>
-    /// Note that the two highest-volume rules are <see cref="RuleSeverity.Info"/>, not errors. The
-    /// <c>000000</c> sentinel is a legitimate business category covering ~7% of the initial dump; treating
-    /// it as corrupt would discard 8.8M real subscriber records and misreport the device population.
+    /// Note that the two highest-volume rules are <see cref="RuleSeverity.Info"/>, not errors, and the row
+    /// is kept: refusing a <c>000000</c> row would leave its later <c>remove</c> with nothing to end, and
+    /// there is nothing in it to repair. The counts leave it out when they read it, not here (ADR-020).
     /// </remarks>
     public static RuleSeverity SeverityOf(ValidationRule rule) => rule switch
     {

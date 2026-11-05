@@ -80,9 +80,8 @@ function render() {
   const categories = props.data.map((d) => d.key)
   const values = props.data.map((d) => ({
     value: d.count,
-    // The "unknown device" bucket is ~7% of rows. It is shown, because hiding it
-    // would understate every total, but drawn in grey so it reads as absence of
-    // information rather than as another vendor.
+    // A bucket with no name, "(unknown TAC)" or, when asked for, "(unknown device)", is drawn in
+    // grey so it reads as absence of information rather than as another vendor.
     itemStyle: { color: d.key.startsWith('(unknown') ? nullColour : accent },
   }))
 

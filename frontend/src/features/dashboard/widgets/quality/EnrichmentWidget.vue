@@ -12,9 +12,9 @@ import { lensFilters } from '../overview/shared/filters'
 import { useKept } from '../overview/shared/useKept'
 
 /**
- * Every active binding, accounted for: enriched from GSMA, the unknown-device sentinel, malformed
- * IMEIs, and well-formed IMEIs whose TAC GSMA does not know. The four sum exactly to the total -
- * shown together because only one of them is a defect.
+ * Every active row, accounted for: enriched from GSMA, the unknown-device sentinel, malformed IMEIs,
+ * and well-formed IMEIs whose TAC GSMA does not know. The four sum exactly to the total. The first
+ * and last are what the dashboard counts; this is where the two it leaves out are shown.
  *
  * Unregistered TAC is computed from the exact counts, never from the coverage percentage: deriving it
  * from a figure rounded to three decimals put it about 30,000 rows off the true value, on the card
@@ -33,8 +33,8 @@ const rows = computed(() => {
   if (!s) return []
   return [
     { key: 'enriched', label: 'Enriched from GSMA', value: s.tacMatchedBindings, tone: 'text-[var(--c-success-text)]', note: `${formatPercent(s.tacCoveragePercent, 2)} of active bindings.` },
-    { key: 'unknown', label: 'Unknown device (000000)', value: s.unknownDeviceBindings, tone: 'text-[var(--c-warning-text)]', note: 'A sentinel the source uses for “device not known”. Expected, not a defect.' },
-    { key: 'malformed', label: 'Malformed IMEI', value: s.malformedImeiBindings, tone: 'text-[var(--c-danger-text)]', note: 'Numeric but not 14 digits. The only genuine defect here — worth raising with the source.' },
+    { key: 'unknown', label: 'Unknown device (000000)', value: s.unknownDeviceBindings, tone: 'text-[var(--c-warning-text)]', note: 'No handset: the source wrote 000000. Stored, and left out of every count.' },
+    { key: 'malformed', label: 'Malformed IMEI', value: s.malformedImeiBindings, tone: 'text-[var(--c-danger-text)]', note: 'Numeric but not 14 digits, so no handset can be named. Left out of every count; worth raising with the source.' },
     { key: 'unregistered', label: 'Unregistered TAC', value: unregisteredTacBindings(s), tone: '', note: 'Well-formed IMEI whose TAC is absent from the GSMA database.' },
   ]
 })
@@ -43,7 +43,7 @@ const rows = computed(() => {
 <template>
   <div class="flex h-full min-h-0 flex-col gap-3" :aria-busy="updating">
     <p v-if="instance.subtitle === null" class="text-xs text-[var(--c-text-muted)]">
-      Every active binding, accounted for. These are characteristics of the feed, not defects — except where noted.
+      Every active row, accounted for: what the dashboard counts, and what it leaves out.
     </p>
     <AsyncBoundary
       class="min-h-0 flex-1"

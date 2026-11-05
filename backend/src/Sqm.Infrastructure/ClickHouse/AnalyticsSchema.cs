@@ -37,8 +37,8 @@ internal static class AnalyticsSchema
 
     /// <summary>A label for the "no device information" bucket.</summary>
     /// <remarks>
-    /// Shown explicitly rather than dropped: it is 6.97% of the initial dump. Hiding it would understate
-    /// every total on the dashboard by roughly a fifteenth.
+    /// Left out of the counts since 2026-11-05 (ADR-020); the marts keep the bucket, so showing it again
+    /// is a read and not a rebuild.
     /// </remarks>
     public const string UnknownDeviceLabel = "(unknown device)";
 

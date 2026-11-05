@@ -48,7 +48,7 @@ public static class QualityCategories
     public static IReadOnlyList<QualityCategory> All { get; } =
     [
         new("missing_imei", "identifiers", "Missing IMEI",
-            "The handset's identity is the feed's '000000': the network did not know the device.", "all"),
+            "The handset's identity is the feed's '000000': the network did not know the device. Stored, and left out of every count.", "all"),
         new("invalid_imei", "identifiers", "Invalid IMEI",
             "The IMEI is neither 14 digits nor the '000000' sentinel - cut short, padded or not numeric.", "all"),
         new("zero_imei", "identifiers", "IMEI of fourteen zeros",

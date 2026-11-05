@@ -353,7 +353,8 @@ GROUP BY device_class;
 --
 --    'unknown' is carried explicitly instead of being folded into 'unsupported'.
 --    Conflating them would claim we know a device lacks 5G when we do not know what the
---    device is - and that is 7% of the population.
+--    device is. It holds real handsets only: a row with no handset has no capability to
+--    know, and no count includes it (ADR-020).
 --
 --    VoLTE is absent because the dataset does not contain it: bandDetails mentions it in
 --    2 rows of 270,166, and the IMS columns describe emergency calling, a different
@@ -379,16 +380,16 @@ FROM (
         SELECT
             countIf(c.tac != '' AND c.has_lte = 1) AS s0,
             countIf(c.tac != '' AND c.has_lte = 0) AS u0,
-            countIf(c.tac = '' OR c.has_lte = 2) AS x0,
+            countIf(b.tac != '' AND (c.tac = '' OR c.has_lte = 2)) AS x0,
             countIf(c.tac != '' AND c.has_5g = 1) AS s1,
             countIf(c.tac != '' AND c.has_5g = 0) AS u1,
-            countIf(c.tac = '' OR c.has_5g = 2) AS x1,
+            countIf(b.tac != '' AND (c.tac = '' OR c.has_5g = 2)) AS x1,
             countIf(c.tac != '' AND c.has_esim = 1) AS s2,
             countIf(c.tac != '' AND c.has_esim = 0) AS u2,
-            countIf(c.tac = '' OR c.has_esim = 2) AS x2,
+            countIf(b.tac != '' AND (c.tac = '' OR c.has_esim = 2)) AS x2,
             countIf(c.tac != '' AND c.ims_emergency = 1) AS s3,
             countIf(c.tac != '' AND c.ims_emergency = 0) AS u3,
-            countIf(c.tac = '' OR c.ims_emergency = 2) AS x3
+            countIf(b.tac != '' AND (c.tac = '' OR c.ims_emergency = 2)) AS x3
         FROM sqm.binding_current AS b FINAL
         LEFT JOIN sqm.tac_capability AS c ON c.tac = b.tac
         WHERE b.active = 1
@@ -409,16 +410,16 @@ FROM (
         SELECT
             uniqIf(b.msisdn, c.tac != '' AND c.has_lte = 1) AS s0,
             uniqIf(b.msisdn, c.tac != '' AND c.has_lte = 0) AS u0,
-            uniqIf(b.msisdn, c.tac = '' OR c.has_lte = 2) AS x0,
+            uniqIf(b.msisdn, b.tac != '' AND (c.tac = '' OR c.has_lte = 2)) AS x0,
             uniqIf(b.msisdn, c.tac != '' AND c.has_5g = 1) AS s1,
             uniqIf(b.msisdn, c.tac != '' AND c.has_5g = 0) AS u1,
-            uniqIf(b.msisdn, c.tac = '' OR c.has_5g = 2) AS x1,
+            uniqIf(b.msisdn, b.tac != '' AND (c.tac = '' OR c.has_5g = 2)) AS x1,
             uniqIf(b.msisdn, c.tac != '' AND c.has_esim = 1) AS s2,
             uniqIf(b.msisdn, c.tac != '' AND c.has_esim = 0) AS u2,
-            uniqIf(b.msisdn, c.tac = '' OR c.has_esim = 2) AS x2,
+            uniqIf(b.msisdn, b.tac != '' AND (c.tac = '' OR c.has_esim = 2)) AS x2,
             uniqIf(b.msisdn, c.tac != '' AND c.ims_emergency = 1) AS s3,
             uniqIf(b.msisdn, c.tac != '' AND c.ims_emergency = 0) AS u3,
-            uniqIf(b.msisdn, c.tac = '' OR c.ims_emergency = 2) AS x3
+            uniqIf(b.msisdn, b.tac != '' AND (c.tac = '' OR c.ims_emergency = 2)) AS x3
         FROM sqm.binding_current AS b FINAL
         LEFT JOIN sqm.tac_capability AS c ON c.tac = b.tac
         WHERE b.active = 1

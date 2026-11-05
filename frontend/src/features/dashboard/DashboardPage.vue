@@ -134,7 +134,7 @@ function onCountBy(value: CountBy) {
   setCountBy(value, defaults.value.countBy ?? 'bindings')
 }
 function onIncludeUnknown(value: boolean) {
-  setIncludeUnknown(value, defaults.value.includeUnknownDevice ?? true)
+  setIncludeUnknown(value, defaults.value.includeUnknownDevice ?? false)
 }
 function onRange(value: string) {
   setRange(value, defaults.value.range ?? 'all')

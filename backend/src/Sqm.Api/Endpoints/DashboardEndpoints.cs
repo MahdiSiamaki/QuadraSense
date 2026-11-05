@@ -153,7 +153,7 @@ public static class DashboardEndpoints
         string? operatingSystem = null,
         string? tac = null,
         string? msisdnPrefix = null,
-        bool includeUnknownDevice = true)
+        bool includeUnknownDevice = false)
     {
         if (InvalidMsisdnPrefix(msisdnPrefix) is { } invalid)
         {
@@ -180,7 +180,7 @@ public static class DashboardEndpoints
         string? operatingSystem = null,
         string? tac = null,
         string? msisdnPrefix = null,
-        bool includeUnknownDevice = true)
+        bool includeUnknownDevice = false)
     {
         if (!TryParseDimension(dimension, out var parsed))
         {
@@ -228,7 +228,7 @@ public static class DashboardEndpoints
         string? operatingSystem = null,
         string? tac = null,
         string? msisdnPrefix = null,
-        bool includeUnknownDevice = true)
+        bool includeUnknownDevice = false)
     {
         if (!TryParseDimension(dimension, out var parsed))
         {

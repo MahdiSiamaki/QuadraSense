@@ -243,12 +243,12 @@ public static class DeviceEndpoints
         // source writes when it does not know the device. Saying so is more use than an empty list.
         if (term.Kind is DeviceSearchKind.UnknownDeviceSentinel)
         {
-            // Resolves to the empty TAC, which is a real row in the catalogue carrying 5,557,995
-            // bindings. Returning nothing here would be the wrong answer twice over: the bindings
-            // exist, and the reader who typed 000000 is asking about exactly them.
+            // Resolves to the empty TAC, the one row the catalogue lists only here. Returning nothing
+            // would be the wrong answer twice over: the rows exist, and the reader who typed 000000
+            // is asking about exactly them.
             return (new DeviceSearchResolution(kind, 1, true,
                 "000000 is the source's marker for \"device not known\", not a handset. These are "
-                + "the bindings whose IMEI identifies no model."),
+                + "the rows whose IMEI identifies no model. They are stored and left out of every count."),
                 [string.Empty]);
         }
 

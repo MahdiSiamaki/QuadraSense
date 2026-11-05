@@ -49,7 +49,7 @@ public static class DashboardLensResolver
         }
 
         bool? includeUnknown = Supports(spec, "includeUnknownDevice")
-            ? overrides.IncludeUnknownDevice ?? url.IncludeUnknownDevice ?? defaults.IncludeUnknownDevice ?? true
+            ? overrides.IncludeUnknownDevice ?? url.IncludeUnknownDevice ?? defaults.IncludeUnknownDevice ?? false
             : null;
 
         return new DashboardLens(

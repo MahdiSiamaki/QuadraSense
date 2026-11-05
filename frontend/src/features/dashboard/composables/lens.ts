@@ -50,7 +50,7 @@ export function effectiveLens(
   }
   if (supports(spec, 'includeUnknownDevice')) {
     result.includeUnknownDevice =
-      overrides.includeUnknownDevice ?? u.includeUnknownDevice ?? defaults.includeUnknownDevice ?? true
+      overrides.includeUnknownDevice ?? u.includeUnknownDevice ?? defaults.includeUnknownDevice ?? false
   }
   if (supportsRange(spec)) {
     result.range = first(overrides.range, u.range, defaults.range) ?? DEFAULT_RANGE

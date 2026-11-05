@@ -40,6 +40,13 @@ export interface KpiMetricSpec {
 }
 
 /**
+ * Every active row: the bindings counted and the rows with no handset that they leave out.
+ */
+export function activeRows(kpi: KpiSummary): number {
+  return kpi.activeBindings + (kpi.setAsideBindings ?? 0)
+}
+
+/**
  * Bindings with a well-formed IMEI whose TAC is absent from the GSMA database.
  *
  * Computed from exact counts the API returns, never from the coverage percentage.
@@ -48,13 +55,20 @@ export interface KpiMetricSpec {
  * whose whole job is to report data quality accurately.
  */
 export function unregisteredTacBindings(kpi: KpiSummary): number {
-  return kpi.activeBindings - kpi.tacMatchedBindings - kpi.unknownDeviceBindings - kpi.malformedImeiBindings
+  return activeRows(kpi) - kpi.tacMatchedBindings - kpi.unknownDeviceBindings - kpi.malformedImeiBindings
 }
 
 /** "7.6% of bindings", from exact counts; nothing when there are no bindings to be a share of. */
 export function shareOfBindings(count: number, kpi: KpiSummary, precision: number): string | undefined {
   if (!kpi.activeBindings) return undefined
   return `${formatPercent((count / kpi.activeBindings) * 100, precision)} of bindings`
+}
+
+/** "4.6% of active rows": for the rows with no handset, which are not a share of what is counted. */
+export function shareOfRows(count: number, kpi: KpiSummary, precision: number): string | undefined {
+  const rows = activeRows(kpi)
+  if (!rows) return undefined
+  return `${formatPercent((count / rows) * 100, precision)} of active rows`
 }
 
 export const KPI_METRIC_SPECS: Record<KpiMetric, KpiMetricSpec> = {
@@ -64,7 +78,7 @@ export const KPI_METRIC_SPECS: Record<KpiMetric, KpiMetricSpec> = {
     identifier: 'MSISDN + IMSI + IMEI',
     qualifier: undefined,
     definition:
-      'Rows in the current state: one per distinct number-SIM-handset combination. This is the grain of the whole dataset, not a count of people.',
+      'Rows in the current state: one per distinct number-SIM-handset combination. This is the grain of the whole dataset, not a count of people. A row with no handset, its IMEI 000000 or malformed, is stored and left out here and in every figure beside it.',
     percent: false,
     tone: 'default',
     value: (k) => k.activeBindings,
@@ -126,9 +140,9 @@ export const KPI_METRIC_SPECS: Record<KpiMetric, KpiMetricSpec> = {
     label: 'Unknown device',
     option: 'Unknown device (bindings)',
     identifier: 'IMEI = 000000',
-    qualifier: (k, precision) => shareOfBindings(k.unknownDeviceBindings, k, precision),
+    qualifier: (k, precision) => shareOfRows(k.unknownDeviceBindings, k, precision),
     definition:
-      'Bindings where the source reports the handset as unknown. A sentinel value, not a data defect - these are real subscribers whose device the operator did not record.',
+      'Rows in the current state with no handset: the source wrote 000000 for the IMEI. Stored, and left out of every other figure. Measured 2026-11-05 on two 1% samples: 99.9% came from the initial dump and no daily file has touched them since, and 93% are on a SIM that has a real handset now, so they are not subscribers with an unknown phone.',
     percent: false,
     tone: 'warning',
     value: (k) => k.unknownDeviceBindings,
@@ -137,9 +151,9 @@ export const KPI_METRIC_SPECS: Record<KpiMetric, KpiMetricSpec> = {
     label: 'Malformed IMEI',
     option: 'Malformed IMEI (bindings)',
     identifier: 'IMEI ≠ 14 digits',
-    qualifier: (k, precision) => shareOfBindings(k.malformedImeiBindings, k, precision),
+    qualifier: (k, precision) => shareOfRows(k.malformedImeiBindings, k, precision),
     definition:
-      'Active bindings whose IMEI is numeric but not 14 digits. The only genuine defect among the enrichment categories - worth raising with the source. Not the same as Unknown device: 000000 is a value the source uses on purpose for a handset it did not record, while a malformed IMEI should identify a handset and does not, so it is not counted as a handset and its model cannot be known.',
+      'Active rows whose IMEI is numeric but not 14 digits. The only genuine defect among the enrichment categories - worth raising with the source. Not the same as Unknown device: 000000 is a value the source uses on purpose for a handset it did not record, while a malformed IMEI should identify a handset and does not. Stored, and left out of every other figure, because no handset can be named.',
     percent: false,
     tone: 'warning',
     value: (k) => k.malformedImeiBindings,
@@ -150,7 +164,7 @@ export const KPI_METRIC_SPECS: Record<KpiMetric, KpiMetricSpec> = {
     identifier: 'TAC',
     qualifier: (k, precision) => shareOfBindings(k.tacMatchedBindings, k, precision),
     definition:
-      'Active bindings whose TAC (the first 8 digits of the IMEI) matched the GSMA device database, so manufacturer and model are known. An exact count: TAC coverage is the same figure as a share of active bindings. The ceiling on it is set by unknown-device rows, not by gaps in the GSMA database.',
+      'Active bindings whose TAC (the first 8 digits of the IMEI) matched the GSMA device database, so manufacturer and model are known. An exact count: TAC coverage is the same figure as a share of active bindings. What it misses is the TACs GSMA does not know.',
     percent: false,
     tone: 'default',
     value: (k) => k.tacMatchedBindings,
@@ -161,7 +175,7 @@ export const KPI_METRIC_SPECS: Record<KpiMetric, KpiMetricSpec> = {
     identifier: 'TAC',
     qualifier: (k, precision) => shareOfBindings(unregisteredTacBindings(k), k, precision),
     definition:
-      'Active bindings with a well-formed 14-digit IMEI whose TAC is absent from the GSMA database, so the model cannot be named. Counted exactly: active bindings minus those enriched from GSMA, unknown-device and malformed-IMEI bindings - never derived from the coverage percentage, which is rounded. A characteristic of the feed and of the GSMA export, not a defect in either.',
+      'Active bindings with a well-formed 14-digit IMEI whose TAC is absent from the GSMA database, so the model cannot be named. Counted exactly: active bindings minus those enriched from GSMA - never derived from the coverage percentage, which is rounded. A characteristic of the feed and of the GSMA export, not a defect in either.',
     percent: false,
     tone: 'default',
     value: unregisteredTacBindings,

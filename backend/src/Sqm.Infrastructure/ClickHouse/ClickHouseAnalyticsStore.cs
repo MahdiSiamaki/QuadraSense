@@ -129,23 +129,27 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
     {
         ArgumentNullException.ThrowIfNull(filter);
 
-        // The mart counts the unknown-device population, so "hide unknown devices" needs the raw
-        // path too. Without it the KPI row went on counting them while every chart beside it,
-        // under the same toggle, did not.
-        var unfiltered =
+        var wholeNetwork =
             MartRouting.CanUseMart(filter) &&
-            filter.IncludeUnknownDevice &&
             string.IsNullOrWhiteSpace(filter.Manufacturer) &&
             string.IsNullOrWhiteSpace(filter.VendorCanonical) &&
             string.IsNullOrWhiteSpace(filter.DeviceType) &&
             string.IsNullOrWhiteSpace(filter.OperatingSystem) &&
             string.IsNullOrWhiteSpace(filter.Tac);
 
-        if (unfiltered)
+        // The mart counts every active row, so leaving out the ones with no handset needs a row of
+        // its own. Without it the KPI row went on counting them while every chart beside it did not.
+        if (wholeNetwork && filter.IncludeUnknownDevice)
         {
             return await GetKpiFromMartAsync(ct).ConfigureAwait(false);
         }
 
+        var kpi = await GetFilteredKpiAsync(filter, ct).ConfigureAwait(false);
+        return wholeNetwork ? await WithSetAsideAsync(kpi, ct).ConfigureAwait(false) : kpi;
+    }
+
+    private async Task<KpiSummary> GetFilteredKpiAsync(DashboardFilter filter, CancellationToken ct)
+    {
         // Every lens filter is a property of the model. One on its own is one finished row
         // (agg_filter_population, migration 028); a combination merges the per-model states
         // (ClickHouseAnalyticsStore.TacMart.cs). The raw path stays for what neither can say - an
@@ -158,6 +162,21 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         return MartRouting.CanUseMart(filter) && await TacMartReadyAsync(ct).ConfigureAwait(false)
             ? await GetKpiFromTacMartAsync(filter, ct).ConfigureAwait(false)
             : await GetKpiFromRawAsync(filter, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The figures that leave out the rows with no handset, beside how many those rows are: the
+    /// counted population has none of them, so the two counts come from the mart of every row.
+    /// </summary>
+    private async Task<KpiSummary> WithSetAsideAsync(KpiSummary counted, CancellationToken ct)
+    {
+        var all = await GetKpiFromMartAsync(ct).ConfigureAwait(false);
+        return counted with
+        {
+            UnknownDeviceBindings = all.UnknownDeviceBindings,
+            MalformedImeiBindings = all.MalformedImeiBindings,
+            SetAsideBindings = all.UnknownDeviceBindings + all.MalformedImeiBindings,
+        };
     }
 
     /// <summary>
@@ -320,22 +339,30 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         var populationTotal = AnalyticsSchema.PopulationTotalFor(countBy);
         var take = FilterBuilder.ClampLimit(limit);
 
-        // Hiding the unknown bucket is one row to skip in a 26k-row rollup, not a reason to
-        // scan 126M rows. Treating it as a filter sent the model breakdown down the raw path,
-        // where grouping by marketing name with a distinct count ran past 100 seconds.
+        // Leaving out the rows with no handset is one row to skip in a 26k-row rollup, not a reason
+        // to scan 126M rows. Treating it as a filter sent the model breakdown down the raw path,
+        // where grouping by marketing name with a distinct count ran past 100 seconds. A TAC GSMA
+        // does not know stays: that is a real handset whose model cannot be named.
         var unknownClause = includeUnknownDevice
             ? string.Empty
-            : $" AND dim_value NOT IN ('{AnalyticsSchema.UnknownDeviceLabel}', "
-              + $"'{AnalyticsSchema.UnknownTacLabel}')";
+            : $" AND dim_value != '{AnalyticsSchema.UnknownDeviceLabel}'";
 
-        // The percentage denominator is the whole population, taken from the KPI mart — never the
-        // sum of the rows returned. A share of the top-N subtotal changes with the page size.
+        // The percentage denominator is the population counted, from the marts — never the sum of
+        // the rows returned. A share of the top-N subtotal changes with the page size.
+        var everyRow = $"(SELECT {populationTotal} FROM sqm.agg_kpi_daily WHERE seq = (SELECT max(seq) FROM sqm.mart_ready) LIMIT 1)";
+        var population = includeUnknownDevice
+            ? everyRow
+            : $"""
+              ifNull((SELECT {measure} FROM sqm.agg_filter_population
+                      WHERE seq = (SELECT max(seq) FROM sqm.mart_ready) AND dimension = 'knownDevice' AND value = '' LIMIT 1),
+                     {everyRow})
+              """;
+
         var sql = $$"""
             SELECT
                 dim_value AS k,
                 {{measure}} AS n,
-                round(100.0 * {{measure}} / nullIf(
-                    (SELECT {{populationTotal}} FROM sqm.agg_kpi_daily WHERE seq = (SELECT max(seq) FROM sqm.mart_ready) LIMIT 1), 0), 3) AS pct
+                round(100.0 * {{measure}} / nullIf({{population}}, 0), 3) AS pct
             FROM sqm.agg_dimension_daily
             WHERE seq = (SELECT max(seq) FROM sqm.mart_ready)
               AND dimension = {dimension:String}{{unknownClause}}
@@ -509,7 +536,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 sumIf(e.n, e.label = 'add')           AS added,
                 sumIf(e.n, e.label = 'remove')        AS removed
             FROM sqm.agg_change_daily AS e
-            WHERE {f.WhereClause}
+            WHERE e.tac != '' AND {f.WhereClause}
             GROUP BY seq
             ORDER BY data_date
             """;
@@ -543,11 +570,14 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         // Under bindings and handsets the classes partition the population. Under
         // subscribers they overlap - someone owning a smartphone and a feature phone is in
         // both - so the shares sum past 100%. The UI says so rather than hiding it.
+        //
+        // The mart's "Unknown device" class is the rows with no handset, which no count includes.
         const string Sql = """
             SELECT device_class, sum(n) AS n
             FROM sqm.agg_device_class_daily
             WHERE seq = (SELECT max(seq) FROM sqm.mart_ready)
               AND measure = {measure:String}
+              AND device_class != 'Unknown device'
             GROUP BY device_class
             ORDER BY n DESC
             """;
@@ -643,25 +673,43 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         //   cumulative(d) = anchor - net_through_anchor + running_net(d)
         // At d = anchor this is the anchor; before it, it walks back; after it - days folded but
         // not yet in a complete snapshot - it walks forward, which is what those days are.
+        //
+        // Rows with no handset are left out of the series as they are of the card above it: an
+        // event's TAC is empty exactly when it carries none, and agg_change_daily keeps those by day.
+        // They were 12% of January's rows and 0.004% from March (ADR-020).
         const string Sql = """
             WITH
+                days AS (
+                    SELECT
+                        s.data_date AS data_date,
+                        toInt64(s.added) - toInt64(x.added) AS added,
+                        toInt64(s.removed) - toInt64(x.removed) AS removed,
+                        s.unknown_device_rows AS unknown_device_rows
+                    FROM sqm.agg_change_summary_daily AS s
+                    LEFT JOIN (
+                        SELECT data_date, sumIf(n, label = 'add') AS added, sumIf(n, label = 'remove') AS removed
+                        FROM sqm.agg_change_daily
+                        WHERE tac = ''
+                        GROUP BY data_date
+                    ) AS x ON x.data_date = s.data_date
+                ),
                 (SELECT max(seq) FROM sqm.mart_ready) AS anchor_seq,
-                (SELECT active_bindings FROM sqm.agg_kpi_daily WHERE seq = anchor_seq) AS anchor_pop,
+                (SELECT active_bindings - unknown_device_bindings - malformed_imei_bindings
+                   FROM sqm.agg_kpi_daily WHERE seq = anchor_seq) AS anchor_pop,
                 -- Through the anchor's DAY, not its sequence number: a missing day imported late
                 -- has a higher number than the anchor but sits before it in the series.
                 (SELECT max(data_date) FROM sqm.agg_change_summary_daily
                   WHERE seq = anchor_seq) AS anchor_date,
-                (SELECT sum(toInt64(added) - toInt64(removed))
-                   FROM sqm.agg_change_summary_daily WHERE data_date <= anchor_date) AS net_to_anchor
+                (SELECT sum(added - removed) FROM days WHERE data_date <= anchor_date) AS net_to_anchor
             SELECT
                 data_date,
                 added,
                 removed,
-                toInt64(added) - toInt64(removed) AS net,
+                added - removed AS net,
                 anchor_pop - net_to_anchor
-                    + sum(toInt64(added) - toInt64(removed)) OVER (ORDER BY data_date) AS cumulative,
+                    + sum(added - removed) OVER (ORDER BY data_date) AS cumulative,
                 unknown_device_rows
-            FROM sqm.agg_change_summary_daily
+            FROM days
             ORDER BY data_date
             """;
 

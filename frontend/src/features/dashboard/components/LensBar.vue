@@ -48,7 +48,7 @@ const COUNT_BY_OPTIONS = [
 const RANGE_OPTIONS = CONTRACT.lens.ranges
 
 const countBy = computed<CountBy>(() => props.view.countBy ?? 'bindings')
-const includeUnknown = computed(() => props.view.includeUnknownDevice ?? true)
+const includeUnknown = computed(() => props.view.includeUnknownDevice ?? false)
 const range = computed(() => props.view.range ?? 'all')
 const customRange = computed(() => !RANGE_OPTIONS.includes(range.value))
 

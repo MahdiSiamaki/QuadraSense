@@ -60,7 +60,7 @@ const refreshChoice = computed({
 function describe(lens: DashboardLens): string[] {
   const parts: string[] = []
   parts.push(`Counted by ${lens.countBy ?? 'bindings'}`)
-  parts.push(lens.includeUnknownDevice === false ? 'unknown devices hidden' : 'unknown devices shown')
+  parts.push(lens.includeUnknownDevice ? 'unknown devices shown' : 'unknown devices hidden')
   parts.push(rangeLabel(lens.range))
   for (const key of LENS_FILTER_KEYS) if (lens[key]) parts.push(`${LENS_FILTER_LABELS[key]}: ${lens[key]}`)
   return parts
@@ -71,7 +71,7 @@ const differs = computed(() => JSON.stringify(normalised(props.current)) !== JSO
 function normalised(lens: DashboardLens) {
   return {
     countBy: lens.countBy ?? 'bindings',
-    includeUnknownDevice: lens.includeUnknownDevice ?? true,
+    includeUnknownDevice: lens.includeUnknownDevice ?? false,
     range: lens.range ?? 'all',
     vendor: lens.vendor ?? null,
     deviceType: lens.deviceType ?? null,

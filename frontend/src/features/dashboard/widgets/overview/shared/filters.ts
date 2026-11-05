@@ -17,7 +17,7 @@ export function lensFilters(lens: EffectiveLens): DashboardFilters {
   if (lens.deviceType) filters.deviceType = lens.deviceType
   if (lens.operatingSystem) filters.operatingSystem = lens.operatingSystem
   if (lens.tac) filters.tac = lens.tac
-  filters.includeUnknownDevice = lens.includeUnknownDevice ?? true
+  filters.includeUnknownDevice = lens.includeUnknownDevice ?? false
   return filters
 }
 

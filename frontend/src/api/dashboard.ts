@@ -19,6 +19,11 @@ export interface KpiSummary {
   unknownDeviceBindings: number
   /** Numeric IMEI that is not 14 digits: a defect, distinct from the 000000 sentinel. */
   malformedImeiBindings: number
+  /**
+   * Active rows with no handset that activeBindings leaves out; added to it, every active row. The
+   * two counts above are what the store holds, counted or not. Absent in a report exported before it.
+   */
+  setAsideBindings?: number
   /** Exact count, not derived from the percentage - see the contract for why. */
   tacMatchedBindings: number
   tacCoveragePercent: number

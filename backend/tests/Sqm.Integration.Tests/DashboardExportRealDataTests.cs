@@ -197,7 +197,7 @@ public sealed class DashboardExportRealDataTests : IClassFixture<WebApplicationF
 
         // Unfiltered: the marts. A filtered KPI reads the raw table for over a minute - measured, recorded,
         // and a separate piece of work; that the lens reaches each widget is proven with a fake loader.
-        var live = await GetAsync("/api/v1/dashboard/kpi?includeUnknownDevice=true");
+        var live = await GetAsync("/api/v1/dashboard/kpi");
         var days = await GetAsync("/api/v1/dashboard/daily-changes");
 
         var clock = Stopwatch.StartNew();

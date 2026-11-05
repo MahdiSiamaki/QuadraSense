@@ -21,7 +21,7 @@ export const definitions = [
   defineWidget<EnrichmentConfig>({
     type: 'quality.enrichment',
     name: 'Enrichment breakdown',
-    description: 'Every active binding accounted for: enriched from GSMA, unknown device, malformed IMEI, unregistered TAC.',
+    description: 'Every active row accounted for: enriched from GSMA, unknown device, malformed IMEI, unregistered TAC.',
     tags: ['enrichment', 'gsma', 'tac', 'coverage', 'malformed', 'unknown device', 'quality'],
     aliases: ['TAC coverage breakdown', 'enrichment', 'unregistered TAC'],
     icon: 'quality',

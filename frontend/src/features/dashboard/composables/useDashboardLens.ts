@@ -42,7 +42,7 @@ export function lensFromQuery(query: LocationQuery): DashboardLens {
   }
   const countBy = query['countBy']
   if (typeof countBy === 'string') raw.countBy = countBy as CountBy
-  // hideUnknown=1 is the old page's switch; =0 is new, for a dashboard whose default hides them.
+  // hideUnknown=1 is the old page's switch; =0 shows them, every dashboard's default being to hide.
   if (query['hideUnknown'] === '1') raw.includeUnknownDevice = false
   else if (query['hideUnknown'] === '0') raw.includeUnknownDevice = true
   const range = query['range']
@@ -80,7 +80,7 @@ export function useDashboardLens() {
     void router.replace({ query })
   }
 
-  function setIncludeUnknown(include: boolean, dashboardDefault = true) {
+  function setIncludeUnknown(include: boolean, dashboardDefault = false) {
     const query = { ...route.query }
     if (include === dashboardDefault) delete query['hideUnknown']
     else query['hideUnknown'] = include ? '0' : '1'

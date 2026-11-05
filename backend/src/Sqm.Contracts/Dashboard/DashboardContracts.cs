@@ -24,8 +24,9 @@ public sealed record Page<T>(IReadOnlyList<T> Items, long? Total, int PageNumber
 /// <param name="SequenceFrom">Inclusive lower bound on delivery sequence.</param>
 /// <param name="SequenceTo">Inclusive upper bound on delivery sequence.</param>
 /// <param name="IncludeUnknownDevice">
-/// Whether to include the <c>000000</c> unknown-device population. Defaults to true: it is ~7% of rows
-/// and excluding it silently would understate every total.
+/// Whether to count the rows with no handset: an IMEI that is <c>000000</c> or not 14 digits. Defaults to
+/// false, by the product owner's decision of 2026-11-05 (ADR-020): they are nearly all leftovers of the
+/// initial dump, on SIMs with a real handset. The rows stay stored; only the counting leaves them out.
 /// </param>
 public sealed record DashboardFilter(
     string? Manufacturer = null,
@@ -36,7 +37,7 @@ public sealed record DashboardFilter(
     string? MsisdnPrefix = null,
     int? SequenceFrom = null,
     int? SequenceTo = null,
-    bool IncludeUnknownDevice = true)
+    bool IncludeUnknownDevice = false)
 {
     /// <summary>
     /// Longest <see cref="MsisdnPrefix"/> accepted: an operator range, never a whole number.
@@ -96,6 +97,10 @@ public sealed record DashboardFilter(
 /// covers a window rather than a day.
 /// </param>
 /// <param name="TacCoveragePercent">Share of active bindings that enrich against the TAC database.</param>
+/// <remarks>
+/// <see cref="UnknownDeviceBindings"/> and <see cref="MalformedImeiBindings"/> are always what the store
+/// holds, counted or not, so a card can say how many there are while the other figures leave them out.
+/// </remarks>
 public sealed record KpiSummary(
     long ActiveBindings,
     long DistinctSubscribers,
@@ -106,7 +111,14 @@ public sealed record KpiSummary(
     long TacMatchedBindings,
     double TacCoveragePercent,
     int DeliverySequence,
-    DateOnly? DeliveryDate);
+    DateOnly? DeliveryDate)
+{
+    /// <summary>
+    /// Active rows with no handset that <see cref="ActiveBindings"/> leaves out: zero when they are
+    /// counted, or when a filter on a model excludes them anyway. Added to it, this is every active row.
+    /// </summary>
+    public long SetAsideBindings { get; init; }
+}
 
 /// <summary>One row of a "top N by dimension" result.</summary>
 /// <param name="Key">The dimension value, e.g. a manufacturer name.</param>
