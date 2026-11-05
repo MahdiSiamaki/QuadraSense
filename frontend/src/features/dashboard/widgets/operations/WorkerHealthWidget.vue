@@ -45,6 +45,7 @@ const pendingSince = computed(() => freshness.data.value?.find((f) => f.sourceCo
         {{ formatFull(h.activeWorkers) }} {{ h.activeWorkers === 1 ? 'worker' : 'workers' }} alive
       </p>
       <p v-if="h.stalled" class="text-[var(--c-danger-text)]" role="status">Stalled: work is waiting and nothing is alive to take it.</p>
+      <p v-if="h.storeReachable === false" class="text-[var(--c-warning-text)]" role="status">Paused: the file store cannot be reached.</p>
       <p class="tabular text-[var(--c-text-secondary)]">
         {{ formatFull(h.running) }} running · {{ formatFull(h.queued) }} queued<template v-if="h.oldestQueuedAt">
           (oldest <span :title="formatDateTime(h.oldestQueuedAt)">{{ formatRelative(h.oldestQueuedAt) }}</span>)</template>

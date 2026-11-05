@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import Button from '@/design-system/Button.vue'
 import Card from '@/design-system/Card.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import Pagination from '@/design-system/Pagination.vue'
@@ -9,13 +10,16 @@ import TacVersionPanel from './TacVersionPanel.vue'
 import { RouterLink } from 'vue-router'
 import {
   useBlockages,
+  useImportActions,
   useImportHistory,
+  useUnqueuedFiles,
   useWorkerHealth,
   useFreshness,
   useStageDurations,
 } from './useImportQueries'
-import { formatDate, formatRelative, formatDateTime } from '@/lib/format'
-import type { ImportHistoryQuery } from '@/api/imports'
+import { formatBytes, formatDate, formatRelative, formatDateTime } from '@/lib/format'
+import { ApiError } from '@/api/client'
+import type { ImportHistoryQuery, UnqueuedFile } from '@/api/imports'
 
 /**
  * Import Center: bring files in, and see what happened to the ones already brought in.
@@ -44,7 +48,23 @@ const tacTypicals = useStageDurations('TAC')
 const health = useWorkerHealth()
 const blockages = useBlockages()
 const freshness = useFreshness()
+const unqueued = useUnqueuedFiles()
+const { queueFile } = useImportActions()
 
+/** Why the last file could not be queued: refused, or no longer readable. */
+const queueProblem = ref<string | null>(null)
+
+function queueStored(file: UnqueuedFile) {
+  queueProblem.value = null
+  queueFile.mutate(file, {
+    onError: (error) => {
+      queueProblem.value =
+        error instanceof ApiError && error.problem?.detail
+          ? error.problem.detail
+          : `${file.originalFileName} could not be queued.`
+    },
+  })
+}
 
 /** Status groupings an operator actually filters by, not the seventeen raw statuses. */
 const STATUS_PRESETS = [
@@ -139,6 +159,27 @@ function resetPaging() {
     </div>
 
     <!--
+      The same silence with a worker running. On the laptop the file store is a USB disk: when it
+      leaves, the worker holds rather than failing a day, and from here a hold looks like a broken
+      worker unless the page says otherwise.
+    -->
+    <div
+      v-if="health.data.value?.storeReachable === false"
+      class="rounded-[var(--radius-md)] border border-[var(--c-warning)] p-4"
+      role="alert"
+    >
+      <p class="text-sm font-semibold">Imports are paused: the file store cannot be reached.</p>
+      <p class="mt-1 text-sm text-[var(--c-text-secondary)]">
+        Check that the disk holding the uploaded files is connected. Nothing has failed:
+        <template v-if="health.data.value.queued > 0">
+          {{ health.data.value.queued }} queued job{{ health.data.value.queued === 1 ? '' : 's' }} will
+          start by themselves when it returns.
+        </template>
+        <template v-else>imports start again by themselves when it returns.</template>
+      </p>
+    </div>
+
+    <!--
       The other silent state. Five days were uploaded and sat at "Queued" with a worker running,
       because an earlier day had failed: days of a source import in order, so that none is folded
       over a gap. The rule is right; a wait nobody can see the reason for looks like a broken worker.
@@ -160,6 +201,50 @@ function resetPaging() {
       <RouterLink :to="`/imports/${b.jobId}`" class="mt-2 inline-block text-sm font-medium text-[var(--c-accent)] hover:underline">
         Open {{ formatDate(b.businessDate) }}
       </RouterLink>
+    </div>
+
+    <!--
+      The quietest of them. A file stored with no job blocks nothing and fails nothing, so its day
+      simply never arrives: the file for 2026-10-26 sat like that for two days and was found by
+      counting. Queued from the copy already stored, so nothing has to be sent again.
+    -->
+    <div
+      v-if="unqueued.data.value?.length"
+      class="rounded-[var(--radius-md)] border border-[var(--c-warning)] p-4"
+      role="alert"
+    >
+      <p class="text-sm font-semibold">
+        {{ unqueued.data.value.length }} uploaded file{{ unqueued.data.value.length === 1 ? ' has' : 's have' }}
+        no import.
+      </p>
+      <p class="mt-1 text-sm text-[var(--c-text-secondary)]">
+        The upload ended before the file reached the queue, so its day will not arrive by itself.
+        The file is stored: queue it here, and nothing has to be uploaded again.
+      </p>
+      <ul class="mt-2 divide-y">
+        <li
+          v-for="file in unqueued.data.value"
+          :key="file.fileId"
+          class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-1.5"
+        >
+          <div class="min-w-0">
+            <p class="text-sm wrap-anywhere">{{ file.originalFileName }}</p>
+            <p class="text-xs text-[var(--c-text-muted)]">
+              {{ file.sourceCode }} · {{ formatBytes(file.sizeBytes) }} · uploaded by {{ file.uploadedBy }},
+              <span :title="formatDateTime(file.uploadedAt)">{{ formatRelative(file.uploadedAt) }}</span>
+            </p>
+          </div>
+          <Button
+            size="sm"
+            :pending="queueFile.isPending.value && queueFile.variables.value?.fileId === file.fileId"
+            :disabled="queueFile.isPending.value"
+            @click="queueStored(file)"
+          >
+            Queue import
+          </Button>
+        </li>
+      </ul>
+      <p v-if="queueProblem" class="mt-2 text-sm text-[var(--c-danger-text)]" role="status">{{ queueProblem }}</p>
     </div>
 
     <!-- Freshness, per source. Placed above the fold because "is the data current?" is the
