@@ -384,6 +384,15 @@ public sealed record WorkerHealth(
     /// saying out loud.
     /// </remarks>
     public bool Stalled => Queued > 0 && ActiveWorkers == 0;
+
+    /// <summary>Whether the file store can be reached; while it cannot, the worker claims nothing.</summary>
+    /// <remarks>
+    /// Set by the caller that holds the store, and not a constructor parameter: Dapper builds this
+    /// record from the columns of a query, and this is no column. The API asks its own store, which
+    /// is the worker's: decision D2 has them on one machine, reading one directory. Without it a
+    /// queue held for a missing disk looks exactly like a broken worker.
+    /// </remarks>
+    public bool StoreReachable { get; init; } = true;
 }
 
 /// <summary>A day that did not land and holds the later days of its source back.</summary>

@@ -362,10 +362,11 @@ public static class ImportEndpoints
             : Results.Ok(await repository.GetStageDurationsAsync(source, ct).ConfigureAwait(false));
 
     private static async Task<IResult> GetWorkerHealthAsync(
-        IImportJobRepository repository, CancellationToken ct)
+        IImportJobRepository repository, IImportFileStore fileStore, CancellationToken ct)
     {
         var health = await repository.GetWorkerHealthAsync(ct).ConfigureAwait(false);
-        return Results.Ok(health);
+        var reachable = await fileStore.IsReachableAsync(ct).ConfigureAwait(false);
+        return Results.Ok(health with { StoreReachable = reachable });
     }
 
     /// <summary>

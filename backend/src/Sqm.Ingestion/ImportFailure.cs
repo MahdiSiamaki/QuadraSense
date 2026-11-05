@@ -43,6 +43,14 @@ internal static class ImportFailure
         _ => (true, Summarise(exception)),
     };
 
+    /// <summary>Whether the failure says a file was not there.</summary>
+    /// <remarks>
+    /// Which <see cref="Classify"/> calls final, and it is, when the store could have found the
+    /// file. <see cref="ImportWorker"/> asks the store before believing it.
+    /// </remarks>
+    public static bool IsFileMissing(Exception exception) =>
+        exception is FileNotFoundException or DirectoryNotFoundException;
+
     /// <summary>
     /// PostgreSQL SQLSTATE classes worth a second attempt.
     /// </summary>

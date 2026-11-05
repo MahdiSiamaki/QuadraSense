@@ -35,4 +35,28 @@ public sealed class FileStoreRootTests
             parent.Delete(recursive: true);
         }
     }
+
+    [Fact]
+    public async Task A_root_that_has_left_reads_as_unreachable_and_is_not_made_again()
+    {
+        var parent = Directory.CreateTempSubdirectory("sqm-root-");
+        try
+        {
+            var root = Path.Combine(parent.FullName, "imports");
+            var store = new DirectoryImportFileStore(
+                Options.Create(new ImportStorageOptions { RootPath = root }),
+                NullLogger<DirectoryImportFileStore>.Instance);
+
+            Assert.True(await store.IsReachableAsync(TestContext.Current.CancellationToken));
+
+            Directory.Delete(root);
+
+            Assert.False(await store.IsReachableAsync(TestContext.Current.CancellationToken));
+            Assert.False(Directory.Exists(root));
+        }
+        finally
+        {
+            parent.Delete(recursive: true);
+        }
+    }
 }

@@ -291,7 +291,8 @@ public sealed class ImportWorkerIdleTests
 
         var worker = new ImportWorker(
             repository,
-            Stub.Create<Sqm.Application.DataImport.IImportFileStore>((m, _) => Stub.Default(m)),
+            Stub.Create<Sqm.Application.DataImport.IImportFileStore>((m, _) =>
+                m.Name == "IsReachableAsync" ? Task.FromResult(true) : Stub.Default(m)),
             [],
             [new Signal(ran)],
             Microsoft.Extensions.Options.Options.Create(new ImportWorkerOptions

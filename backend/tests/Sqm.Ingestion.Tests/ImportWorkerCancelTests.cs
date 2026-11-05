@@ -64,7 +64,8 @@ public sealed class ImportWorkerCancelTests
 
             Worker = new ImportWorker(
                 Repository,
-                Stub.Create<IImportFileStore>((m, _) => Stub.Default(m)),
+                Stub.Create<IImportFileStore>((m, _) =>
+                    m.Name == "IsReachableAsync" ? Task.FromResult(true) : Stub.Default(m)),
                 [processor],
                 [],
                 Options.Create(new ImportWorkerOptions

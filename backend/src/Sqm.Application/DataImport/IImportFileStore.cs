@@ -54,6 +54,16 @@ public interface IImportFileStore
     /// <summary>Whether the blob is still there.</summary>
     Task<bool> ExistsAsync(string storedPath, CancellationToken ct);
 
+    /// <summary>Whether the store itself can be reached, whatever is or is not in it.</summary>
+    /// <remarks>
+    /// A different question from <see cref="ExistsAsync"/>. A file that is not there may be gone for
+    /// good; with the store away, nothing can be said about any file, and every one of them would
+    /// read as missing. The worker asks this before it claims a job and again before it calls a
+    /// missing file gone, so that a disk unplugged from the laptop pauses the queue instead of
+    /// failing a day (2026-10-26, and again 2026-11-03).
+    /// </remarks>
+    Task<bool> IsReachableAsync(CancellationToken ct);
+
     /// <summary>
     /// Removes a blob. The metadata row survives, so history stays explainable after the bytes
     /// are gone.
