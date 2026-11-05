@@ -237,10 +237,10 @@ A row that fails a validation rule is **quarantined** — recorded with its rule
 count — rather than silently dropped or allowed to fail the import.
 
 A daily import finishes as `PARTIALLY_COMPLETED` when rows were **rejected** — not imported, and so
-missing from the data. A file whose every row landed is `COMPLETED`, and if validation raised
-warnings on some rows the status reads **Completed · with warnings**; the job's quarantine lists
-the rules, the counts and samples. (A TAC snapshot uses `PARTIALLY_COMPLETED` differently: loaded,
-not yet activated.)
+missing from the data. A file whose every row landed is `COMPLETED`. If validation raised warnings
+on some rows, the job's quarantine lists the rules, the counts and samples; the status no longer
+says so (`09-import-platform.md`, D17). (A TAC snapshot uses `PARTIALLY_COMPLETED` differently:
+loaded, not yet activated.)
 
 > **SUPERSEDED (2026-09-24).** This used to read: `PARTIALLY_COMPLETED` when *anything* was
 > rejected or warned, kept deliberately so that "if that figure ever jumps from thousands to

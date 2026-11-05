@@ -333,8 +333,8 @@ internal sealed partial class SqmDailyProcessor(
     /// <para>
     /// The cost is the alarm the old rule was kept for. On 25 and 26 August about 10% of rows
     /// carried IMEIs cut to eight digits - 250 times the usual count - and that went unnoticed,
-    /// because the status could not get any worse than it already was. The warning count beside
-    /// the status is where such a day now shows.
+    /// because the status could not get any worse than it already was. Such a day now shows on
+    /// Data quality: the words beside the status came off the Import pages on 2026-11-05.
     /// </para>
     /// </remarks>
     internal static ImportJobStatus StatusFor(long rejectedRows, long warnedRows)
