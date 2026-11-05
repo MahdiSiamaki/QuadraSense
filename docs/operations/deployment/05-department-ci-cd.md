@@ -388,6 +388,24 @@ build script's new check, under dash and busybox `sh`: two passwords missing - i
 stops; all four present - it goes on. **On `<gitlab>`**, pipeline 370 ran all of it end to end
 (section 4).
 
+### A migration is downtime
+
+`api`, `web` and `worker` wait in `Created` until the `migrate` service finishes, so the site is down
+for as long as a migration runs. It is not the old release that keeps serving, whatever a failed
+migration does.
+
+Measured on 2026-11-05: analytics migration 033, two `DROP COLUMN` on `risk_sim_change_day`, took
+637,507 ms, and the site was down for about 11 minutes. The same statement took 55 s on the laptop.
+`system.part_log` shows 3 parts in the first second, nothing for ten minutes, then the other 264 inside
+a minute, with the background pool idle and no failure recorded. The likely cause is inferred from those
+timestamps and ClickHouse's source, not observed: the server's pool is 4 with one spare entry reserved,
+so the fourth mutation task is refused, and the retry waits on a backoff that reaches 600 s on a table
+idle for days. A table written the same day, as on the laptop, backs off for far less.
+
+**So treat a migration that rewrites parts as about ten minutes of downtime on this server, and say so
+before merging it.** `SETTINGS alter_sync = 0` should let the deploy return at once and the rewrite run
+behind it; that is untested (`docs/backlog.md`).
+
 ### CI/CD variables - on the Quadrasense group (Settings → CI/CD → Variables); the two passwords on the project
 
 | Variable | Value | Flags |
