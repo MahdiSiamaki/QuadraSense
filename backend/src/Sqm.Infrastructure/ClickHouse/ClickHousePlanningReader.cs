@@ -733,23 +733,41 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         var pageLabel = by == "tac"
             ? "any(coalesce(nullIf(transform(b.tac, names.1, names.3, ''), ''), if(b.tac = '', '(unknown device)', '(unknown TAC)')))"
             : "k";
-        var rows = await _query.ExecuteAsync($$"""
+
+        // One state column per statement, and max_block_size is no way round it: a read decodes whole
+        // granules, and one granule of the per-model mart holds 184 MiB of subscriber states and 157 MiB
+        // of handset states. Both at once, on top of this statement's 153 MiB of sets, the IoT fleet by
+        // vendor came to 499 MiB against the 476 MiB cap, and failed on the department's server on
+        // 2026-11-04. One at a time the larger is 341 MiB (delivery 247, measured 2026-11-05).
+        string Page(string measures, string order) => $$"""
             WITH (SELECT (groupArray(t.tac), groupArray({{(by == "tac" ? "t.tac" : key)}}), groupArray(t.marketingName))
                   FROM tac AS t
                   LEFT JOIN (SELECT * FROM tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
                   WHERE {{named}}) AS names
-            SELECT {{pageKey}} AS k, {{pageLabel}} AS l, {{tac}}, uniqMerge(b.numbers) AS n, sum(b.bindings), uniqMerge(b.handsets)
+            SELECT {{pageKey}} AS k, {{measures}}
             FROM ({{source}} AND {{pageTacs}}) AS b
             WHERE k IN {keys:Array(String)} {{match}}
             GROUP BY k
-            ORDER BY n DESC, k
-            """, parameters, ct, Budget).ConfigureAwait(false);
+            ORDER BY {{order}}
+            """;
 
-        var list = rows.Rows.Select(r => new PlanningBreakdownRow(
-            ClickHouseJsonResult.Text(r, 0) ?? string.Empty,
-            ClickHouseJsonResult.Text(r, 1) ?? string.Empty,
-            ClickHouseJsonResult.NullIfEmpty(r, 2),
-            ClickHouseJsonResult.Int64(r, 3), ClickHouseJsonResult.Int64(r, 4), ClickHouseJsonResult.Int64(r, 5))).ToList();
+        var rows = await _query.ExecuteAsync(
+            Page($"{pageLabel} AS l, {tac}, uniqMerge(b.numbers) AS n, sum(b.bindings)", "n DESC, k"),
+            parameters, ct, Budget).ConfigureAwait(false);
+        var handsets = await _query.ExecuteAsync(
+            Page("uniqMerge(b.handsets)", "k"), parameters, ct, Budget).ConfigureAwait(false);
+        var handsetsOf = handsets.Rows.ToDictionary(
+            r => ClickHouseJsonResult.Text(r, 0) ?? string.Empty, r => ClickHouseJsonResult.Int64(r, 1), StringComparer.Ordinal);
+
+        var list = rows.Rows.Select(r =>
+        {
+            var k = ClickHouseJsonResult.Text(r, 0) ?? string.Empty;
+            return new PlanningBreakdownRow(
+                k,
+                ClickHouseJsonResult.Text(r, 1) ?? string.Empty,
+                ClickHouseJsonResult.NullIfEmpty(r, 2),
+                ClickHouseJsonResult.Int64(r, 3), ClickHouseJsonResult.Int64(r, 4), handsetsOf.GetValueOrDefault(k));
+        }).ToList();
         var total = ClickHouseJsonResult.Int64(largest.Rows[0], 2);
 
         return new PlanningBreakdownResponse(run, view, planningClass, by, list, total);
