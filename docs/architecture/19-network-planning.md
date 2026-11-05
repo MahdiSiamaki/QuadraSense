@@ -307,6 +307,21 @@ The peaks are 380-434 MiB - the largest a breakdown by vendor whose page holds t
 up to 91% of the cap; every view answers within 33 s (bands, the slowest). They are the first thing to
 measure again when the catalogue or the network grows.
 
+**Measured again on 2026-11-05, and one was over.** The IoT fleet by vendor had reached 499 MiB on
+delivery 247. `PlanningRealDataTests` failed on it the first time it ran against October's data, and the
+department's server had already refused the same read for a person twice on 2026-11-04.
+
+`max_block_size` changes nothing, at any size down to 256: a read decodes whole granules. One granule
+of the mart holds 184 MiB of subscriber states and 157 MiB of handset states, so a statement carries both
+at once, on top of its own sets, 153 MiB for this one. Hence a fourth rule:
+
+- *One state column per statement, where the sets are large.* A breakdown now reads its numbers and its
+  handsets in two statements and joins them by key: 341 MiB on the laptop, and 322 and 289 MiB on the
+  department's server, under the API's limits, where the single statement failed.
+
+The next peaks are 428 MiB (`ClassRows`), 415 MiB (the lifecycle's model pairs) and 377 MiB (the
+not-classifiable row); `docs/backlog.md` has what to do about them.
+
 **The unnarrowed band view is written at publication** (`planning_model_figure`, migration 032). The
 worker runs the same statements once, under its own limits. A last row marks the figures complete.
 The page then reads the 115 rows they give:

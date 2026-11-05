@@ -181,7 +181,8 @@ Three things follow from the rule as written:
 - **Jobs with no business date neither block nor are blocked.** The initial dump describes a
   30-day range and the TAC snapshots describe no day at all; they are outside the ordering. A day
   the source never delivered has no job row, and so blocks nothing either - you cannot wait for
-  something nobody queued.
+  something nobody queued. A file that arrived and got no job blocks nothing for the same reason,
+  which is why the Import Center lists it (D16).
 
 The mart refresh carries the matching guard on the other side: it refuses to build a delivery's
 snapshot at all if a later delivery is already folded, and publishes nothing to `mart_ready`.
@@ -959,6 +960,79 @@ no date, over the VPN at 350-650 KB/s:
   history. `ResumableUploadTests` cover it, against the real API and file store.
 - **Found and fixed:** the owner record left by a cancel; and a resumed upload's speed read 2.6 MB/s
   for its first seconds, because the bytes already on the server were counted as just sent.
+
+### D15 - The queue waits for a store that has left (2026-11-05)
+
+**Why.** On the laptop the file store is a USB disk. It left twice with a queue running, on 2026-10-26
+and 2026-11-03, and each time the next day failed for good. `ImportFailure` reads a missing path as
+"the original is gone", which is true of a store that is there and false of one that is not: the file
+was intact both times, and the days behind it stopped until someone queued it again by hand. The first
+time the decision was to keep that and reprocess (`docs/operations/dedicated-hardware.md`); the second
+time the product owner asked for this instead.
+
+**How.** `IImportFileStore.IsReachableAsync` asks about the store, not about a file: for the directory
+store, whether its root exists. The worker asks before every claim. While the answer is no it claims
+nothing, runs no idle task and goes on beating, and when the answer changes it carries on by itself,
+logging each change once. A job that finds its file missing asks too, because the disk can leave after
+the claim, where the hold cannot see it: with the store away the job goes back to the queue with one
+attempt spent, and waits there like the rest.
+
+**What it deliberately leaves alone.** A file missing from a store that is there still fails for good,
+and so does a rejected file, disk or no disk. Every other failure is classified as it was.
+
+**Idle tasks wait as well.** The days in the queue are about to change what those tasks compute, and
+the dashboard rebuild cannot be interrupted once it starts: on 2026-11-05 a job waited 50 minutes behind
+one that the days after it then made stale. Risk and planning give way between chunks, so for them this
+only saves work that would be abandoned. The cost is that figures owed with an empty queue also wait for
+the disk.
+
+**It says so.** A hold with nothing on the page looks like a broken worker, which is the failure the
+heartbeat was added for (§10). `GET /api/v1/imports/worker-health` carries `storeReachable`, and the
+Import Center says imports are paused, what to check, and that nothing has failed. The API asks its own
+store rather than the worker reporting through its heartbeat: D2 has them on one machine reading one
+directory, and this needs no column. A worker on another machine, with a store the API cannot see,
+would have to report it itself.
+
+**On fixed storage it never fires**, and an empty mount point would pass the check: a directory that
+exists there is not proof the volume is under it. The VM's store is a named volume, so that cannot
+happen today.
+
+### D16 - A stored file reaches the queue, or says that it did not (2026-11-05)
+
+**Why.** The file for 2026-10-26 was registered on the laptop on 2026-11-03 and got neither a job nor
+an audit row. A day with no job blocks nothing and fails nothing, so nothing said so for two days; it
+was found by comparing the files with the jobs, and queued with `--import-file`.
+
+**What is known about the cause, and what is not.** It was not the crash: the file arrived at 08:30:54
+UTC, five and a half hours before it. It arrived during the import of the first file of the run, 08:27:48
+to 08:34:08, and inside that window its neighbours took up to 10.8 seconds from being registered to being
+queued and up to 7.9 more to the audit row; the ten files after it took 0.2 seconds or less. So the window
+was long, and the likely reason is PostgreSQL's commits waiting behind ClickHouse on one virtual disk,
+which is inferred, not measured. The enqueue was already off the request's token and the rest of the
+intake was not, so a browser that went away at that moment fits. A failed enqueue fits as well: it has a
+30-second command timeout, and a timeout leaves the same trace. PostgreSQL kept no log of that day and the
+API's console is gone, so neither can be proven. Both are therefore closed separately.
+
+**How.** Once the bytes are stored there is nothing left to save by stopping, so `ImportIntake.AcceptAsync`
+takes no cancellation token at all, and a resumable upload forgets its pieces off the request's token
+too, since by then the file has moved. Whatever still stops the intake - a failed enqueue, a process
+that dies - leaves a file with no job, and those are listed: `GET /api/v1/imports/unqueued-files` feeds
+a warning on the Import Center with **Queue import** on each file, which queues it from the copy already
+stored, for the day in its name, under the upload permission of its source. Sending the file again
+still works too; it costs the whole upload.
+
+A file counts two minutes after it was registered, not before: the gap between the two steps was 10.8
+seconds at worst, and an upload being finished is not stranded.
+
+**Proved by failing first**, 2026-11-05: each rule of D15 and D16 broken in turn, and the test written
+for it seen to fail. For D15: the worker claiming with the store away, idle tasks running during a hold,
+a missing file failing for good with the store away, every missing file being retried, the store calling
+a missing root reachable, and worker health always saying reachable. For D16: the intake on the request's
+token, an upload being finished listed as stranded and a file with a job staying listed (both against the
+real PostgreSQL), a file queued under another source, and an unreadable file queued anyway. On the page:
+the pause notice and the list not showing, the button doing nothing, and a refusal swallowed.
+`ImportWorkerHoldTests`, `FileStoreRootTests`, `OrphanedUploadTests`, `ImportQueueTests`,
+`ImportCenterAlerts.spec.ts`.
 
 ---
 
