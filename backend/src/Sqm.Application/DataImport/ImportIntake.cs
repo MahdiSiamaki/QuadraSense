@@ -21,6 +21,19 @@ namespace Sqm.Application.DataImport;
 public static class ImportIntake
 {
     /// <summary>Registers a stored file and queues its import, or finds the import it already has.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>No cancellation token, and that is the point.</b> The bytes are stored by the time this
+    /// runs, so there is nothing left to save by stopping: stopping part way can only leave a file
+    /// registered with no job. Only the enqueue used to be off the request's token. On 2026-11-03
+    /// the file for 26 October was registered and got neither a job nor an audit row, among
+    /// neighbours whose steps took up to 10.8 seconds apart while an import was running: a long
+    /// window for a connection to end in. Nothing logged why that one stopped, so the token is a
+    /// likely cause, not a proven one; a failed enqueue would look the same. Whatever the cause,
+    /// a file that does end up here is listed for the operator: see
+    /// <see cref="QueueStoredFileAsync"/>.
+    /// </para>
+    /// </remarks>
     /// <param name="repository">The Import Center's history and queue.</param>
     /// <param name="files">The file store the bytes were written to.</param>
     /// <param name="sourceCode">Data source, upper case.</param>
@@ -28,7 +41,6 @@ public static class ImportIntake
     /// <param name="stored">Where the bytes went, and their hash.</param>
     /// <param name="actor">Who sent it.</param>
     /// <param name="correlationId">The request's trace identifier, when there is a request.</param>
-    /// <param name="ct">Cancellation token.</param>
     public static async Task<IntakeResult> AcceptAsync(
         IImportJobRepository repository,
         IImportFileStore files,
@@ -36,21 +48,21 @@ public static class ImportIntake
         string originalFileName,
         StoredFile stored,
         string actor,
-        string? correlationId,
-        CancellationToken ct)
+        string? correlationId)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(files);
         ArgumentNullException.ThrowIfNull(stored);
 
         var registered = await repository
-            .RegisterFileAsync(sourceCode, originalFileName, stored, actor, ct).ConfigureAwait(false);
+            .RegisterFileAsync(sourceCode, originalFileName, stored, actor, CancellationToken.None)
+            .ConfigureAwait(false);
 
         if (!registered.IsNew)
         {
             // The bytes just written duplicate a file already on disk. Removing the copy keeps
             // storage honest: one content hash, one stored blob.
-            await files.DeleteAsync(stored.StoredPath, ct).ConfigureAwait(false);
+            await files.DeleteAsync(stored.StoredPath, CancellationToken.None).ConfigureAwait(false);
         }
 
         // A known file with no job is not a duplicate import, it is an unfinished upload: the
@@ -63,7 +75,8 @@ public static class ImportIntake
             await repository.WriteAuditAsync(
                 actor, "import.upload.duplicate", registered.ExistingJobId, registered.FileId,
                 null, correlationId,
-                new { fileName = originalFileName, sha256 = stored.Sha256 }, ct).ConfigureAwait(false);
+                new { fileName = originalFileName, sha256 = stored.Sha256 },
+                CancellationToken.None).ConfigureAwait(false);
 
             return new IntakeResult(registered, null);
         }
@@ -81,8 +94,6 @@ public static class ImportIntake
         // was actually imported, so a misnamed file is corrected rather than believed.
         var declaredDate = DailyFileName.BusinessDateOf(originalFileName);
 
-        // Not on the caller's token. The file is registered by now, and a client that
-        // disconnects at this moment is how a file used to end up with no job.
         var jobId = await repository
             .EnqueueAsync(sourceCode, registered.FileId, declaredDate, actor, ct: CancellationToken.None)
             .ConfigureAwait(false);
@@ -90,9 +101,69 @@ public static class ImportIntake
         await repository.WriteAuditAsync(
             actor, "import.upload", jobId, registered.FileId, null, correlationId,
             new { fileName = originalFileName, bytes = stored.SizeBytes, sha256 = stored.Sha256 },
-            ct).ConfigureAwait(false);
+            CancellationToken.None).ConfigureAwait(false);
 
         return new IntakeResult(registered, jobId);
+    }
+
+    /// <summary>Queues a stored file that has no job, from the copy already stored.</summary>
+    /// <remarks>
+    /// <para>
+    /// The way back for a file <see cref="AcceptAsync"/> did not finish with - a failed enqueue, a
+    /// process that died. A day with no job blocks nothing, so nothing else would ever say it is
+    /// missing, and this list is what does. Sending the file again also works, and costs the whole
+    /// upload. Only a file still on the list is queued, so two people asking cannot queue it twice
+    /// unless they ask in the same instant, and then the day is imported twice, which is harmless.
+    /// </para>
+    /// <para>
+    /// A file gone from the store answers <see cref="ReprocessOutcome.FileGone"/>: with the store
+    /// away a job queued now would only wait, and saying so is more use than a queue entry.
+    /// </para>
+    /// </remarks>
+    /// <param name="repository">The Import Center's history and queue.</param>
+    /// <param name="files">The file store the original is read from.</param>
+    /// <param name="sourceCode">Data source, upper case. The file must belong to it.</param>
+    /// <param name="fileId">The file to queue.</param>
+    /// <param name="actor">Who asked for it.</param>
+    /// <param name="correlationId">The request's trace identifier, when there is a request.</param>
+    /// <param name="ct">Cancellation token; it stops the checks, never the queueing.</param>
+    public static async Task<ReprocessResult> QueueStoredFileAsync(
+        IImportJobRepository repository,
+        IImportFileStore files,
+        string sourceCode,
+        long fileId,
+        string actor,
+        string? correlationId,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(repository);
+        ArgumentNullException.ThrowIfNull(files);
+
+        var unqueued = await repository.GetUnqueuedFilesAsync(ct).ConfigureAwait(false);
+        var file = unqueued.FirstOrDefault(f => f.FileId == fileId && f.SourceCode == sourceCode);
+
+        if (file is null)
+        {
+            return new ReprocessResult(ReprocessOutcome.NotFound, null, null);
+        }
+
+        if (!await files.ExistsAsync(file.StoredPath, ct).ConfigureAwait(false))
+        {
+            return new ReprocessResult(ReprocessOutcome.FileGone, null, file.StoredPath);
+        }
+
+        var jobId = await repository
+            .EnqueueAsync(
+                file.SourceCode, file.FileId, DailyFileName.BusinessDateOf(file.OriginalFileName), actor,
+                ct: CancellationToken.None)
+            .ConfigureAwait(false);
+
+        await repository.WriteAuditAsync(
+            actor, "import.upload.queued", jobId, file.FileId, null, correlationId,
+            new { fileName = file.OriginalFileName, bytes = file.SizeBytes },
+            CancellationToken.None).ConfigureAwait(false);
+
+        return new ReprocessResult(ReprocessOutcome.Queued, jobId, file.StoredPath);
     }
 
     /// <summary>"Import again": queues a finished import's file as a new job, its day's next revision.</summary>
