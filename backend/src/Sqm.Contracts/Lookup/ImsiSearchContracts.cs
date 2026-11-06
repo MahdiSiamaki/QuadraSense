@@ -87,7 +87,11 @@ public sealed record ImsiSearchResponse(
     IdentifierVisibility Identifiers,
     IReadOnlyList<ImsiMatch> Items,
     ImsiSummary? Summary,
-    SearchTiming Timing);
+    SearchTiming Timing)
+{
+    /// <summary>Rows of the one SIM searched for that hold no handset and are left out (ADR-020).</summary>
+    public int LeftOut { get; init; }
+}
 
 /// <summary>Whether identifiers in a response are complete or redacted.</summary>
 public enum IdentifierVisibility

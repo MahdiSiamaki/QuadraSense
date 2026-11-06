@@ -301,6 +301,11 @@ public sealed record BindingRow(
     bool IsActive,
     DateOnly? LastChangeDate);
 
+/// <summary>A number's bindings, and how many of its rows hold no handset and are left out (ADR-020).</summary>
+/// <param name="Bindings">The bindings shown.</param>
+/// <param name="LeftOut">Rows of the number with no handset, so that a page can say so rather than go quiet.</param>
+public sealed record BindingLookup(IReadOnlyList<BindingRow> Bindings, int LeftOut);
+
 /// <summary>Data-quality counters for one delivery.</summary>
 /// <param name="Sequence">Delivery sequence.</param>
 /// <param name="RowsReceived">Rows read from the file.</param>

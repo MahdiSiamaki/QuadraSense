@@ -54,7 +54,11 @@ public sealed record ImsiSearchOutcome(
     int Total,
     ImsiFacts? Facts,
     long ElapsedMs,
-    long RowsExamined);
+    long RowsExamined)
+{
+    /// <summary>Rows of the one SIM searched for that hold no handset and are left out (ADR-020).</summary>
+    public int LeftOut { get; init; }
+}
 
 /// <summary>Aggregate facts about one IMSI. Computed only for an exact term.</summary>
 /// <remarks>

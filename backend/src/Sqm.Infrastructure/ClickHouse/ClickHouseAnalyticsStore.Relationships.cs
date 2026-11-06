@@ -84,7 +84,8 @@ public sealed partial class ClickHouseAnalyticsStore
                 coalesce(nullIf(t.brandName, ''), t.manufacturer) AS brand,
                 t.marketingName, t.deviceType,
                 b.active,
-                b.last_change_date
+                b.last_change_date,
+                {{AnalyticsSchema.RowHasNoHandset}} AS no_handset
             FROM {{table}} AS b FINAL
             LEFT JOIN sqm.tac AS t ON t.tac = b.tac
             WHERE b.{{column}} = {value:{{type}}}
@@ -102,6 +103,11 @@ public sealed partial class ClickHouseAnalyticsStore
         var truncated = result.Rows.Count > MaxBindings;
         var rows = truncated ? result.Rows.Take(MaxBindings).ToList() : result.Rows;
 
+        // A row with no handset is no binding (ADR-020), unless the handset is what was asked about.
+        IReadOnlyList<System.Text.Json.JsonElement> bound = kind == RelatedKind.Imei
+            ? rows
+            : [.. rows.Where(r => ClickHouseJsonResult.Int32(r, 9) == 0)];
+
         // Accumulate each neighbour once, counting how many bindings reach it and how many of
         // those are still in force. A handset a subscriber used and replaced is still connected -
         // hiding it would answer a different question from the one being asked.
@@ -109,7 +115,7 @@ public sealed partial class ClickHouseAnalyticsStore
         var sims = new Dictionary<string, Accumulator>(StringComparer.Ordinal);
         var handsets = new Dictionary<string, Accumulator>(StringComparer.Ordinal);
 
-        foreach (var row in rows)
+        foreach (var row in bound)
         {
             var msisdn = ClickHouseJsonResult.UInt64(row, 0).ToString(CultureInfo.InvariantCulture);
             var imsi = ClickHouseJsonResult.UInt64(row, 1).ToString(CultureInfo.InvariantCulture);
@@ -139,7 +145,7 @@ public sealed partial class ClickHouseAnalyticsStore
         // a search by IMEI never looked: Galaxy A51 35446411748626 showed no pair until 2026-10-19,
         // while a search by its own number found 35446511748626.
         var paired = allowed.Handsets && (handsets.Count > 0 || kind == RelatedKind.Imei)
-            ? await FindPairedHandsetsAsync(kind, identifier, handsets.Keys, rows, ct)
+            ? await FindPairedHandsetsAsync(kind, identifier, handsets.Keys, bound, ct)
                 .ConfigureAwait(false)
             : [];
 

@@ -66,7 +66,8 @@ public static class LookupEndpoints
 
         // A well-formed lookup is 10 digits. Others are accepted so operators can investigate the 24
         // known malformed rows, but the response tells the UI the input was unusual.
-        var rows = await store.GetBindingsForMsisdnAsync(msisdn.Value.Value, ct).ConfigureAwait(false);
+        var lookup = await store.GetBindingsForMsisdnAsync(msisdn.Value.Value, ct).ConfigureAwait(false);
+        var rows = lookup.Bindings;
 
         var user = CurrentUser.Require(http);
 
@@ -96,6 +97,7 @@ public static class LookupEndpoints
             msisdn = msisdn.Value.ToString(),
             wellFormed = msisdn.Value.IsWellFormed,
             count = rows.Count,
+            leftOut = lookup.LeftOut,
             identifiers = reveal ? IdentifierVisibility.Full : IdentifierVisibility.Masked,
             bindings = reveal
                 ? rows

@@ -31,12 +31,12 @@ public interface IDeviceAnalyticsStore
     Task<IReadOnlyList<DistributionSlice>> GetDistributionAsync(
         AnalyticsDimension dimension, DashboardFilter filter, CountBy countBy, CancellationToken ct);
 
-    /// <summary>Every binding for one subscriber number, active and historical.</summary>
+    /// <summary>Every binding for one subscriber number, active and historical, but for rows with no handset.</summary>
     /// <remarks>
     /// The MSISDN is passed as a parameter, never interpolated, and is carried in a request body rather
     /// than a query string so it never reaches an access log or browser history.
     /// </remarks>
-    Task<IReadOnlyList<BindingRow>> GetBindingsForMsisdnAsync(ulong msisdn, CancellationToken ct);
+    Task<BindingLookup> GetBindingsForMsisdnAsync(ulong msisdn, CancellationToken ct);
 
     /// <summary>Bindings matching a complete IMSI or a prefix, filtered and paged.</summary>
     /// <remarks>

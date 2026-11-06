@@ -92,6 +92,7 @@ public sealed partial class ClickHouseAnalyticsStore
             FROM sqm.binding_by_imsi AS b FINAL
             LEFT JOIN sqm.tac AS t ON t.tac = b.tac
             WHERE b.imsi >= {low:UInt64} AND b.imsi <= {high:UInt64}
+              AND NOT {{AnalyticsSchema.RowHasNoHandset}}
             {{filters}}
             ORDER BY b.imsi, b.active DESC, b.msisdn, b.imei
             LIMIT {limit:UInt32} OFFSET {offset:UInt32}
@@ -125,6 +126,9 @@ public sealed partial class ClickHouseAnalyticsStore
             ? await GetImsiFactsAsync(criteria.Term.Low, ct).ConfigureAwait(false)
             : null;
 
+        // Only for one SIM: over a prefix the figure would describe thousands of unrelated SIMs.
+        var leftOut = criteria.Term.IsExact ? await CountImsiLeftOutAsync(criteria.Term.Low, ct).ConfigureAwait(false) : 0;
+
         var kind = criteria.Term.IsExact ? "exact" : "prefix";
         LogImsiSearch(criteria.Term.DigitCount, kind, total, result.ElapsedMs, result.RowsRead);
 
@@ -133,7 +137,18 @@ public sealed partial class ClickHouseAnalyticsStore
             LogImsiSearchScan(result.RowsRead, kind);
         }
 
-        return new ImsiSearchOutcome(rows, total, facts, result.ElapsedMs, result.RowsRead);
+        return new ImsiSearchOutcome(rows, total, facts, result.ElapsedMs, result.RowsRead) { LeftOut = leftOut };
+    }
+
+    /// <summary>The rows of one SIM with no handset (ADR-020), which a search leaves out.</summary>
+    private async Task<int> CountImsiLeftOutAsync(ulong imsi, CancellationToken ct)
+    {
+        var result = await JsonQuery.ExecuteAsync(
+            $"SELECT count() FROM sqm.binding_by_imsi AS b FINAL WHERE b.imsi = {{imsi:UInt64}} AND {AnalyticsSchema.RowHasNoHandset}",
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["imsi"] = imsi.ToString(CultureInfo.InvariantCulture) },
+            ct).ConfigureAwait(false);
+
+        return ClickHouseJsonResult.Int32(result.Rows[0], 0);
     }
 
     /// <inheritdoc />
@@ -144,13 +159,14 @@ public sealed partial class ClickHouseAnalyticsStore
         // partitions at all - the difference between 586 ms across 133 days and 87 ms across 14.
         // An absent bound becomes the extreme of the range rather than NULL, because a NULL
         // comparison would defeat the pruning entirely.
-        const string Sql = """
+        var sql = $$"""
             SELECT e.data_date, e.seq, e.msisdn, e.imei, t.manufacturer, t.marketingName, e.label
             FROM sqm.binding_event AS e
             LEFT JOIN sqm.tac AS t ON t.tac = e.tac
             WHERE e.imsi = {imsi:UInt64}
               AND e.data_date >= {fromDate:Date}
               AND e.data_date <= {toDate:Date}
+              AND NOT {{AnalyticsSchema.NoHandset("e.imei", "e.tac", "sqm.tac")}}
             ORDER BY e.data_date DESC, e.seq DESC
             LIMIT {limit:UInt32}
             """;
@@ -167,7 +183,7 @@ public sealed partial class ClickHouseAnalyticsStore
             ["limit"] = (limit + 1).ToString(CultureInfo.InvariantCulture),
         };
 
-        var result = await JsonQuery.ExecuteAsync(Sql, parameters, ct).ConfigureAwait(false);
+        var result = await JsonQuery.ExecuteAsync(sql, parameters, ct).ConfigureAwait(false);
 
         var events = new List<ImsiHistoryRow>(Math.Min(limit, result.Rows.Count));
 
@@ -196,7 +212,7 @@ public sealed partial class ClickHouseAnalyticsStore
     /// <summary>Aggregate facts for one IMSI.</summary>
     private async Task<ImsiFacts> GetImsiFactsAsync(ulong imsi, CancellationToken ct)
     {
-        const string Sql = """
+        var sql = $$"""
             SELECT
                 uniqExact(msisdn)                    AS subscribers,
                 uniqExactIf(imei, length(imei) = 14) AS handsets,
@@ -207,11 +223,11 @@ public sealed partial class ClickHouseAnalyticsStore
                 -- carries the log's highest sequence as its version, dated or not.
                 countIf(last_change_date IS NOT NULL) > 0 AS ever_touched
             FROM sqm.binding_by_imsi AS b FINAL
-            WHERE b.imsi = {imsi:UInt64}
+            WHERE b.imsi = {imsi:UInt64} AND NOT {{AnalyticsSchema.RowHasNoHandset}}
             """;
 
         var result = await JsonQuery.ExecuteAsync(
-            Sql,
+            sql,
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["imsi"] = imsi.ToString(CultureInfo.InvariantCulture),
