@@ -108,6 +108,7 @@ the merge. On dedicated hardware:
 | PostgreSQL on port 15432 because another project holds 5432; ClickHouse HTTP on 18123 | Standard internal ports, TLS between services |
 | `sqm_app` and `sqm_ingest` share one development password (`sqm-app-user.xml`) | Separate secrets, from the environment - the file already says so |
 | System-log TTLs and flush settings tuned to stop thousands of tiny parts (`system-logs.xml`, `11-…` §7) | Keep, re-tune retention to the disk |
+| Idle work in at most two lanes (`ImportWorker:MaxIdleLanes`), the only number measured, on this machine (ADR-021) | The formula follows the memory and the cores by itself. Raise the cap against measurement, and consider several chunks of one run at once |
 
 ### 7. Stalls on the laptop's Docker port
 

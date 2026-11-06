@@ -2,7 +2,7 @@
 
 <img src="docs/assets/readme/hero.svg" width="100%" alt="Quadrasense, the Primary Inventory of a mobile operator's SIM and eSIM estate. A number, a SIM and a handset meet in one binding.">
 
-<img src="docs/assets/readme/stack.svg" width="86%" alt=".NET 10, Vue 3, ClickHouse 25.8, PostgreSQL 17, OpenShift-ready containers, 20 architecture decision records">
+<img src="docs/assets/readme/stack.svg" width="86%" alt=".NET 10, Vue 3, ClickHouse 25.8, PostgreSQL 17, OpenShift-ready containers, 21 architecture decision records">
 
 [What it does](#what-it-does) &nbsp;·&nbsp; [The numbers](#the-numbers) &nbsp;·&nbsp; [How it works](#how-it-works) &nbsp;·&nbsp; [Five things first](#five-things-to-understand-first) &nbsp;·&nbsp; [Run it](#run-it) &nbsp;·&nbsp; [Deploying](#deploying) &nbsp;·&nbsp; [The documents](#the-documents)
 
@@ -179,6 +179,9 @@ The refresh figures are the laptop's. The department VM's come with its next imp
   delivery and say so.
 - **Lookups are key reads.** Copies of current state ordered by IMSI and by IMEI, and a binding history
   with one row per binding per month, make one entity a contiguous range rather than a scan.
+- **Background work follows the machine.** Risk and Planning run side by side when ClickHouse reports the
+  room for it, read at run time from its memory limit, its cores and the heaviest step it has seen: 1.55 to
+  1.69 times the work of one lane, measured, and nothing runs beside an import.
 - **Everything can be rebuilt.** The originals are kept indefinitely, about 144 GB a year, and every table
   comes back from them and the pipeline.
 
@@ -237,7 +240,7 @@ Before the first sign-in come the grants, the seed and the first administrator.
 how the tests behave.
 
 ```bash
-dotnet test backend/Sqm.slnx    # 902: Domain 243, Ingestion 144, Application 105, Integration 410
+dotnet test backend/Sqm.slnx    # 926: Domain 243, Ingestion 165, Application 105, Integration 413
 cd frontend && npm test         # 265, in 37 files
 ```
 
@@ -297,7 +300,7 @@ chosen because of that is [listed](docs/operations/dedicated-hardware.md), to re
 | [Backlog](docs/backlog.md) | suggestions not built yet, with their evidence and cost |
 
 <details>
-<summary><b>Architecture decisions</b>: twenty ADRs, each with the evidence in it</summary>
+<summary><b>Architecture decisions</b>: twenty-one ADRs, each with the evidence in it</summary>
 
 <br>
 
@@ -323,6 +326,7 @@ chosen because of that is [listed](docs/operations/dedicated-hardware.md), to re
 | [ADR-018](docs/adr/ADR-018-resumable-uploads.md) | Uploads resume after a broken connection, with the tus protocol | Accepted |
 | [ADR-019](docs/adr/ADR-019-planning-snapshot.md) | Network planning: each number classed once per delivery by an idle-time snapshot, from parsed radio profiles | Accepted |
 | [ADR-020](docs/adr/ADR-020-rows-with-no-handset.md) | Rows with no handset stay stored and are left out of every count | Accepted |
+| [ADR-021](docs/adr/ADR-021-idle-lanes.md) | The worker runs what does not conflict in lanes, as many as the engine reports room for, with a brake | Accepted |
 
 Every one of these was decided against measurement on the real dataset, not on reputation. Where a claim
 appears in these documents, the number behind it is there too.
