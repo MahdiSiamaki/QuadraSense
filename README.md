@@ -153,7 +153,7 @@ Measured on the laptop, which holds the whole history, on 2026-11-06.
 
 <br>
 
-| | Before | After | Source |
+| Measure | Before | After | Source |
 |---|---:|---:|---|
 | Whole dashboard refresh | 50–68 min | 499 s | [Worker capacity](docs/research/2026-11-worker-capacity.md) |
 | Data read per refresh | 646–668 GiB | 55 GiB | [Worker capacity](docs/research/2026-11-worker-capacity.md) |
@@ -252,10 +252,10 @@ them: an arbitrary non-root UID in group 0, a read-only root filesystem, no capa
 1024. ClickHouse, PostgreSQL, the API, the worker on its own and the web front, with the migrations and
 grants as jobs that run on every start and do nothing when nothing changed.
 
-| | Where | State |
+| Stage | Where | State |
 |---|---|---|
-| **Stage 1** | the department's VM | running since 2026-10-24, every day to 2026-10-31 |
-| **Stage 2** | MCI's OpenShift: dev, uat, prd | planned |
+| **1** | the department's VM | running since 2026-10-24, every day to 2026-10-31 |
+| **2** | MCI's OpenShift: dev, uat, prd | planned |
 
 **How a change reaches a server:**
 
