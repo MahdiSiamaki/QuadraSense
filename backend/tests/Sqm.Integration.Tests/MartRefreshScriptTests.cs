@@ -35,8 +35,9 @@ public sealed class MartRefreshScriptTests : IAsyncLifetime
     private static readonly string[] Views = ["tac", "tac_radio_active"];
 
     /// <summary>
-    /// Handsets of five catalogued models, one the catalogue lacks, rows with no handset, a malformed IMEI,
-    /// subscribers on two models, of one class and of two, and a binding already ended.
+    /// Handsets of six catalogued models, TACs the catalogue lacks, rows with no handset, a malformed
+    /// IMEI, the three kinds of IMEI no handset could carry, subscribers on two models, of one class and
+    /// of two, and a binding already ended.
     /// </summary>
     private const string FirstState = """
         (9120000001, 432110000000001, '35004012000001', 1, 1, '2026-05-01'),
@@ -51,7 +52,14 @@ public sealed class MartRefreshScriptTests : IAsyncLifetime
         (9120000001, 432110000000001, '000000', 1, 1, '2026-05-01'),
         (9120000008, 432110000000008, '000100', 1, 1, '2026-05-01'),
         (9120000009, 432110000000009, '99999999000001', 1, 1, '2026-05-01'),
-        (9120000010, 432110000000010, '35004012000003', 0, 1, '2026-05-01')
+        (9120000010, 432110000000010, '35004012000003', 0, 1, '2026-05-01'),
+        (9120000014, 432110000000014, '00000000000000', 1, 1, '2026-05-01'),
+        (9120000015, 432110000000015, '00000000123456', 1, 1, '2026-05-01'),
+        (9120000016, 432110000000016, '50040120000010', 1, 1, '2026-05-01'),
+        (9120000017, 432110000000017, '50040120000011', 1, 1, '2026-05-01'),
+        (9120000018, 432110000000018, '77123456000001', 1, 1, '2026-05-01'),
+        (9120000019, 432110000000019, '77000001000001', 1, 1, '2026-05-01'),
+        (9120000020, 432110000000020, '35999999000001', 1, 1, '2026-05-01')
         """;
 
     /// <summary>The next delivery: one binding ends, three arrive, one of them with no handset.</summary>
@@ -102,7 +110,8 @@ public sealed class MartRefreshScriptTests : IAsyncLifetime
                      '2G/3G: GSM 900,GSM 1800 | Radio Interface: NONE'),
                     (1, '35405595', 'Samsung Vietnam', 'Galaxy S25', 'Smartphone', 'Android', '0', '1', '3GPP NTN & TN(GSO)', '14-Feb-2025', 'Y',
                      '5G NR: n1, n78 | 4G: LTE FDD BAND 1 | 2G/3G: GSM 900'),
-                    (1, '01010900', '', '', '', '', '00', '00', 'Not Known', '20-Apr-2000', 'Not Known', 'Radio Interface: NONE')
+                    (1, '01010900', '', '', '', '', '00', '00', 'Not Known', '20-Apr-2000', 'Not Known', 'Radio Interface: NONE'),
+                    (1, '77000001', 'Odd Maker', 'Odd One', 'Smartphone', 'Android', '00', '00', 'Not Known', '01-Jan-2024', 'Not Known', '4G: LTE FDD BAND 3')
                 """);
             await QueryAsync($"INSERT INTO {_database}.tac_active (singleton, version_id, activated_at) VALUES (1, 1, now64(3))");
             await QueryAsync($"""
@@ -155,17 +164,21 @@ public sealed class MartRefreshScriptTests : IAsyncLifetime
         (await QueryAsync(Sql(sql) + " FORMAT TSVRaw"))
             .Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
 
+    /// <summary>The rule as what reads the rows themselves has it, in this database.</summary>
+    private string NoHandset => AnalyticsSchema.NoHandset("b.imei", "b.tac", $"{_database}.tac");
+
     private const string Kpi = """
         SELECT active_bindings, distinct_subscribers, distinct_sims, distinct_devices,
-               unknown_device_bindings, malformed_imei_bindings, tac_matched_bindings
+               unknown_device_bindings, malformed_imei_bindings, invalid_imei_bindings, tac_matched_bindings
         FROM {db}.agg_kpi_daily WHERE seq = 2
         """;
 
-    private const string KpiTruth = """
-        SELECT count(), uniq(msisdn), uniq(imsi), uniqIf(imei, length(imei) = 14),
-               countIf(imei = '000000'), countIf(length(imei) != 14 AND imei != '000000'),
-               countIf(tac != '' AND tac IN (SELECT tac FROM {db}.tac))
-        FROM {db}.binding_current FINAL WHERE active = 1
+    private string KpiTruth => $"""
+        SELECT count(), uniq(b.msisdn), uniq(b.imsi), uniqIf(b.imei, NOT {NoHandset}),
+               countIf(b.imei = '000000'), countIf(length(b.imei) != 14 AND b.imei != '000000'),
+               countIf(length(b.imei) = 14 AND {NoHandset}),
+               countIf(b.tac != '' AND b.tac IN (SELECT tac FROM {_database}.tac))
+        FROM {_database}.binding_current AS b FINAL WHERE b.active = 1
         """;
 
     [Fact]
@@ -196,8 +209,8 @@ public sealed class MartRefreshScriptTests : IAsyncLifetime
         await TwoDeliveriesAsync();
 
         var truth = await RowsAsync($"""
-            SELECT multiIf(b.tac = '', '(unknown device)', t.tac = '', '(unknown TAC)', {value}) AS dim_value,
-                   count(), uniq(b.msisdn), uniqIf(b.imei, length(b.imei) = 14)
+            SELECT multiIf({NoHandset}, '(unknown device)', t.tac = '', '(unknown TAC)', {value}) AS dim_value,
+                   count(), uniq(b.msisdn), uniqIf(b.imei, NOT {NoHandset})
             FROM {_database}.binding_current AS b FINAL
             LEFT JOIN {_database}.tac AS t ON t.tac = b.tac
             LEFT JOIN (SELECT * FROM {_database}.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
@@ -220,10 +233,10 @@ public sealed class MartRefreshScriptTests : IAsyncLifetime
         Assert.SkipWhen(_unavailable is not null, _unavailable ?? "");
         await TwoDeliveriesAsync();
 
-        var truth = await RowsAsync("""
-            SELECT if(tac = '', '(unknown device)', tac) AS dim_value, count(), uniq(msisdn), uniqIf(imei, length(imei) = 14)
-            FROM {db}.binding_current FINAL
-            WHERE active = 1
+        var truth = await RowsAsync($"""
+            SELECT if({NoHandset}, '(unknown device)', b.tac) AS dim_value, count(), uniq(b.msisdn), uniqIf(b.imei, NOT {NoHandset})
+            FROM {_database}.binding_current AS b FINAL
+            WHERE b.active = 1
             GROUP BY dim_value ORDER BY dim_value
             """);
 
@@ -241,11 +254,11 @@ public sealed class MartRefreshScriptTests : IAsyncLifetime
         Assert.SkipWhen(_unavailable is not null, _unavailable ?? "");
         await TwoDeliveriesAsync();
 
-        var truth = await RowsAsync("""
-            SELECT multiIf(b.tac = '', 'Unknown device', r.tac = '', 'Unregistered TAC', r.device_class) AS device_class,
-                   count(), uniq(b.msisdn), uniqIf(b.imei, length(b.imei) = 14)
-            FROM {db}.binding_current AS b FINAL
-            LEFT JOIN (SELECT tac, device_class FROM {db}.tac_radio_active) AS r ON r.tac = b.tac
+        var truth = await RowsAsync($"""
+            SELECT multiIf({NoHandset}, 'Unknown device', r.tac = '', 'Unregistered TAC', r.device_class) AS device_class,
+                   count(), uniq(b.msisdn), uniqIf(b.imei, NOT {NoHandset})
+            FROM {_database}.binding_current AS b FINAL
+            LEFT JOIN (SELECT tac, device_class FROM {_database}.tac_radio_active) AS r ON r.tac = b.tac
             WHERE b.active = 1
             GROUP BY device_class ORDER BY device_class
             """);
@@ -275,7 +288,7 @@ public sealed class MartRefreshScriptTests : IAsyncLifetime
         {
             var supported = string.Format(System.Globalization.CultureInfo.InvariantCulture, aggregate, $"c.tac != '' AND c.{column} = 1");
             var unsupported = string.Format(System.Globalization.CultureInfo.InvariantCulture, aggregate, $"c.tac != '' AND c.{column} = 0");
-            var unknown = string.Format(System.Globalization.CultureInfo.InvariantCulture, aggregate, $"b.tac != '' AND (c.tac = '' OR c.{column} = 2)");
+            var unknown = string.Format(System.Globalization.CultureInfo.InvariantCulture, aggregate, $"NOT {NoHandset} AND (c.tac = '' OR c.{column} = 2)");
 
             var truth = await RowsAsync($"""
                 SELECT {supported}, {unsupported}, {unknown}
@@ -291,6 +304,31 @@ public sealed class MartRefreshScriptTests : IAsyncLifetime
 
             Assert.Equal(truth, mart);
         }
+    }
+
+    [Fact]
+    public async Task A_row_no_handset_could_carry_joins_the_empty_tac_and_a_tac_merely_unknown_does_not()
+    {
+        Assert.SkipWhen(_unavailable is not null, _unavailable ?? "");
+        await TwoDeliveriesAsync();
+
+        // tac | bindings | invalid | handsets
+        var rows = await RowsAsync("""
+            SELECT if(tac = '', 'no TAC', tac), bindings, invalid_imei, finalizeAggregation(handsets) FROM {db}.agg_tac_population
+            WHERE seq = 2 AND tac IN ('', '00000000', '50040120', '77123456', '77000001', '35999999', '99999999')
+            ORDER BY tac = '' DESC, tac
+            """);
+
+        Assert.Equal(
+            [
+                // 000000 three times, a malformed one, both zero TACs, the shifted IMEI, the unknown body.
+                "no TAC\t8\t4\t0",
+                "35999999\t1\t0\t1",  // a good body the catalogue lacks: a handset
+                "50040120\t1\t0\t1",  // that shape, but not ending in 0: not shifted
+                "77000001\t1\t0\t1",  // a body Annex A lacks, but a TAC the catalogue holds
+                "99999999\t1\t0\t1",
+            ],
+            rows);
     }
 
     [Fact]

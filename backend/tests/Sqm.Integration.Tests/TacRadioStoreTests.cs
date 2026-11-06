@@ -75,6 +75,7 @@ public sealed class TacRadioStoreTests : IAsyncLifetime
                      'Radio Interface: NONE')
                 """);
             await QueryAsync($"INSERT INTO {_database}.tac_active (singleton, version_id, activated_at) VALUES (1, 1, now64(3))");
+            await QueryAsync($"CREATE VIEW {_database}.tac AS SELECT * FROM {_database}.tac_all WHERE version_id = 1");
 
             // Active bindings: 2 on the A54, 3 on the feature phone, 1 each on the GSM handheld, the
             // NTN phone and the record with no bands, 1 unknown device and 1 TAC the catalogue lacks.

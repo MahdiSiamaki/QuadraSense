@@ -157,7 +157,8 @@ public sealed partial class DashboardWidgetDataLoader : IWidgetDataLoader
 
     /// <summary>From the exact counts, never from the rounded coverage percentage.</summary>
     private static double UnregisteredTac(KpiSummary k) =>
-        k.ActiveBindings + k.SetAsideBindings - k.TacMatchedBindings - k.UnknownDeviceBindings - k.MalformedImeiBindings;
+        k.ActiveBindings + k.SetAsideBindings - k.TacMatchedBindings - k.UnknownDeviceBindings - k.MalformedImeiBindings
+        - k.InvalidImeiBindings;
 
     private async Task<WidgetDataResult> KpiAsync(Config c, DashboardLens lens, IReadOnlyList<string> metrics, CancellationToken ct)
     {

@@ -45,6 +45,31 @@ internal static class AnalyticsSchema
     /// <summary>A label for a well-formed TAC that is absent from the GSMA database. Measured at 0.20%.</summary>
     public const string UnknownTacLabel = "(unknown TAC)";
 
+    /// <summary>The reporting bodies of GSMA TS.06 v27, Annex A, current and former: a TAC's first two digits.</summary>
+    private const string ReportingBodies =
+        "'00', '01', '10', '30', '33', '35', '44', '45', '49', '50', '51', '52', '53', '54', '86', '91', '98', '99'";
+
+    /// <summary>The condition that a row carries no handset (ADR-020), for a read of the rows themselves.</summary>
+    /// <remarks>
+    /// <c>000000</c>, or anything not 14 digits. Or 14 digits no handset could carry: a TAC the catalogue
+    /// does not hold that is all zeros, is a shifted IMEI, or names a reporting body GSMA never had. A
+    /// TAC merely missing from the catalogue is none of these, and is a handset.
+    /// <para>
+    /// The marts have this already: section 1b of <c>refresh_marts.sql</c> moves such a row to the empty
+    /// TAC, and <c>MartRefreshScriptTests</c> holds the two to each other.
+    /// </para>
+    /// </remarks>
+    /// <param name="imei">The IMEI column.</param>
+    /// <param name="tac">The TAC column.</param>
+    /// <param name="catalogue">The catalogue: <c>sqm.tac</c>, or <c>tac</c> for the connection's own database.</param>
+    public static string NoHandset(string imei, string tac, string catalogue) =>
+        $"(length({imei}) != 14 OR ({tac} NOT IN (SELECT tac FROM {catalogue}) AND ({tac} = '00000000'"
+        + $" OR substring({tac}, 1, 2) NOT IN ({ReportingBodies})"
+        + $" OR (endsWith({imei}, '0') AND substring({imei}, 1, 7) IN (SELECT substring(tac, 2, 7) FROM {catalogue})))))";
+
+    /// <summary><see cref="NoHandset"/> for the current-state reads: <c>b</c>, against the catalogue.</summary>
+    public static readonly string RowHasNoHandset = NoHandset("b.imei", "b.tac", "sqm.tac");
+
     /// <summary>The <c>dimension</c> key used in <c>agg_dimension_daily</c>.</summary>
     public static string MartKeyFor(AnalyticsDimension dimension) => dimension switch
     {
