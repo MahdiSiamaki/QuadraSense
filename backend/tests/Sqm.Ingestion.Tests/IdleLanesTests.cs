@@ -11,17 +11,35 @@ internal static class Lanes
     private const long GiB = 1L << 30;
 
     /// <summary>Reads what it is told to, and counts.</summary>
-    internal sealed class Reader(Func<EngineCapacity> read) : IEngineCapacityReader
+    internal sealed class Reader(Func<EngineCapacity> read, Func<long>? peoplesRows = null) : IEngineCapacityReader
     {
         private int _reads;
+        private int _looks;
 
         public int Reads => Volatile.Read(ref _reads);
+
+        public int Looks => Volatile.Read(ref _looks);
 
         public Task<EngineCapacity> ReadCapacityAsync(CancellationToken ct)
         {
             Interlocked.Increment(ref _reads);
             return Task.FromResult(read());
         }
+
+        public Task<long> ReadPeoplesRowsAsync(TimeSpan window, CancellationToken ct)
+        {
+            Interlocked.Increment(ref _looks);
+            return Task.FromResult(peoplesRows?.Invoke() ?? 0);
+        }
+    }
+
+    internal sealed class ManualClock : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 11, 6, 8, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan by) => _now += by;
     }
 
     /// <summary>A small engine: room for one step.</summary>
@@ -45,15 +63,6 @@ public sealed class IdleLanesCountTests
 {
     private const long GiB = 1L << 30;
 
-    private sealed class ManualClock : TimeProvider
-    {
-        private DateTimeOffset _now = new(2026, 11, 6, 8, 0, 0, TimeSpan.Zero);
-
-        public override DateTimeOffset GetUtcNow() => _now;
-
-        public void Advance(TimeSpan by) => _now += by;
-    }
-
     [Theory]
     // The real readings of 2026-11-06.
     [InlineData(5_583_457_484, 12, 1_178_910_709, 2)] // the laptop
@@ -75,7 +84,7 @@ public sealed class IdleLanesCountTests
     {
         var lanes = Lanes.Of(new EngineCapacity(64 * GiB, 16, GiB), new ImportWorkerOptions { MaxIdleLanes = 3 });
 
-        Assert.Equal(3, await lanes.CountAsync(CancellationToken.None));
+        Assert.Equal(3, await lanes.CountAsync(false, CancellationToken.None));
     }
 
     [Fact]
@@ -84,26 +93,26 @@ public sealed class IdleLanesCountTests
         var reader = new Lanes.Reader(() => new EngineCapacity(64 * GiB, 16, GiB));
         var lanes = Lanes.Of(reader, new ImportWorkerOptions { MaxIdleLanes = 1 });
 
-        Assert.Equal(1, await lanes.CountAsync(CancellationToken.None));
+        Assert.Equal(1, await lanes.CountAsync(false, CancellationToken.None));
         Assert.Equal(0, reader.Reads);
     }
 
     [Fact]
     public async Task A_reading_stands_until_it_is_old()
     {
-        var clock = new ManualClock();
+        var clock = new Lanes.ManualClock();
         var reader = new Lanes.Reader(() => new EngineCapacity(64 * GiB, 16, GiB));
         var lanes = Lanes.Of(reader, clock: clock);
 
         for (var i = 0; i < 5; i++)
         {
-            await lanes.CountAsync(CancellationToken.None);
+            await lanes.CountAsync(false, CancellationToken.None);
         }
 
         Assert.Equal(1, reader.Reads);
 
         clock.Advance(IdleLanes.ReadEvery);
-        await lanes.CountAsync(CancellationToken.None);
+        await lanes.CountAsync(false, CancellationToken.None);
 
         Assert.Equal(2, reader.Reads);
     }
@@ -111,38 +120,173 @@ public sealed class IdleLanesCountTests
     [Fact]
     public async Task An_engine_that_cannot_be_read_gets_one_lane_until_it_can()
     {
-        var clock = new ManualClock();
+        var clock = new Lanes.ManualClock();
         var reachable = false;
         var reader = new Lanes.Reader(() => reachable
             ? new EngineCapacity(64 * GiB, 16, GiB)
             : throw new HttpRequestException("no route"));
         var lanes = Lanes.Of(reader, clock: clock);
 
-        Assert.Equal(1, await lanes.CountAsync(CancellationToken.None));
+        Assert.Equal(1, await lanes.CountAsync(false, CancellationToken.None));
 
         reachable = true;
         clock.Advance(IdleLanes.ReadEvery);
 
-        Assert.Equal(2, await lanes.CountAsync(CancellationToken.None));
+        Assert.Equal(2, await lanes.CountAsync(false, CancellationToken.None));
     }
 
     [Fact]
     public async Task A_failed_step_leaves_one_lane_until_the_brake_lets_go()
     {
-        var clock = new ManualClock();
+        var clock = new Lanes.ManualClock();
         var options = new ImportWorkerOptions { IdleBrake = TimeSpan.FromMinutes(30) };
         var lanes = Lanes.Of(new EngineCapacity(64 * GiB, 16, GiB), options, clock);
 
-        Assert.Equal(2, await lanes.CountAsync(CancellationToken.None));
+        Assert.Equal(2, await lanes.CountAsync(false, CancellationToken.None));
 
         lanes.StepFailed();
-        Assert.Equal(1, await lanes.CountAsync(CancellationToken.None));
+        Assert.Equal(1, await lanes.CountAsync(false, CancellationToken.None));
 
         clock.Advance(TimeSpan.FromMinutes(29));
-        Assert.Equal(1, await lanes.CountAsync(CancellationToken.None));
+        Assert.Equal(1, await lanes.CountAsync(false, CancellationToken.None));
 
         clock.Advance(TimeSpan.FromMinutes(1));
-        Assert.Equal(2, await lanes.CountAsync(CancellationToken.None));
+        Assert.Equal(2, await lanes.CountAsync(false, CancellationToken.None));
+    }
+
+    /// <summary>An engine with room for two, and people reading as many rows as they are told to.</summary>
+    private static (IdleLanes Lanes, Lanes.Reader Reader, Lanes.ManualClock Clock) Site(Func<long> rows)
+    {
+        var clock = new Lanes.ManualClock();
+        var reader = new Lanes.Reader(() => new EngineCapacity(64 * GiB, 16, GiB), rows);
+        return (Lanes.Of(reader, clock: clock), reader, clock);
+    }
+
+    [Fact]
+    public async Task A_run_gives_way_while_people_read()
+    {
+        var (lanes, _, _) = Site(() => 5_000_000);
+
+        Assert.Equal(0, await lanes.CountAsync(true, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_tab_left_open_is_not_people()
+    {
+        // Polling reads under 6,000 rows a minute on the VM.
+        var (lanes, _, _) = Site(() => 12_000);
+
+        Assert.Equal(2, await lanes.CountAsync(true, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task With_nothing_under_way_nobody_is_asked_about()
+    {
+        var (lanes, reader, _) = Site(() => 5_000_000);
+
+        Assert.Equal(2, await lanes.CountAsync(false, CancellationToken.None));
+        Assert.Equal(0, reader.Looks);
+    }
+
+    [Fact]
+    public async Task The_log_is_asked_every_so_often_and_not_at_every_poll()
+    {
+        var (lanes, reader, clock) = Site(() => 0);
+
+        for (var i = 0; i < 5; i++)
+        {
+            await lanes.CountAsync(true, CancellationToken.None);
+        }
+
+        Assert.Equal(1, reader.Looks);
+
+        clock.Advance(IdleLanes.LookEvery);
+        await lanes.CountAsync(true, CancellationToken.None);
+
+        Assert.Equal(2, reader.Looks);
+    }
+
+    [Fact]
+    public async Task A_run_carries_on_when_people_stop()
+    {
+        long rows = 5_000_000;
+        var (lanes, _, clock) = Site(() => rows);
+
+        Assert.Equal(0, await lanes.CountAsync(true, CancellationToken.None));
+
+        rows = 0;
+        clock.Advance(IdleLanes.LookEvery);
+
+        Assert.Equal(2, await lanes.CountAsync(true, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_busy_site_cannot_starve_a_run()
+    {
+        var (lanes, _, clock) = Site(() => 5_000_000);
+
+        Assert.Equal(0, await lanes.CountAsync(true, CancellationToken.None));
+
+        clock.Advance(TimeSpan.FromMinutes(119));
+        Assert.Equal(0, await lanes.CountAsync(true, CancellationToken.None));
+
+        // Past the limit it goes on, in one lane, for as long as they stay.
+        clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.Equal(1, await lanes.CountAsync(true, CancellationToken.None));
+
+        clock.Advance(TimeSpan.FromHours(5));
+        Assert.Equal(1, await lanes.CountAsync(true, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task The_wait_starts_again_after_people_have_gone()
+    {
+        long rows = 5_000_000;
+        var (lanes, _, clock) = Site(() => rows);
+
+        await lanes.CountAsync(true, CancellationToken.None);
+        clock.Advance(TimeSpan.FromHours(3));
+        Assert.Equal(1, await lanes.CountAsync(true, CancellationToken.None));
+
+        rows = 0;
+        clock.Advance(IdleLanes.LookEvery);
+        Assert.Equal(2, await lanes.CountAsync(true, CancellationToken.None));
+
+        rows = 5_000_000;
+        clock.Advance(IdleLanes.LookEvery);
+        Assert.Equal(0, await lanes.CountAsync(true, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_log_that_cannot_be_read_holds_nothing_back()
+    {
+        var clock = new Lanes.ManualClock();
+        var reader = new Lanes.Reader(
+            () => new EngineCapacity(64 * GiB, 16, GiB), () => throw new HttpRequestException("no route"));
+        var lanes = Lanes.Of(reader, clock: clock);
+
+        Assert.Equal(2, await lanes.CountAsync(true, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task No_rows_set_turns_giving_way_off()
+    {
+        var clock = new Lanes.ManualClock();
+        var reader = new Lanes.Reader(() => new EngineCapacity(64 * GiB, 16, GiB), () => 5_000_000);
+        var lanes = Lanes.Of(reader, new ImportWorkerOptions { IdleYieldRows = 0 }, clock);
+
+        Assert.Equal(2, await lanes.CountAsync(true, CancellationToken.None));
+        Assert.Equal(0, reader.Looks);
+    }
+
+    [Fact]
+    public async Task One_lane_allowed_still_gives_way()
+    {
+        var clock = new Lanes.ManualClock();
+        var reader = new Lanes.Reader(() => new EngineCapacity(64 * GiB, 16, GiB), () => 5_000_000);
+        var lanes = Lanes.Of(reader, new ImportWorkerOptions { MaxIdleLanes = 1 }, clock);
+
+        Assert.Equal(0, await lanes.CountAsync(true, CancellationToken.None));
     }
 }
 
@@ -461,7 +605,54 @@ public sealed class IdleLanesTests
         await goneOn.Task.WaitAsync(Patience);
         await worker.StopAsync(CancellationToken.None);
 
-        Assert.Equal(1, await lanes.CountAsync(CancellationToken.None));
+        Assert.Equal(1, await lanes.CountAsync(false, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_run_stops_stepping_while_people_read_and_goes_on_when_they_stop()
+    {
+        const long GiB = 1L << 30;
+        long rows = 0;
+        var clock = new Lanes.ManualClock();
+        var reader = new Lanes.Reader(() => new EngineCapacity(64 * GiB, 16, GiB), () => Volatile.Read(ref rows));
+        var lanes = Lanes.Of(reader, clock: clock);
+
+        var task = new Idle(async (_, ct) =>
+        {
+            await Task.Delay(1, ct).ConfigureAwait(false);
+            return true;
+        });
+
+        var worker = Worker([task], lanes);
+        await worker.StartAsync(CancellationToken.None);
+
+        await WaitForAsync(() => task.Steps >= 3);
+
+        // People arrive: the round in progress ends and no other starts.
+        Volatile.Write(ref rows, 5_000_000);
+        clock.Advance(IdleLanes.LookEvery);
+        await Task.Delay(AWhile);
+        var held = task.Steps;
+        await Task.Delay(AWhile);
+        Assert.Equal(held, task.Steps);
+
+        // They stop, and the run carries on by itself.
+        Volatile.Write(ref rows, 0);
+        clock.Advance(IdleLanes.LookEvery);
+        await WaitForAsync(() => task.Steps > held);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + Patience;
+
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < deadline, "it did not happen in time");
+            await Task.Delay(5);
+        }
     }
 
     private static void InterlockedMax(ref int target, int value)

@@ -1,3 +1,5 @@
+using System.Net.Http.Headers;
+using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Sqm.Infrastructure.ClickHouse;
@@ -88,6 +90,35 @@ public sealed class EngineCapacityTests : IAsyncLifetime
 
         Assert.NotEqual(Limit, capacity.StepPeakBytes);
         Assert.True(capacity.StepPeakBytes > 1L << 20, $"{capacity.StepPeakBytes} bytes");
+    }
+
+    [Fact]
+    public async Task What_the_api_has_read_lately_is_counted_and_what_the_worker_reads_is_not()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+        }
+
+        var store = Store("sqm");
+        var window = TimeSpan.FromSeconds(5);
+
+        // Past the last test's reads: this collection runs alone, and the log holds them until it flushes.
+        await Task.Delay(window + TimeSpan.FromSeconds(1), Ct);
+
+        // The worker's own user reads more than the API does, and the API a known amount.
+        await store.ScalarAsync("SELECT count() FROM numbers(300000)", Ct);
+
+        using var api = new HttpClient();
+        api.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes("sqm_app:sqm_dev")));
+        using var body = new StringContent("SELECT count() FROM numbers(200000)", Encoding.UTF8, "text/plain");
+        using var read = await api.PostAsync(new Uri("http://localhost:18123/"), body, Ct);
+        read.EnsureSuccessStatusCode();
+
+        await store.ScalarAsync("SYSTEM FLUSH LOGS", Ct);
+
+        Assert.InRange(await store.ReadPeoplesRowsAsync(window, Ct), 200_000, 299_999);
     }
 
     [Fact]

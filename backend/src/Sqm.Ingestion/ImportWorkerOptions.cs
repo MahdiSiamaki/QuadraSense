@@ -50,6 +50,20 @@ public sealed class ImportWorkerOptions
     /// <summary>How long the worker keeps to one lane after an idle step fails.</summary>
     public TimeSpan IdleBrake { get; set; } = TimeSpan.FromMinutes(30);
 
+    /// <summary>How far back the API's reads count as people using the site.</summary>
+    public TimeSpan IdleYieldWindow { get; set; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>The rows the API must have read in that window for a run to give way. Zero turns it off.</summary>
+    /// <remarks>
+    /// Between what an open tab reads and what a person does: on the VM, polling alone stayed under 6,000
+    /// rows a minute, and 220 of the 276 minutes with any reads in twelve days were over 100,000 (ADR-021).
+    /// </remarks>
+    public long IdleYieldRows { get; set; } = 100_000;
+
+    /// <summary>How long a run gives way before it goes on beside people, in one lane.</summary>
+    /// <remarks>So that a busy site cannot starve a run: it must still finish within the day.</remarks>
+    public TimeSpan IdleYieldLimit { get; set; } = TimeSpan.FromHours(2);
+
     /// <summary>
     /// How long a claim is valid before another worker may take the job.
     /// </summary>

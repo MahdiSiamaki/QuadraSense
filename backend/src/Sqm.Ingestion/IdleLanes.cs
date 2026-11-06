@@ -10,6 +10,14 @@ namespace Sqm.Ingestion;
 /// one lane whenever it cannot be known, which is how the worker has always run.
 /// </para>
 /// <para>
+/// <b>People come first.</b> A run under way gives way while the API is reading for people, because on
+/// the VM what they share is the disk: one run beside them took a chart from 789 to 3,060 ms. ClickHouse's
+/// workloads cannot help, measured: they do not schedule a local disk. It counts rows read, not sessions,
+/// because an open tab polls, and that is what tells the two apart: a poll reads under 6,000 rows a minute.
+/// After <see cref="ImportWorkerOptions.IdleYieldLimit"/> the run goes on in one lane, so that a busy site
+/// cannot starve it.
+/// </para>
+/// <para>
 /// <b>A brake, not an engine.</b> A step that fails leaves one lane for <see cref="ImportWorkerOptions.IdleBrake"/>:
 /// whatever failed it, its retries then have the machine to themselves, and a run is failed only after
 /// three tries. Tasks here take minutes, so a controller would learn too slowly to be worth having
@@ -25,12 +33,20 @@ public sealed partial class IdleLanes(
     /// <summary>How long a reading stands. What it reads changes with a deployment, not by the minute.</summary>
     internal static readonly TimeSpan ReadEvery = TimeSpan.FromMinutes(10);
 
+    /// <summary>How often to ask whether people are reading: the worker polls every five seconds.</summary>
+    internal static readonly TimeSpan LookEvery = TimeSpan.FromSeconds(30);
+
     private readonly ImportWorkerOptions _options = options.Value;
 
     private DateTimeOffset _nextRead = DateTimeOffset.MinValue;
     private int _lanes = 1;
     private int _reported;
     private bool _unreadable;
+
+    private DateTimeOffset _nextLook = DateTimeOffset.MinValue;
+    private bool _peopleReading;
+    private DateTimeOffset? _givingWaySince;
+    private bool _waitedLongEnough;
 
     /// <summary>Written from any lane, read on the claim loop.</summary>
     private long _brakedUntilTicks;
@@ -47,15 +63,59 @@ public sealed partial class IdleLanes(
         Message = "An idle step failed; one lane until {Until}")]
     private partial void LogBraked(DateTimeOffset until);
 
-    /// <summary>The lanes to run now. Called from the claim loop alone.</summary>
-    public async Task<int> CountAsync(CancellationToken ct)
+    [LoggerMessage(EventId = 3413, Level = LogLevel.Information,
+        Message = "People are reading; background runs give way until they stop")]
+    private partial void LogGivingWay();
+
+    [LoggerMessage(EventId = 3414, Level = LogLevel.Information,
+        Message = "Background runs have waited {Limit}; they go on in one lane beside people")]
+    private partial void LogWaitedLongEnough(TimeSpan limit);
+
+    [LoggerMessage(EventId = 3415, Level = LogLevel.Information,
+        Message = "People have stopped reading; background runs carry on")]
+    private partial void LogPeopleGone();
+
+    /// <summary>The lanes to run now, none while background runs give way. Called from the claim loop alone.</summary>
+    /// <param name="moreToDo">Whether a run is under way. With nothing held back there is nothing to give way.</param>
+    /// <param name="ct">Cancellation.</param>
+    public async Task<int> CountAsync(bool moreToDo, CancellationToken ct)
     {
+        var now = clock.GetUtcNow();
+
+        if (moreToDo && await PeopleAreReadingAsync(now, ct).ConfigureAwait(false))
+        {
+            if (_givingWaySince is null)
+            {
+                _givingWaySince = now;
+                LogGivingWay();
+            }
+
+            if (now - _givingWaySince < _options.IdleYieldLimit)
+            {
+                return 0;
+            }
+
+            if (!_waitedLongEnough)
+            {
+                _waitedLongEnough = true;
+                LogWaitedLongEnough(_options.IdleYieldLimit);
+            }
+
+            return 1;
+        }
+
+        if (_givingWaySince is not null)
+        {
+            _givingWaySince = null;
+            _waitedLongEnough = false;
+            LogPeopleGone();
+        }
+
         if (_options.MaxIdleLanes <= 1)
         {
             return 1;
         }
 
-        var now = clock.GetUtcNow();
         if (now >= _nextRead)
         {
             await ReadAsync(ct).ConfigureAwait(false);
@@ -73,6 +133,34 @@ public sealed partial class IdleLanes(
         var until = clock.GetUtcNow() + _options.IdleBrake;
         Volatile.Write(ref _brakedUntilTicks, until.UtcTicks);
         LogBraked(until);
+    }
+
+    private async Task<bool> PeopleAreReadingAsync(DateTimeOffset now, CancellationToken ct)
+    {
+        if (_options.IdleYieldRows <= 0)
+        {
+            return false;
+        }
+
+        if (now < _nextLook)
+        {
+            return _peopleReading;
+        }
+
+        _nextLook = now + LookEvery;
+
+        try
+        {
+            var rows = await capacity.ReadPeoplesRowsAsync(_options.IdleYieldWindow, ct).ConfigureAwait(false);
+            _peopleReading = rows >= _options.IdleYieldRows;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Nothing says anyone is there, and work held back on a guess could wait for ever.
+            _peopleReading = false;
+        }
+
+        return _peopleReading;
     }
 
     private async Task ReadAsync(CancellationToken ct)
