@@ -75,8 +75,8 @@ function modelPoints(points: PlanningModelTrendPoint[]) {
       </div>
       <p class="text-2xs text-[var(--c-text-muted)]">
         Numbers holding such a model, estimated; a number holding two models is counted under each. Shares are of the
-        {{ formatFull(data.totalNumbers) }} numbers with an active binding. Not classifiable - unknown devices and TACs the catalogue
-        lacks: {{ formatFull(data.notClassified.bindings) }} bindings.
+        {{ formatFull(data.totalNumbers) }} numbers holding a handset. Not classifiable - TACs the catalogue lacks:
+        {{ formatFull(data.notClassified.bindings) }} bindings.
       </p>
 
       <div v-for="n in data.noData" :key="n.topic" class="rounded-[var(--radius-md)] border bg-[var(--c-surface-sunken)] px-4 py-3 text-xs">

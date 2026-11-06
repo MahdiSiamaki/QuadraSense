@@ -97,7 +97,11 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
                     (9120000010, 432110000000010, '35000001000010', 0, 1, '2026-05-01'),
                     (9120000010, 432110000000010, '35100001000010', 1, 1, '2026-05-01'),
                     (9120000011, 432110000000011, '35200001000011', 1, 1, '2026-05-01'),
-                    (9120000011, 432110000000011, '35200101000013', 1, 1, '2026-05-01')
+                    (9120000011, 432110000000011, '35200101000013', 1, 1, '2026-05-01'),
+                    (9120000013, 432110000000023, '000000', 1, 1, '2026-05-01'),
+                    (9120000014, 432110000000024, '50000011234570', 1, 1, '2026-05-01'),
+                    (9120000015, 432110000000025, '35200001000015', 1, 1, '2026-05-01'),
+                    (9120000015, 432110000000025, '77000000000015', 1, 1, '2026-05-01')
                 """);
 
             // The modem's life: three SIMs on two numbers, one still on it.
@@ -195,13 +199,16 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
                 "9120000002|3|0|2|0|1|0",   // GSM only, every handset known: exposed; eSIM not stated (00)
                 "9120000003|1|0|1|0|0|0",   // one LTE handset beside a GSM one is enough
                 "9120000004|2|0|0|1|0|0",   // NB-IoT / LTE-M only: ready, on its own row
-                "9120000005|4|2|2|0|0|0",   // beside an unknown device (000000): not assessable
-                "9120000006|4|1|2|0|0|0",   // beside a shifted IMEI: the feed defect is the reason
+                "9120000005|3|0|0|0|0|0",   // a 000000 row is no handset: it decides nothing beside a real one
+                "9120000006|3|0|0|0|0|0",   // nor does a shifted IMEI, and its feature phone is exposed
                 "9120000007|4|3|2|0|0|0",   // beside a TAC the catalogue lacks
                 "9120000008|3|0|0|0|0|1",   // the unregistered twin (+100, same serial) is this handset's other radio
                 "9120000009|4|4|2|0|0|0",   // beside a model whose record lists no band
                 "9120000010|3|0|2|0|1|0",   // the inactive LTE binding does not count
                 "9120000011|4|3|2|0|0|0",   // serials two apart are not a pair
+                "9120000013|4|2|2|0|0|0",   // 000000 and nothing else: no handset, and the reader leaves it out
+                "9120000014|4|1|2|0|0|0",   // a shifted IMEI and nothing else: the same
+                "9120000015|3|0|0|0|0|0",   // a reporting body GSMA never had is no handset either
             ],
             rows.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
     }
@@ -220,17 +227,18 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
             GROUP BY class ORDER BY class FORMAT TSVRaw
             """);
         Assert.Equal(
-            ["1|2|3", "2|1|1", "3|3|4", "4|5|10"],
+            ["1|2|3", "2|1|1", "3|6|10", "4|5|8"],
             summary.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
 
-        // The exposed numbers' models: the GSM handheld on two numbers, the feature phone and its twin on one.
+        // The exposed numbers' models: the GSM handheld on two numbers, the feature phone on four and its
+        // twin on one. The rows with no handset beside them are no model.
         var models = await QueryAsync($"""
             SELECT concatWithSeparator('|', tac, toString(uniqMerge(numbers)))
             FROM {_database}.planning_breakdown WHERE run_id = {run.RunId} AND sunset = 3
             GROUP BY tac ORDER BY tac FORMAT TSVRaw
             """);
         Assert.Equal(
-            ["35100001|2", "35200001|1", "35200101|1"],
+            ["35100001|2", "35200001|4", "35200101|1"],
             models.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
 
         // Who holds which model: every number once per model, with its classes, and no number missing.

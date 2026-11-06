@@ -60,7 +60,7 @@ const blocks = computed(() => {
 
       <p class="text-2xs text-[var(--c-text-muted)]">
         Per model: a number holding two models is counted under each, and numbers and handsets are estimated. Shares are of the
-        {{ formatFull(data.totalNumbers) }} numbers with an active binding.
+        {{ formatFull(data.totalNumbers) }} numbers holding a handset.
         <template v-if="data.operatorLte.length || data.operatorNr.length">
           The operator’s bands as configured: LTE {{ data.operatorLte.join(', ') || '—' }}; NR {{ data.operatorNr.map((b) => `n${b}`).join(', ') || '—' }}.
         </template>

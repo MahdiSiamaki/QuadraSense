@@ -214,6 +214,30 @@ public sealed class PlanningModelViewTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_number_with_nothing_but_a_row_with_no_handset_is_on_no_list_and_in_no_breakdown()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+
+        // Number 6 holds no handset, and is stored as not assessable for that; 7 a TAC the catalogue lacks.
+        var list = (await Reader().ListNumbersAsync(1, "sunset", "not-assessable", null, PlanningFilter.None, 1, 50, ct))!.Value;
+
+        Assert.Equal([7UL], list.Rows.Select(r => r.Msisdn));
+        Assert.Equal(1, list.Total);
+        Assert.Equal(1, await Reader().CountNumbersAsync(1, "sunset", "not-assessable", null, PlanningFilter.None, ct));
+
+        var models = (await Reader().GetBreakdownAsync(
+            null, "sunset", "not-assessable", "tac", PlanningFilter.None, 50, new OperatorBandsOptions(), ct))!;
+
+        Assert.Equal(["99999999"], models.Rows.Select(r => r.Key));
+    }
+
+    [Fact]
     public async Task A_satellite_radio_is_not_3gpp_ntn_and_unknowns_are_kept_apart()
     {
         if (_unavailable is not null)
@@ -229,10 +253,10 @@ public sealed class PlanningModelViewTests : IAsyncLifetime
         Assert.Equal(["NTN and TN|2"], ntn.ByMode.Select(r => $"{r.Key}|{r.Numbers}"));
         Assert.Equal(["GSO|2"], ntn.ByOrbit.Select(r => $"{r.Key}|{r.Numbers}"));
         Assert.Equal(["B256|LTE band 256|2"], ntn.ByBand.Select(r => $"{r.Key}|{r.Label}|{r.Numbers}"));
-        Assert.Equal(2, ntn.NotClassified.Numbers);
+        Assert.Equal(1, ntn.NotClassified.Numbers);
 
-        // Every binding is in exactly one class or not classified.
-        Assert.Equal(10, ntn.Classes.Sum(c => c.Bindings) + ntn.NotClassified.Bindings);
+        // Every binding of a handset is in exactly one class or not classified.
+        Assert.Equal(9, ntn.Classes.Sum(c => c.Bindings) + ntn.NotClassified.Bindings);
 
         var breakdown = (await Reader().GetBreakdownAsync(null, "ntn", "satellite", "model", PlanningFilter.None, 50, new OperatorBandsOptions(), ct))!;
         Assert.Equal(["Sat Phone|1"], breakdown.Rows.Select(r => $"{r.Key}|{r.Numbers}"));

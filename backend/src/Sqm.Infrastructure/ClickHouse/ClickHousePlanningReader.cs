@@ -55,13 +55,24 @@ public sealed class ClickHousePlanningReader : IPlanningReader
     ];
 
     /// <summary>Why a number is not assessable, planning_number.reason.</summary>
+    /// <remarks>
+    /// Reasons 1 and 2 are stored as well: a shifted IMEI, and no handset otherwise. A number with those
+    /// and nothing else has no handset to plan for, so it is on no list, in no total (ADR-020).
+    /// </remarks>
     public static readonly IReadOnlyList<(int Code, string Key, string Label)> Reasons =
     [
-        (1, "shifted-imei", "A shifted IMEI (feed defect)"),
-        (2, "unknown-device", "An unknown device (000000 or malformed IMEI)"),
         (3, "unregistered-tac", "A TAC the GSMA catalogue does not hold"),
         (4, "no-bands", "A model whose record lists no band"),
     ];
+
+    /// <summary>On a row of planning_number or planning_breakdown: the number holds a handset (ADR-020).</summary>
+    private const string HoldsAHandset = "NOT (sunset = 4 AND reason IN (1, 2))";
+
+    /// <summary><see cref="HoldsAHandset"/> on a row of planning_summary. An eSIM row's class is never 4.</summary>
+    private const string SummaryHoldsAHandset = "NOT (class = 4 AND reason IN (1, 2))";
+
+    /// <summary>The class of planning_number.esim that a number with no handset falls in.</summary>
+    private const int EsimNotStated = 2;
 
     /// <summary>The eSIM classes of planning_number.esim.</summary>
     public static readonly IReadOnlyList<(int Code, string Key, string Label)> EsimClasses =
@@ -686,7 +697,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             var column = view == "esim" ? "esim" : "sunset";
             source = $$"""
                 SELECT tac, numbers, bindings, handsets FROM planning_breakdown
-                WHERE run_id = {run:UInt64} AND {{column}} = {{chosen.Code}}
+                WHERE run_id = {run:UInt64} AND {{column}} = {{chosen.Code}} AND {{HoldsAHandset}}
                 """;
         }
 
@@ -1076,7 +1087,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             return null;
         }
 
-        var condition = $"{(view == "esim" ? "esim" : "sunset")} = {chosen.Code}";
+        var condition = $"{(view == "esim" ? "esim" : "sunset")} = {chosen.Code} AND {HoldsAHandset}";
         if (view != "esim" && reason is not null && Reasons.FirstOrDefault(r => r.Key == reason) is { Key: not null } why)
         {
             condition += $" AND reason = {why.Code}";
@@ -1212,13 +1223,13 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             ? await _query.ExecuteAsync($$"""
                 SELECT {{column}}, uniqMerge(numbers), sum(bindings), uniqMerge(handsets)
                 FROM planning_breakdown
-                WHERE run_id = {run:UInt64} AND tac IN ({{MatchingTacs}})
+                WHERE run_id = {run:UInt64} AND {{HoldsAHandset}} AND tac IN ({{MatchingTacs}})
                 GROUP BY {{column}}
                 """, parameters, ct, Budget).ConfigureAwait(false)
-            : await _query.ExecuteAsync("""
+            : await _query.ExecuteAsync($$"""
                 SELECT class, sum(numbers), sum(bindings), sum(handsets)
                 FROM planning_summary FINAL
-                WHERE run_id = {run:UInt64} AND measure = {measure:String}
+                WHERE run_id = {run:UInt64} AND measure = {measure:String} AND {{SummaryHoldsAHandset}}
                 GROUP BY class
                 """, parameters, ct, Budget).ConfigureAwait(false);
 
@@ -1226,11 +1237,26 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             r => ClickHouseJsonResult.Int32(r, 0),
             r => (Numbers: ClickHouseJsonResult.Int64(r, 1), Bindings: ClickHouseJsonResult.Int64(r, 2), Handsets: ClickHouseJsonResult.Int64(r, 3)));
 
+        // The summary's eSIM rows do not know the reason, and a number with no handset states nothing.
+        if (measure == "esim" && !filter.Any && byClass.TryGetValue(EsimNotStated, out var notStated))
+        {
+            var aside = await _query.ExecuteAsync($$"""
+                SELECT sum(numbers), sum(bindings), sum(handsets)
+                FROM planning_summary FINAL
+                WHERE run_id = {run:UInt64} AND measure = 'sunset' AND NOT {{SummaryHoldsAHandset}}
+                """, parameters, ct, Budget).ConfigureAwait(false);
+            byClass[EsimNotStated] = (
+                notStated.Numbers - ClickHouseJsonResult.Int64(aside.Rows[0], 0),
+                notStated.Bindings - ClickHouseJsonResult.Int64(aside.Rows[0], 1),
+                notStated.Handsets - ClickHouseJsonResult.Int64(aside.Rows[0], 2));
+        }
+
         long total;
         if (filter.Any)
         {
             var all = await _query.ExecuteAsync($$"""
-                SELECT uniqMerge(numbers) FROM planning_breakdown WHERE run_id = {run:UInt64} AND tac IN ({{MatchingTacs}})
+                SELECT uniqMerge(numbers) FROM planning_breakdown
+                WHERE run_id = {run:UInt64} AND {{HoldsAHandset}} AND tac IN ({{MatchingTacs}})
                 """, parameters, ct, Budget).ConfigureAwait(false);
             total = ClickHouseJsonResult.Int64(all.Rows[0], 0);
         }
@@ -1280,10 +1306,24 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         string measure, IReadOnlyList<(int Code, string Key, string Label)> classes, CancellationToken ct)
     {
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal) { ["measure"] = measure };
-        var result = await _query.ExecuteAsync("""
-            SELECT s.as_of_seq, toString(s.as_of_date), s.class, sum(s.numbers), sum(s.bindings)
+
+        // Each run's numbers with no handset, taken off the eSIM class they fall in, as in ClassesAsync.
+        var aside = measure == "esim"
+            ? $"""
+                sum(s.numbers) - if(s.class = {EsimNotStated}, any(x.numbers), 0),
+                sum(s.bindings) - if(s.class = {EsimNotStated}, any(x.bindings), 0)
+                """
+            : "sum(s.numbers), sum(s.bindings)";
+
+        var result = await _query.ExecuteAsync($$"""
+            SELECT s.as_of_seq, toString(s.as_of_date), s.class, {{aside}}
             FROM planning_summary AS s FINAL
-            WHERE s.measure = {measure:String}
+            LEFT JOIN (
+                SELECT run_id, sum(numbers) AS numbers, sum(bindings) AS bindings
+                FROM planning_summary FINAL WHERE measure = 'sunset' AND NOT {{SummaryHoldsAHandset}}
+                GROUP BY run_id
+            ) AS x ON x.run_id = s.run_id
+            WHERE s.measure = {measure:String} AND NOT (s.class = 4 AND s.reason IN (1, 2))
               AND s.run_id IN (SELECT run_id FROM planning_run FINAL WHERE state = 'published')
             GROUP BY s.run_id, s.as_of_seq, s.as_of_date, s.class
             ORDER BY s.as_of_date, s.as_of_seq, s.class
@@ -1296,7 +1336,10 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             ClickHouseJsonResult.Int64(r, 3), ClickHouseJsonResult.Int64(r, 4)))];
     }
 
-    /// <summary>Bindings per model class at every delivery agg_device_model holds, under today's profiles.</summary>
+    /// <summary>
+    /// Bindings per model class at every delivery agg_device_model holds, under today's profiles. The
+    /// empty TAC is no model, and a row with no handset no binding (ADR-020).
+    /// </summary>
     private async Task<List<PlanningModelTrendPoint>> ModelTrendAsync(string classExpression, PlanningFilter filter, CancellationToken ct)
     {
         var parameters = FilterParameters(filter);
@@ -1307,7 +1350,7 @@ public sealed class ClickHousePlanningReader : IPlanningReader
             FROM agg_device_model AS d
             LEFT JOIN (SELECT tac, sunset, esim, ntn, satellite_listed FROM tac_radio_active) AS r ON r.tac = d.tac
             LEFT JOIN (SELECT seq, min(data_date) AS data_date FROM agg_change_summary_daily GROUP BY seq) AS e ON e.seq = d.seq
-            WHERE d.seq IN (SELECT seq FROM mart_ready FINAL) {{match}}
+            WHERE d.seq IN (SELECT seq FROM mart_ready FINAL) AND d.tac != '' {{match}}
             GROUP BY d.seq, k
             ORDER BY d.seq, k
             """, parameters, ct, Budget).ConfigureAwait(false);
@@ -1329,14 +1372,14 @@ public sealed class ClickHousePlanningReader : IPlanningReader
     }
 
     /// <summary>
-    /// Numbers with an active binding at the run's delivery, exactly, from its summary: every per-model
+    /// Numbers holding a handset at the run's delivery, exactly, from its summary: every per-model
     /// share's denominator. (A uniqMerge over the delivery's per-model mart is an estimate, and read
     /// 796 MiB for one statement, 2026-10-27.)
     /// </summary>
     private async Task<long> AllNumbersAsync(IReadOnlyDictionary<string, string> parameters, CancellationToken ct)
     {
         var all = await _query.ExecuteAsync(
-            "SELECT sum(numbers) FROM planning_summary FINAL WHERE run_id = {run:UInt64} AND measure = 'sunset'",
+            $"SELECT sum(numbers) FROM planning_summary FINAL WHERE run_id = {{run:UInt64}} AND measure = 'sunset' AND {SummaryHoldsAHandset}",
             parameters, ct, Budget).ConfigureAwait(false);
         return ClickHouseJsonResult.Int64(all.Rows[0], 0);
     }
@@ -1407,16 +1450,16 @@ public sealed class ClickHousePlanningReader : IPlanningReader
         return figures;
     }
 
-    /// <summary>What no per-model class can place: unknown devices (no TAC) and TACs the catalogue does not hold.</summary>
+    /// <summary>What no per-model class can place: TACs the catalogue does not hold.</summary>
     private async Task<PlanningClassRow> NotClassifiedAsync(IReadOnlyDictionary<string, string> parameters, long total, CancellationToken ct)
     {
         var unclassified = await _query.ExecuteAsync("""
             SELECT uniqMerge(subscribers), sum(bindings), uniqMerge(handsets)
             FROM agg_tac_population
-            WHERE seq = {seq:UInt16} AND (tac = '' OR tac NOT IN (SELECT tac FROM tac_radio_active))
+            WHERE seq = {seq:UInt16} AND tac != '' AND tac NOT IN (SELECT tac FROM tac_radio_active)
             """, parameters, ct, Budget).ConfigureAwait(false);
         return new PlanningClassRow(
-            "not-classified", "Not classifiable: unknown devices and TACs the catalogue lacks",
+            "not-classified", "Not classifiable: TACs the catalogue lacks",
             ClickHouseJsonResult.Int64(unclassified.Rows[0], 0), ClickHouseJsonResult.Int64(unclassified.Rows[0], 1),
             ClickHouseJsonResult.Int64(unclassified.Rows[0], 2),
             Percent(ClickHouseJsonResult.Int64(unclassified.Rows[0], 0), total));
