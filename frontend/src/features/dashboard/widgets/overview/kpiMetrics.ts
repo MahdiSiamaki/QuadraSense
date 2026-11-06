@@ -55,7 +55,13 @@ export function activeRows(kpi: KpiSummary): number {
  * whose whole job is to report data quality accurately.
  */
 export function unregisteredTacBindings(kpi: KpiSummary): number {
-  return activeRows(kpi) - kpi.tacMatchedBindings - kpi.unknownDeviceBindings - kpi.malformedImeiBindings
+  return (
+    activeRows(kpi) -
+    kpi.tacMatchedBindings -
+    kpi.unknownDeviceBindings -
+    kpi.malformedImeiBindings -
+    (kpi.invalidImeiBindings ?? 0)
+  )
 }
 
 /** "7.6% of bindings", from exact counts; nothing when there are no bindings to be a share of. */

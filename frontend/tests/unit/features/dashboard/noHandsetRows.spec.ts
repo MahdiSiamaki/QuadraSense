@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import type { KpiSummary } from '@/api/dashboard'
 import LensBar from '@/features/dashboard/components/LensBar.vue'
 import { effectiveLens } from '@/features/dashboard/composables/lens'
@@ -8,6 +9,7 @@ import { devicePopulation } from '@/features/dashboard/templates/devicePopulatio
 import type { WidgetInstance } from '@/features/dashboard/types/definition'
 import { activeRows, shareOfBindings, shareOfRows, unregisteredTacBindings } from '@/features/dashboard/widgets/overview/kpiMetrics'
 import { lensFilters } from '@/features/dashboard/widgets/overview/shared/filters'
+import EnrichmentWidget from '@/features/dashboard/widgets/quality/EnrichmentWidget.vue'
 
 /*
   Rows with no handset stay stored and are left out of every count (ADR-020): what the dashboard asks
@@ -70,6 +72,47 @@ describe('rows with no handset, in the figures', () => {
 
   it('keeps a share of what is counted as one', () => {
     expect(shareOfBindings(counted.tacMatchedBindings, counted, 1)).toBe('99.7% of bindings')
+  })
+})
+
+describe('IMEIs no handset could carry', () => {
+  /* The same delivery under the wider rule: a zero TAC, a shifted IMEI, a body GSMA never had. */
+  const kpi: KpiSummary = {
+    ...counted,
+    activeBindings: 110_459_865,
+    invalidImeiBindings: 224_244,
+    setAsideBindings: 5_664_151,
+  }
+
+  function enrichment(display: string) {
+    const widget = instance('quality.enrichment')
+    return mount(EnrichmentWidget, {
+      props: {
+        instance: { ...widget, config: { ...widget.config, display } },
+        lens: {},
+        active: false,
+        mode: 'export',
+        snapshot: { id: widget.id, type: widget.type, status: 'ok', reason: null, data: { kpi }, asOf: null, notes: [] },
+      } as never,
+      global: { plugins: [[VueQueryPlugin, { queryClient: new QueryClient() }]] as never },
+    })
+  }
+
+  it('are rows of their own, not TACs the catalogue lacks', () => {
+    expect(activeRows(kpi)).toBe(116_124_016)
+    expect(unregisteredTacBindings(kpi)).toBe(124_163)
+  })
+
+  it('are a line of the Enrichment breakdown, and the lines sum to every active row', () => {
+    const text = enrichment('figures').text()
+    expect(text).toContain('Invalid IMEI')
+    expect(text).toContain('224,244')
+    expect(text).toContain('The five figures sum to 116,124,016 active rows')
+  })
+
+  it('leave the shares of the breakdown shares of every active row', () => {
+    const cells = enrichment('table').findAll('tbody tr').map((r) => r.findAll('td').at(-1)!.text())
+    expect(cells).toEqual(['95.02%', '4.65%', '0.04%', '0.19%', '0.11%'])
   })
 })
 

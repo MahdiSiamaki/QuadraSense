@@ -20,8 +20,13 @@ export interface KpiSummary {
   /** Numeric IMEI that is not 14 digits: a defect, distinct from the 000000 sentinel. */
   malformedImeiBindings: number
   /**
+   * 14 digits no handset could carry: a zero TAC, a shifted IMEI, or a reporting body GSMA never had
+   * (ADR-020). A TAC merely missing from the catalogue is not one. Absent in a report exported before it.
+   */
+  invalidImeiBindings?: number
+  /**
    * Active rows with no handset that activeBindings leaves out; added to it, every active row. The
-   * two counts above are what the store holds, counted or not. Absent in a report exported before it.
+   * three counts above are what the store holds, counted or not. Absent in a report exported before it.
    */
   setAsideBindings?: number
   /** Exact count, not derived from the percentage - see the contract for why. */
