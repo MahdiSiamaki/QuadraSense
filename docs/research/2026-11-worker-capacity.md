@@ -1,8 +1,8 @@
 # Research: what limits the worker, and what more workers would buy
 
 **Date:** 2026-11-05. **Status:** the owner approved the recommendation on 2026-11-05. Step 1 is built
-(section 5), and section 6 has what two runs side by side measured on 2026-11-06. Steps 2 to 4 are built as
-far as ADR-021 says; 5 and 6 are not.
+(section 5), and section 6 has what two runs side by side measured on 2026-11-06. Steps 2 to 5 are built as
+far as ADR-021 says, and step 5 changed on the way; step 6 is not.
 **Asked by:** the product owner: several workers, started according to the machine's resources, running
 what does not conflict, with the number chosen automatically, on the laptop, the department VM and MCI's
 OpenShift.
@@ -93,7 +93,7 @@ the sound part of the request. The limit has to be read where the system runs.
 | Resource-based slots | Temporal's tuner: PID controllers hold CPU and memory near a target. Temporal itself recommends fixed slots as more predictable, and resource-based ones for fluctuating, light tasks, because what a task will use cannot be known in advance | Our tasks are few, long and heavy, the case it advises against |
 | Adaptive concurrency | AIMD, Vegas, gradient: Netflix's `concurrency-limits`, GitLab's Gitaly. Raise the limit slowly, cut it quickly on a bad signal | Good as a brake. Built for thousands of requests a second; a task here takes minutes, so the loop learns slowly |
 | Pressure signals | Linux PSI: the share of time work stalled on CPU, memory or IO; beta in Kubernetes 1.34 | The right signal: it saw the VM's disk where CPU figures showed idle. Linux only |
-| Server-side scheduling | ClickHouse workloads: `CREATE WORKLOAD`, priorities, weights, `max_concurrent_threads`, and CPU preemption | Keeps dashboards ahead of background work wherever it runs. To be proven on 25.8 |
+| Server-side scheduling | ClickHouse workloads: `CREATE WORKLOAD`, priorities, weights, `max_concurrent_threads`, and CPU preemption | Keeps dashboards ahead of background work wherever it runs. To be proven on 25.8. **Tested 2026-11-06: reads of a local disk are not scheduled** (ADR-021) |
 | Autoscaling replicas | KEDA, Red Hat's Custom Metrics Autoscaler on OpenShift | Scales pods on queue depth. Here the queue is a file a day and the shared limit is ClickHouse, so more pods add nothing. The Red Hat docs found list Prometheus, CPU, memory and Kafka triggers, with no PostgreSQL |
 | A workflow engine | Temporal, Airflow, Dagster | A server and a database to run and approve for what a Postgres table and one loop already do |
 
@@ -126,7 +126,9 @@ In this order, each measured before the next:
    adds one. A brake, not an engine. **Partly built 2026-11-06 (ADR-021):** the heaviest step in `query_log`
    sets the lanes, and a failed step leaves one lane for 30 minutes. The pressure half waits for the VM's first
    runs in lanes, to set its threshold from: ClickHouse reports `PSI_*` itself, so it needs no access to the host.
-5. **Dashboards first.** ClickHouse workloads put API reads ahead of all background work.
+5. **Dashboards first.** ClickHouse workloads put API reads ahead of all background work. **Superseded
+   2026-11-06, built otherwise (ADR-021):** workloads do not schedule a local disk, measured on 25.8, and
+   that is what the VM runs out of. A run gives way while the API is reading for people instead.
 6. **OpenShift.** The same image and the same logic. Two worker replicas for failover, which the leases
    already allow. No autoscaler until something needs one.
 
@@ -190,7 +192,6 @@ from the environment. Step 2 reads that.
 ## 7. Not known yet
 
 - The same scaling test on Ceph.
-- Whether ClickHouse workloads behave on 25.8 under our limits.
 - What raising the merge cap costs on the VM.
 
 ## Sources

@@ -35,4 +35,9 @@ public interface IEngineCapacityReader
 {
     /// <summary>Reads the engine's capacity as it is now.</summary>
     Task<EngineCapacity> ReadCapacityAsync(CancellationToken ct);
+
+    /// <summary>The rows the API has read lately: what people are asking of the disk.</summary>
+    /// <param name="window">How far back to count.</param>
+    /// <param name="ct">Cancellation.</param>
+    Task<long> ReadPeoplesRowsAsync(TimeSpan window, CancellationToken ct);
 }

@@ -82,6 +82,9 @@ public sealed partial class ImportWorker(
     /// <summary>Read and written by the claim loop alone.</summary>
     private bool _holding;
 
+    /// <summary>Whether the last round found work. Read and written by the claim loop alone.</summary>
+    private bool _moreToDo;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         LogStarted(_options.WorkerId, _processors.Count, _options.MaxConcurrentJobs);
@@ -481,6 +484,9 @@ public sealed partial class ImportWorker(
     /// With one lane the round is a step each, in turn: a lane that went on stepping would hold the
     /// others back for the whole round.
     /// </para>
+    /// <para>
+    /// No lanes means people are reading: a run under way waits, and is asked again at the next poll.
+    /// </para>
     /// </remarks>
     /// <returns>Whether a task may have more to do straight away.</returns>
     private async Task<bool> RunIdleTasksAsync(CancellationToken ct)
@@ -490,7 +496,12 @@ public sealed partial class ImportWorker(
             await RunIdleStepAsync(task, ct).ConfigureAwait(false);
         }
 
-        var count = _beside.Length > 1 ? await lanes.CountAsync(ct).ConfigureAwait(false) : 1;
+        var count = await lanes.CountAsync(_moreToDo, ct).ConfigureAwait(false);
+        if (count == 0)
+        {
+            return false;
+        }
+
         var round = count > 1 ? _options.IdleRound : TimeSpan.Zero;
         var started = Stopwatch.GetTimestamp();
         var worked = 0;
@@ -513,7 +524,8 @@ public sealed partial class ImportWorker(
                 }
             }).ConfigureAwait(false);
 
-        return Volatile.Read(ref worked) == 1;
+        _moreToDo = Volatile.Read(ref worked) == 1;
+        return _moreToDo;
     }
 
     private async Task<bool> RunIdleStepAsync(IIdleTask task, CancellationToken ct)

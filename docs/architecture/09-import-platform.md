@@ -226,7 +226,8 @@ bottleneck and the queue depth would not improve.
 **Between jobs the worker's idle tasks run in lanes** (ADR-021). The dashboard rebuild goes first and alone.
 Risk and Planning then step side by side when ClickHouse reports the room for it, for a round of a minute,
 before the worker looks for a job again. So nothing runs beside a job, and a file waits for a round and
-the steps in progress: about 2.5 minutes at the worst.
+the steps in progress: about 2.5 minutes at the worst. A run also gives way while the API is reading for
+people, for up to two hours, then goes on in one lane.
 
 ---
 

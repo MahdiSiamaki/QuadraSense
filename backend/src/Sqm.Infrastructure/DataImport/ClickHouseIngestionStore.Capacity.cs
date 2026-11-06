@@ -1,3 +1,4 @@
+using System.Globalization;
 using Sqm.Application.DataImport;
 
 namespace Sqm.Infrastructure.DataImport;
@@ -37,5 +38,23 @@ public sealed partial class ClickHouseIngestionStore : IEngineCapacityReader
             memory ?? 0,
             (int)(cores ?? 1),
             peak is > 0 ? peak.Value : _options.BoundedMemoryBytes);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// The API's own reads, because they are what competes with a run for the disk, and what tells a
+    /// person from a tab left open: polling reads under 6,000 rows a minute and a page some millions. A
+    /// session's <c>last_seen_at</c> cannot tell them apart, because every poll touches it. 0.03 s on the VM.
+    /// </remarks>
+    public async Task<long> ReadPeoplesRowsAsync(TimeSpan window, CancellationToken ct)
+    {
+        var seconds = ((long)window.TotalSeconds).ToString(CultureInfo.InvariantCulture);
+
+        return await ScalarAsync($"""
+            SELECT toInt64(sum(read_rows))
+            FROM system.query_log
+            WHERE event_date >= today() - 1 AND event_time > now() - {seconds}
+              AND type = 'QueryFinish' AND query_kind = 'Select' AND user = 'sqm_app'
+            """, ct).ConfigureAwait(false) ?? 0;
     }
 }
