@@ -181,6 +181,23 @@ and only a number with nothing else keeps reason 1 or 2. The reader leaves those
 total, list and trend, at once and for every published run. **The numbers that move to their real class
 do so from the next run**: until then, the 55,426 are simply out of the published one.
 
+The next run came on 2026-11-06, on the laptop, and moved more than that estimate, which looked at one
+reason only. The totals stayed exact at 74,971,692 numbers:
+
+| Sunset class | Before | After | Change |
+|---|---:|---:|---:|
+| Ready: LTE or 5G | 64,882,932 | 64,882,932 | 0 |
+| Ready: LTE-M / NB-IoT only | 15,198 | 15,198 | 0 |
+| **Exposed: 2G/3G only** | 9,625,291 | 9,699,289 | **+73,998** |
+| Not assessable: a shifted IMEI | 28,116 | 10,753 | -17,363 |
+| Not assessable: no handset otherwise | 360,378 | 311,525 | -48,853 |
+| Not assessable: a TAC the catalogue lacks | 42,841 | 34,773 | -8,068 |
+| Not assessable: a model with no band | 16,936 | 17,222 | +286 |
+
+So 73,998 numbers on 2G or 3G were out of the sunset's count, each behind a row that is not a handset. eSIM
+moved further: **4,111,349 numbers** went from "not stated" (13,253,371 to 9,142,022) to none, because a
+leftover row no longer decides for the real handset beside it. Capable stayed at 6,459,035.
+
 ### What this changes
 
 The counted population at delivery 247, read directly from `binding_current FINAL`:
