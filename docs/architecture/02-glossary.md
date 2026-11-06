@@ -230,7 +230,12 @@ TAC and therefore no model.
 and these have no handset. Measured on 2026-11-05: 99.9% came from the initial dump and no daily file
 has touched them since, and 93% are on a SIM with a real handset now. They are what is left of the
 dump, not subscribers with an unknown phone. The Enrichment breakdown and Data quality show them; so
-do Explorer and a person's lookup, and `Show unknown devices` puts them back in the dashboard's figures.
+does a person's lookup, and Explorer when the query names an IMEI or a TAC. `Show unknown devices` puts
+them back in the dashboard's figures.
+
+**Fourteen digits are not always a handset either.** A zero TAC, a shifted IMEI, or a reporting body GSMA
+never had: 224,244 active rows at delivery 247, the *Invalid IMEI* line of Enrichment, treated the same
+way. A well-formed IMEI whose TAC is merely missing from the catalogue is a handset, and is counted.
 
 > **SUPERSEDED (2026-11-05).** This used to read: "They are shown, labelled `(unknown device)`, and
 > never silently dropped: hiding them would understate every device total by about a twentieth." The

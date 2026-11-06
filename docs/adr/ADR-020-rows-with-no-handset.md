@@ -74,7 +74,7 @@ turned from true to false, in the API and the lens, and `Show unknown devices` b
 
 The malformed IMEIs go with them because the rule is the empty TAC, and because they name no handset
 either: 41,088 active rows, 0.04%. Fourteen zeros, about 2,000 active rows, do not: they carry a TAC.
-That is a smaller case left for the data-quality decision.
+That is a smaller case left for the data-quality decision. (Decided the same day: see the update below.)
 
 ### Where each figure comes from now
 
@@ -94,9 +94,11 @@ That is a smaller case left for the data-quality decision.
   every active row: these are the one place the rows are counted. A KPI card for Unknown device or
   Malformed IMEI still reads the true figure, because `KpiSummary` carries them whether counted or not.
 - **Subscriber lookup and the binding timeline** show a person's rows as they are. They are evidence.
-- **Explorer** reads raw rows. It is where someone goes to look at what was left out.
+- **Explorer** reads raw rows. It is where someone goes to look at what was left out. (Changed the same
+  day: see the update below.)
 - **Planning's "Not assessable: an unknown device"**: 360,379 numbers at delivery 247. It says why
-  those numbers cannot be planned for, and it is built per number in the run.
+  those numbers cannot be planned for, and it is built per number in the run. (Changed the same day:
+  see the update below.)
 - **SIM and handset changes** before March. `agg_sim_change_daily` and `agg_device_change_daily` count
   a number's change between `000000` and a real IMEI as a change, and they hold counts per day, so
   only a rebuild of every day could separate them. From March such rows are 0.004% of the feed.
@@ -112,8 +114,97 @@ That is a smaller case left for the data-quality decision.
 - The measurements are a statement about this data. If a daily file starts carrying many `000000`
   rows again, as January did, they will be left out too, and Data quality is where it will show.
 
+## Update: IMEIs that are not an IMEI (2026-11-05)
+
+The owner widened the rule the same day: an IMEI that is zero or not acceptable leaves the counts too,
+and Planning's row and Explorer follow, but a TAC merely missing from the catalogue is a different thing
+and stays. This closes the "smaller case" left open above.
+
+### What makes an IMEI unacceptable
+
+GSMA TS.06 v27, Annex A, lists the reporting bodies, the first two digits of a TAC: current 00 (test),
+01, 35, 86, 98 (reserved) and 99; former 10, 30, 33, 44, 45, 49, 50, 51, 52, 53, 54 and 91. A 14-digit
+IMEI whose TAC is in the catalogue is always accepted. One whose TAC is not, is judged in this order:
+
+| Class | Test | Active rows at delivery 247 | Decision |
+|---|---|---:|---|
+| No handset | `000000`, or not 14 digits | 5,439,907 | Left out, as above |
+| Zero TAC | `00000000` | 2,118 | **Left out** |
+| Shifted IMEI | The feed-quality test: ends in 0, and one digit put back in front makes a GSMA TAC | 176,031 | **Left out** |
+| Reporting body GSMA never had | First two digits not in Annex A | 46,095 | **Left out** |
+| Valid body, not in the catalogue | None of the above | 124,163 | Stays: a real handset the catalogue may not have yet |
+| In the catalogue | | 110,335,702 | Stays |
+
+### One test, on the row
+
+The first measurement judged a whole TAC: a model is shifted if one leading digit makes it a GSMA TAC.
+That put 198,519 rows in the class. But the feed-quality monitor, Risk and Planning all judge the IMEI,
+which must also end in 0, and a TAC of that shape need not be a shifted one:
+
+| Share of the TAC's IMEIs ending in 0 | TACs | Rows | Rows ending in 0 |
+|---|---:|---:|---:|
+| 100% | 23,585 | 108,866 | 108,866 |
+| 90-99% | 216 | 13,890 | 13,541 |
+| 50-89% | 1,748 | 69,884 | 53,071 |
+| 20-49% | 206 | 1,068 | 351 |
+| Under 20% | 1,711 | 4,811 | 202 |
+
+An ordinary model ends in 0 about one time in ten, which is the last row. So the rule stays on the row,
+and "shifted" means one thing everywhere. Of the 22,488 rows of those TACs that do not end in 0, 21,177
+name a body GSMA never had and are refused for that, and 1,311 stay.
+
+### How it is applied
+
+**Section 1b of the refresh reads every row anyway, so the rule sits there.** A row it refuses joins the
+empty TAC, the one place every mart already treats as "no handset". So the `knownDevice` row, the top
+lists, the class mix, capability, the Devices catalogue and Planning's per-model pages all follow with no
+rule of their own, and the rows stay in `binding_current` and the event log as they arrived.
+`agg_kpi_daily.invalid_imei_bindings` keeps their count, so Enrichment accounts for every row with a
+fifth line. It takes effect at the next refresh, and nothing is rebuilt.
+
+| Read path | How |
+|---|---|
+| Everything built on the marts | Section 1b, as above |
+| Raw reads under a number prefix | `AnalyticsSchema.NoHandset`, the same rule in C#. `MartRefreshScriptTests` compares every mart with it, so the two cannot drift apart |
+| Explorer | Leaves out every row with no handset unless the query names an IMEI or a TAC, and the plan says so |
+| Planning | See below |
+| Data quality, a person's lookup | Unchanged: they count and show them all |
+| Risk, and the handset lifecycle | Unchanged: "countable" already leaves out shifted IMEIs and fourteen zeros. A zero TAC with a serial or an unknown body is still countable there, about 48,000 rows |
+| Daily change charts | Unchanged: they subtract empty-TAC events only, as the event log is not rebuilt |
+
+**Planning needed more than a filter.** "Not assessable: an unknown device" held 360,378 numbers, and
+55,426 of them hold a real handset too: a 2G phone and a leftover `000000`. Leaving those out would have
+dropped real customers from the plan. So a row with no handset now decides nothing beside a real one,
+and only a number with nothing else keeps reason 1 or 2. The reader leaves those out of every class,
+total, list and trend, at once and for every published run. **The numbers that move to their real class
+do so from the next run**: until then, the 55,426 are simply out of the published one.
+
+### What this changes
+
+The counted population at delivery 247, read directly from `binding_current FINAL`:
+
+| | Before | After | Change |
+|---|---:|---:|---:|
+| Active bindings | 110,684,109 | 110,459,865 | -224,244 (-0.20%) |
+| Subscribers (estimated) | 74,984,884 | 74,960,816 | -0.03% |
+| SIM cards (estimated) | 76,314,146 | 76,282,821 | -0.04% |
+| Handsets (estimated) | 82,066,166 | 81,891,587 | -0.21% |
+
+The rule cost section 1b nothing that can be told from noise: 316 to 402 s with it, 350 to 361 s
+without. (One run took 901 s, on the night the host disk filled; it is not counted.)
+
+**Its side effect was not free.** Moving 70,000 tiny rows off the per-model mart left each granule
+heavier, and the first full test run failed: the NTN classes reached 480 MiB against the API's 476 MiB cap
+over a partition in six parts. The answer is a merge of the partition in the refresh, made affordable by
+table settings (migration 036, `docs/architecture/11-clickhouse-memory.md` section 8). The NTN classes
+now take 325 MiB, and the KPI statement 160 where it took 691.
+
+One doubt stays open. Among the rows that stay, bodies 50 to 54 look suspicious, about four rows per TAC,
+and may be shifted in a way the test does not see. Nothing proves it, so by the owner's rule they stay.
+
 ## Sources
 
+- GSMA, [TS.06 IMEI Allocation and Approval Process v27](https://imeidb.gsma.com/imei/resources/documents/TS.06%20v27.0.pdf), Annex A
 - Kimball Group, [Design Tip #43: Dealing with nulls in the dimensional model](https://www.kimballgroup.com/2003/02/design-tip-43-dealing-with-nulls-in-the-dimensional-model/)
 - Kimball Group, [Fact table null](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/fact-table-null/)
 - Databricks community, [Designing an effective quarantine pattern](https://community.databricks.com/t5/data-engineering/designing-an-effective-quot-quarantine-quot-pattern-for-failed/td-p/168345): practitioners' discussion, not vendor guidance
