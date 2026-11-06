@@ -277,4 +277,111 @@ public sealed class DashboardFilteredRealDataTests : IAsyncLifetime
 
         Assert.Equal(0, differing);
     }
+
+    // The next four send a filter as the page does, with the unknown-device switch left at its default.
+    // Every test above sets it, and that path never adds the no-handset condition, so nothing here saw
+    // the four charts beside a vendor filter fail on 2026-11-06, asking the mart for a column it has not.
+
+    [Theory]
+    [InlineData(AnalyticsDimension.VendorCanonical)]
+    [InlineData(AnalyticsDimension.MarketingName)]
+    [InlineData(AnalyticsDimension.DeviceType)]
+    [InlineData(AnalyticsDimension.OperatingSystem)]
+    public async Task A_vendor_filter_answers_each_breakdown_as_the_page_sends_it(AnalyticsDimension dimension)
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+        }
+
+        var rows = await Store().GetTopDimensionAsync(
+            dimension, new DashboardFilter(VendorCanonical: "Samsung"), 10, CountBy.Handsets, TestContext.Current.CancellationToken);
+
+        Assert.NotEmpty(rows);
+        Assert.DoesNotContain(rows, r => r.Key == "(unknown device)");
+    }
+
+    [Theory]
+    [InlineData("vendor", "Samsung")]
+    [InlineData("manufacturer", "Samsung Korea")]
+    [InlineData("deviceType", "Smartphone")]
+    [InlineData("operatingSystem", "Android")]
+    public async Task One_filter_counts_the_same_in_its_breakdown_and_its_finished_row(string dimension, string value)
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+        }
+
+        var filter = dimension switch
+        {
+            "vendor" => new DashboardFilter(VendorCanonical: value),
+            "manufacturer" => new DashboardFilter(Manufacturer: value),
+            "deviceType" => new DashboardFilter(DeviceType: value),
+            _ => new DashboardFilter(OperatingSystem: value),
+        };
+
+        var finished = await ScalarAsync($"""
+            SELECT sum(bindings) FROM sqm.agg_filter_population
+            WHERE seq = {Served} AND dimension = '{dimension}' AND value = '{value}'
+            """);
+        Assert.True(finished > 0, $"no finished row for {dimension} {value}");
+
+        // By device type: few enough groups that the rows are the whole filtered population.
+        var rows = await Store().GetTopDimensionAsync(
+            AnalyticsDimension.DeviceType, filter, 500, CountBy.Bindings, TestContext.Current.CancellationToken);
+
+        Assert.Equal(finished, rows.Sum(r => r.Count));
+    }
+
+    [Fact]
+    public async Task Two_filters_answer_the_kpi_row_and_a_breakdown_as_the_page_sends_them()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+        }
+
+        var filter = new DashboardFilter(VendorCanonical: "Samsung", DeviceType: "Smartphone");
+        var expected = await ScalarAsync($"""
+            SELECT sum(b.bindings)
+            FROM sqm.agg_tac_population AS b
+            LEFT JOIN sqm.tac AS t ON t.tac = b.tac
+            LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
+            WHERE b.seq = {Served} AND t.deviceType = 'Smartphone'
+              AND coalesce(nullIf(v.vendor_canonical, ''), t.manufacturer) = 'Samsung'
+            """);
+        Assert.True(expected > 0);
+
+        var kpi = await Store().GetKpiSummaryAsync(filter, TestContext.Current.CancellationToken);
+        var rows = await Store().GetTopDimensionAsync(
+            AnalyticsDimension.OperatingSystem, filter, 500, CountBy.Bindings, TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected, kpi.ActiveBindings);
+        Assert.Equal(expected, rows.Sum(r => r.Count));
+    }
+
+    [Fact]
+    public async Task A_tac_filter_answers_the_kpi_row_and_a_breakdown_as_the_page_sends_it()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+        }
+
+        var bindings = await ScalarAsync($"""
+            SELECT bindings FROM sqm.agg_tac_population WHERE seq = {Served} AND tac != '' ORDER BY bindings DESC LIMIT 1
+            """);
+        var tac = await ScalarAsync($"""
+            SELECT toUInt64(tac) FROM sqm.agg_tac_population WHERE seq = {Served} AND tac != '' ORDER BY bindings DESC LIMIT 1
+            """);
+        var filter = new DashboardFilter(Tac: tac.ToString("D8", CultureInfo.InvariantCulture));
+
+        var kpi = await Store().GetKpiSummaryAsync(filter, TestContext.Current.CancellationToken);
+        var rows = await Store().GetTopDimensionAsync(
+            AnalyticsDimension.VendorCanonical, filter, 10, CountBy.Bindings, TestContext.Current.CancellationToken);
+
+        Assert.Equal(bindings, kpi.ActiveBindings);
+        Assert.Equal(bindings, Assert.Single(rows).Count);
+    }
 }

@@ -146,7 +146,7 @@ public sealed partial class ClickHouseAnalyticsStore
     /// <summary>The filtered KPI row: the matching models' bindings added, their states merged.</summary>
     private async Task<KpiSummary> GetKpiFromTacMartAsync(DashboardFilter filter, CancellationToken ct)
     {
-        var f = FilterBuilder.ForCurrentState(filter);
+        var f = FilterBuilder.ForTacMart(filter);
 
         var sql = $"""
             SELECT
@@ -194,7 +194,7 @@ public sealed partial class ClickHouseAnalyticsStore
     {
         var column = AnalyticsSchema.ColumnFor(dimension);
         var measure = AnalyticsSchema.TacMartMeasureFor(countBy);
-        var f = FilterBuilder.ForCurrentState(filter);
+        var f = FilterBuilder.ForTacMart(filter);
         var take = FilterBuilder.ClampLimit(limit);
 
         var sql = $$"""
