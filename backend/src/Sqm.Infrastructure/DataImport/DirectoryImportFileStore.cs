@@ -56,6 +56,10 @@ public sealed partial class DirectoryImportFileStore : IImportFileStore
         Message = "Stored {Bytes} bytes at {StoredPath} (sha256 {Sha256})")]
     private partial void LogStored(long bytes, string storedPath, string sha256);
 
+    [LoggerMessage(EventId = 3101, Level = LogLevel.Warning,
+        Message = "The file store at {Root} is not there; uploads and imports wait for it")]
+    private partial void LogAway(string root, Exception exception);
+
     private readonly ImportStorageOptions _options;
     private readonly string _root;
     private readonly ILogger<DirectoryImportFileStore> _logger;
@@ -74,7 +78,17 @@ public sealed partial class DirectoryImportFileStore : IImportFileStore
         }
 
         _root = Path.GetFullPath(_options.RootPath);
-        Directory.CreateDirectory(_root);
+
+        // Away at the start is what leaving later is: IsReachableAsync says so and the worker holds.
+        // On the laptop this is a USB disk, and nothing but uploads and imports needs it.
+        try
+        {
+            Directory.CreateDirectory(_root);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LogAway(_root, ex);
+        }
     }
 
     public async Task<StoredFile> SaveAsync(

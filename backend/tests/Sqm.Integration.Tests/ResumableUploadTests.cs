@@ -100,6 +100,25 @@ public sealed class ResumableUploadTests : IClassFixture<WebApplicationFactory<P
     }
 
     [Fact]
+    public async Task An_upload_with_the_store_away_is_told_so_and_works_when_it_returns()
+    {
+        // A file where the folder must go: the store is not there, as when the laptop's disk is out.
+        await File.WriteAllTextAsync(_root, "not a folder", TestContext.Current.CancellationToken);
+        using var client = _factory.CreateClient();
+
+        using var refused = Create("SQM", "daily_subs_device_sim_info_2026-06-15.csv", Content.Length);
+        using var response = await client.SendAsync(refused, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+
+        // The disk comes back, with no restart.
+        File.Delete(_root);
+        var upload = await CreateAsync(client, "SQM", "daily_subs_device_sim_info_2026-06-15.csv");
+
+        Assert.Equal(Content.Length, await SendAsync(client, upload, 0, Content));
+    }
+
+    [Fact]
     public async Task Completing_before_every_byte_has_arrived_is_refused()
     {
         using var client = _factory.CreateClient();
