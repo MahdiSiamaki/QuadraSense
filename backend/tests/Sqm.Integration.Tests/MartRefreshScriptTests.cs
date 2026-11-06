@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Sqm.Application.Sql;
+using Sqm.Contracts.Dashboard;
 using Sqm.Infrastructure.ClickHouse;
 using Sqm.Infrastructure.DataImport;
 
@@ -329,6 +330,21 @@ public sealed class MartRefreshScriptTests : IAsyncLifetime
                 "99999999\t1\t0\t1",
             ],
             rows);
+    }
+
+    [Fact]
+    public async Task A_read_of_the_rows_leaves_out_what_the_marts_leave_out()
+    {
+        Assert.SkipWhen(_unavailable is not null, _unavailable ?? "");
+        await TwoDeliveriesAsync();
+
+        var filter = FilterBuilder.ForCurrentState(new DashboardFilter()).WhereClause
+            .Replace("sqm.", _database + ".", StringComparison.Ordinal);
+
+        var read = await RowsAsync($"SELECT count() FROM {_database}.binding_current AS b FINAL WHERE b.active = 1 AND {filter}");
+        var mart = await RowsAsync("SELECT bindings FROM {db}.agg_filter_population WHERE seq = 2 AND dimension = 'knownDevice'");
+
+        Assert.Equal(mart, read);
     }
 
     [Fact]
