@@ -94,6 +94,12 @@ public interface IPlanningSnapshotStore
     Task<PlanningRun> BuildPlanningChunkAsync(PlanningRun run, PlanningTable table, int chunk, PlanningOptions options, CancellationToken ct);
 
     /// <summary>
+    /// Takes off the ledger every chunk that holds a key twice, so that it is built again, and says how
+    /// many there were. See <c>IRiskSnapshotStore.ReopenDoubledChunksAsync</c> for how it happens.
+    /// </summary>
+    Task<int> ReopenDoubledPlanningChunksAsync(PlanningRun run, CancellationToken ct);
+
+    /// <summary>
     /// Publishes a run whose every chunk is written, if no key appears twice and its inputs are unchanged,
     /// and writes its finished figures to the summary. Returns null when published, otherwise why not.
     /// </summary>

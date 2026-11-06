@@ -214,6 +214,30 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_chunk_doubled_by_an_orphaned_insert_is_reopened_alone_and_built_again()
+    {
+        Assert.SkipWhen(_unavailable is not null, _unavailable ?? "");
+        var ct = TestContext.Current.CancellationToken;
+
+        var run = await BuildUnpublishedAsync(ct);
+        Assert.Equal(0, await Store().ReopenDoubledPlanningChunksAsync(run, ct));
+
+        // What an orphan leaves: the chunk's rows, written again beside the ones that replaced them.
+        await QueryAsync($"INSERT INTO {_database}.planning_number SELECT * FROM {_database}.planning_number WHERE run_id = {run.RunId} AND chunk = 0");
+        Assert.NotNull(await Store().TryPublishPlanningAsync(run, ct));
+
+        Assert.Equal(1, await Store().ReopenDoubledPlanningChunksAsync(run, ct));
+
+        var reopened = (await Store().LatestPlanningRunAsync("running", ct))!;
+        Assert.Equal((PlanningTable.Numbers, 0), reopened.Next());
+
+        var rebuilt = await Store().BuildPlanningChunkAsync(reopened, PlanningTable.Numbers, 0, Settings(), ct);
+
+        Assert.Null(rebuilt.Next());
+        Assert.Null(await Store().TryPublishPlanningAsync(rebuilt, ct));
+    }
+
+    [Fact]
     public async Task The_summary_counts_numbers_exactly_and_the_breakdown_names_the_models()
     {
         Assert.SkipWhen(_unavailable is not null, _unavailable ?? "");
@@ -358,7 +382,16 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
         Assert.Contains(before.NoData, n => n.Topic == "This run");
     }
 
+    private static PlanningOptions Settings() => new() { Chunks = 2 };
+
     private async Task<PlanningRun> BuildAsync(CancellationToken ct)
+    {
+        var run = await BuildUnpublishedAsync(ct);
+        Assert.Null(await Store().TryPublishPlanningAsync(run, ct));
+        return run;
+    }
+
+    private async Task<PlanningRun> BuildUnpublishedAsync(CancellationToken ct)
     {
         var store = Store();
         await TacStore().ParseRadioAsync(1, ct);
@@ -366,14 +399,13 @@ public sealed class PlanningSnapshotTests : IAsyncLifetime
         var inputs = await store.ReadPlanningInputsAsync(ct);
         Assert.True(inputs.Ready, inputs.NotReadyReason);
 
-        var options = new PlanningOptions { Chunks = 2 };
+        var options = Settings();
         var run = await store.PlanPlanningRunAsync(inputs, options, ct);
         while (run.Next() is { } next)
         {
             run = await store.BuildPlanningChunkAsync(run, next.Table, next.Chunk, options, ct);
         }
 
-        Assert.Null(await store.TryPublishPlanningAsync(run, ct));
         return run;
     }
 

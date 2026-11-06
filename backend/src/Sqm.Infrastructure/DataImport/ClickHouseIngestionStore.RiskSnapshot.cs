@@ -232,6 +232,35 @@ public sealed partial class ClickHouseIngestionStore : IRiskSnapshotStore
     }
 
     /// <inheritdoc />
+    public async Task<int> ReopenDoubledChunksAsync(RiskRun run, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+
+        var done = new HashSet<string>(run.Done, StringComparer.Ordinal);
+        foreach (var (table, key) in new[]
+                 {
+                     (RiskTable.SimWindow, "imsi"), (RiskTable.ImeiWindow, "imei"),
+                     (RiskTable.ImeiLifetime, "imei"), (RiskTable.Quality, "category"),
+                 })
+        {
+            var doubled = await IdsAsync($"""
+                SELECT chunk FROM {_database}.{Target(table)} WHERE run_id = {run.RunId}
+                GROUP BY chunk HAVING count() != uniqExact({key})
+                """, ct).ConfigureAwait(false);
+            done.ExceptWith(doubled.Select(c => RiskRun.Key(table, (int)c)));
+        }
+
+        var reopened = run.Done.Count - done.Count;
+        if (reopened > 0)
+        {
+            await WriteRunAsync(run, "running", done, run.Note, ct).ConfigureAwait(false);
+            LogRiskRun(run.RunId, "doubled chunks taken back to build again");
+        }
+
+        return reopened;
+    }
+
+    /// <inheritdoc />
     public async Task<string?> TryPublishAsync(RiskRun run, RiskOptions options, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(run);

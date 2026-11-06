@@ -78,6 +78,9 @@ internal sealed partial class RiskSnapshot(
 
     private string? _failingChunk;
     private int _failures;
+
+    /// <summary>The run whose doubled chunks were sent back, so that it happens once.</summary>
+    private ulong _reopenedRun;
     private string? _reportedProblems;
 
     [LoggerMessage(EventId = 3520, Level = LogLevel.Warning,
@@ -198,6 +201,14 @@ internal sealed partial class RiskSnapshot(
 
             _failingChunk = null;
             _failures = 0;
+            return RiskSnapshotStep.Built;
+        }
+
+        // A doubled chunk is what a stopped worker's orphaned INSERT leaves, and a few minutes' work to
+        // build again. Once per run: a chunk that doubles again is a fault, which publication refuses.
+        if (_reopenedRun != run.RunId && await store.ReopenDoubledChunksAsync(run, ct).ConfigureAwait(false) > 0)
+        {
+            _reopenedRun = run.RunId;
             return RiskSnapshotStep.Built;
         }
 

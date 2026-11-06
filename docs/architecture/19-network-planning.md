@@ -135,6 +135,13 @@ chunk of the number range per idle moment, never beside an SQM import, published
 chunk is in, no number appears twice and nothing it read has changed (analytics migration 030;
 ADR-019). `Sqm.Ingestion --refresh-planning [--force]` builds one to the end from the shell.
 
+**A chunk that came out doubled is built again, not the run.** ClickHouse keeps an INSERT running after
+its client has gone, so a worker stopped mid-chunk, and every push of `main` stops it, leaves an orphan
+beside the chunk the next worker rebuilds. The risk snapshot is built the same way and lost a whole run
+to this on 2026-11-05: nine duplicate keys, found at publication, after 384 steps. Before publishing,
+each run now takes any chunk holding a key twice off its ledger and builds it again, once; a chunk that
+doubles a second time is a fault, and publication refuses it as before.
+
 ### One delivery's state
 
 A run describes the delivery whose state current state holds - the latest by date - and is abandoned
