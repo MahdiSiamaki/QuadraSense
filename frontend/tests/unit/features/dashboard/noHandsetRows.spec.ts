@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
-import type { KpiSummary } from '@/api/dashboard'
+import { lookupMsisdn, type KpiSummary } from '@/api/dashboard'
 import LensBar from '@/features/dashboard/components/LensBar.vue'
 import { effectiveLens } from '@/features/dashboard/composables/lens'
 import { CONTRACT, defaultConfig } from '@/features/dashboard/registry/contract'
@@ -10,11 +10,17 @@ import type { WidgetInstance } from '@/features/dashboard/types/definition'
 import { activeRows, shareOfBindings, shareOfRows, unregisteredTacBindings } from '@/features/dashboard/widgets/overview/kpiMetrics'
 import { lensFilters } from '@/features/dashboard/widgets/overview/shared/filters'
 import EnrichmentWidget from '@/features/dashboard/widgets/quality/EnrichmentWidget.vue'
+import SubscriberBindings from '@/features/lookup/SubscriberBindings.vue'
 
 /*
   Rows with no handset stay stored and are left out of every count (ADR-020): what the dashboard asks
   for by default, and how a card accounts for rows it does not count.
 */
+vi.mock('@/api/dashboard', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/dashboard')>()),
+  lookupMsisdn: vi.fn(),
+}))
+
 vi.mock('@/features/auth/useAuth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/features/auth/useAuth')>()
   return { ...actual, useAuth: () => ({ can: () => true }) }
@@ -113,6 +119,25 @@ describe('IMEIs no handset could carry', () => {
   it('leave the shares of the breakdown shares of every active row', () => {
     const cells = enrichment('table').findAll('tbody tr').map((r) => r.findAll('td').at(-1)!.text())
     expect(cells).toEqual(['95.02%', '4.65%', '0.04%', '0.19%', '0.11%'])
+  })
+})
+
+describe('looking a number up', () => {
+  const none = { msisdn: '9120000000', wellFormed: true, count: 0, identifiers: 'Full' as const, bindings: [] }
+
+  async function details(leftOut: number) {
+    vi.mocked(lookupMsisdn).mockResolvedValue({ ...none, leftOut })
+    const wrapper = mount(SubscriberBindings, { props: { msisdn: '9120000000' } })
+    await flushPromises()
+    return wrapper.text()
+  }
+
+  it('says a number with only rows with no handset holds none, not that it is unknown', async () => {
+    expect(await details(1)).toContain('This number holds no handset.')
+  })
+
+  it('says a number nothing is known about is not found', async () => {
+    expect(await details(0)).toContain('No bindings found for this number.')
   })
 })
 

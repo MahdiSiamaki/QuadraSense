@@ -87,7 +87,7 @@ function correlationId(e: unknown): string | null {
       </p>
 
       <div v-if="result.count === 0" class="px-4 py-8 text-center text-sm text-[var(--c-text-secondary)]">
-        No bindings found for this number.
+        {{ result.leftOut ? 'This number holds no handset.' : 'No bindings found for this number.' }}
       </div>
 
       <div v-else class="overflow-x-auto">

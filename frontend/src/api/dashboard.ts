@@ -83,6 +83,8 @@ export interface LookupResult {
   msisdn: string
   wellFormed: boolean
   count: number
+  /** Rows of the number with no handset, which are left out (ADR-020). */
+  leftOut: number
   /** Masked when the caller lacks identifier.reveal: the IMSI and IMEI are then redacted. */
   identifiers: 'Masked' | 'Full'
   bindings: BindingRow[]
