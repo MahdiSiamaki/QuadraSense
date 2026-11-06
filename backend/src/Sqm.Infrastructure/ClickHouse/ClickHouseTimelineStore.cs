@@ -123,6 +123,11 @@ public sealed partial class ClickHouseTimelineStore : ITimelineStore
     {
         var (history, current, column, type) = Source(centre);
 
+        // A row with no handset is no binding (ADR-020), unless the handset is what was asked about.
+        var handsets = centre == TimelineCentre.Imei
+            ? string.Empty
+            : $"AND NOT {AnalyticsSchema.NoHandset("imei", "substring(imei, 1, 8)", "tac")}";
+
         // Most recently changed first, so a limit keeps what is newest. The dump's zero date sorts
         // a never-changed binding last, which is where an unconfirmed one belongs.
         var sql = $$"""
@@ -137,7 +142,7 @@ public sealed partial class ClickHouseTimelineStore : ITimelineStore
                        min(first_date)         AS first_date,
                        count() OVER ()         AS total
                 FROM {{history}}
-                WHERE {{column}} = {value:{{type}}}
+                WHERE {{column}} = {value:{{type}}} {{handsets}}
                 GROUP BY msisdn, imsi, imei
                 ORDER BY last_date DESC, first_date DESC, msisdn, imsi, imei
                 LIMIT {limit:UInt32}

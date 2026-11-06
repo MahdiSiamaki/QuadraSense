@@ -56,11 +56,11 @@ public sealed class IdentifierExposureTests : IClassFixture<WebApplicationFactor
             }));
             services.AddSingleton(TestStubs.Create<IDeviceAnalyticsStore>((method, _) => method.Name switch
             {
-                "GetBindingsForMsisdnAsync" => Task.FromResult<IReadOnlyList<BindingRow>>(
+                "GetBindingsForMsisdnAsync" => Task.FromResult(new BindingLookup(
                 [
                     new BindingRow("9121234567", Imsi, Imei, "35085748", "Samsung", "Galaxy A32",
                         "Smartphone", true, new DateOnly(2026, 8, 31)),
-                ]),
+                ], 0)),
                 "GetRelationshipsAsync" => Task.FromResult(new RelationshipGraph(
                     "9121234567", RelatedKind.Msisdn, true, [],
                     [new RelatedNode(Imsi, RelatedKind.Imsi, 1, 1, null)],

@@ -474,18 +474,19 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<BindingRow>> GetBindingsForMsisdnAsync(
+    public async Task<BindingLookup> GetBindingsForMsisdnAsync(
         ulong msisdn, CancellationToken ct)
     {
         // Measured at a median of 12 ms, reading 278K of 125.9M rows: the primary index on
         // (msisdn, imsi, imei) skips 99.8% of the table.
-        const string Sql = """
+        var sql = $$"""
             SELECT
                 b.msisdn, b.imsi, b.imei, b.tac,
                 t.manufacturer, t.marketingName, t.deviceType, b.active,
                 -- NULL when no daily file has ever mentioned this binding: it is active only
                 -- because the initial dump listed it and nothing has removed it since.
-                b.last_change_date
+                b.last_change_date,
+                {{AnalyticsSchema.RowHasNoHandset}} AS no_handset
             FROM sqm.binding_current AS b FINAL
             LEFT JOIN sqm.tac AS t ON t.tac = b.tac
             WHERE b.msisdn = {msisdn:UInt64}
@@ -495,7 +496,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
 
         await using var connection = CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
-        await using var command = CreateCommand(connection, Sql);
+        await using var command = CreateCommand(connection, sql);
 
         var p = command.CreateParameter();
         p.ParameterName = "msisdn";
@@ -503,9 +504,17 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         command.Parameters.Add(p);
 
         var results = new List<BindingRow>();
+        var leftOut = 0;
         await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
+            // A row with no handset is no binding (ADR-020): a leftover of the dump beside a real row.
+            if (Convert.ToInt32(reader.GetValue(9), CultureInfo.InvariantCulture) == 1)
+            {
+                leftOut++;
+                continue;
+            }
+
             var tac = reader.GetString(3);
             results.Add(new BindingRow(
                 Msisdn: GetUInt64(reader, 0).ToString(CultureInfo.InvariantCulture),
@@ -524,7 +533,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         // recorded against the user in the audit log instead, which is access-controlled.
         LogLookupCompleted(results.Count);
 
-        return results;
+        return new BindingLookup(results, leftOut);
     }
 
     /// <inheritdoc />

@@ -77,6 +77,8 @@ export interface ImsiSearchResponse {
   items: ImsiMatch[]
   summary: ImsiSummary | null
   timing: SearchTiming
+  /** Rows of the one SIM searched for with no handset, which are left out (ADR-020). */
+  leftOut: number
 }
 
 export interface ImsiHistoryEvent {

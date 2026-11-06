@@ -283,7 +283,7 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
             ><template v-if="!result.isExact">…</template>.
           </p>
           <p class="mt-1 text-xs text-[var(--c-text-muted)]">
-            The SIM may not be on this network, or the filters may exclude it.
+            {{ result.leftOut ? 'This SIM holds no handset.' : 'The SIM may not be on this network, or the filters may exclude it.' }}
           </p>
         </div>
 
@@ -340,13 +340,12 @@ const masked = computed(() => result.value?.identifiers === 'Masked')
                     </span>
                   </template>
                   <!--
-                    Absence stated rather than left blank. 7.4% of bindings have no TAC match and
-                    an empty cell reads as a rendering fault.
+                    Absence stated rather than left blank: a TAC missing from the catalogue is
+                    still a handset (ADR-020), and an empty cell reads as a rendering fault. A row
+                    with no handset at all never reaches this table.
                   -->
                   <span v-else class="text-xs text-[var(--c-text-muted)]">
-                    <template v-if="match.imei === '000000'">device not reported</template>
-                    <template v-else-if="match.tac">TAC {{ match.tac }} not in the database</template>
-                    <template v-else>no usable IMEI</template>
+                    TAC {{ match.tac }} not in the database
                   </span>
                 </td>
 

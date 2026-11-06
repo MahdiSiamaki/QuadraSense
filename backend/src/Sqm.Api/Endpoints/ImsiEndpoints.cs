@@ -141,7 +141,10 @@ public static class ImsiEndpoints
                 seen is null ? outcome.Facts.LastSeen : seen.LastChange,
                 outcome.Facts.EverTouchedByDailyFile,
                 seen?.FirstSeenIsDumpWindow ?? false),
-            Timing: new SearchTiming(outcome.ElapsedMs, outcome.RowsExamined)));
+            Timing: new SearchTiming(outcome.ElapsedMs, outcome.RowsExamined))
+        {
+            LeftOut = outcome.LeftOut,
+        });
     }
 
     private static async Task<IResult> HistoryAsync(

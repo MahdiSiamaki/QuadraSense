@@ -94,6 +94,7 @@ That is a smaller case left for the data-quality decision. (Decided the same day
   every active row: these are the one place the rows are counted. A KPI card for Unknown device or
   Malformed IMEI still reads the true figure, because `KpiSummary` carries them whether counted or not.
 - **Subscriber lookup and the binding timeline** show a person's rows as they are. They are evidence.
+  (Changed the next day: see the update below.)
 - **Explorer** reads raw rows. It is where someone goes to look at what was left out. (Changed the same
   day: see the update below.)
 - **Planning's "Not assessable: an unknown device"**: 360,379 numbers at delivery 247. It says why
@@ -166,9 +167,10 @@ fifth line. It takes effect at the next refresh, and nothing is rebuilt.
 |---|---|
 | Everything built on the marts | Section 1b, as above |
 | Raw reads under a number prefix | `AnalyticsSchema.NoHandset`, the same rule in C#. `MartRefreshScriptTests` compares every mart with it, so the two cannot drift apart |
-| Explorer | Leaves out every row with no handset unless the query names an IMEI or a TAC, and the plan says so |
+| Explorer, Advanced | Leaves out every row with no handset unless the query names an IMEI or a TAC, and the plan says so |
+| Explorer, Simple: a number or a SIM | Left out of Details, Relationships and History, as of 2026-11-06. Searching a handset still shows what it asks for |
 | Planning | See below |
-| Data quality, a person's lookup | Unchanged: they count and show them all |
+| Data quality | Unchanged: it counts them all |
 | Risk, and the handset lifecycle | Unchanged: "countable" already leaves out shifted IMEIs and fourteen zeros. A zero TAC with a serial or an unknown body is still countable there, about 48,000 rows |
 | Daily change charts | Unchanged: they subtract empty-TAC events only, as the event log is not rebuilt |
 
@@ -189,6 +191,13 @@ The counted population at delivery 247, read directly from `binding_current FINA
 | Subscribers (estimated) | 74,984,884 | 74,960,816 | -0.03% |
 | SIM cards (estimated) | 76,314,146 | 76,282,821 | -0.04% |
 | Handsets (estimated) | 82,066,166 | 81,891,587 | -0.21% |
+
+**A person's lookup follows the rule too** (the owner, 2026-11-06). This ADR first kept it as evidence, and
+the widening above only reached Advanced. The owner looked a number up, saw `000000` beside five real
+handsets, and that was not what was agreed: Explorer means both of its modes. A row with no handset is left
+out of a number's and a SIM's Details, Relationships and History, and the page says when that leaves
+nothing: "This number holds no handset" rather than "no bindings found", which would claim the number is
+not on the network.
 
 The rule cost section 1b nothing that can be told from noise: 316 to 402 s with it, 350 to 361 s
 without. (One run took 901 s, on the night the host disk filled; it is not counted.)

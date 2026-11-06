@@ -4,7 +4,10 @@ using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Sqm.Application.Abstractions;
+using Sqm.Application.Timeline;
 using Sqm.Contracts.Dashboard;
+using Sqm.Contracts.Lookup;
+using Sqm.Domain.Identifiers;
 using Sqm.Infrastructure.ClickHouse;
 
 namespace Sqm.Integration.Tests;
@@ -72,6 +75,15 @@ public sealed class NoHandsetRowsRealDataTests : IAsyncLifetime
         }),
         new Factory(),
         NullLogger<ClickHouseAnalyticsStore>.Instance);
+
+    private static ClickHouseTimelineStore Timelines() => new(
+        Options.Create(new ClickHouseOptions
+        {
+            ConnectionString = "Host=localhost;Port=18123;Database=sqm;Username=sqm_app;Password=sqm_dev",
+        }),
+        new Factory(),
+        NullLogger<ClickHouseTimelineStore>.Instance,
+        TimeProvider.System);
 
     private async Task<long> ScalarAsync(string sql)
     {
@@ -258,6 +270,96 @@ public sealed class NoHandsetRowsRealDataTests : IAsyncLifetime
         var movement = await Store().GetVendorMovementAsync(null, null, VendorRanking.Share, 500, Ct);
 
         Assert.DoesNotContain(movement.Rows, r => r.Vendor == NoHandset);
+    }
+
+    /// <summary>A number with a real handset and a 000000 row: the case an operator actually meets.</summary>
+    private async Task<(ulong Msisdn, ulong Imsi)> ANumberWithALeftoverRowAsync()
+    {
+        // One block of numbers: the table is ordered by number, and all of it is a billion versions.
+        var msisdn = (ulong)await ScalarAsync("""
+            SELECT msisdn FROM sqm.binding_current FINAL
+            WHERE msisdn BETWEEN 9120000000 AND 9129999999 AND active = 1
+            GROUP BY msisdn HAVING countIf(imei = '000000') > 0 AND countIf(length(imei) = 14) > 0
+            ORDER BY msisdn LIMIT 1
+            """);
+        var imsi = (ulong)await ScalarAsync($"""
+            SELECT imsi FROM sqm.binding_current FINAL
+            WHERE msisdn = {msisdn} AND imei = '000000' AND active = 1 LIMIT 1
+            """);
+
+        return (msisdn, imsi);
+    }
+
+    [Fact]
+    public async Task A_number_shows_its_handsets_and_says_it_left_the_rest_out()
+    {
+        SkipWithoutTheStore();
+        var (msisdn, _) = await ANumberWithALeftoverRowAsync();
+
+        var lookup = await Store().GetBindingsForMsisdnAsync(msisdn, Ct);
+
+        Assert.NotEmpty(lookup.Bindings);
+        Assert.DoesNotContain(lookup.Bindings, b => b.Imei == "000000");
+        Assert.True(lookup.LeftOut > 0, "the number has a row with no handset");
+    }
+
+    [Fact]
+    public async Task A_numbers_relationships_name_no_handset_that_is_not_one()
+    {
+        SkipWithoutTheStore();
+        var (msisdn, _) = await ANumberWithALeftoverRowAsync();
+
+        var graph = await Store().GetRelationshipsAsync(
+            RelatedKind.Msisdn, msisdn.ToString(CultureInfo.InvariantCulture), new RelationshipSections(true, true, true), Ct);
+
+        Assert.True(graph.Found);
+        Assert.NotEmpty(graph.Handsets);
+        Assert.DoesNotContain(graph.Handsets, h => h.Value == "000000");
+    }
+
+    [Fact]
+    public async Task A_sim_found_by_its_imsi_shows_no_row_with_no_handset()
+    {
+        SkipWithoutTheStore();
+        var (_, imsi) = await ANumberWithALeftoverRowAsync();
+
+        Assert.True(ImsiQuery.TryParse(imsi.ToString(CultureInfo.InvariantCulture), out var term, out _));
+
+        var found = await Store().SearchByImsiAsync(new ImsiSearchCriteria(term.Value, null, null, false, null, null, 0, 50), Ct);
+
+        Assert.DoesNotContain(found.Rows, r => r.Imei == "000000");
+        Assert.True(found.LeftOut > 0, "the SIM has a row with no handset");
+    }
+
+    [Fact]
+    public async Task The_history_of_a_number_names_no_row_with_no_handset()
+    {
+        SkipWithoutTheStore();
+        var (msisdn, _) = await ANumberWithALeftoverRowAsync();
+        var digits = msisdn.ToString(CultureInfo.InvariantCulture);
+
+        // It is in the binding history to be left out: this is not passing for lack of such a row.
+        Assert.True(await ScalarAsync($"SELECT count() FROM sqm.binding_history WHERE msisdn = {digits} AND imei = '000000'") > 0);
+
+        var timeline = await Timelines().GetAsync(TimelineCentre.Msisdn, digits, 200, Ct);
+
+        Assert.NotEmpty(timeline.Bindings);
+        Assert.DoesNotContain(timeline.Bindings, b => b.Imei == "000000");
+    }
+
+    [Fact]
+    public async Task The_history_of_a_sim_names_no_row_with_no_handset()
+    {
+        SkipWithoutTheStore();
+
+        // One day of the January feed, when 000000 was 12% of rows: a SIM with such an event for certain.
+        var imsi = (ulong)await ScalarAsync("""
+            SELECT imsi FROM sqm.binding_event WHERE data_date = '2026-01-27' AND imei = '000000' ORDER BY imsi LIMIT 1
+            """);
+
+        var history = await Store().GetImsiHistoryAsync(imsi, null, null, 500, Ct);
+
+        Assert.DoesNotContain(history.Events, e => e.Imei == "000000");
     }
 
     [Fact]

@@ -119,9 +119,13 @@ anyone who could see any of them.
 
 ## Rows with no handset
 
-Explorer leaves out every row with no handset (ADR-020), as the dashboard does, unless the query names
-an IMEI or a TAC: that is someone looking for exactly such a row. The plan says when it has left them
-out. A person's lookup is not filtered: it is evidence, and shows their rows as they are.
+Explorer leaves out every row with no handset (ADR-020), as the dashboard does, in both modes. In
+Advanced that holds unless the query names an IMEI or a TAC: that is someone looking for exactly such a
+row, and the plan says when it has left them out. In Simple it holds for a number and a SIM, in Details,
+Relationships and History, and a search for a handset shows what it asks for.
+
+A number or a SIM with nothing else is still on the network, so its Details say "holds no handset" and not
+that nothing was found.
 
 ## A defect the move exposed: no pair from a handset
 
