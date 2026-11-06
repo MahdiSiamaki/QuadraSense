@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 440" width="1280" height="440" role="img" aria-label="Quadrasense, the Primary Inventory of a mobile operator's SIM and eSIM estate. A number, a SIM and a handset meet in one binding.">
+  <title>Quadrasense</title>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#091228"/>
+      <stop offset="0.55" stop-color="#101f4a"/>
+      <stop offset="1" stop-color="#16306b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#22b8ed" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#22b8ed" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.1" fill="#7ba0e8" fill-opacity="0.16"/>
+    </pattern>
+    <!-- The gap between ring and bar, from BrandMark.vue. In user space so that the ring's outer edge is not clipped at this size. -->
+    <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+      <rect width="64" height="64" fill="#fff"/>
+      <path d="M27.2 34 L37.8 34 L56.8 55.6 L46.3 55.6 Z" fill="#000"/>
+    </mask>
+  </defs>
+  <style>
+    text { font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .flow { stroke-dasharray: 7 13; animation: flow 2.6s linear infinite; }
+    .flow.late { animation-delay: -0.9s; }
+    .flow.later { animation-delay: -1.7s; }
+    .pulse { transform-box: fill-box; transform-origin: center; animation: pulse 3.4s ease-in-out infinite; }
+    @keyframes flow { to { stroke-dashoffset: -40; } }
+    @keyframes pulse { 0%, 100% { opacity: 0.45; transform: scale(1); } 50% { opacity: 0.9; transform: scale(1.14); } }
+    @media (prefers-reduced-motion: reduce) { .flow, .pulse { animation: none; } }
+  </style>
+
+  <rect width="1280" height="440" fill="url(#sky)"/>
+  <rect width="1280" height="440" fill="url(#dots)"/>
+  <circle cx="985" cy="220" r="300" fill="url(#glow)"/>
+
+  <!-- The application's mark (BrandMark.vue), with the ring in its dark-surface tint. -->
+  <g transform="translate(43.5 58) scale(2.2)">
+    <circle cx="32.05" cy="30.6" r="15.1" fill="none" stroke="#7ba0e8" stroke-width="6.2" mask="url(#cut)"/>
+    <path d="M29.2 34.6 L36.8 34.6 L50.0 49.4 L42.4 49.4 Z" fill="#22b8ed"/>
+  </g>
+
+  <text x="176" y="154" fill="#ffffff" font-size="74" font-weight="700" letter-spacing="-1.6">Quadrasense</text>
+
+  <text x="74" y="238" fill="#dbe6ff" font-size="29" font-weight="500">The Primary Inventory of a mobile</text>
+  <text x="74" y="276" fill="#dbe6ff" font-size="29" font-weight="500">operator's SIM and eSIM estate</text>
+
+  <text x="74" y="334" fill="#22b8ed" font-size="21" font-weight="600">Every figure measured on the real data.</text>
+
+  <!-- A binding: a number, a SIM and a handset. The ICCID is derived from the IMSI, so its line is dotted. -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M985 220 L985 86" stroke="#7ba0e8" stroke-opacity="0.35" stroke-width="2"/>
+    <path d="M985 220 L843 338" stroke="#7ba0e8" stroke-opacity="0.35" stroke-width="2"/>
+    <path d="M985 220 L1127 338" stroke="#7ba0e8" stroke-opacity="0.35" stroke-width="2"/>
+    <path class="flow" d="M985 86 L985 220" stroke="#22b8ed" stroke-width="3"/>
+    <path class="flow late" d="M843 338 L985 220" stroke="#22b8ed" stroke-width="3"/>
+    <path class="flow later" d="M1127 338 L985 220" stroke="#22b8ed" stroke-width="3"/>
+    <path d="M783 338 L690 338" stroke="#a9bbe3" stroke-opacity="0.55" stroke-width="2" stroke-dasharray="3 9"/>
+  </g>
+
+  <circle class="pulse" cx="985" cy="220" r="74" fill="#22b8ed" fill-opacity="0.13"/>
+  <circle cx="985" cy="220" r="55" fill="#0f2a5e" stroke="#22b8ed" stroke-width="3"/>
+  <text x="985" y="228" fill="#ffffff" font-size="21" font-weight="700" text-anchor="middle">binding</text>
+
+  <g font-size="19" font-weight="600" text-anchor="middle">
+    <rect x="913" y="48" width="144" height="46" rx="23" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.75" stroke-width="1.5"/>
+    <text x="985" y="78" fill="#ffffff">MSISDN</text>
+    <rect x="783" y="316" width="120" height="46" rx="23" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.75" stroke-width="1.5"/>
+    <text x="843" y="346" fill="#ffffff">IMSI</text>
+    <rect x="1067" y="316" width="120" height="46" rx="23" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.75" stroke-width="1.5"/>
+    <text x="1127" y="346" fill="#ffffff">IMEI</text>
+  </g>
+  <text x="985" y="30" fill="#a9bbe3" font-size="17" text-anchor="middle">the number</text>
+  <text x="843" y="390" fill="#a9bbe3" font-size="17" text-anchor="middle">the SIM</text>
+  <text x="1127" y="390" fill="#a9bbe3" font-size="17" text-anchor="middle">the handset</text>
+  <text x="652" y="344" fill="#a9bbe3" font-size="18" font-weight="600" text-anchor="middle">ICCID</text>
+  <text x="652" y="368" fill="#a9bbe3" font-size="15" text-anchor="middle">derived</text>
+</svg>

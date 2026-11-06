@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 957 46" width="957" height="46" role="img" aria-label=".NET 10, Vue 3, ClickHouse 25.8, PostgreSQL 17, OpenShift-ready, 20 ADRs">
+  <title>The stack</title>
+  <style>
+    text { font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif; font-size: 17px; font-weight: 600; fill: #ffffff; }
+  </style>
+  <g transform="translate(1 1)">
+    <rect x="0.75" y="0.75" width="115.5" height="42.5" rx="21.25" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+    <circle cx="21" cy="22.0" r="4.5" fill="#22b8ed"/>
+    <text x="35" y="28.0">.NET 10</text>
+  </g>
+  <g transform="translate(130 1)">
+    <rect x="0.75" y="0.75" width="96.5" height="42.5" rx="21.25" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+    <circle cx="21" cy="22.0" r="4.5" fill="#22b8ed"/>
+    <text x="35" y="28.0">Vue 3</text>
+  </g>
+  <g transform="translate(240 1)">
+    <rect x="0.75" y="0.75" width="192.5" height="42.5" rx="21.25" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+    <circle cx="21" cy="22.0" r="4.5" fill="#22b8ed"/>
+    <text x="35" y="28.0">ClickHouse 25.8</text>
+  </g>
+  <g transform="translate(446 1)">
+    <rect x="0.75" y="0.75" width="173.5" height="42.5" rx="21.25" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+    <circle cx="21" cy="22.0" r="4.5" fill="#22b8ed"/>
+    <text x="35" y="28.0">PostgreSQL 17</text>
+  </g>
+  <g transform="translate(633 1)">
+    <rect x="0.75" y="0.75" width="192.5" height="42.5" rx="21.25" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+    <circle cx="21" cy="22.0" r="4.5" fill="#22b8ed"/>
+    <text x="35" y="28.0">OpenShift-ready</text>
+  </g>
+  <g transform="translate(839 1)">
+    <rect x="0.75" y="0.75" width="115.5" height="42.5" rx="21.25" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+    <circle cx="21" cy="22.0" r="4.5" fill="#22b8ed"/>
+    <text x="35" y="28.0">20 ADRs</text>
+  </g>
+</svg>
