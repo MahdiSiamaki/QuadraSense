@@ -1,3 +1,6 @@
+using System.Net;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Sqm.Application.DataImport;
@@ -57,6 +60,56 @@ public sealed class FileStoreRootTests
         finally
         {
             parent.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task A_root_that_is_not_there_at_the_start_reads_as_unreachable()
+    {
+        // A file where a folder would have to be: no directory can be made under it, on any system.
+        var blocker = Path.GetTempFileName();
+        try
+        {
+            var store = new DirectoryImportFileStore(
+                Options.Create(new ImportStorageOptions { RootPath = Path.Combine(blocker, "imports") }),
+                NullLogger<DirectoryImportFileStore>.Instance);
+
+            Assert.False(await store.IsReachableAsync(TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            File.Delete(blocker);
+        }
+    }
+}
+
+/// <summary>The API has dashboards to serve whether or not the disk of originals is attached.</summary>
+/// <remarks>
+/// On the laptop the store is a USB disk. On 2026-11-06 it was away, and the host could not start at all:
+/// no dashboard, no Explorer, for a folder only an upload needs. A store that leaves while the API runs was
+/// already a hold; one that is away at the start is the same thing.
+/// </remarks>
+public sealed class ApiWithoutTheStoreTests(WebApplicationFactory<Program> factory)
+    : IClassFixture<WebApplicationFactory<Program>>
+{
+    [Fact]
+    public async Task The_api_starts_with_the_store_away()
+    {
+        var blocker = Path.GetTempFileName();
+        try
+        {
+            using var host = factory.WithWebHostBuilder(builder =>
+                builder.UseSetting("ImportStorage:RootPath", Path.Combine(blocker, "imports")));
+            using var client = host.CreateClient();
+
+            using var response = await client.GetAsync(
+                new Uri("/health/live", UriKind.Relative), TestContext.Current.CancellationToken);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+        finally
+        {
+            File.Delete(blocker);
         }
     }
 }

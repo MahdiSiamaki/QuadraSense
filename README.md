@@ -240,7 +240,7 @@ Before the first sign-in come the grants, the seed and the first administrator.
 how the tests behave.
 
 ```bash
-dotnet test backend/Sqm.slnx    # 926: Domain 243, Ingestion 165, Application 105, Integration 413
+dotnet test backend/Sqm.slnx    # 929: Domain 243, Ingestion 165, Application 105, Integration 416
 cd frontend && npm test         # 265, in 37 files
 ```
 

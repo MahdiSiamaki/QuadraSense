@@ -62,7 +62,7 @@ public sealed partial class ResumableUploads
         // Under the storage root, so a finished upload is renamed into the store, not copied. An
         // underscore, because no source code has one and the store lays files out by source.
         _directory = Path.Combine(Path.GetFullPath(options.Value.RootPath), "_resumable");
-        Directory.CreateDirectory(_directory);
+        TryMakeDirectory();
 
         Store = new TusDiskStore(_directory);
         Configuration = new DefaultTusConfiguration
@@ -192,8 +192,28 @@ public sealed partial class ResumableUploads
         return Task.CompletedTask;
     }
 
+    /// <summary>Whether the folder is there. The store may be away, and may come back: see the store.</summary>
+    private bool TryMakeDirectory()
+    {
+        try
+        {
+            Directory.CreateDirectory(_directory);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     private async Task BeforeCreateAsync(BeforeCreateContext context)
     {
+        if (!TryMakeDirectory())
+        {
+            context.FailRequest(HttpStatusCode.ServiceUnavailable, "The file store cannot be reached.");
+            return;
+        }
+
         if (context.UploadLengthIsDeferred)
         {
             context.FailRequest("Send Upload-Length: the size is checked before any byte is taken.");

@@ -1029,6 +1029,11 @@ still works too; it costs the whole upload.
 A file counts two minutes after it was registered, not before: the gap between the two steps was 10.8
 seconds at worst, and an upload being finished is not stranded.
 
+**A store that is away at the start is the same thing** (2026-11-06). The API used to refuse to start, for
+a folder only an upload needs, so with the disk out there was no dashboard either. It now starts, logs
+event 3101, and the worker holds. A new upload is told the store cannot be reached, with a 503, and works
+once the disk is back, with no restart.
+
 **Proved by failing first**, 2026-11-05: each rule of D15 and D16 broken in turn, and the test written
 for it seen to fail. For D15: the worker claiming with the store away, idle tasks running during a hold,
 a missing file failing for good with the store away, every missing file being retried, the store calling
