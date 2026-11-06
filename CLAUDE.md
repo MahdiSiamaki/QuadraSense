@@ -80,8 +80,8 @@ Do not re-open these without asking:
   version, a card uses. Key material stays in the HSMs of the systems that use it.
 - **Rows with no handset are left out of every count** (2026-11-05, ADR-020). An IMEI of `000000`, one
   that is not 14 digits, or 14 digits no handset could carry (a zero TAC, a shifted IMEI, a reporting
-  body GSMA never had) is stored and shown only on Data quality, in a person's lookup, and in Explorer
-  when the query names an IMEI or a TAC. A TAC merely missing from the catalogue is a handset, and
+  body GSMA never had) is stored and shown only on Data quality, and in Explorer when the search or the
+  query names an IMEI or a TAC. A TAC merely missing from the catalogue is a handset, and
   stays. Measured: 99.9% of the `000000` rows are leftovers of the January dump, on SIMs with a real
   handset. The refresh carries the rule for every mart; a new read of the rows themselves uses
   `AnalyticsSchema.NoHandset`.
