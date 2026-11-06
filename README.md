@@ -1,375 +1,338 @@
-# Quadrasense
+<div align="center">
 
-**PI — Primary SIM & Device Inventory.** Analytics platform for mobile device / SIM / subscriber
-binding data, enriched with the GSMA TAC device database. Among the operator's SIM and eSIM systems
-it is the Primary Inventory, the record of what is true about a SIM, a handset and the binding
-between them. `docs/architecture/20-estate-landscape.md` covers the systems around it, what each one
-owns, and which of PI's responsibilities are built.
+<img src="docs/assets/readme/hero.svg" width="100%" alt="Quadrasense, the Primary Inventory of a mobile operator's SIM and eSIM estate. A number, a SIM and a handset meet in one binding.">
 
-The four identifiers the name points at are MSISDN, IMSI, IMEI and ICCID/EID. The feed carries the
-first three, and they are loaded and queryable. **ICCID is derived, not delivered:** the operator's
-numbering builds it from the IMSI — `8998`, the IMSI's digits 4–7, `000`, its last eight — and every
-IMSI in the feed has the MCC that lets the rule run backwards, so an ICCID can be searched as well as
-shown. The UI and the exports label it derived. EID is not in the feed, and nothing here pretends
-otherwise — see `docs/architecture/03-data-model.md` for what the source delivers and
-`docs/architecture/18-explorer-modes.md` for the ICCID rule.
+<img src="docs/assets/readme/stack.svg" width="86%" alt=".NET 10, Vue 3, ClickHouse 25.8, PostgreSQL 17, OpenShift-ready containers, 20 architecture decision records">
 
-> **Status.** In use on the laptop against the full history, and deployed to its first server.
-> Built: the import platform (upload, queue, worker, validation, GSMA TAC versioning, late days and
-> revisions); identity (local sign-in, server-side sessions, permission-based RBAC, an append-only
-> audit trail); the dashboard and its builder; the Explorer (look up a number, SIM, ICCID or handset,
-> what it is bound to and its dated history, and a query builder); devices and their images; feed
-> quality; risk signals. Every endpoint requires a permission, and a test enumerates the router to
-> prove none escapes it.
->
-> **Stage 1 of the deployment runs** on the department's VM as containers, with real data — the dump
-> and the daily files to 2026-02-19. Stage 2 is MCI's OpenShift. See [Deploying](#deploying).
+[What it does](#what-it-does) &nbsp;·&nbsp; [The numbers](#the-numbers) &nbsp;·&nbsp; [How it works](#how-it-works) &nbsp;·&nbsp; [Five things first](#five-things-to-understand-first) &nbsp;·&nbsp; [Run it](#run-it) &nbsp;·&nbsp; [Deploying](#deploying) &nbsp;·&nbsp; [The documents](#the-documents)
 
----
+</div>
 
-## What this system does
+Every day the operator's quality system (SNQM) reports which **handset** each **SIM** and **phone number**
+is bound to. Quadrasense takes that feed, enriches it with the GSMA TAC device database, and keeps the
+record of what is true: what a number, a SIM or a handset is bound to now, what it was bound to before,
+and when that changed.
 
-The operator's quality system (SNQM) delivers a daily feed describing which **handset** each
-**SIM** and **phone number** is currently bound to. This platform ingests that feed, enriches it with device metadata
-from the GSMA TAC database, and answers:
+Among the operator's SIM and eSIM systems it is the **Primary Inventory (PI)**.
+[The estate landscape](docs/architecture/20-estate-landscape.md) covers the systems around it, what each
+one owns, and which of PI's responsibilities are built.
 
-- What is the active device population by manufacturer, model, OS and device type?
-- How is it changing — which brands are growing, which are losing users, which models are new?
-- Which subscribers changed device or swapped SIM, and how often?
-- For one number, SIM or handset: what is it bound to now, what was it bound to, and when?
-- Which SIMs and handsets show risk signals, measured against thresholds cut from the real data?
-- How healthy is the incoming data, and how current is it?
+<img src="docs/assets/readme/stats.svg" width="100%" alt="2.1 billion events in the log, 110 million bindings counted, 75 million subscribers, estimated, and 99.9% of bindings named by GSMA.">
 
-## Scale (measured, not estimated)
+> **Status.** In use on the laptop against the full history, and running on its first server, the
+> department's VM, with every day to 2026-10-31. Each merge to `main` deploys there. Next is MCI's
+> OpenShift.
 
-On the laptop, which holds the whole history, 2026-10-26 - after re-importing the four days its bulk
-load had cut short (02-03, 02-10, 02-15 and 03-24 had lost 27-61% of their rows, 14.6 million events
-in all, removals among them). The last two came back after these figures were first measured that
-morning: 7,219,972 more events since, and current state about 2 million active bindings lower:
+## What it does
 
-| | |
+<table>
+<tr>
+<td width="50%" valign="top">
+
+#### Dashboards
+
+The active population by manufacturer, model, OS and device type, and how it moves: which brands grow,
+which lose bindings, which models are new. People build their own from widgets, and one filter answers
+in 65 ms.
+
+[The builder](docs/architecture/17-dashboard-builder.md) · [ADR-017](docs/adr/ADR-017-filtered-dashboard-views.md)
+
+</td>
+<td width="50%" valign="top">
+
+#### Explorer
+
+Look up a number, a SIM, an ICCID or a handset: what it is bound to, what it was bound to, and when.
+Advanced mode compiles an allow-listed query to SQL, plans it, and runs it within a budget of rows and
+time.
+
+[Explorer modes](docs/architecture/18-explorer-modes.md) · [ADR-012](docs/adr/ADR-012-explorer-query-engine.md)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+#### Import Center
+
+Resumable uploads, a queue and a worker, validation, late days and revisions, versioned GSMA reference
+data. A day folds into current state in seconds, and its original is kept for good.
+
+[The import platform](docs/architecture/09-import-platform.md) · [ADR-018](docs/adr/ADR-018-resumable-uploads.md)
+
+</td>
+<td valign="top">
+
+#### Risk signals
+
+Levels, feed defects and SIM changes, against thresholds cut from curves of the real data. Without a
+threshold the page says *not calibrated* rather than judge on an invented number.
+
+[ADR-014](docs/adr/ADR-014-risk-signals.md) · [ADR-015](docs/adr/ADR-015-new-models-network-age-data-quality.md)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+#### Network planning
+
+Sunset exposure, eSIM readiness, radio bands, lifecycle and campaign lists. Each number is classed once
+per delivery, in the worker's idle time, from parsed radio profiles.
+
+[Network planning](docs/architecture/19-network-planning.md) · [ADR-019](docs/adr/ADR-019-planning-snapshot.md)
+
+</td>
+<td valign="top">
+
+#### Devices
+
+A catalogue where a model is a contiguous range of an IMEI-ordered table. Images are proposed, scored
+from the pixels and approved by a person: nothing reaches the live table on its own.
+
+[ADR-009](docs/adr/ADR-009-device-module.md) · [ADR-011](docs/adr/ADR-011-device-image-sourcing.md)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+#### Data quality
+
+What the feed gets wrong, measured per day. Rows with no handset stay stored, are shown here, and are
+left out of every count.
+
+[Feed quality](docs/architecture/15-feed-quality.md) · [ADR-020](docs/adr/ADR-020-rows-with-no-handset.md)
+
+</td>
+<td valign="top">
+
+#### Identity and audit
+
+Local sign-in, server-side sessions, permission-based RBAC, and an audit trail PostgreSQL itself keeps
+append-only. A test enumerates the router to prove no endpoint escapes a permission.
+
+[Identity and access](docs/architecture/12-identity-and-access.md) · [ADR-006](docs/adr/ADR-006-authentication-and-access-control.md)
+
+</td>
+</tr>
+</table>
+
+### The identifiers the name points at
+
+| Identifier | What it is | In the feed |
+|---|---|---|
+| **MSISDN** | the number | yes |
+| **IMSI** | the SIM | yes |
+| **IMEI** | the handset | yes |
+| **ICCID** | the SIM card | **derived, not delivered:** the operator's numbering builds it from the IMSI, so it can be searched too, and the UI and the exports say so ([the rule](docs/architecture/18-explorer-modes.md)) |
+| **EID** | the eSIM chip | no, and nothing here pretends otherwise ([what the source delivers](docs/architecture/03-data-model.md)) |
+
+## The numbers
+
+Measured on the laptop, which holds the whole history, on 2026-11-06.
+
+| Measure | Value |
 |---|---:|
 | Initial dump | **125,939,523** bindings (4.86 GiB, 2025-12-27 → 2026-01-25) |
-| Daily change history | **1,961,277,736** events over **247 days** (2026-01-26 → 2026-10-10) |
+| Daily change history | **2,139,460,693** events over **268 days** (2026-01-26 → 2026-10-31) |
 | Days absent from the files received | **11** (7 in May, 3 in July, 1 in August) |
 | Daily volume | 6.3M – 11.3M events a day (5th–95th percentile; median 7.7M) |
-| Current state | **118,393,683** active bindings — 75.7M subscribers, 76.8M SIMs, 83.4M handsets (estimated) |
+| Active rows | **116,124,016** |
+| Bindings counted | **110,459,865**: 74,960,816 subscribers, 76,282,821 SIMs, 81,891,587 handsets (estimated) |
+| Rows with no handset | **5,664,151**, stored and left out of every count |
 | Device reference data | 271,830 TACs (GSMA version v2026.10.04, activated 2026-10-05) |
-| TAC enrichment coverage | **93.9%** of active bindings |
+| TAC enrichment coverage | **99.89%** of bindings counted |
 
-## The four things a newcomer should understand first
+<div align="center">
+<img src="docs/assets/readme/measured.svg" width="100%" alt="What measuring bought: six measurements, before and after on the same data. They are listed in the table below.">
+</div>
+
+<details>
+<summary>The same figures as a table, and where each one comes from</summary>
+
+<br>
+
+| Measure | Before | After | Source |
+|---|---:|---:|---|
+| Whole dashboard refresh | 50–68 min | 499 s | [Worker capacity](docs/research/2026-11-worker-capacity.md) |
+| Data read per refresh | 646–668 GiB | 55 GiB | [Worker capacity](docs/research/2026-11-worker-capacity.md) |
+| Peak of a merge, the same 11 parts | 3.50 GiB | 1.01 GiB | [ClickHouse memory](docs/architecture/11-clickhouse-memory.md), §8 |
+| Memory of the KPI statement | 691 MiB | 160 MiB | [ClickHouse memory](docs/architecture/11-clickhouse-memory.md), §8 |
+| One dashboard filter | 100 s | 65 ms in the store, 82–185 ms in the browser | [ADR-017](docs/adr/ADR-017-filtered-dashboard-views.md) |
+| A handset by its IMEI | 1,861–2,085 ms | 3 ms | [ADR-009](docs/adr/ADR-009-device-module.md) |
+
+The refresh figures are the laptop's. The department VM's come with its next import.
+
+</details>
+
+## How it works
+
+<img src="docs/assets/readme/flow.svg" width="100%" alt="The flow of the data. The daily feed and the GSMA TAC database enter the Import Center. Originals are kept, and the worker validates and folds them into ClickHouse: the event log, from which come current state and the binding history, and from current state the marts. The API reads ClickHouse and PostgreSQL and serves the Vue 3 application.">
+
+- **An immutable event log.** Each day's file is one partition, known by its SHA-256, so importing a day
+  again replaces that day and nothing else.
+- **State is a fold.** Current state comes from the log one day at a time, which the feed's own semantics
+  make correct (see [the second thing](#five-things-to-understand-first) below).
+- **Dashboards read finished answers.** They read only a delivery listed in `sqm.mart_ready`, which the
+  refresh writes after every statement has succeeded. During a rebuild they serve the previous complete
+  delivery and say so.
+- **Lookups are key reads.** Copies of current state ordered by IMSI and by IMEI, and a binding history
+  with one row per binding per month, make one entity a contiguous range rather than a scan.
+- **Everything can be rebuilt.** The originals are kept indefinitely, about 144 GB a year, and every table
+  comes back from them and the pipeline.
+
+## Five things to understand first
 
 **1. The grain is a *binding*, not a subscriber.**
-`(msisdn, imsi, imei)` — a phone number, a SIM and a handset. Zero duplicates across 125.9M rows,
-so it is a genuine natural key. 51.3% of numbers were seen on more than one device, so "one row per
-subscriber" is not a shape this data has. Every count in the product therefore states its unit:
-Samsung is 52,704,438 **bindings**, 40,070,800 **subscribers** or 39,320,516 **handsets**, and all
+`(msisdn, imsi, imei)`: a phone number, a SIM and a handset. Zero duplicates across 125.9M rows, so it is
+a genuine natural key. 51.3% of numbers were seen on more than one handset, so "one row per subscriber"
+is not a shape this data has. Every count in the product therefore states its unit: Samsung is 49,752,774 **bindings**, 37,891,404
+**subscribers** or 36,342,722 **handsets**, the last two estimated, and all
 three are correct answers to different questions.
 
 **2. The feed has set semantics, and that is load-bearing.**
-`add` and `remove` toggle a binding, and its final state depends only on its **last** event, not on
-the path taken to it — verified over 8,062,257 transitions with **zero** repeated adds.
-
-This is not a curiosity. It is what lets a daily import fold only its own day into current state
-instead of replaying the whole event log. Measured: the full replay takes about **45 minutes**; one
-day takes **seconds**. Without the proof, the 45-minute path would be the only correct one.
+`add` and `remove` toggle a binding, and its final state depends only on its **last** event, not on the
+path taken to it: verified over 8,062,257 transitions with **zero** repeated adds. That is what lets a
+daily import fold only its own day into current state instead of replaying the whole event log. Measured:
+the full replay takes about **45 minutes**, one day takes **seconds**. Without the proof, the 45-minute
+path would be the only correct one.
 
 **3. The dates were recovered, and two earlier conclusions were wrong.**
-The original 82 files carried no dates, which was the project's largest open risk. The source then
-began supplying dated filenames, and all 82 old files matched dated ones by exact byte size with
-**zero unmatched**. The inferred ordering turned out to be exactly right — but the *span* was wrong
-(2026-01-26 → 2026-04-17, not 2026-02-23 → 2026-05-16), and the supposed gap did not exist. See
-`docs/discovery/03-dated-daily-files.md`.
+The original 82 files carried no dates, which was the project's largest open risk. The source then began
+supplying dated filenames, and all 82 old files matched dated ones by exact byte size with **zero
+unmatched**. The inferred ordering turned out to be exactly right, but the *span* was wrong (2026-01-26 →
+2026-04-17, not 2026-02-23 → 2026-05-16), and the supposed gap did not exist. See
+[the dated daily files](docs/discovery/03-dated-daily-files.md).
 
 **4. Dashboards cannot be served from raw data, by either engine.**
-The Phase 0 benchmark measured 3.5 s for a dashboard-shaped query against a 500 ms budget. The mart
-layer is therefore **load-bearing architecture, not an optimisation** — see ADR-003.
+The Phase 0 benchmark measured 3.5 s for a dashboard-shaped query against a 500 ms budget. The mart layer
+is therefore **load-bearing architecture, not an optimisation**: see
+[ADR-003](docs/adr/ADR-003-analytics-store.md).
 
-## Running it
+**5. A row with no handset is not a binding.**
+An IMEI of `000000`, one that is not 14 digits, or 14 digits no handset could carry is stored, and shown
+only on Data quality and in Explorer when the search or the query names an IMEI or a TAC. It is left out of
+every count. Measured: 99.9% of the `000000` rows are leftovers of the January dump, on SIMs with a real
+handset. A TAC merely missing from the catalogue is a handset, and stays. See
+[ADR-020](docs/adr/ADR-020-rows-with-no-handset.md).
 
-This section is the development setup on the laptop. Running it as containers on a server is
-[Deploying](#deploying).
+## Run it
 
-### 1. Infrastructure
-
-```bash
-docker compose -f infra/docker-compose.yml up -d
-```
-
-ClickHouse on `localhost:18123`, PostgreSQL on `localhost:15432`. Source directories are
-bind-mounted read-only, so a bug in a job cannot damage the originals.
-
-### 2. Configuration
+Docker, the .NET SDK that `global.json` pins, and Node:
 
 ```bash
-cp .env.example .env
-```
+docker compose -f infra/docker-compose.yml up -d   # ClickHouse :18123, PostgreSQL :15432
+cp .env.example .env                               # every variable the stack reads
 
-Every variable the stack reads is listed there. Nothing is committed with a credential in it.
-
-### 3. Schema
-
-```bash
 dotnet run --project backend/src/Sqm.Migrator -- --target postgres   --dir db/operational/migrations
 dotnet run --project backend/src/Sqm.Migrator -- --target clickhouse --dir db/analytics/migrations
+
+dotnet run --project backend/src/Sqm.Api --launch-profile http   # API :5202, worker inside
+cd frontend && npm install && npm run dev                        # UI :5173
 ```
 
-Forward-only. The runner refuses to start if an already-applied migration's checksum has changed —
-an edited migration is a different migration, and the database it ran against no longer matches the
-repository.
-
-**The seeds are not migrations, and nothing applies them.** Once, on a new database:
+Before the first sign-in come the grants, the seed and the first administrator.
+**[Running the system](docs/operations/running-the-system.md)** has those steps, every batch command, and
+how the tests behave.
 
 ```bash
-docker exec -i sqm-clickhouse clickhouse-client --multiquery < db/analytics/seed/002_vendor_map_seed.sql
+dotnet test backend/Sqm.slnx    # 888: Domain 243, Ingestion 144, Application 105, Integration 396
+cd frontend && npm test         # 265, in 37 files
 ```
 
-Without it the vendor map is empty and every vendor appears under each of its raw GSMA spellings —
-Samsung as six vendors, as it did on the first server. Once only: the map is edited in the product
-afterwards, and a second run would put the seed's rows back over those edits.
-
-**When the migrator refuses.** Find out whether the edit changed the schema, not only the text.
-Compare `SHOW CREATE TABLE` for every object the migration creates with the file. If they differ, the
-fix is a new migration that brings the database to the file. If they are identical, the edit was
-comments or layout, and a person with access to the database records the file's checksum as applied —
-a deliberate, reviewed act, because it is the migration history that is being changed:
-
-```sql
-INSERT INTO sqm.schema_migration (version, name, checksum, applied_at, duration_ms)
-VALUES ('<version>', '<name>', '<sha-256 of the file, CRLF normalised to LF>', now64(3), 0);
-```
-
-The table keeps the latest row per version, so the old checksum stays in its history.
-
-Done once so far, on the development database: `019_device_module` was edited after it ran on
-2026-09-15 (applied 18:25 UTC, committed 18:57 UTC). On 2026-09-30 the live `binding_by_imei`,
-`mv_binding_by_imei` and `agg_device_model` were compared with the file and are identical — columns,
-types, engine, sort key, partitioning and the view's query. On 2026-10-01, with the product owner's
-authorisation, the file's checksum `e66cac95…` was recorded over the original `f4ee6c0f…`, and the
-migrator then applied 020–022. A fresh environment runs the file as it stands and never meets this.
-
-### 4. Grants, and the first administrator
-
-```bash
-psql -U sqm -d sqm -v app_password="a-strong-password" \
-     -f db/operational/grants/003_least_privilege.sql
-```
-
-Creates the `sqm_app` role the application connects as. It holds INSERT and SELECT on the audit
-tables and nothing else, which is what makes the audit trail append-only in fact rather than by
-convention — `UPDATE` and `DELETE` on it are refused by PostgreSQL.
-
-A schema added after that gets its own grants file, run once after the migration that creates it.
-There are three so far; all are safe to re-run:
-
-```bash
-psql -U sqm -d sqm -f db/operational/grants/005_device_catalog.sql   # after migration 005
-psql -U sqm -d sqm -f db/operational/grants/013_explorer.sql         # after migration 013
-psql -U sqm -d sqm -f db/operational/grants/016_dashboards.sql       # after migration 016
-```
-
-Without them `sqm_app` has no privileges on the new schema at all.
-
-```bash
-SQM_BOOTSTRAP_PASSWORD='...' \
-dotnet run --project backend/src/Sqm.Migrator -- \
-  --create-admin --username admin --display-name "System Administrator"
-```
-
-Refuses to run if any active user can already manage users and roles. The password is read from
-stdin or the environment, never from an argument — arguments appear in shell history and in the
-process list. Everyone else is created from the Users page.
-
-### 5. The application
-
-```bash
-dotnet run --project backend/src/Sqm.Api --launch-profile http   # API on :5202, import worker inside it
-cd frontend && npm install && npm run dev                        # UI on :5173
-```
-
-**In development the import worker runs inside the API** (`Import:RunWorkerInProcess`, on by
-default in Development). Do not also start `Sqm.Ingestion` as a worker: that makes two, and this
-README used to say to. On 2026-09-27 two did run, and two late days were folded side by side. A
-day of a source is now never claimed while another day of it is running, whichever worker holds
-it, but one worker is what the design assumes and what its timings were measured on. To run the
-worker as its own process, start the API with `Import__RunWorkerInProcess=false`:
-
-```bash
-dotnet run --project backend/src/Sqm.Ingestion  # the worker, only when the API does not host one
-```
-
-The worker checks the analytics schema at startup and refuses to run against the wrong partition
-key, because day-level idempotency is implemented as a partition drop.
-
-### 6. Batch operations
-
-The worker doubles as the batch entry point, so the historical jobs and the daily import run the
-same code rather than two implementations that can drift.
-
-**Getting data in from a shell.** For what cannot go through the Import Center's upload: the
-initial dump, and files that cannot cross the network in one piece. Each ends in the Import Center's
-history like an upload, with its original in the file store.
-
-```bash
-cd backend/src/Sqm.Ingestion
-
-# Load the operator's initial dump into an empty store - once per environment, before the first
-# daily file - then its bindings in the history and its device models.
-dotnet run -- --load-dump <dump_subs_device_sim_info_*.csv[.gz]>
-
-# Record a dump loaded before --load-dump recorded it. Refuses unless the file holds exactly as
-# many rows as binding_snapshot.
-dotnet run -- --record-dump <dump_subs_device_sim_info_*.csv[.gz]>
-
-# Hand a file already on this machine to the Import Center, as an upload would. A .gz is
-# decompressed as it is stored; the queue and the processing are the upload's.
-dotnet run -- --import-file <daily_subs_device_sim_info_YYYY-MM-DD.csv[.gz]> [--source SQM|TAC]
-
-# "Import again" from the shell: queue a finished import's file as its day's next revision.
-# Refuses when the original is no longer in the file store.
-dotnet run -- --reprocess <job id>
-```
-
-**Rebuilding what is derived.** Each is resumable or skips work already done unless `--force`.
-
-```bash
-# Rebuild the per-day marts. Skips days already built; --force redoes them all.
-dotnet run -- --refresh-marts [--from 2026-01-26] [--to 2026-06-14] [--force]
-
-# Rebuild the dashboard marts for one delivery. Defaults to the newest.
-dotnet run -- --refresh-dashboard [--seq 133] [--pause-merges]
-
-# Check a delivery's marts are complete, not merely present.
-dotnet run -- --verify-marts [--seq 133]
-
-# Populate the IMSI- and IMEI-ordered copies of current state. Run once after migrations 018 and 019.
-dotnet run -- --backfill-imsi [--truncate]
-dotnet run -- --backfill-imei [--truncate]
-
-# Fill the binding history (timelines). Run once after migration 022, while nothing imports.
-# Resumable: months that already reconcile are skipped; --force rebuilds them all.
-dotnet run -- --backfill-history [--from 2026-01-26] [--to 2026-09-26] [--force]
-
-# Measure feed quality for days imported before it existed, or again after a new GSMA version.
-dotnet run -- --refresh-quality [--from d] [--to d] [--force]
-
-# Write each day's SIM changes for the risk pages. Run once after migration 023; the import keeps
-# it current. --force rewrites days already written (needed after --refresh-quality --force).
-dotnet run -- --refresh-risk-days [--from 2026-01-26] [--to 2026-09-26] [--force]
-
-# Write the per-model day counts (new models, network age) and the dump's models. Run once after
-# migration 025; --force again when the first GSMA version arrives on a store loaded without one.
-dotnet run -- --refresh-tac-days [--from d] [--to d] [--force]
-
-# Build the risk measures now (migration 024), instead of a chunk per idle moment of the worker.
-# Stop the worker first, or the two build the same run. --force retries a failed run.
-dotnet run -- --refresh-risk [--force]
-```
-
-**Risk signals are judged only once thresholds are set.** The worker keeps the measures current on
-its own; the `Risk` configuration section holds the thresholds, and until one is set the risk pages
-say "not calibrated" rather than judge on invented numbers. How each threshold is cut, and the curves
-it is cut from, are in `docs/adr/ADR-014-risk-signals.md`.
-
-**`--backfill-history` is what timelines wait for.** The history holds every binding's dated
-events, one row per binding per month, by number, by SIM and by IMEI - so one entity's whole
-timeline is a key read, 34 ms for a handset with 218 bindings where the event log took 65 s for
-the most-shared one. Until every day of the event log is in it, the timeline API answers 503
-rather than show a history with days missing. After that the daily import keeps it current: a new
-day is added, a corrected or retried one rebuilds its month. See
-`docs/adr/ADR-013-binding-history.md`.
-
-**`--verify-marts` is the one worth knowing about.** The refresh writes its statements across
-several marts, so a partly-failed run leaves every mart holding rows for the delivery while several
-slices are missing. It checks every expected slice and reconciles the totals against the KPI
-mart's active-binding count — because a mart that disagrees with the headline figure is worse
-than a missing one, it will be believed.
-
-The dashboard only ever reads a delivery listed in `sqm.mart_ready`, which the refresh writes
-**after** every statement succeeds. During a rebuild it serves the previous complete delivery and
-says so on the freshness card.
-
-`--pause-merges` is for an undersized node. The mart statements still collide with a single merge
-of the event log, which can hold 4 GiB. Merges are always resumed afterwards, including when the
-job fails. Each statement's memory is capped by `ClickHouse:BoundedMemoryBytes` — 1.2 GB on the
-laptop, 2.5 GB on the first server. See `docs/architecture/11-clickhouse-memory.md`.
-
-**`--backfill-imsi` has to be run again after any rebuild of `binding_current` that is not an
-INSERT.** The IMSI-ordered table is kept in step by a materialized view, and a materialized view
-fires on INSERT and on nothing else — an `EXCHANGE TABLES` swap, which migration 015 used on the
-event log, bypasses it entirely and leaves IMSI search describing the old data. The command
-reconciles row counts and active counts against the source before reporting success, and exits
-non-zero if they differ. That check earned itself on its first run: every chunk reported success
-and the copy was short by five rows, because the chunk loop stopped at ten digits and five MSISDNs
-in the data have twelve, thirteen and fifteen. See `docs/adr/ADR-008-imsi-search.md`.
-
-**`--backfill-imei` is the same command for the other re-ordered copy**, and the same rule applies
-to it. `sqm.binding_by_imei` is what makes a device model a contiguous range rather than a scan of
-every binding, and it is kept in step by a materialized view with the same one weakness. The first
-run copied 295,013,916 rows in 629 s with zero chunk failures, compacted 301 parts to 5, and
-reconciled to the row. See `docs/adr/ADR-009-device-module.md`.
-
-### 7. Tests
-
-```bash
-dotnet test backend/Sqm.slnx                   # 832: Domain 243, Ingestion 137, Application 105, Integration 347
-cd frontend && npm test                        # 231, in 33 files
-python tools/test_device_image_pipeline.py     # 46 checks, no network, no database
-python tools/test_device_image_package.py      # 111 checks, no network, no database
-```
-
-Counted 2026-11-02. Integration tests run against a real PostgreSQL and ClickHouse and **skip with a
-reason** when none is reachable, rather than failing — so a green run without the stack proves only
-the tests that do not need it. They connect as `sqm_app`, not as the owner: connecting as the owner
-would leave the append-only guarantee untested while appearing to pass. A system proxy that
-intercepts `localhost` makes them skip too; `NO_PROXY=localhost,127.0.0.1` lets them through.
-
-They have earned it repeatedly. Three bugs a mocked repository could not have found: Dapper cannot
-bind `DateOnly` at all, `smallint` columns do not match `int` parameters, and Npgsql surfaces
-`timestamptz` as `DateTime` where the models use `DateTimeOffset`. Three more from the identity
-work: Dapper strips underscores when mapping to properties but not when matching a constructor,
-Npgsql reports a `text[]` column as `System.Array`, and a non-nullable `int` is a *required* query
-parameter to a minimal API.
+Integration tests run against a real PostgreSQL and ClickHouse, connected as the least-privileged
+application role. With neither reachable they skip with a reason, so a green run without the stack proves
+only what does not need it.
 
 ## Deploying
 
-The system ships as containers (`deploy/compose/compose.yaml`, ADR-007) that run the way OpenShift
-runs them: an arbitrary non-root UID in group 0, a read-only root filesystem, no capabilities, no
-port below 1024. ClickHouse, PostgreSQL, the API, the worker on its own and the web front (the SPA in
-unprivileged nginx), with the migrations and grants as jobs that run on every start and do nothing
-when nothing changed.
+The system ships as containers ([ADR-007](docs/adr/ADR-007-deployment.md)) that run the way OpenShift runs
+them: an arbitrary non-root UID in group 0, a read-only root filesystem, no capabilities, no port below
+1024. ClickHouse, PostgreSQL, the API, the worker on its own and the web front, with the migrations and
+grants as jobs that run on every start and do nothing when nothing changed.
 
-| | Where | State |
+| Stage | Where | State |
 |---|---|---|
-| **Stage 1** | the department's VM, everything under `/opt/quadrasense` | running since 2026-10-24: the dump, GSMA version v2026.10.04, the daily files to 2026-02-19 |
-| **Stage 2** | MCI's OpenShift — dev, uat, prd | planned |
+| **1** | the department's VM | running since 2026-10-24, every day to 2026-10-31 |
+| **2** | MCI's OpenShift: dev, uat, prd | planned |
 
-On the server, a deployment is one command. It pulls the checkout's branch from GitHub, builds the
-images there, tagged with the commit, and restarts what changed; a failed migration leaves the
-running API and worker in place.
+**How a change reaches a server:**
 
-```bash
-/opt/quadrasense/repo/deploy/compose/update.sh
-```
+1. **Through a pull request.** Work is done on a branch and merged into `main` on GitHub, and the branch is
+   deleted: `main` is the only branch that lasts.
+2. **Pushed to the department's GitLab.** Over HTTPS from the development machine after each merge. The
+   red lines let developers push and servers only pull, so no server pushes to another.
+3. **The push deploys.** The pipeline tests, builds the four images with kaniko and deploys them to the VM.
+   `deploy/compose/update.sh` remains the way to do it by hand.
 
-`docs/operations/deployment/` has the rest: the images and the rules that keep them OpenShift-ready
-(`01`), the VM's layout, first start, loading the data, carrying daily files over a VPN that drops,
-and every session on it (`02`), the OpenShift plan (`03`), MCI's security red lines row by row
-(`04`), and the department's GitLab pipeline — test, build with kaniko, deploy — with what it still
-needs (`05`). The MCI documents behind `03` and `04` are internal; this repository cites them by
-section and copies nothing identifying out of them.
+[`docs/operations/deployment/`](docs/operations/deployment/) has the rest. The MCI documents behind it are
+internal: this repository cites them by section and copies nothing identifying out of them.
 
-### How a change reaches a server
+## How it is built
 
-1. **On a branch, through a pull request.** Work is done on a branch, merged into `main` on GitHub
-   through a pull request, and the branch deleted: `main` is the only branch that lasts.
-2. **The department's GitLab carries the same `main`.** Pushed over HTTPS from the development
-   machine after each merge — the red lines let developers push and servers only pull, so no
-   server pushes to another (`04`, §2-2).
-3. **Servers pull.** `update.sh` on the VM today; the GitLab pipeline's deploy job when its runners
-   and variables are in place (`05`, §8).
+**Prove it, never assert it.** Every performance claim here is backed by a real run on the real dataset.
+Before a fix is called a fix, the bug goes back in and a test has to fail: the TAC scanner's 13 unit tests
+once all passed against a version that silently dropped 62% of the file.
 
-## Repository layout
+**The simplest thing that meets the current need.** Not the most extensible, not the most impressive. When
+a simpler option was rejected, the ADR says why.
+
+**Honest about state.** Conclusions that turned out wrong are marked SUPERSEDED and kept, not deleted.
+Distinct counts are labelled *estimated*, because they are.
+
+**Laptop now, dedicated hardware later.** The whole stack runs inside hard limits on a laptop. Every setting
+chosen because of that is [listed](docs/operations/dedicated-hardware.md), to revisit on real hardware.
+
+## The documents
+
+| Start with | For |
+|---|---|
+| [Glossary](docs/architecture/02-glossary.md) | binding, fold, mart, delivery: the vocabulary the code uses |
+| [Overview](docs/architecture/01-overview.md) | requirements, diagrams, risk register |
+| [Data model](docs/architecture/03-data-model.md) | entities, tables, quality rules |
+| [Data profiling report](docs/discovery/01-data-profiling-report.md) | what the data actually is, measured |
+| [Running the system](docs/operations/running-the-system.md) | setup, every batch command, the tests |
+| [Deployment](docs/operations/deployment/) | the containers, the department VM, MCI's OpenShift, the red lines, CI/CD |
+| [Backlog](docs/backlog.md) | suggestions not built yet, with their evidence and cost |
+
+<details>
+<summary><b>Architecture decisions</b>: twenty ADRs, each with the evidence in it</summary>
+
+<br>
+
+| ADR | Decision | Status |
+|---|---|---|
+| [ADR-001](docs/adr/ADR-001-backend-technology.md) | Backend: **.NET 10 / C#** | Accepted |
+| [ADR-002](docs/adr/ADR-002-operational-database.md) | Operational store: **PostgreSQL 17** | Proposed |
+| [ADR-003](docs/adr/ADR-003-analytics-store.md) | Analytics store: **ClickHouse**: 26–35× on dashboard shapes, 3.4× smaller | Accepted |
+| [ADR-004](docs/adr/ADR-004-ingestion-strategy.md) | Ingestion: immutable event log, SHA-256 idempotency, TAC joined at query time | Accepted |
+| [ADR-005](docs/adr/ADR-005-frontend-architecture.md) | Frontend: **Vue 3** + Vite + Tailwind + headless primitives | Accepted |
+| [ADR-006](docs/adr/ADR-006-authentication-and-access-control.md) | Auth: **local accounts, server-side sessions, permission-based RBAC** | Accepted |
+| [ADR-007](docs/adr/ADR-007-deployment.md) | Deployment: **containers that run as OpenShift runs them** (non-root, any UID, read-only); the worker on its own; compose on the VM, then OpenShift | Proposed; stage 1 running |
+| [ADR-008](docs/adr/ADR-008-imsi-search.md) | IMSI search: a second table ordered by IMSI, and a skip index on the event log | Accepted |
+| [ADR-009](docs/adr/ADR-009-device-module.md) | Devices: a model is a TAC, and an IMEI-ordered table makes it a range | Accepted |
+| [ADR-010](docs/adr/ADR-010-device-images.md) | Device images: keyed by model, sourced from Commons under identity guards | Amended by ADR-011 |
+| [ADR-011](docs/adr/ADR-011-device-image-sourcing.md) | Device images are proposed, scored from the pixels and reviewed, never auto-applied | Accepted |
+| [ADR-012](docs/adr/ADR-012-explorer-query-engine.md) | Explorer queries: an allow-listed model compiled to SQL, planned, and run within a budget of rows and time | Accepted |
+| [ADR-013](docs/adr/ADR-013-binding-history.md) | Timelines: a binding history, one row per binding per month, by number, SIM and IMEI | Accepted |
+| [ADR-014](docs/adr/ADR-014-risk-signals.md) | Risk signals: levels, feed defects, SIM change; measures precomputed, verdicts judged when read, thresholds cut from the data | Accepted |
+| [ADR-015](docs/adr/ADR-015-new-models-network-age-data-quality.md) | New models, network age and data-quality signals, from a per-model day table | Accepted |
+| [ADR-016](docs/adr/ADR-016-dashboard-builder.md) | The dashboard builder: one JSONB definition per dashboard; each widget reads an endpoint that already exists, under its permission | Accepted |
+| [ADR-017](docs/adr/ADR-017-filtered-dashboard-views.md) | Filtered dashboard views read per-model population marts, and abandoned reads are killed | Accepted |
+| [ADR-018](docs/adr/ADR-018-resumable-uploads.md) | Uploads resume after a broken connection, with the tus protocol | Accepted |
+| [ADR-019](docs/adr/ADR-019-planning-snapshot.md) | Network planning: each number classed once per delivery by an idle-time snapshot, from parsed radio profiles | Accepted |
+| [ADR-020](docs/adr/ADR-020-rows-with-no-handset.md) | Rows with no handset stay stored and are left out of every count | Accepted |
+
+Every one of these was decided against measurement on the real dataset, not on reputation. Where a claim
+appears in these documents, the number behind it is there too.
+
+</details>
+
+<details>
+<summary><b>Repository layout</b></summary>
+
+<br>
 
 ```
 docs/
@@ -398,10 +361,12 @@ docs/
     19-network-planning.md         network and product planning: sunset, eSIM, bands, lifecycle, campaign lists
     20-estate-landscape.md         the systems around Quadrasense, what each owns, and PI's role among them
   operations/
+    running-the-system.md          the development setup, every batch command, the tests
     dedicated-hardware.md          every setting chosen because of the laptop, to revisit on real hardware
     deployment/                    the containers, the department VM, MCI's OpenShift, red lines, CI/CD
   adr/             Architecture Decision Records
   research/        feature research
+  assets/readme/   the drawings on this page
   backlog.md       suggestions not built yet, with their evidence and cost
 backend/
   src/Sqm.Domain          the binding fold and identifier rules
@@ -410,7 +375,7 @@ backend/
   src/Sqm.Api            minimal-API endpoints
   src/Sqm.Ingestion      the import worker, and the batch commands
   src/Sqm.Migrator       forward-only schema migrator for both stores
-frontend/          Vue 3 SPA: dashboards, Import Center, Explorer, devices, risk, feed quality, users, roles, audit
+frontend/          Vue 3 SPA: dashboards, Import Center, Explorer, devices, risk, planning, feed quality, users, roles, audit
 db/
   analytics/       ClickHouse migrations, batch jobs and seeds
   operational/
@@ -437,43 +402,10 @@ tools/
   benchmark/       storage-engine benchmark harness
 ```
 
-## Architecture decisions
+</details>
 
-| ADR | Decision | Status |
-|---|---|---|
-| [ADR-001](docs/adr/ADR-001-backend-technology.md) | Backend: **.NET 10 / C#** | Accepted |
-| [ADR-002](docs/adr/ADR-002-operational-database.md) | Operational store: **PostgreSQL 17** | Proposed |
-| [ADR-003](docs/adr/ADR-003-analytics-store.md) | Analytics store: **ClickHouse** — 26–35× on dashboard shapes, 3.4× smaller | Accepted |
-| [ADR-004](docs/adr/ADR-004-ingestion-strategy.md) | Ingestion: immutable event log, SHA-256 idempotency, TAC joined at query time | Accepted |
-| [ADR-005](docs/adr/ADR-005-frontend-architecture.md) | Frontend: **Vue 3** + Vite + Tailwind + headless primitives | Accepted |
-| [ADR-006](docs/adr/ADR-006-authentication-and-access-control.md) | Auth: **local accounts, server-side sessions, permission-based RBAC** | Accepted |
-| [ADR-007](docs/adr/ADR-007-deployment.md) | Deployment: **containers that run as OpenShift runs them** (non-root, any UID, read-only); the worker on its own; compose on the VM, then OpenShift | Proposed; stage 1 running |
-| [ADR-008](docs/adr/ADR-008-imsi-search.md) | IMSI search: a second table ordered by IMSI, and a skip index on the event log | Accepted |
-| [ADR-009](docs/adr/ADR-009-device-module.md) | Devices: a model is a TAC, and an IMEI-ordered table makes it a range | Accepted |
-| [ADR-010](docs/adr/ADR-010-device-images.md) | Device images: keyed by model, sourced from Commons under identity guards | Amended by ADR-011 |
-| [ADR-011](docs/adr/ADR-011-device-image-sourcing.md) | Device images are proposed, scored from the pixels and reviewed - never auto-applied | Accepted |
-| [ADR-012](docs/adr/ADR-012-explorer-query-engine.md) | Explorer queries: an allow-listed model compiled to SQL, planned, and run within a budget of rows and time | Accepted |
-| [ADR-013](docs/adr/ADR-013-binding-history.md) | Timelines: a binding history, one row per binding per month, by number, SIM and IMEI | Accepted |
-| [ADR-014](docs/adr/ADR-014-risk-signals.md) | Risk signals: levels, feed defects, SIM change; measures precomputed, verdicts judged when read, thresholds cut from the data | Accepted |
-| [ADR-015](docs/adr/ADR-015-new-models-network-age-data-quality.md) | New models, network age and data-quality signals, from a per-model day table | Accepted |
-| [ADR-016](docs/adr/ADR-016-dashboard-builder.md) | The dashboard builder: one JSONB definition per dashboard; each widget reads an endpoint that already exists, under its permission | Accepted |
-| [ADR-017](docs/adr/ADR-017-filtered-dashboard-views.md) | Filtered dashboard views read per-model population marts, and abandoned reads are killed | Accepted |
-| [ADR-018](docs/adr/ADR-018-resumable-uploads.md) | Uploads resume after a broken connection, with the tus protocol | Accepted |
-| [ADR-020](docs/adr/ADR-020-rows-with-no-handset.md) | Rows with no handset stay stored and are left out of every count | Accepted |
-| [ADR-019](docs/adr/ADR-019-planning-snapshot.md) | Network planning: each number classed once per delivery by an idle-time snapshot, from parsed radio profiles | Accepted |
+<br>
 
-Every one of these was decided against measurement on the real dataset, not on reputation. Where a
-claim appears in these documents, the number behind it is there too.
-
-## Reproducing the profiling
-
-Requires Python 3.12+ and `duckdb`:
-
-```bash
-pip install duckdb
-python tools/profiling/to_parquet_base.py
-python tools/profiling/q.py tools/profiling/a1.py
-```
-
-Scripts read from `E:\job\Quadrasense\SQM` and `E:\job\Quadrasense\TAC` and write working Parquet
-projections outside the repository, under `E:\job\Quadrasense\_sqm_discovery`.
+<div align="center">
+<sub>Every figure on this page comes from a real run on the real dataset.</sub>
+</div>

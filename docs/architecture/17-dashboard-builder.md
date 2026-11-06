@@ -163,7 +163,7 @@ the format, counts and scope - never the lens or a figure.
 
 ## Running it
 
-Migration `016_dashboards` runs with the others (README, *Running it* §3), then its grants file
+Migration `016_dashboards` runs with the others (`docs/operations/running-the-system.md` §3), then its grants file
 once, as for every schema added after 003:
 
 ```bash

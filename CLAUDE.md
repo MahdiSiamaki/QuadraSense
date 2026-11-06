@@ -148,8 +148,8 @@ The UI conventions these and the layout review settled are in
 The grain is a **binding** — `(msisdn, imsi, imei)`. A number, a SIM and a handset. A row with no
 handset is not one, and is not counted (ADR-020).
 
-Never write "users" or "devices" without saying which unit. Samsung is 52,704,438 bindings,
-40,070,800 subscribers or 39,320,516 handsets, and all three are right answers to different
+Never write "users" or "devices" without saying which unit. Samsung is 49,752,774 bindings,
+37,891,404 subscribers or 36,342,722 handsets, and all three are right answers to different
 questions. Distinct counts in the marts use `uniq()` (HyperLogLog, ~0.5% error) and the UI labels
 them *estimated* for that reason.
 

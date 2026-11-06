@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 570" width="1280" height="570" role="img" aria-label="Six measurements, each before and after on the same data. The whole dashboard refresh fell from 50 to 68 minutes to 8.3 minutes. Data read per refresh fell from 646 to 668 gibibytes to 55. The peak of a merge of the same parts fell from 3.5 to 1.01 gibibytes. The memory of the KPI statement fell from 691 to 160 mebibytes. One dashboard filter fell from 100 seconds to 185 milliseconds. Finding a handset by its IMEI fell from about 2 seconds to 3 milliseconds.">
+  <title>What measuring bought</title>
+  <style>
+    text { font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .h { fill: #ffffff; font-size: 34px; font-weight: 700; }
+    .s { fill: #a9bbe3; font-size: 19px; }
+    .l { fill: #ffffff; font-size: 21px; font-weight: 600; }
+    .n { fill: #a9bbe3; font-size: 16px; }
+    .v { fill: #dbe6ff; font-size: 19px; font-variant-numeric: tabular-nums; }
+    .x { fill: #ffffff; font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .after { fill: #22b8ed; }
+    .before { fill: #5a6f9f; }
+  </style>
+
+  <rect width="1280" height="570" rx="18" fill="#0c1630"/>
+
+  <text x="48" y="62" class="h">What measuring bought</text>
+  <text x="48" y="96" class="s">Each row is one thing, before and after, on the same data. The whole bar is where it started; the blue is where it is now.</text>
+
+  <!-- One axis: each bar is a share of its own before, 480 px wide. The last two are under 1 px to scale, so they are drawn at a 4 px floor. -->
+  <g transform="translate(0 132)">
+    <text x="48" y="20" class="l">Whole dashboard refresh</text>
+    <text x="48" y="44" class="n">one delivery, the same laptop</text>
+    <rect class="after" x="420" y="10" width="80" height="20" rx="4"/>
+    <rect class="before" x="502" y="10" width="398" height="20" rx="4"/>
+    <text x="924" y="27" class="v">50–68 min → 8.3 min</text>
+    <text x="1232" y="30" class="x" text-anchor="end">6–8×</text>
+  </g>
+  <g transform="translate(0 202)">
+    <text x="48" y="20" class="l">Data read per refresh</text>
+    <text x="48" y="44" class="n">14 reads of current state became one</text>
+    <rect class="after" x="420" y="10" width="41" height="20" rx="4"/>
+    <rect class="before" x="463" y="10" width="437" height="20" rx="4"/>
+    <text x="924" y="27" class="v">646–668 GiB → 55 GiB</text>
+    <text x="1232" y="30" class="x" text-anchor="end">12×</text>
+  </g>
+  <g transform="translate(0 272)">
+    <text x="48" y="20" class="l">Peak of a merge</text>
+    <text x="48" y="44" class="n">the same 11 parts of uniq() states</text>
+    <rect class="after" x="420" y="10" width="139" height="20" rx="4"/>
+    <rect class="before" x="561" y="10" width="339" height="20" rx="4"/>
+    <text x="924" y="27" class="v">3.50 GiB → 1.01 GiB</text>
+    <text x="1232" y="30" class="x" text-anchor="end">3.5×</text>
+  </g>
+  <g transform="translate(0 342)">
+    <text x="48" y="20" class="l">Memory of the KPI statement</text>
+    <text x="48" y="44" class="n">six parts, then one of small granules</text>
+    <rect class="after" x="420" y="10" width="111" height="20" rx="4"/>
+    <rect class="before" x="533" y="10" width="367" height="20" rx="4"/>
+    <text x="924" y="27" class="v">691 MiB → 160 MiB</text>
+    <text x="1232" y="30" class="x" text-anchor="end">4.3×</text>
+  </g>
+  <g transform="translate(0 412)">
+    <text x="48" y="20" class="l">One dashboard filter</text>
+    <text x="48" y="44" class="n">a finished row, not a read of current state</text>
+    <rect class="after" x="420" y="10" width="4" height="20" rx="2"/>
+    <rect class="before" x="426" y="10" width="474" height="20" rx="4"/>
+    <text x="924" y="27" class="v">100 s → 185 ms</text>
+    <text x="1232" y="30" class="x" text-anchor="end">540×</text>
+  </g>
+  <g transform="translate(0 482)">
+    <text x="48" y="20" class="l">A handset by its IMEI</text>
+    <text x="48" y="44" class="n">an IMEI-ordered copy of current state</text>
+    <rect class="after" x="420" y="10" width="4" height="20" rx="2"/>
+    <rect class="before" x="426" y="10" width="474" height="20" rx="4"/>
+    <text x="924" y="27" class="v">1.9–2.1 s → 3 ms</text>
+    <text x="1232" y="30" class="x" text-anchor="end">650×</text>
+  </g>
+</svg>

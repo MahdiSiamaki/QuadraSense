@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 156" width="1280" height="156" role="img" aria-label="2.1 billion events in the log, 110 million bindings counted, 75 million subscribers, estimated, and 99.9% of bindings named by GSMA.">
+  <title>At a glance</title>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16306b"/>
+      <stop offset="1" stop-color="#0c1630"/>
+    </linearGradient>
+  </defs>
+  <style>
+    text { font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .f { fill: #ffffff; font-size: 60px; font-weight: 700; letter-spacing: -1px; }
+    .u { fill: #dbe6ff; font-size: 28px; font-weight: 600; letter-spacing: 0; }
+    .l { fill: #a9bbe3; font-size: 20px; }
+  </style>
+  <g transform="translate(1 1)">
+    <rect width="300" height="154" rx="14" fill="url(#tile)" stroke="#7ba0e8" stroke-opacity="0.4" stroke-width="1.5"/>
+    <rect x="24" y="24" width="34" height="4" rx="2" fill="#22b8ed"/>
+    <text x="24" y="92" class="f">2.1 <tspan class="u">billion</tspan></text>
+    <text x="24" y="128" class="l">events in the log</text>
+  </g>
+  <g transform="translate(327 1)">
+    <rect width="300" height="154" rx="14" fill="url(#tile)" stroke="#7ba0e8" stroke-opacity="0.4" stroke-width="1.5"/>
+    <rect x="24" y="24" width="34" height="4" rx="2" fill="#22b8ed"/>
+    <text x="24" y="92" class="f">110 <tspan class="u">million</tspan></text>
+    <text x="24" y="128" class="l">bindings counted</text>
+  </g>
+  <g transform="translate(653 1)">
+    <rect width="300" height="154" rx="14" fill="url(#tile)" stroke="#7ba0e8" stroke-opacity="0.4" stroke-width="1.5"/>
+    <rect x="24" y="24" width="34" height="4" rx="2" fill="#22b8ed"/>
+    <text x="24" y="92" class="f">75 <tspan class="u">million</tspan></text>
+    <text x="24" y="128" class="l">subscribers, estimated</text>
+  </g>
+  <g transform="translate(979 1)">
+    <rect width="300" height="154" rx="14" fill="url(#tile)" stroke="#7ba0e8" stroke-opacity="0.4" stroke-width="1.5"/>
+    <rect x="24" y="24" width="34" height="4" rx="2" fill="#22b8ed"/>
+    <text x="24" y="92" class="f">99.9%</text>
+    <text x="24" y="128" class="l">bindings named by GSMA</text>
+  </g>
+</svg>

@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 452" width="1280" height="452" role="img" aria-label="The flow of the data. The daily feed and the GSMA TAC database enter the Import Center. Originals are kept, and the worker validates and folds them into ClickHouse: the event log, from which come current state and the binding history, and from current state the marts. The API reads ClickHouse and PostgreSQL and serves the Vue 3 application.">
+  <title>How the data flows</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#22b8ed"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .h { fill: #a9bbe3; font-size: 17px; font-weight: 600; letter-spacing: 0.4px; }
+    .t { fill: #ffffff; font-size: 19px; font-weight: 600; }
+    .s { fill: #a9bbe3; font-size: 16px; }
+  </style>
+
+  <rect width="1280" height="452" rx="18" fill="#0c1630"/>
+
+  <text x="40" y="50" class="h">Sources</text>
+  <text x="284" y="50" class="h">Import</text>
+  <text x="510" y="50" class="h" style="fill:#22b8ed">ClickHouse</text>
+  <text x="996" y="50" class="h">Product</text>
+
+  <rect x="510" y="62" width="440" height="366" rx="16" fill="#22b8ed" fill-opacity="0.05" stroke="#22b8ed" stroke-opacity="0.5" stroke-width="1.5"/>
+
+  <rect x="40" y="72" width="200" height="96" rx="12" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="56" y="105" class="t">Daily feed</text>
+  <text x="56" y="130" class="s">which number and SIM</text>
+  <text x="56" y="151" class="s">sit on which handset</text>
+  <rect x="40" y="194" width="200" height="96" rx="12" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="56" y="227" class="t">GSMA TAC database</text>
+  <text x="56" y="252" class="s">what each handset is</text>
+  <rect x="284" y="72" width="200" height="96" rx="12" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="300" y="105" class="t">Import Center</text>
+  <text x="300" y="130" class="s">resumable upload,</text>
+  <text x="300" y="151" class="s">a queue</text>
+  <rect x="284" y="194" width="200" height="96" rx="12" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="300" y="227" class="t">Originals</text>
+  <text x="300" y="252" class="s">kept indefinitely,</text>
+  <text x="300" y="273" class="s">about 144 GB a year</text>
+  <g transform="translate(457 209)" fill="none" stroke="#7ba0e8" stroke-width="1.6"><ellipse cx="9" cy="4" rx="9" ry="3.5"/><path d="M0 4v12c0 2 4 3.5 9 3.5s9-1.5 9-3.5V4"/><path d="M0 10c0 2 4 3.5 9 3.5s9-1.5 9-3.5"/></g>
+  <rect x="284" y="316" width="200" height="96" rx="12" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="300" y="349" class="t">Worker</text>
+  <text x="300" y="374" class="s">validates, folds,</text>
+  <text x="300" y="395" class="s">refreshes the marts</text>
+  <rect x="526" y="110" width="188" height="96" rx="12" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="542" y="143" class="t">Current state</text>
+  <text x="542" y="168" class="s">one row per binding,</text>
+  <text x="542" y="189" class="s">by number, SIM, IMEI</text>
+  <g transform="translate(687 125)" fill="none" stroke="#7ba0e8" stroke-width="1.6"><ellipse cx="9" cy="4" rx="9" ry="3.5"/><path d="M0 4v12c0 2 4 3.5 9 3.5s9-1.5 9-3.5V4"/><path d="M0 10c0 2 4 3.5 9 3.5s9-1.5 9-3.5"/></g>
+  <rect x="746" y="110" width="188" height="96" rx="12" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="762" y="143" class="t">Marts</text>
+  <text x="762" y="168" class="s">finished answers</text>
+  <text x="762" y="189" class="s">for every dashboard</text>
+  <g transform="translate(907 125)" fill="none" stroke="#7ba0e8" stroke-width="1.6"><ellipse cx="9" cy="4" rx="9" ry="3.5"/><path d="M0 4v12c0 2 4 3.5 9 3.5s9-1.5 9-3.5V4"/><path d="M0 10c0 2 4 3.5 9 3.5s9-1.5 9-3.5"/></g>
+  <rect x="526" y="316" width="188" height="96" rx="12" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="542" y="349" class="t">Event log</text>
+  <text x="542" y="374" class="s">every add and remove</text>
+  <text x="542" y="395" class="s">a partition a day</text>
+  <g transform="translate(687 331)" fill="none" stroke="#7ba0e8" stroke-width="1.6"><ellipse cx="9" cy="4" rx="9" ry="3.5"/><path d="M0 4v12c0 2 4 3.5 9 3.5s9-1.5 9-3.5V4"/><path d="M0 10c0 2 4 3.5 9 3.5s9-1.5 9-3.5"/></g>
+  <rect x="746" y="316" width="188" height="96" rx="12" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="762" y="349" class="t">Binding history</text>
+  <text x="762" y="374" class="s">one row per binding</text>
+  <text x="762" y="395" class="s">per month</text>
+  <g transform="translate(907 331)" fill="none" stroke="#7ba0e8" stroke-width="1.6"><ellipse cx="9" cy="4" rx="9" ry="3.5"/><path d="M0 4v12c0 2 4 3.5 9 3.5s9-1.5 9-3.5V4"/><path d="M0 10c0 2 4 3.5 9 3.5s9-1.5 9-3.5"/></g>
+  <rect x="996" y="72" width="244" height="96" rx="12" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="1012" y="105" class="t">Vue 3 application</text>
+  <text x="1012" y="130" class="s">Dashboards, Explorer, Risk,</text>
+  <text x="1012" y="151" class="s">Planning, Devices, Quality</text>
+  <rect x="996" y="194" width="244" height="96" rx="12" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="1012" y="227" class="t">API</text>
+  <text x="1012" y="252" class="s">every endpoint behind</text>
+  <text x="1012" y="273" class="s">a permission</text>
+  <rect x="996" y="316" width="244" height="96" rx="12" fill="#101f4a" stroke="#7ba0e8" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="1012" y="349" class="t">PostgreSQL</text>
+  <text x="1012" y="374" class="s">users, audit, jobs,</text>
+  <text x="1012" y="395" class="s">dashboards</text>
+  <g transform="translate(1213 331)" fill="none" stroke="#7ba0e8" stroke-width="1.6"><ellipse cx="9" cy="4" rx="9" ry="3.5"/><path d="M0 4v12c0 2 4 3.5 9 3.5s9-1.5 9-3.5V4"/><path d="M0 10c0 2 4 3.5 9 3.5s9-1.5 9-3.5"/></g>
+
+  <g fill="none" stroke="#22b8ed" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M240 108 H284" marker-end="url(#a)"/>
+    <path d="M240 242 H262 V134 H284" marker-end="url(#a)"/>
+    <path d="M384 168 V194" marker-end="url(#a)"/>
+    <path d="M384 290 V316" marker-end="url(#a)"/>
+    <path d="M484 364 H526" marker-end="url(#a)"/>
+    <path d="M620 316 V206" marker-end="url(#a)"/>
+    <path d="M714 364 H746" marker-end="url(#a)"/>
+    <path d="M714 158 H746" marker-end="url(#a)"/>
+    <path d="M950 242 H996" marker-end="url(#a)"/>
+    <path d="M1118 194 V168" marker-end="url(#a)"/>
+    <path d="M1118 316 V290" marker-start="url(#a)" marker-end="url(#a)"/>
+  </g>
+</svg>
