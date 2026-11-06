@@ -17,20 +17,11 @@ internal sealed class FilterBuilder
     private readonly List<string> _conditions = [];
     private readonly Dictionary<string, (object Value, string Type)> _parameters = [];
 
-    /// <summary>Builds the filter for the current-state tables.</summary>
+    /// <summary>Builds the filter for the current-state tables, whose rows carry a number and an IMEI.</summary>
     public static FilterBuilder ForCurrentState(DashboardFilter filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
-        var b = new FilterBuilder();
-
-        b.AddStringEquals("t.manufacturer", filter.Manufacturer, "f_manufacturer");
-        b.AddStringEquals("t.deviceType", filter.DeviceType, "f_devicetype");
-        b.AddStringEquals("trim(t.operatingSystem)", filter.OperatingSystem, "f_os");
-        b.AddStringEquals("b.tac", filter.Tac, "f_tac");
-        b.AddStringEquals(
-            "coalesce(nullIf(v.vendor_canonical, ''), t.manufacturer)",
-            filter.VendorCanonical,
-            "f_vendor");
+        var b = ForModels(filter);
 
         if (!string.IsNullOrWhiteSpace(filter.MsisdnPrefix))
         {
@@ -51,6 +42,48 @@ internal sealed class FilterBuilder
         {
             b._conditions.Add($"NOT {AnalyticsSchema.RowHasNoHandset}");
         }
+
+        return b;
+    }
+
+    /// <summary>Builds the filter for the per-model mart, <c>agg_tac_population</c>.</summary>
+    /// <remarks>
+    /// One row per model, so there is no IMEI to ask the rule of, and no need to: the refresh moved every
+    /// row the rule refuses to the empty model (ADR-020, section 1b of <c>refresh_marts.sql</c>), so
+    /// leaving that model out leaves out exactly those rows.
+    /// </remarks>
+    public static FilterBuilder ForTacMart(DashboardFilter filter)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+
+        if (!MartRouting.CanUseMart(filter))
+        {
+            throw new ArgumentException("A number's prefix is not a property of a model.", nameof(filter));
+        }
+
+        var b = ForModels(filter);
+
+        if (!filter.IncludeUnknownDevice)
+        {
+            b._conditions.Add("b.tac != ''");
+        }
+
+        return b;
+    }
+
+    /// <summary>What both filters share: every condition that is a property of the model.</summary>
+    private static FilterBuilder ForModels(DashboardFilter filter)
+    {
+        var b = new FilterBuilder();
+
+        b.AddStringEquals("t.manufacturer", filter.Manufacturer, "f_manufacturer");
+        b.AddStringEquals("t.deviceType", filter.DeviceType, "f_devicetype");
+        b.AddStringEquals("trim(t.operatingSystem)", filter.OperatingSystem, "f_os");
+        b.AddStringEquals("b.tac", filter.Tac, "f_tac");
+        b.AddStringEquals(
+            "coalesce(nullIf(v.vendor_canonical, ''), t.manufacturer)",
+            filter.VendorCanonical,
+            "f_vendor");
 
         return b;
     }
