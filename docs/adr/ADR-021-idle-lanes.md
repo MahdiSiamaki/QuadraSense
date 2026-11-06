@@ -4,7 +4,7 @@
 - **Date:** 2026-11-06
 - **Decided by:** the product owner, on 2026-11-05: one worker with slots rather than separate containers,
   capacity read at run time with a protective brake rather than a dynamic controller, and dashboards
-  always ahead of imports.
+  always ahead of imports. On 2026-11-06: runs give way to people, in place of ClickHouse workloads.
 - **Evidence:** `docs/research/2026-11-worker-capacity.md`, section 6.
 
 ## Context
@@ -77,6 +77,32 @@ Capped by `ImportWorker:MaxIdleLanes`, 2, which is what has been measured; 1 tur
 **A brake, not an engine.** A step that fails leaves one lane for `ImportWorker:IdleBrake`, 30 minutes. Whatever
 failed it, its retries have the machine to themselves, and a run is failed only after three tries.
 
+**A run gives way to people** (the owner, 2026-11-06). While the API has read 100,000 rows in the last two
+minutes, a run under way takes no further step. After two hours it goes on beside them, in one lane, so a busy
+site cannot starve it, and the wait starts again once they have gone. The dashboard rebuild does not give way:
+it is what they are looking at.
+
+The plan was ClickHouse workloads. They cannot do this, for two measured reasons:
+
+- **They do not schedule a local disk.** On 25.8, a workload limited to 1 MB/s read 8 million rows of a local table
+  with direct IO in under a second, and `system.scheduler` counted no request at any node. The page's examples
+  are all S3.
+- **The VM's limit is that disk.** Its CPU is 86% idle, so scheduling CPU would change little. Beside one run,
+  on its own log:
+
+| The API's read, on the VM | Alone, median | Beside a run, median | Reads beside a run |
+|---|---:|---:|---:|
+| A breakdown from the mart | 789 ms | 3,060 ms | 13 |
+| The KPI row | 23 ms | 89 ms | 61 |
+| A lookup | 381 ms | 597 ms | 21 |
+| One filter's finished row | 14 ms | 16 ms | 10 |
+
+**Rows read, not sessions.** `auth.session.last_seen_at` looked like the signal, and is not: every page polls for
+freshness, so on the VM it was five seconds old with nobody working, and a run would have waited its whole limit
+behind a tab left open. The API's own reads say what is asked of the disk. Polling stayed under 6,000 rows a minute
+there, and 220 of the 276 minutes with any reads in twelve days were over 100,000. It is one read of `query_log`,
+0.03 s on the VM, every 30 seconds, and only while a run is under way.
+
 ## Consequences
 
 - A run costs about 100 minutes on the laptop where it cost 161, and the 32 minutes of sleep go in either case.
@@ -87,9 +113,12 @@ failed it, its retries have the machine to themselves, and a run is failed only 
 - **The VM is not proven.** Its log says the runs are mostly CPU, and only Planning's heaviest three and
   `quality_chunk` wait on the disk, 24 to 41% of their time. Two of those at once would share it. To read after
   the VM's first run in lanes: how long the two runs took, and `PSI_IO_some` beside dashboards being used.
-- **Dashboards are not yet ahead of the lanes.** That is step 5, ClickHouse workloads.
+- **A person arriving waits for what is in progress:** the round and the steps, about 2.5 minutes at the worst,
+  and the reads of the first page are what the next look sees.
+- **Rows are a proxy.** A person only reading small things, such as one number's lookup, may stay under the
+  threshold, and a run goes on beside them, as it always did.
 - A pressure brake is not built. ClickHouse reports `PSI_CPU_*`, `PSI_MEM_*` and `PSI_IO_*` in
   `system.asynchronous_metrics`, so it needs no access to the host, but its threshold should come from the VM's
-  first runs, not from a guess.
+  first runs, not from a guess. Giving way may leave it nothing to do.
 - Two worker replicas (step 6) would both step the same run. Each task checks for a job elsewhere, not for
   itself; that has to be closed before there is a second replica.
