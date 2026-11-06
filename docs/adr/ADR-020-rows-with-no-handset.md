@@ -198,6 +198,13 @@ handsets, and that was not what was agreed: Explorer means both of its modes. A 
 out of a number's and a SIM's Details, Relationships and History, and the page says when that leaves
 nothing: "This number holds no handset" rather than "no bindings found", which would claim the number is
 not on the network.
+**A mart has no IMEI to ask.** The rule went into `FilterBuilder`, which also writes the filter for the
+per-model mart, and that table has one row per model and no IMEI. With any dashboard filter set, every
+breakdown beside it failed, on both machines, until the owner saw it on 2026-11-06. The mart now has its own
+filter, `ForTacMart`, which leaves out the empty model: section 1b has made that the same rows. No test
+saw it because every filtered test set the unknown-device switch, and the page leaves it at its default.
+They now send a filter as the page does, and a test with no database holds the mart's filter to its own
+columns, because the pipeline skips the real-data tests.
 
 The rule cost section 1b nothing that can be told from noise: 316 to 402 s with it, 350 to 361 s
 without. (One run took 901 s, on the night the host disk filled; it is not counted.)
