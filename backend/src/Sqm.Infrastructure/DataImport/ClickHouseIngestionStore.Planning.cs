@@ -259,6 +259,37 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
     }
 
     /// <inheritdoc />
+    public async Task<int> ReopenDoubledPlanningChunksAsync(PlanningRun run, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+
+        var done = new HashSet<string>(run.Done, StringComparer.Ordinal);
+        foreach (var (table, target, key) in new[]
+                 {
+                     (PlanningTable.Numbers, "planning_number", "msisdn"),
+                     (PlanningTable.Numbers, "planning_breakdown", "(sunset, reason, esim, tac)"),
+                     (PlanningTable.IotDevices, "planning_iot_device", "imei"),
+                     (PlanningTable.DeviceAge, "planning_device_age", "(tac, first_month)"),
+                 })
+        {
+            var doubled = await IdsAsync($"""
+                SELECT chunk FROM {_database}.{target} WHERE run_id = {run.RunId}
+                GROUP BY chunk HAVING count() != uniqExact({key})
+                """, ct).ConfigureAwait(false);
+            done.ExceptWith(doubled.Select(c => PlanningRun.Key(table, (int)c)));
+        }
+
+        var reopened = run.Done.Count - done.Count;
+        if (reopened > 0)
+        {
+            await WritePlanningRunAsync(run, "running", done, run.Note, ct).ConfigureAwait(false);
+            LogPlanningRun(run.RunId, "doubled chunks taken back to build again");
+        }
+
+        return reopened;
+    }
+
+    /// <inheritdoc />
     public async Task<string?> TryPublishPlanningAsync(PlanningRun run, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(run);

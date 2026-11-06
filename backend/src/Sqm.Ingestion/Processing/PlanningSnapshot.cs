@@ -63,6 +63,9 @@ internal sealed partial class PlanningSnapshot(
     private DateTimeOffset _quietUntil = DateTimeOffset.MinValue;
     private string? _failingChunk;
     private int _failures;
+
+    /// <summary>The run whose doubled chunks were sent back, so that it happens once.</summary>
+    private ulong _reopenedRun;
     private string? _reportedProblems;
 
     [LoggerMessage(EventId = 3530, Level = LogLevel.Warning,
@@ -184,6 +187,13 @@ internal sealed partial class PlanningSnapshot(
 
             _failingChunk = null;
             _failures = 0;
+            return PlanningSnapshotStep.Built;
+        }
+
+        // As in RiskSnapshot: an orphaned INSERT's doubled chunk is built again, once, rather than losing the run.
+        if (_reopenedRun != run.RunId && await store.ReopenDoubledPlanningChunksAsync(run, ct).ConfigureAwait(false) > 0)
+        {
+            _reopenedRun = run.RunId;
             return PlanningSnapshotStep.Built;
         }
 

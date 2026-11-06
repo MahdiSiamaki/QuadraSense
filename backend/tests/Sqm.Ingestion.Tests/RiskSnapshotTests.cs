@@ -35,6 +35,9 @@ public sealed class RiskSnapshotTests
 
         public string? PublishRefusal { get; init; }
 
+        /// <summary>How many chunks each look for doubled ones finds, in turn; none after the last.</summary>
+        public Queue<int> Doubled { get; init; } = new();
+
         public int ChunkFailures { get; set; }
 
         public List<string> Calls { get; } = [];
@@ -81,6 +84,14 @@ public sealed class RiskSnapshotTests
                     }
 
                     return Task.FromResult(Running!);
+                case "ReopenDoubledChunksAsync":
+                    var doubled = Doubled.Count > 0 ? Doubled.Dequeue() : 0;
+                    if (doubled > 0)
+                    {
+                        Calls.Add($"reopen {doubled}");
+                    }
+
+                    return Task.FromResult(doubled);
                 case "TryPublishAsync":
                     Calls.Add("publish");
                     return Task.FromResult(PublishRefusal);
@@ -120,6 +131,30 @@ public sealed class RiskSnapshotTests
         Assert.Equal(["read inputs"], incomplete.Calls);
 
         Assert.Equal(RiskSnapshotStep.NotDeployed, await Step(new Harness { Deployed = false }));
+    }
+
+    [Fact]
+    public async Task A_doubled_chunk_is_built_again_and_the_run_is_not_lost()
+    {
+        var h = new Harness { Running = Run(Today, AllChunks), Doubled = new([1]) };
+        var snapshot = h.Build();
+
+        Assert.Equal(RiskSnapshotStep.Built, await snapshot.StepAsync(new RiskOptions(), false, CancellationToken.None));
+        Assert.Equal(RiskSnapshotStep.Published, await snapshot.StepAsync(new RiskOptions(), false, CancellationToken.None));
+
+        Assert.Equal(["read inputs", "reopen 1", "read inputs", "publish", "drop old"], h.Calls);
+    }
+
+    [Fact]
+    public async Task A_chunk_that_doubles_again_is_a_fault_and_publication_says_so()
+    {
+        var h = new Harness { Running = Run(Today, AllChunks), Doubled = new([1, 1]), PublishRefusal = "quality_chunk holds 9 duplicate key(s)" };
+        var snapshot = h.Build();
+
+        await snapshot.StepAsync(new RiskOptions(), false, CancellationToken.None);
+
+        Assert.Equal(RiskSnapshotStep.Abandoned, await snapshot.StepAsync(new RiskOptions(), false, CancellationToken.None));
+        Assert.Contains("abandon: quality_chunk holds 9 duplicate key(s)", h.Calls);
     }
 
     [Fact]

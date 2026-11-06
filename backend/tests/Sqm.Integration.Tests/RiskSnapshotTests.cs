@@ -113,6 +113,40 @@ public sealed class RiskSnapshotTests : IAsyncLifetime
         };
     }
 
+    [Fact]
+    public async Task A_chunk_doubled_by_an_orphaned_insert_is_reopened_alone_and_built_again()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var store = Store();
+        await SeedAsync(store);
+        var settings = Settings();
+        var run = await BuildAsync(store, settings);
+
+        // What an orphan leaves: the chunk's rows, written again beside the ones that replaced them.
+        var chunk = int.Parse(
+            await QueryAsync($"SELECT min(chunk) FROM {_database}.quality_chunk WHERE run_id = {run.RunId}"), System.Globalization.CultureInfo.InvariantCulture);
+        await QueryAsync($"INSERT INTO {_database}.quality_chunk SELECT * FROM {_database}.quality_chunk WHERE run_id = {run.RunId} AND chunk = {chunk}");
+        Assert.NotNull(await store.TryPublishAsync(run, settings, ct));
+
+        Assert.Equal(1, await store.ReopenDoubledChunksAsync(run, ct));
+
+        var reopened = (await store.LatestRunAsync("running", ct))!;
+        Assert.Equal((RiskTable.Quality, chunk), reopened.Next());
+        Assert.Equal(run.Done.Count - 1, reopened.Done.Count);
+
+        var rebuilt = await store.BuildChunkAsync(reopened, RiskTable.Quality, chunk, settings, ct);
+
+        Assert.Null(rebuilt.Next());
+        Assert.Equal(0, await store.ReopenDoubledChunksAsync(rebuilt, ct));
+        Assert.Null(await store.TryPublishAsync(rebuilt, settings, ct));
+    }
+
     private ClickHouseIngestionStore Store() => new(
         Options.Create(new ClickHouseOptions
         {
@@ -229,6 +263,7 @@ public sealed class RiskSnapshotTests : IAsyncLifetime
         var settings = Settings();
         var run = await BuildAsync(store, settings);
         Assert.Equal(May(31), run.AsOf);
+        Assert.Equal(0, await store.ReopenDoubledChunksAsync(run, ct));
         Assert.Null(await store.TryPublishAsync(run, settings, ct));
         Assert.Equal(run.RunId, (await store.LatestRunAsync("published", ct))?.RunId);
 

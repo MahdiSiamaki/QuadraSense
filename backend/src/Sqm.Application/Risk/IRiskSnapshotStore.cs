@@ -90,6 +90,19 @@ public interface IRiskSnapshotStore
     Task<RiskRun> BuildChunkAsync(RiskRun run, RiskTable table, int chunk, RiskOptions options, CancellationToken ct);
 
     /// <summary>
+    /// Takes off the ledger every chunk that holds a key twice, so that it is built again, and says
+    /// how many there were.
+    /// </summary>
+    /// <remarks>
+    /// A worker stopped in the middle of a chunk leaves its INSERT running on the server: the server
+    /// does not stop with the client. The chunk is then built again beside it, and what the orphan
+    /// writes after that is there twice. On 2026-11-05 a deployment at step 314 of 384 left nine
+    /// duplicate keys in one chunk of the quality table, and the whole run was refused at publication
+    /// and started again. Every push of main deploys, so this is not rare.
+    /// </remarks>
+    Task<int> ReopenDoubledChunksAsync(RiskRun run, CancellationToken ct);
+
+    /// <summary>
     /// Publishes a run whose every chunk is written, if no key appears twice and its inputs are
     /// unchanged. Returns null when published, otherwise why not.
     /// </summary>
