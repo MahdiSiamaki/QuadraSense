@@ -1,7 +1,7 @@
 # Research: what limits the worker, and what more workers would buy
 
 **Date:** 2026-11-05. **Status:** the owner approved the recommendation on 2026-11-05. Step 1 is built
-(section 5); the rest is not.
+(section 5), and section 6 has what two runs side by side measured on 2026-11-06. The rest is not built.
 **Asked by:** the product owner: several workers, started according to the machine's resources, running
 what does not conflict, with the number chosen automatically, on the laptop, the department VM and MCI's
 OpenShift.
@@ -115,7 +115,7 @@ In this order, each measured before the next:
    them (`dedicated-hardware.md`, section 3).
 3. **One conductor with slots.** The worker stays one process and runs several tasks at once. Each kind of
    task declares what it touches, and two run together only if a table of conflicts allows it. Risk and
-   planning first: independent, and the clearest gain.
+   planning first: independent, and measured at 1.55 to 1.69 times one lane (section 6).
 4. **Admission by evidence.** A task starts only if its usual peak memory, learned from `query_log`, fits
    the budget, and if pressure is low. A rising signal or a memory error halves the slots; a quiet spell
    adds one. A brake, not an engine.
@@ -132,10 +132,55 @@ In this order, each measured before the next:
 | Chunks of one run | Free, up to the slots |
 | Validate and write of the next file | Free, but only 12 s of a day: not worth building |
 
-## 6. Not known yet
+## 6. Measured since: two runs side by side
 
-- Whether two run steps beside each other go twice as fast. The steps read little, so they should, unlike
-  the scans of section 3; it needs a test.
+On the laptop, 2026-11-06, delivery 247: Risk and Planning as two processes, for 66 clean minutes in two
+stretches. Each statement against its own median alone, from `system.query_log`:
+
+| Statement | Alone | Beside the other run | Ratio |
+|---|---:|---:|---:|
+| `planning_spell_stage` | 62.5 s | 67.1 s | 1.07 |
+| `planning_device_age` | 20.3 s | 18.3 s | 0.90 |
+| `quality_chunk` | 12.0 s | 16.6 s | 1.38 |
+| `risk_imei_lifetime` | 11.6 s | 14.5 s | 1.25 |
+| `planning_tenure` | 9.9 s | 13.1 s | 1.32 |
+| `risk_sim_window` | 9.4 s | 9.4 s | 1.00 |
+| `planning_spell` | 6.6 s | 8.8 s | 1.35 |
+| `risk_imei_window` | 5.2 s | 5.5 s | 1.04 |
+
+**1.55 to 1.69 times one lane, not two.** Each clock minute did that many minutes of alone-work: 44.0 in 26
+minutes, 62.1 in 40. Alone, a whole run is 81 minutes of Risk and 80 of Planning, so one lane takes 161 and
+two about 100. Nothing failed. IO pressure averaged 11 to 19% with a 58% peak, memory 7% with a 37% peak,
+CPU under 1%, and the two largest statements peaked at 828 and 416 MiB.
+
+**A count of steps misleads here.** Risk moved 6.6, 2.2 and 1.6 steps a minute through its stages, the last
+of them alone: the stage sets the rate, not the neighbour. So the 0.5 and 4.75 of section 2 show that a short
+step waits behind a long one, and say nothing of the size of the gain. The statements above do.
+
+**The VM's own log says it should gain too.** Share of each statement's time on CPU, over its last runs:
+
+| Statement | Laptop | VM | Read from disk, each, on the VM |
+|---|---:|---:|---:|
+| `quality_chunk` | 92% | 78% | 814 MiB |
+| `planning_spell_stage` | 77% | 60% | 5.16 GiB |
+| `risk_imei_lifetime` | 93% | 98% | 279 MiB |
+| `risk_sim_window` | 92% | 90% | 113 MiB |
+| `planning_iot_device` | 93% | 63% | 3.24 GiB |
+| `planning_device_age` | 91% | 88% | 1.61 GiB |
+| `planning_handset_stage` | 91% | 72% | 2.26 GiB |
+
+Weighted by time, 80% of the VM's run statements is CPU at one thread, on a machine that keeps 86% of its CPU
+idle. Unlike the scans of section 3, the wait here is mostly not the disk. Only Planning's heaviest three and
+`quality_chunk` wait on it, 24 to 41% of their time, and two of those at once would share it. That is a
+reading of the log, not a test: nothing proves the VM's gain until step 3 runs there.
+
+**Capacity can be read more simply than section 5 said.** `CGroupMaxCPU` does not exist on the laptop and
+`CGroupMemoryTotal` reads 0, because Docker Desktop's limit is the whole VM. `max_server_memory_usage` in
+`system.server_settings` is right on both, 5.2 GiB and 6.4 GiB, because ClickHouse has already worked it out
+from the environment. Step 2 reads that.
+
+## 7. Not known yet
+
 - The same scaling test on Ceph.
 - Whether ClickHouse workloads behave on 25.8 under our limits.
 - What raising the merge cap costs on the VM.

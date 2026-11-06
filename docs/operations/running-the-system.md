@@ -226,7 +226,7 @@ reconciled to the row. See `docs/adr/ADR-009-device-module.md`.
 ## 7. Tests
 
 ```bash
-dotnet test backend/Sqm.slnx                   # 888: Domain 243, Ingestion 144, Application 105, Integration 396
+dotnet test backend/Sqm.slnx                   # 902: Domain 243, Ingestion 144, Application 105, Integration 410
 cd frontend && npm test                        # 265, in 37 files
 python tools/test_device_image_pipeline.py     # 46 checks, no network, no database
 python tools/test_device_image_package.py      # 111 checks, no network, no database

@@ -109,6 +109,18 @@ the merge. On dedicated hardware:
 | `sqm_app` and `sqm_ingest` share one development password (`sqm-app-user.xml`) | Separate secrets, from the environment - the file already says so |
 | System-log TTLs and flush settings tuned to stop thousands of tiny parts (`system-logs.xml`, `11-…` §7) | Keep, re-tune retention to the disk |
 
+### 7. Stalls on the laptop's Docker port
+
+Two full integration runs on 2026-11-06 lost 4 and 1 tests, at 30 to 49 s each. The one reason captured is
+`connection forcibly closed`: its request never reached `query_log` for 30 s while ClickHouse answered from
+inside the container, and the server's `http_receive_timeout` is 30 s. So the wait looks like Docker Desktop's
+port forwarding on Windows, not the code or the database. A third run was green, and each test passed alone.
+Both failed runs had a sampler calling `wsl.exe` once a minute beside them, and neither green run did, which
+is a correlation and proves nothing: the stall that was examined did not start on a tick.
+
+**On the new machine:** the containers talk on their own network, so this should not exist. Until then, run
+the suite with nothing beside it, and read a failure of 30 s or more here before reading it as a fault.
+
 ## Order of work on the new machine
 
 1. Provision; restore the two data volumes and the originals; confirm row counts against the old
