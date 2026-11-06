@@ -274,10 +274,10 @@ public sealed class ImportWorkerIdleTests
 {
     private sealed class Signal(TaskCompletionSource ran) : IIdleTask
     {
-        public Task RunAsync(CancellationToken ct)
+        public Task<bool> RunAsync(CancellationToken ct)
         {
             ran.TrySetResult();
-            return Task.CompletedTask;
+            return Task.FromResult(false);
         }
     }
 
@@ -295,6 +295,7 @@ public sealed class ImportWorkerIdleTests
                 m.Name == "IsReachableAsync" ? Task.FromResult(true) : Stub.Default(m)),
             [],
             [new Signal(ran)],
+            Lanes.One(),
             Microsoft.Extensions.Options.Options.Create(new ImportWorkerOptions
             {
                 WorkerId = "test",

@@ -68,6 +68,7 @@ public sealed class ImportWorkerCancelTests
                     m.Name == "IsReachableAsync" ? Task.FromResult(true) : Stub.Default(m)),
                 [processor],
                 [],
+                Lanes.One(),
                 Options.Create(new ImportWorkerOptions
                 {
                     WorkerId = "test",

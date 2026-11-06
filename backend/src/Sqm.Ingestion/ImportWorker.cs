@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Options;
 using Sqm.Application.DataImport;
 using Sqm.Ingestion.Processing;
@@ -24,6 +25,7 @@ public sealed partial class ImportWorker(
     IImportFileStore fileStore,
     IEnumerable<IImportProcessor> processors,
     IEnumerable<IIdleTask> idleTasks,
+    IdleLanes lanes,
     IOptions<ImportWorkerOptions> options,
     ILogger<ImportWorker> logger) : BackgroundService
 {
@@ -73,6 +75,9 @@ public sealed partial class ImportWorker(
     private readonly bool _hostedInApi = options.Value.HostedInApi;
     private readonly Dictionary<string, IImportProcessor> _processors =
         processors.ToDictionary(p => p.SourceCode, StringComparer.OrdinalIgnoreCase);
+
+    private readonly IIdleTask[] _alone = [.. idleTasks.Where(t => t.RunsAlone)];
+    private readonly IIdleTask[] _beside = [.. idleTasks.Where(t => !t.RunsAlone)];
 
     /// <summary>Read and written by the claim loop alone.</summary>
     private bool _holding;
@@ -138,13 +143,15 @@ public sealed partial class ImportWorker(
                 // Not during a hold. The work waiting is about to change what these tasks compute,
                 // and the dashboard rebuild cannot be interrupted: on 2026-11-05 a job waited 50
                 // minutes behind one that the jobs after it then made stale.
-                if (!holding)
-                {
-                    await RunIdleTasksAsync(stoppingToken).ConfigureAwait(false);
-                }
+                var worked = !holding && await RunIdleTasksAsync(stoppingToken).ConfigureAwait(false);
 
                 slots.Release();
-                await DelayAsync(_options.PollInterval, stoppingToken).ConfigureAwait(false);
+
+                if (!worked)
+                {
+                    await DelayAsync(_options.PollInterval, stoppingToken).ConfigureAwait(false);
+                }
+
                 continue;
             }
 
@@ -462,18 +469,64 @@ public sealed partial class ImportWorker(
         }
     }
 
-    private async Task RunIdleTasksAsync(CancellationToken ct)
+    /// <summary>One round of idle work, then back to the queue.</summary>
+    /// <remarks>
+    /// <para>
+    /// What must run alone goes first and by itself. The rest run in lanes, each stepping until the
+    /// round is over, so a job waits for <see cref="ImportWorkerOptions.IdleRound"/> and the steps in
+    /// progress. The claim loop stays as it was: nothing runs beside a job, because a round is over
+    /// before the next claim.
+    /// </para>
+    /// <para>
+    /// With one lane the round is a step each, in turn: a lane that went on stepping would hold the
+    /// others back for the whole round.
+    /// </para>
+    /// </remarks>
+    /// <returns>Whether a task may have more to do straight away.</returns>
+    private async Task<bool> RunIdleTasksAsync(CancellationToken ct)
     {
-        foreach (var task in idleTasks)
+        foreach (var task in _alone)
         {
-            try
+            await RunIdleStepAsync(task, ct).ConfigureAwait(false);
+        }
+
+        var count = _beside.Length > 1 ? await lanes.CountAsync(ct).ConfigureAwait(false) : 1;
+        var round = count > 1 ? _options.IdleRound : TimeSpan.Zero;
+        var started = Stopwatch.GetTimestamp();
+        var worked = 0;
+
+        await Parallel.ForEachAsync(
+            _beside,
+            new ParallelOptions { MaxDegreeOfParallelism = count, CancellationToken = ct },
+            async (task, token) =>
             {
-                await task.RunAsync(ct).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                LogIdleTaskFailed(task.GetType().Name, ex);
-            }
+                while (await RunIdleStepAsync(task, token).ConfigureAwait(false))
+                {
+                    Volatile.Write(ref worked, 1);
+
+                    if (Stopwatch.GetElapsedTime(started) >= round)
+                    {
+                        return;
+                    }
+
+                    token.ThrowIfCancellationRequested();
+                }
+            }).ConfigureAwait(false);
+
+        return Volatile.Read(ref worked) == 1;
+    }
+
+    private async Task<bool> RunIdleStepAsync(IIdleTask task, CancellationToken ct)
+    {
+        try
+        {
+            return await task.RunAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogIdleTaskFailed(task.GetType().Name, ex);
+            lanes.StepFailed();
+            return false;
         }
     }
 

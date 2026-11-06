@@ -124,6 +124,11 @@ public static class ImportWorkerRegistration
         // Each day's per-model counts for new models and network age (analytics migration 025).
         services.TryAddSingleton<TacDayStep>();
 
+        // How many idle tasks run at once, from what the engine says it has to give (ADR-021).
+        services.TryAddSingleton<IEngineCapacityReader>(
+            sp => (IEngineCapacityReader)sp.GetRequiredService<IAnalyticsIngestionStore>());
+        services.TryAddSingleton<IdleLanes>();
+
         // Rebuilt once per run of files; the worker settles what a stopped run left owed.
         services.TryAddSingleton<DashboardSnapshot>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IIdleTask, DashboardSnapshot>(

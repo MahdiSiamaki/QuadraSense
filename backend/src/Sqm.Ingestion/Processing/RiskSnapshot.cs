@@ -38,9 +38,9 @@ internal enum RiskSnapshotStep
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>One chunk at a time.</b> A whole run is 72 statements of about a minute each. Built in one go
-/// it would hold the worker's only slot for over an hour; built a chunk per idle moment, a file that
-/// arrives waits at most for the chunk in progress, and the run resumes where it stopped - after the
+/// <b>One chunk at a time.</b> A whole run is 384 statements. Built in one go it would hold the worker's
+/// only slot for over an hour; built a chunk at a time, a file that arrives waits at most for the
+/// worker's round and the chunk in progress (ADR-021), and the run resumes where it stopped - after the
 /// file, after a restart, after a crash.
 /// </para>
 /// <para>
@@ -92,7 +92,7 @@ internal sealed partial class RiskSnapshot(
     private partial void LogChunkFailed(Exception exception, ulong runId, string chunk, int attempt, int maxAttempts);
 
     /// <inheritdoc />
-    public async Task RunAsync(CancellationToken ct)
+    public async Task<bool> RunAsync(CancellationToken ct)
     {
         var settings = options.CurrentValue;
         var problems = settings.Problems();
@@ -106,20 +106,23 @@ internal sealed partial class RiskSnapshot(
                 LogInvalid(text);
             }
 
-            return;
+            return false;
         }
 
         _reportedProblems = null;
         if (clock.GetUtcNow() < _quietUntil)
         {
-            return;
+            return false;
         }
 
         var step = await StepAsync(settings, force: false, ct).ConfigureAwait(false);
         if (step is RiskSnapshotStep.Current or RiskSnapshotStep.Waiting or RiskSnapshotStep.Failed or RiskSnapshotStep.NotDeployed)
         {
             _quietUntil = clock.GetUtcNow() + QuietFor;
+            return false;
         }
+
+        return true;
     }
 
     /// <summary>Does the next piece of work: plan a run, write one chunk, or publish.</summary>

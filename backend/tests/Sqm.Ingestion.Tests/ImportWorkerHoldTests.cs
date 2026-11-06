@@ -39,10 +39,10 @@ public sealed class ImportWorkerHoldTests
 
         public int Runs => Volatile.Read(ref _runs);
 
-        public Task RunAsync(CancellationToken ct)
+        public Task<bool> RunAsync(CancellationToken ct)
         {
             Interlocked.Increment(ref _runs);
-            return Task.CompletedTask;
+            return Task.FromResult(false);
         }
     }
 
@@ -80,6 +80,7 @@ public sealed class ImportWorkerHoldTests
                     m.Name == "IsReachableAsync" ? Task.FromResult(_reachable) : Stub.Default(m)),
                 [new Processor(() => outcome(this))],
                 idle is null ? [] : [idle],
+                Lanes.One(),
                 Options.Create(new ImportWorkerOptions
                 {
                     WorkerId = "test",
