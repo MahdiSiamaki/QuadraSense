@@ -267,6 +267,44 @@ time, never by having merged.
 5 and reconciled**, on the first attempt, with the server answering throughout. The equivalent
 step in the IMSI backfill took the server down three times.
 
+## 8. A merge of uniq() states, and why a copy lied about it
+
+`agg_tac_population` holds wide columns: a popular model's `uniq()` state is hundreds of KiB, three to a
+row, 972 MiB in 88,000 rows. Section 1b of the refresh writes it in 8,192-row blocks (a default block holds
+every state at once and fails at the statement's limit), so a delivery starts in about eleven parts.
+
+Reads and merges both pay for that shape. On 2026-11-05, delivery 247:
+
+| | Six parts | One part, horizontal merge | One part, after migration 036 |
+|---|---:|---:|---:|
+| The four NTN classes | 512 MiB | 345 MiB | 325 MiB |
+| The KPI statement | 691 MiB | 428 MiB | 160 MiB |
+| The heaviest dimension statement | 600 MiB | 511 MiB | 389 MiB |
+| Marks in the partition | 18 | 12 | 87 |
+
+Over six parts the NTN classes passed the API's 476 MiB cap, so the refresh now merges the partition
+before anything reads it. But a default merge of those parts took **3.5 GiB**, most of what the laptop's
+server may use, so this table merges differently:
+
+| Merge of 11 parts, 972 MiB | Peak | Time |
+|---|---:|---:|
+| Default | 3.50 GiB | 123 s |
+| `merge_max_block_size` 1024 | 2.88 GiB | 154 s |
+| Vertical | 1.23 GiB | 96 s |
+| Vertical, and `merge_max_block_size` 1024 | **1.01 GiB** | **87 s** |
+
+In the real refresh the two merges then peaked at 631 and 518 MiB, and the second took 39 s. ClickHouse
+only chooses a vertical merge from 131,072 rows, which a table of few, very wide rows never reaches, hence
+the two settings that force it. Together they also leave granules of about 1,024 rows, so a read decodes a
+seventh of what it did. That is the 87 marks above, and most of the fall in the last column: rebuilding the
+table with `index_granularity` 1024 measured the same (KPI statement 180 MiB, NTN classes 325 MiB), for a
+part-rewriting migration that is no longer needed.
+
+**Measure this on parts an aggregation wrote.** The first test copied the mart with `INSERT ... SELECT`, and
+every setting merged in the same 439 MiB, the same bytes on disk, so `merge_max_block_size` looked like the
+whole answer. Real parts took eight times that. Only parts written by `uniqMergeState` under a `GROUP BY`
+reproduced it.
+
 ## Related
 
 

@@ -107,7 +107,8 @@ In this order, each measured before the next:
    as it was, but for the `unknown` column of capability: ADR-020 had changed its statement and it had not
    been refreshed since. The VM's figure comes with its next import; 2 h 12 min to about 25 minutes was the
    estimate. `MartRefreshScriptTests` holds every mart to a direct read of current state over two
-   deliveries, and fails if a second read of the table comes back.
+   deliveries, and fails if a second read of the table comes back. With ADR-020's wider rule in section
+   1b and the partition merged after it, 499 s, and the heaviest statement after the read 389 MiB.
 2. **Read the capacity at run time.** Threads, memory per statement and the merge cap come from what the
    environment reports (`CGroupMaxCPU`, `CGroupMemoryTotal`), replacing the laptop's constants. The merge
    cap matters most: at 2 GiB, `binding_current` holds 1.26 billion versions, and every `FINAL` pays for

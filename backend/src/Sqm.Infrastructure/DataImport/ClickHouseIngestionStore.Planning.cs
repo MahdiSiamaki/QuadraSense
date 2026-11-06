@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Sqm.Application.Planning;
 using Sqm.Domain.Devices;
+using Sqm.Infrastructure.ClickHouse;
 
 namespace Sqm.Infrastructure.DataImport;
 
@@ -371,11 +372,12 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
     /// <summary>
     /// A handset's state, from its IMEI and its model's radio profile: 0-3 the profile's sunset class
     /// (0 no band listed, 1 LTE or NR, 2 LTE-M / NB-IoT only, 3 2G/3G only), 5 a shifted IMEI,
-    /// 6 an unknown device (000000 or not 14 digits, fourteen zeros), 7 a TAC the catalogue lacks.
+    /// 6 no other handset either (ADR-020: 000000, not 14 digits, or 14 digits no handset could carry),
+    /// 7 a TAC the catalogue lacks.
     /// </summary>
     private string HandsetState(string imei, string profileTac, string sunset) => $$"""
         multiIf({{Shifted(imei)}}, 5,
-                NOT match({{imei}}, '^[0-9]{14}$') OR {{imei}} = '00000000000000', 6,
+                NOT match({{imei}}, '^[0-9]{14}$') OR {{AnalyticsSchema.NoHandset(imei, $"substring({imei}, 1, 8)", $"{_database}.tac")}}, 6,
                 {{profileTac}} = '', 7,
                 {{sunset}})
         """;
@@ -403,15 +405,20 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
     /// takes the profile of its dual-SIM partner, found by a join on the number and the partner's IMEI:
     /// the same TAC and a serial one either side, or a TAC a hundred either side and the same serial.
     /// Then the number's classes follow from the whole set.
+    /// <para>
+    /// States 5 and 6 are rows with no handset (ADR-020), so they decide nothing while the number holds a
+    /// real one: 55,426 numbers at delivery 247 were "not assessable" for a leftover 000000 beside a real
+    /// handset. Only a number with nothing else keeps reason 1 or 2, and the reader leaves those out.
+    /// </para>
     /// </summary>
     private string NumbersSql(PlanningRun run, int chunk) => $$"""
         INSERT INTO {{_database}}.planning_number
             (run_id, chunk, msisdn, sunset, reason, esim, iot, gsm_only, handsets, bindings, paired, tacs)
         SELECT
             {{run.RunId}}, {{chunk}}, msisdn,
-            multiIf(has(st, 1), 1, has(st, 2), 2, hasAny(st, [0, 5, 6, 7]), 4, 3)                  AS sunset,
-            multiIf(sunset != 4, 0, has(st, 5), 1, has(st, 6), 2, has(st, 7), 3, 4)                  AS reason,
-            multiIf(has(es, 1), 1, has(es, 2), 2, 0)                                                 AS esim,
+            multiIf(has(st, 1), 1, has(st, 2), 2, hasAny(st, [0, 7]), 4, has(st, 3), 3, 4)           AS sunset,
+            multiIf(sunset != 4, 0, has(st, 7), 3, has(st, 0), 4, has(st, 5), 1, 2)                  AS reason,
+            multiIf(has(es, 1), 1, has(es, 2) OR empty(es), 2, 0)                                    AS esim,
             iot_any                                                                                  AS iot,
             toUInt8(sunset = 3 AND umts_any = 0)                                                     AS gsm_only,
             toUInt16(least(handset_count, 65535))                                                    AS handsets,
@@ -421,7 +428,7 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
         FROM (
             SELECT h.msisdn AS msisdn,
                    groupUniqArray(if(p.found = 1, p.state, h.state))          AS st,
-                   groupUniqArray(if(p.found = 1, p.esim, h.esim))            AS es,
+                   groupUniqArrayIf(if(p.found = 1, p.esim, h.esim), h.state NOT IN (5, 6)) AS es,
                    toUInt8(max(if(p.found = 1, p.iot, h.iot)))                AS iot_any,
                    max(if(p.found = 1, p.umts, h.umts))                       AS umts_any,
                    count()                                                    AS handset_count,
@@ -457,14 +464,17 @@ public sealed partial class ClickHouseIngestionStore : IPlanningSnapshotStore
         )
         """;
 
-    /// <summary>Who holds which model, under each number class: the breakdown by vendor, model and type.</summary>
+    /// <summary>
+    /// Who holds which model, under each number class: the breakdown by vendor, model and type. A row
+    /// with no handset is no model (ADR-020).
+    /// </summary>
     private string BreakdownSql(PlanningRun run, int chunk) => $"""
         INSERT INTO {_database}.planning_breakdown (run_id, chunk, sunset, reason, esim, tac, numbers, bindings, handsets)
         SELECT {run.RunId}, {chunk}, n.sunset, n.reason, n.esim, s.tac,
                uniqState(s.msisdn), sum(s.bindings), uniqStateIf(s.imei, length(s.imei) = 14)
         FROM (
             SELECT msisdn, imei, tac, bindings FROM {_database}.planning_handset_stage
-            WHERE run_id = {run.RunId} AND chunk = {chunk}
+            WHERE run_id = {run.RunId} AND chunk = {chunk} AND state NOT IN (5, 6)
         ) AS s
         INNER JOIN (
             SELECT msisdn, sunset, reason, esim FROM {_database}.planning_number WHERE run_id = {run.RunId} AND chunk = {chunk}

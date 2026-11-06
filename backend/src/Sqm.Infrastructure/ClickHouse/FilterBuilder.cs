@@ -49,8 +49,7 @@ internal sealed class FilterBuilder
 
         if (!filter.IncludeUnknownDevice)
         {
-            // The 000000 sentinel yields an empty materialised tac.
-            b._conditions.Add("b.tac != ''");
+            b._conditions.Add($"NOT {AnalyticsSchema.RowHasNoHandset}");
         }
 
         return b;

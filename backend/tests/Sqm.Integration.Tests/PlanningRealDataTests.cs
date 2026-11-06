@@ -87,7 +87,7 @@ public sealed class PlanningRealDataTests
         // No number in two classes, and the summary is the rows'.
         var rows = await QueryAsync($"""
             SELECT concat(toString(count()), '|', toString(uniqExact(msisdn)))
-            FROM sqm.planning_number WHERE run_id = {sunset.Run.RunId}
+            FROM sqm.planning_number WHERE run_id = {sunset.Run.RunId} AND NOT (sunset = 4 AND reason IN (1, 2))
             """);
         Assert.Equal($"{sunset.TotalNumbers}|{sunset.TotalNumbers}", rows);
         Assert.InRange(sunset.ExposedGsmOnly, 0, sunset.Classes.Single(c => c.Class == "exposed").Numbers);
@@ -178,12 +178,12 @@ public sealed class PlanningRealDataTests
         Write($"iot devices: ~{iot.Devices.Handsets:N0} active (estimated); {rotated:N0} in the SIM rotation");
         Assert.InRange(rotated, (long)(iot.Devices.Handsets * 0.9), (long)(iot.Devices.Handsets * 1.02));
 
-        // The per-model views: every binding of the delivery is in one NTN class or not classified, and
+        // The per-model views: every binding of a handset is in one NTN class or not classified, and
         // the band view reads within budget with no operator list configured.
         timer.Restart();
         var ntn = (await Reader().GetNtnAsync(null, PlanningFilter.None, ct))!;
         var bindings = long.Parse(await QueryAsync(
-            $"SELECT sum(bindings) FROM sqm.agg_tac_population WHERE seq = {ntn.Run.AsOfSequence}"), System.Globalization.CultureInfo.InvariantCulture);
+            $"SELECT sum(bindings) FROM sqm.agg_tac_population WHERE seq = {ntn.Run.AsOfSequence} AND tac != ''"), System.Globalization.CultureInfo.InvariantCulture);
         Write($"ntn view: {timer.ElapsedMilliseconds} ms; " + string.Join("; ", ntn.Classes.Select(c => $"{c.Label} ~{c.Numbers:N0}")));
         Assert.Equal(bindings, ntn.Classes.Sum(c => c.Bindings) + ntn.NotClassified.Bindings);
 

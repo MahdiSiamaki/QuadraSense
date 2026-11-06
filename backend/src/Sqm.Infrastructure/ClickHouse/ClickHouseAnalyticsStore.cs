@@ -175,7 +175,8 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
         {
             UnknownDeviceBindings = all.UnknownDeviceBindings,
             MalformedImeiBindings = all.MalformedImeiBindings,
-            SetAsideBindings = all.UnknownDeviceBindings + all.MalformedImeiBindings,
+            InvalidImeiBindings = all.InvalidImeiBindings,
+            SetAsideBindings = all.UnknownDeviceBindings + all.MalformedImeiBindings + all.InvalidImeiBindings,
         };
     }
 
@@ -204,7 +205,8 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 -- The delivery's own day, so the caller can say which delivery these figures
                 -- describe rather than implying they are the newest data imported.
                 (SELECT max(data_date) FROM sqm.agg_change_summary_daily AS d
-                  WHERE d.seq = agg_kpi_daily.seq) AS delivery_date
+                  WHERE d.seq = agg_kpi_daily.seq) AS delivery_date,
+                invalid_imei_bindings
             FROM sqm.agg_kpi_daily
             WHERE seq = (SELECT max(seq) FROM sqm.mart_ready)
             ORDER BY seq DESC
@@ -231,7 +233,10 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
             TacMatchedBindings: GetInt64(reader, 6),
             TacCoveragePercent: GetDouble(reader, 7),
             DeliverySequence: (int)GetInt64(reader, 8),
-            DeliveryDate: GetDateOrNull(reader, 9));
+            DeliveryDate: GetDateOrNull(reader, 9))
+        {
+            InvalidImeiBindings = GetInt64(reader, 10),
+        };
     }
 
     /// <summary>Reads a nullable Date column.</summary>
@@ -259,7 +264,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 count()                                        AS active_bindings,
                 uniq(b.msisdn)                                 AS distinct_subscribers,
                 uniq(b.imsi)                                   AS distinct_sims,
-                uniqIf(b.imei, length(b.imei) = 14)            AS distinct_devices,
+                uniqIf(b.imei, NOT {AnalyticsSchema.RowHasNoHandset}) AS distinct_devices,
                 countIf(b.imei = '000000')                     AS unknown_device_bindings,
                 countIf(length(b.imei) != 14 AND b.imei != '000000') AS malformed_imei_bindings,
                 countIf(t.tac != '')                           AS tac_matched_bindings,
@@ -272,7 +277,8 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 -- be a full column scan of a billion.
                 (SELECT argMax(seq, data_date) FROM sqm.agg_change_summary_daily) AS delivery_seq,
                 -- NULL before the first daily file, not max() of nothing, which is 1970-01-01.
-                (SELECT if(count() = 0, NULL, max(data_date)) FROM sqm.agg_change_summary_daily) AS delivery_date
+                (SELECT if(count() = 0, NULL, max(data_date)) FROM sqm.agg_change_summary_daily) AS delivery_date,
+                countIf(length(b.imei) = 14 AND {AnalyticsSchema.RowHasNoHandset}) AS invalid_imei_bindings
             FROM sqm.binding_current AS b FINAL
             LEFT JOIN sqm.tac AS t ON t.tac = b.tac
             LEFT JOIN (SELECT * FROM sqm.tac_vendor_map FINAL) AS v ON v.raw_manufacturer = t.manufacturer
@@ -300,7 +306,10 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
             TacMatchedBindings: GetInt64(reader, 6),
             TacCoveragePercent: GetDouble(reader, 7),
             DeliverySequence: (int)GetInt64(reader, 8),
-            DeliveryDate: GetDateOrNull(reader, 9));
+            DeliveryDate: GetDateOrNull(reader, 9))
+        {
+            InvalidImeiBindings = GetInt64(reader, 10),
+        };
     }
 
     /// <inheritdoc />
@@ -408,7 +417,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                 SELECT k, n, is_total, max(if(is_total = 1, n, 0)) OVER () AS total
                 FROM (
                     SELECT
-                        multiIf(b.tac = '', {unknown_device:String},
+                        multiIf({{AnalyticsSchema.RowHasNoHandset}}, {unknown_device:String},
                                 t.tac = '',  {unknown_tac:String},
                                 coalesce(nullIf({{column}}, ''), {unknown_tac:String})) AS k,
                         {{measure}} AS n,
@@ -693,7 +702,7 @@ public sealed partial class ClickHouseAnalyticsStore : IDeviceAnalyticsStore
                     ) AS x ON x.data_date = s.data_date
                 ),
                 (SELECT max(seq) FROM sqm.mart_ready) AS anchor_seq,
-                (SELECT active_bindings - unknown_device_bindings - malformed_imei_bindings
+                (SELECT active_bindings - unknown_device_bindings - malformed_imei_bindings - invalid_imei_bindings
                    FROM sqm.agg_kpi_daily WHERE seq = anchor_seq) AS anchor_pop,
                 -- Through the anchor's DAY, not its sequence number: a missing day imported late
                 -- has a higher number than the anchor but sits before it in the series.

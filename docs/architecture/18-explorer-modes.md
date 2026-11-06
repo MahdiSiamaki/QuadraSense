@@ -117,6 +117,12 @@ anyone who could see any of them.
 - **Back sends the lookup again**: it is a new request for an identifier shown before, and is audited as
   one.
 
+## Rows with no handset
+
+Explorer leaves out every row with no handset (ADR-020), as the dashboard does, unless the query names
+an IMEI or a TAC: that is someone looking for exactly such a row. The plan says when it has left them
+out. A person's lookup is not filtered: it is evidence, and shows their rows as they are.
+
 ## A defect the move exposed: no pair from a handset
 
 Checked against the case that found the twin-TAC scheme (`14-relationship-explorer.md`), a search by

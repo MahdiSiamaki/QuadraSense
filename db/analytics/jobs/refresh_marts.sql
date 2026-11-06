@@ -8,7 +8,7 @@
 -- of the TAC or of the whole population, so nothing needs the table twice. It used to be read 14
 -- times, 66 GiB and about 9 minutes each on the department VM: 2 h 12 min of an import
 -- (`docs/research/2026-11-worker-capacity.md`). Merged, the marts came out identical to the digit
--- on both machines' data, and a whole refresh took 514 s on the laptop where it took 50-68 minutes.
+-- on both machines' data, and a whole refresh took about 8 minutes on the laptop where it took 50-68.
 --
 -- IDEMPOTENCY. Each mart is partitioned by `seq`, and every section below drops that
 -- partition before inserting. Re-running a delivery therefore produces the same result
@@ -81,24 +81,53 @@ ALTER TABLE sqm.agg_filter_population DROP PARTITION {seq:UInt16};
 --     2026-10-19, at 1.20 GiB, merging the spilled aggregation back. Finished
 --     numbers, as this pass wrote before, are small enough that it never showed.
 --     In small blocks: 842 s, 368 MiB peak, 158,002 rows (delivery 246).
+--
+--     IMEIS THAT ARE NOT AN IMEI (ADR-020). A row whose 14 digits no handset could carry joins the
+--     empty TAC here, so every mart below treats it as a row with no handset and none needs a rule
+--     of its own. A TAC in the catalogue is always accepted. One that is not must fail one of three
+--     tests to be refused, and a TAC merely missing from the catalogue fails none of them:
+--       * all zeros;
+--       * the shifted IMEI, the feed-quality monitor's test: ending in 0, with one digit put back
+--         in front making a GSMA TAC. Judged on the IMEI, not the TAC: 1,711 TACs of that shape end
+--         in 0 about one time in ten, as real handsets do;
+--       * a reporting body GSMA never had: the first two digits, against GSMA TS.06 v27, Annex A.
+--     AnalyticsSchema.NoHandset is the same rule for what reads current state directly, and
+--     MartRefreshScriptTests holds the two to each other.
 -- --------------------------------------------------------------------------
 INSERT INTO sqm.agg_tac_population
-    (seq, tac, bindings, unknown_device, malformed_imei, subscribers, sims, handsets, first_seen, last_seen)
+    (seq, tac, bindings, unknown_device, malformed_imei, invalid_imei, subscribers, sims, handsets, first_seen, last_seen)
 SELECT
     {seq:UInt16}  AS seq,
-    tac,
+    counted_tac   AS tac,
     count()                                             AS bindings,
     countIf(imei = '000000')                            AS unknown_device,
     countIf(length(imei) != 14 AND imei != '000000')    AS malformed_imei,
+    countIf(length(imei) = 14 AND counted_tac = '')     AS invalid_imei,
     uniqState(msisdn)                                   AS subscribers,
     uniqState(imsi)                                     AS sims,
-    uniqStateIf(imei, length(imei) = 14)                AS handsets,
+    uniqStateIf(imei, counted_tac != '')                AS handsets,
     min(last_change_date)                               AS first_seen,
     max(last_change_date)                               AS last_seen
-FROM sqm.binding_current FINAL
-WHERE active = 1
-GROUP BY tac
+FROM (
+    SELECT
+        msisdn, imsi, imei, last_change_date,
+        if(tac NOT IN (SELECT tac FROM sqm.tac)
+           AND (tac = '00000000'
+                OR substring(tac, 1, 2) NOT IN ('00', '01', '10', '30', '33', '35', '44', '45', '49',
+                                                '50', '51', '52', '53', '54', '86', '91', '98', '99')
+                OR (endsWith(imei, '0') AND substring(imei, 1, 7) IN (SELECT substring(tac, 2, 7) FROM sqm.tac))),
+           '', tac) AS counted_tac
+    FROM sqm.binding_current FINAL
+    WHERE active = 1
+)
+GROUP BY counted_tac
 SETTINGS min_insert_block_size_rows = 8192, min_insert_block_size_bytes = 0;
+
+-- One part before anything reads it. The small blocks above leave the partition in several parts, and
+-- a read of the states costs more across them: the four NTN classes took 512 MiB over six parts, over
+-- the API's 476 MiB cap, and 325 MiB over one. Every statement below reads it too: the KPI row took
+-- 691 MiB and now takes 160. See migration 036 for what makes this merge affordable.
+OPTIMIZE TABLE sqm.agg_tac_population PARTITION {seq:UInt16} FINAL;
 
 INSERT INTO sqm.agg_device_model
     (seq, data_date, tac, bindings, handsets, sims, subscribers, first_seen, last_seen)
@@ -251,7 +280,7 @@ GROUP BY value;
 -- --------------------------------------------------------------------------
 INSERT INTO sqm.agg_kpi_daily
     (seq, data_date, active_bindings, distinct_subscribers, distinct_devices,
-     unknown_device_bindings, malformed_imei_bindings, tac_matched_bindings, distinct_sims)
+     unknown_device_bindings, malformed_imei_bindings, invalid_imei_bindings, tac_matched_bindings, distinct_sims)
 SELECT
     {seq:UInt16} AS seq,
     NULL         AS data_date,
@@ -263,6 +292,8 @@ SELECT
     sum(b.unknown_device)                            AS unknown_device_bindings,
     -- Numeric but not 14 digits, so no TAC can be derived. A defect, unlike the sentinel above.
     sum(b.malformed_imei)                            AS malformed_imei_bindings,
+    -- 14 digits, but not an IMEI: section 1b refused them.
+    sum(b.invalid_imei)                              AS invalid_imei_bindings,
     sumIf(b.bindings, b.tac != '' AND b.tac IN (SELECT tac FROM sqm.tac)) AS tac_matched_bindings,
     uniqMerge(b.sims)                                AS distinct_sims
 FROM sqm.agg_tac_population AS b

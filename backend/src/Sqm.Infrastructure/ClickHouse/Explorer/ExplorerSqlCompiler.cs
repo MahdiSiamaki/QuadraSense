@@ -103,6 +103,9 @@ internal static class ExplorerSqlCompiler
         ["operatingSystem"] = "nullIf(trim(operatingSystem), '')",
     }.ToFrozenDictionary(StringComparer.Ordinal);
 
+    /// <summary>The fields that name a handset: a condition on one is someone looking for exactly that row.</summary>
+    private static readonly FrozenSet<string> HandsetFields = new[] { "imei", "tac" }.ToFrozenSet(StringComparer.Ordinal);
+
     /// <summary>Device fields: read through the GSMA join, and resolvable to TACs.</summary>
     internal static readonly FrozenSet<string> DeviceFields = TacTableExpressions.Keys.ToFrozenSet(StringComparer.Ordinal);
 
@@ -172,6 +175,14 @@ internal static class ExplorerSqlCompiler
         }
 
         where.AddRange(hints);
+
+        // A row with no handset is left out of what Explorer counts as of everything else (ADR-020),
+        // but this is where someone goes to see one: naming an IMEI or a TAC brings them back.
+        if (!Mentions(query.Where, HandsetFields))
+        {
+            where.Add($"NOT {AnalyticsSchema.NoHandset("b.imei", "b.tac", "tac")}");
+            notes.Add("Rows with no handset are left out. Filter on an IMEI or a TAC to see them.");
+        }
 
         // ------------------------------------------------------------ select
         var select = new List<string>();

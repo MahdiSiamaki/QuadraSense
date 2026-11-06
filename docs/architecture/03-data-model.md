@@ -194,7 +194,7 @@ Dashboards must never scan the event log. Measured shape of the rollups:
 
 | Mart | Grain | Est. rows/day | Purpose |
 |---|---|---:|---|
-| `agg_tac_population` | seq × tac | ~120,000 | the one read of current state; every other snapshot mart is merged from its uniq() states |
+| `agg_tac_population` | seq × tac | ~120,000 | the one read of current state; every other snapshot mart is merged from its uniq() states. A row with no handset (ADR-020) is under the empty TAC |
 | `agg_change_daily` | seq × change_type × tac | ~95,000 | growth, churn, migration |
 | `agg_quality_daily` | seq × rule | ~20 | the data-quality dashboard |
 

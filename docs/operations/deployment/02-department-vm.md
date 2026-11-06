@@ -292,7 +292,7 @@ Each is a measurement to record in `docs/operations/dedicated-hardware.md` besid
 | 5 | The dashboard against the laptop's for the same delivery | identical figures |
 | 6 | `dotnet test backend/Sqm.slnx` from a machine that can reach the stores, or the integration tests pointed at them | the real-data tests' timing bounds hold |
 | 7 | `SELECT count() FROM sqm.binding_current FINAL` and the filtered KPI | the laptop: 74 s and 100 s (ADR-017); disk speed decides the VM's |
-| 8 | A full mart refresh (`--refresh-dashboard`, in the worker image) | the laptop: 514 s for delivery 247 |
+| 8 | A full mart refresh (`--refresh-dashboard`, in the worker image) | the laptop: 499 s for delivery 247 |
 | 9 | `docker compose restart clickhouse` while idle; then under an import | comes back healthy; the import resumes from its lease |
 | 10 | Restore last night's PostgreSQL dump into a scratch container | it restores |
 

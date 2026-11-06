@@ -7,14 +7,15 @@ import type { SnapshotData } from '@/features/dashboard/types/snapshot'
 import type { WidgetViewProps } from '@/features/dashboard/types/widget'
 import { formatFull, formatPercent } from '@/lib/format'
 import type { EnrichmentConfig } from './config'
-import { unregisteredTacBindings } from '../overview/kpiMetrics'
+import { activeRows, unregisteredTacBindings } from '../overview/kpiMetrics'
 import { lensFilters } from '../overview/shared/filters'
 import { useKept } from '../overview/shared/useKept'
 
 /**
  * Every active row, accounted for: enriched from GSMA, the unknown-device sentinel, malformed IMEIs,
- * and well-formed IMEIs whose TAC GSMA does not know. The four sum exactly to the total. The first
- * and last are what the dashboard counts; this is where the two it leaves out are shown.
+ * IMEIs no handset could carry, and well-formed IMEIs whose TAC GSMA does not know. The five sum
+ * exactly to the total. The first and last are what the dashboard counts; this is where the three it
+ * leaves out are shown.
  *
  * Unregistered TAC is computed from the exact counts, never from the coverage percentage: deriving it
  * from a figure rounded to three decimals put it about 30,000 rows off the true value, on the card
@@ -27,6 +28,7 @@ const filters = computed(() => lensFilters(props.lens))
 const query = useKpiSummary(filters, { enabled: active })
 const kpi = useWidgetData(props, query, (raw) => (raw as SnapshotData<'quality.enrichment'>).kpi)
 const { value: k, loading, updating } = useKept(kpi)
+const total = computed(() => (k.value ? activeRows(k.value) : 0))
 
 const rows = computed(() => {
   const s = k.value
@@ -35,6 +37,7 @@ const rows = computed(() => {
     { key: 'enriched', label: 'Enriched from GSMA', value: s.tacMatchedBindings, tone: 'text-[var(--c-success-text)]', note: `${formatPercent(s.tacCoveragePercent, 2)} of active bindings.` },
     { key: 'unknown', label: 'Unknown device (000000)', value: s.unknownDeviceBindings, tone: 'text-[var(--c-warning-text)]', note: 'No handset: the source wrote 000000. Stored, and left out of every count.' },
     { key: 'malformed', label: 'Malformed IMEI', value: s.malformedImeiBindings, tone: 'text-[var(--c-danger-text)]', note: 'Numeric but not 14 digits, so no handset can be named. Left out of every count; worth raising with the source.' },
+    { key: 'invalid', label: 'Invalid IMEI', value: s.invalidImeiBindings ?? 0, tone: 'text-[var(--c-danger-text)]', note: '14 digits no handset could carry: a zero TAC, a shifted IMEI, or a reporting body GSMA never had. Left out of every count.' },
     { key: 'unregistered', label: 'Unregistered TAC', value: unregisteredTacBindings(s), tone: '', note: 'Well-formed IMEI whose TAC is absent from the GSMA database.' },
   ]
 })
@@ -77,15 +80,15 @@ const rows = computed(() => {
                 <span class="block text-2xs text-[var(--c-text-muted)]">{{ r.note }}</span>
               </th>
               <td class="tabular px-2 py-1.5 text-right">{{ formatFull(r.value) }}</td>
-              <td class="tabular px-2 py-1.5 text-right">{{ k?.activeBindings ? formatPercent((100 * r.value) / k.activeBindings, 2) : '—' }}</td>
+              <td class="tabular px-2 py-1.5 text-right">{{ total ? formatPercent((100 * r.value) / total, 2) : '—' }}</td>
             </tr>
           </tbody>
         </table>
       </div>
     </AsyncBoundary>
     <p v-if="k" class="shrink-0 border-t pt-2 text-xs text-[var(--c-text-muted)]">
-      The four figures sum to <span class="tabular font-medium text-[var(--c-text-secondary)]">{{ formatFull(k.activeBindings) }}</span>
-      active bindings. The enrichment ceiling is set by unknown-device rows, not by gaps in the GSMA database.
+      The five figures sum to <span class="tabular font-medium text-[var(--c-text-secondary)]">{{ formatFull(total) }}</span>
+      active rows. The enrichment ceiling is set by unknown-device rows, not by gaps in the GSMA database.
     </p>
   </div>
 </template>

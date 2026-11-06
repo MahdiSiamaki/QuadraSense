@@ -182,6 +182,41 @@ public sealed class ExplorerEngineTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_row_with_no_handset_is_left_out_until_the_query_names_an_imei_or_a_tac()
+    {
+        if (_unavailable is not null)
+        {
+            Assert.Skip(_unavailable);
+            return;
+        }
+
+        // Beside number 1's three bindings: 000000, a shifted Galaxy A01, a body GSMA never had, and a
+        // TAC the catalogue merely lacks, which is a handset and stays.
+        const string Rows = """
+            (9120000001, 432110000000001, '000000',         1, 1, '2026-09-26'),
+            (9120000001, 432110000000001, '54801110000010', 1, 1, '2026-09-26'),
+            (9120000001, 432110000000001, '77123456000001', 1, 1, '2026-09-26'),
+            (9120000001, 432110000000001, '35999999000001', 1, 1, '2026-09-26')
+            """;
+        foreach (var copy in new[] { "binding_current", "binding_by_imei" })
+        {
+            await QueryAsync($"INSERT INTO {_database}.{copy} (msisdn, imsi, imei, active, last_change_seq, last_change_date) VALUES {Rows}");
+        }
+
+        var number = await RunAsync(new ExplorerQueryRequest(ExplorerDataset.Bindings, Is("msisdn", ExplorerOperator.Equals, "0912 000 0001")));
+
+        Assert.Equal(4, number.Total);
+        Assert.Contains(number.Plan.Notes, n => n.Contains("no handset", StringComparison.Ordinal));
+
+        var shifted = await RunAsync(new ExplorerQueryRequest(ExplorerDataset.Bindings, Is("imei", ExplorerOperator.Equals, "54801110000010")));
+        var body = await RunAsync(new ExplorerQueryRequest(ExplorerDataset.Bindings, Is("tac", ExplorerOperator.Equals, "77123456")));
+
+        Assert.Equal(1, shifted.Total);
+        Assert.Equal(1, body.Total);
+        Assert.DoesNotContain(shifted.Plan.Notes, n => n.Contains("no handset", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Nested_and_or_not_select_exactly_what_they_say()
     {
         if (_unavailable is not null)

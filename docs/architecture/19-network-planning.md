@@ -172,10 +172,19 @@ by all their handsets - from the per-model uniq() states, and says so.
 | Exposed: 2G/3G only | every handset is known and lists only 2G/3G |
 | Not assessable | no LTE known, and at least one handset that cannot be assessed |
 
-A number is not assessable for the first reason that applies: a **shifted IMEI** (the feed defect of
-2026-09-15, `docs/discovery/05-…`: usually another subscriber's handset, so it is not guessed either
-way), an **unknown device** (`000000` or not 14 digits), a **TAC the catalogue lacks**, or a model
+A number is not assessable for the first reason that applies: a **TAC the catalogue lacks**, or a model
 whose record **lists no band**.
+
+**A row with no handset is not a handset** (ADR-020): a shifted IMEI (the feed defect of 2026-09-15,
+`docs/discovery/05-…`, usually another subscriber's handset), `000000`, anything not 14 digits, a zero
+TAC, or a reporting body GSMA never had. Such a row decides nothing beside a real handset, and a number
+with nothing else has no handset to plan for: it is stored with reason 1 or 2, and is in no class, total,
+list or trend.
+
+> **SUPERSEDED (2026-11-05).** This used to list the shifted IMEI and the unknown device as reasons for
+> "not assessable", first in order, so a 2G phone beside a leftover `000000` was not exposed: 55,426
+> numbers at delivery 247. A run built before this change still has them there, and they are simply out
+> of it until the next run gives them their real class.
 
 **Dual-SIM pairs** settle one case and only one. An IMEI that cannot be assessed, whose partner by
 the documented rule (`14-relationship-explorer.md`: the same TAC and a serial one apart, or a TAC a
@@ -366,8 +375,8 @@ bands, so the match is never computed - and the view says the list is not config
 
 From `ntnConnectivity` and the band list, four classes per model: **3GPP NTN capable**; **a satellite
 radio listed, not 3GPP NTN** (L-band, S-band, Inmarsat, BGAN - another technology); **stated: no
-NTN**; **not stated** (88.8% of TACs say "Not Known"). Unknown devices and TACs the catalogue lacks
-are counted apart. NTN models are broken down by mode (NTN only, or NTN and the terrestrial network),
+NTN**; **not stated** (88.8% of TACs say "Not Known"). TACs the catalogue lacks are counted apart, and
+rows with no handset not at all. NTN models are broken down by mode (NTN only, or NTN and the terrestrial network),
 orbit (GSO, NGSO) and NTN band (E-UTRA B255/B256, NR n255/n256), with bindings per class at every
 delivery the per-model mart holds. **Satellite service in use: no data** - capability is not a
 subscription.

@@ -271,12 +271,13 @@ public sealed partial class DashboardWidgetDataLoader
         var unregistered = UnregisteredTac(kpi);
 
         return Done(
-            Data(("kpi", kpi)), Iso(kpi.DeliveryDate), ["The four categories sum exactly to the active rows. A row with no handset, 000000 or malformed, is left out of every count."],
+            Data(("kpi", kpi)), Iso(kpi.DeliveryDate), ["The five categories sum exactly to the active rows. A row with no handset, 000000, malformed or invalid, is left out of every count."],
             Table(["Category", "Rows", "Percent of active rows"],
             [
                 Row("Enriched from GSMA", kpi.TacMatchedBindings, Share(kpi.TacMatchedBindings)),
                 Row("Unknown device (000000)", kpi.UnknownDeviceBindings, Share(kpi.UnknownDeviceBindings)),
                 Row("Malformed IMEI", kpi.MalformedImeiBindings, Share(kpi.MalformedImeiBindings)),
+                Row("Invalid IMEI", kpi.InvalidImeiBindings, Share(kpi.InvalidImeiBindings)),
                 Row("Unregistered TAC", unregistered, Share(unregistered)),
                 Row("Active rows", rows, 100.0),
             ], Full, "Every active row."));

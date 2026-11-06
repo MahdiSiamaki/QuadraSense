@@ -103,11 +103,15 @@ public sealed class NoHandsetRowsRealDataTests : IAsyncLifetime
         var everything = await store.GetKpiSummaryAsync(Everything, Ct);
 
         Assert.True(everything.UnknownDeviceBindings > 0, "the store holds no 000000 rows to leave out");
-        Assert.Equal(everything.ActiveBindings - everything.UnknownDeviceBindings - everything.MalformedImeiBindings, counted.ActiveBindings);
+        Assert.True(everything.InvalidImeiBindings > 0, "the store holds no IMEI no handset could carry");
+        Assert.Equal(
+            everything.ActiveBindings - everything.UnknownDeviceBindings - everything.MalformedImeiBindings - everything.InvalidImeiBindings,
+            counted.ActiveBindings);
 
         // A card for them reads the true figure, counted or not.
         Assert.Equal(everything.UnknownDeviceBindings, counted.UnknownDeviceBindings);
         Assert.Equal(everything.MalformedImeiBindings, counted.MalformedImeiBindings);
+        Assert.Equal(everything.InvalidImeiBindings, counted.InvalidImeiBindings);
         Assert.Equal(everything.ActiveBindings, counted.ActiveBindings + counted.SetAsideBindings);
         Assert.Equal(0, everything.SetAsideBindings);
 
@@ -220,6 +224,16 @@ public sealed class NoHandsetRowsRealDataTests : IAsyncLifetime
 
         Assert.DoesNotContain(listed.Rows, d => d.Tac.Length == 0);
         Assert.Equal(string.Empty, Assert.Single(searched.Rows).Tac);
+    }
+
+    [Fact]
+    public async Task An_imei_no_handset_could_carry_names_no_model()
+    {
+        SkipWithoutTheStore();
+
+        var zeros = await Store().SearchDevicesAsync(Catalogue(["00000000"], DeviceListSort.Bindings), Ct);
+
+        Assert.Empty(zeros.Rows);
     }
 
     [Fact]

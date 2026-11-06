@@ -98,8 +98,9 @@ public sealed record DashboardFilter(
 /// </param>
 /// <param name="TacCoveragePercent">Share of active bindings that enrich against the TAC database.</param>
 /// <remarks>
-/// <see cref="UnknownDeviceBindings"/> and <see cref="MalformedImeiBindings"/> are always what the store
-/// holds, counted or not, so a card can say how many there are while the other figures leave them out.
+/// <see cref="UnknownDeviceBindings"/>, <see cref="MalformedImeiBindings"/> and
+/// <see cref="InvalidImeiBindings"/> are always what the store holds, counted or not, so a card can say
+/// how many there are while the other figures leave them out.
 /// </remarks>
 public sealed record KpiSummary(
     long ActiveBindings,
@@ -113,6 +114,12 @@ public sealed record KpiSummary(
     int DeliverySequence,
     DateOnly? DeliveryDate)
 {
+    /// <summary>
+    /// Active bindings whose 14 digits no handset could carry: a zero TAC, a shifted IMEI, or a
+    /// reporting body GSMA never had (ADR-020). A TAC merely missing from the catalogue is not one.
+    /// </summary>
+    public long InvalidImeiBindings { get; init; }
+
     /// <summary>
     /// Active rows with no handset that <see cref="ActiveBindings"/> leaves out: zero when they are
     /// counted, or when a filter on a model excludes them anyway. Added to it, this is every active row.

@@ -528,7 +528,7 @@ const requestLabel = computed(() => {
               <li>A <strong>number</strong> is an MSISDN; a <strong>binding</strong> is one number, one SIM and one handset together; a
                 <strong>handset</strong> is an IMEI - a dual-SIM phone has two.</li>
               <li><strong>Active</strong> means the operator's last event for the binding, up to this delivery, was an add.</li>
-              <li>Every share is of the numbers with an active binding at this delivery: {{ formatFull(sunset.data.value?.totalNumbers ?? esim.data.value?.totalNumbers ?? 0) }}.</li>
+              <li>Every share is of the numbers holding a handset at this delivery: {{ formatFull(sunset.data.value?.totalNumbers ?? esim.data.value?.totalNumbers ?? 0) }}.</li>
               <li>A number's class is decided by all its active handsets at once. One handset with LTE or 5G makes it ready.</li>
               <li>Handsets are distinct IMEIs counted with HyperLogLog (~0.5% error), so they are marked as estimated.</li>
               <li>Published {{ formatDateTime(run.publishedAt) }}, for delivery {{ formatSequence(run.asOfSequence, run.asOfDate) }}<template v-if="run.asOfDate">
