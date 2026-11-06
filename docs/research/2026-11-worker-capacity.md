@@ -1,7 +1,8 @@
 # Research: what limits the worker, and what more workers would buy
 
 **Date:** 2026-11-05. **Status:** the owner approved the recommendation on 2026-11-05. Step 1 is built
-(section 5), and section 6 has what two runs side by side measured on 2026-11-06. The rest is not built.
+(section 5), and section 6 has what two runs side by side measured on 2026-11-06. Steps 2 to 4 are built as
+far as ADR-021 says; 5 and 6 are not.
 **Asked by:** the product owner: several workers, started according to the machine's resources, running
 what does not conflict, with the number chosen automatically, on the laptop, the department VM and MCI's
 OpenShift.
@@ -112,13 +113,19 @@ In this order, each measured before the next:
 2. **Read the capacity at run time.** Threads, memory per statement and the merge cap come from what the
    environment reports (`CGroupMaxCPU`, `CGroupMemoryTotal`), replacing the laptop's constants. The merge
    cap matters most: at 2 GiB, `binding_current` holds 1.26 billion versions, and every `FINAL` pays for
-   them (`dedicated-hardware.md`, section 3).
+   them (`dedicated-hardware.md`, section 3). **Built 2026-11-06 for the lanes (ADR-021):** memory, cores and
+   the heaviest step, from `max_server_memory_usage`, `max_threads` and `query_log`. Threads and memory per
+   statement and the merge cap are still settings: threads pay on one disk and not on the other (section 3),
+   and raising the cap is a measurement still to make on the VM.
 3. **One conductor with slots.** The worker stays one process and runs several tasks at once. Each kind of
    task declares what it touches, and two run together only if a table of conflicts allows it. Risk and
-   planning first: independent, and measured at 1.55 to 1.69 times one lane (section 6).
+   planning first: independent, and measured at 1.55 to 1.69 times one lane (section 6). **Built 2026-11-06
+   (ADR-021)**, as rounds on the claim loop, which also ends the 5 s sleep after every step.
 4. **Admission by evidence.** A task starts only if its usual peak memory, learned from `query_log`, fits
    the budget, and if pressure is low. A rising signal or a memory error halves the slots; a quiet spell
-   adds one. A brake, not an engine.
+   adds one. A brake, not an engine. **Partly built 2026-11-06 (ADR-021):** the heaviest step in `query_log`
+   sets the lanes, and a failed step leaves one lane for 30 minutes. The pressure half waits for the VM's first
+   runs in lanes, to set its threshold from: ClickHouse reports `PSI_*` itself, so it needs no access to the host.
 5. **Dashboards first.** ClickHouse workloads put API reads ahead of all background work.
 6. **OpenShift.** The same image and the same logic. Two worker replicas for failover, which the leases
    already allow. No autoscaler until something needs one.
@@ -129,6 +136,7 @@ In this order, each measured before the next:
 | Marts against fold | Never together: a mart is the state of one delivery |
 | Risk or planning against fold | Yield: they are built for one delivery, and restart on a new one |
 | Risk against planning | Free |
+| Dashboard rebuild against risk or planning | Never together: it goes first, and alone |
 | Chunks of one run | Free, up to the slots |
 | Validate and write of the next file | Free, but only 12 s of a day: not worth building |
 

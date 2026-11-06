@@ -78,7 +78,11 @@ internal sealed partial class DashboardSnapshot(
     /// <summary>
     /// Settles an owed snapshot once nothing is left to claim. Called by the worker when idle.
     /// </summary>
-    public async Task RunAsync(CancellationToken ct)
+    public bool RunsAlone => true;
+
+    /// <inheritdoc />
+    /// <returns>False: a rebuild that failed stays owed, and is not tried again without a pause.</returns>
+    public async Task<bool> RunAsync(CancellationToken ct)
     {
         foreach (var source in await repository.ListDashboardOwedAsync(ct).ConfigureAwait(false))
         {
@@ -101,6 +105,8 @@ internal sealed partial class DashboardSnapshot(
                 LogSettleFailed(source, ex);
             }
         }
+
+        return false;
     }
 
     private async Task RebuildAsync(

@@ -130,8 +130,9 @@ both models' figures, and is not exposed. So it needs every active binding group
 `binding_current FINAL`, about 120 million bindings - which the API cannot read per request (the
 same read took 100 s and more on 2026-10-19, ADR-017).
 
-The import worker builds it instead, the way it builds the risk snapshot: `PlanningSnapshot`, one
-chunk of the number range per idle moment, never beside an SQM import, published only when every
+The import worker builds it instead, the way it builds the risk snapshot, and beside it when
+ClickHouse reports the room (ADR-021): `PlanningSnapshot`, one chunk of the number range at a time
+between jobs, never beside an SQM import, published only when every
 chunk is in, no number appears twice and nothing it read has changed (analytics migration 030;
 ADR-019). `Sqm.Ingestion --refresh-planning [--force]` builds one to the end from the shell.
 

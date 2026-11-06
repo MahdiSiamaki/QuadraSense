@@ -30,8 +30,25 @@ public sealed class ImportWorkerOptions
     /// </remarks>
     public int MaxConcurrentJobs { get; set; } = 1;
 
-    /// <summary>How long to wait before asking for work again when the queue was empty.</summary>
+    /// <summary>How long to wait before asking for work again when there was none.</summary>
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>The most idle tasks to run at once. The engine's capacity may allow fewer.</summary>
+    /// <remarks>
+    /// Two is what has been measured: Risk and Planning beside each other did 1.55 to 1.69 times the
+    /// work of one lane on the laptop (ADR-021). One turns lanes off.
+    /// </remarks>
+    public int MaxIdleLanes { get; set; } = 2;
+
+    /// <summary>How long lanes go on stepping before the worker looks for a job again.</summary>
+    /// <remarks>
+    /// A job waits for this and the step in progress, and files come about once a day. Longer wastes
+    /// less: a lane that reaches the end waits for the others' steps, up to a minute and a half.
+    /// </remarks>
+    public TimeSpan IdleRound { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>How long the worker keeps to one lane after an idle step fails.</summary>
+    public TimeSpan IdleBrake { get; set; } = TimeSpan.FromMinutes(30);
 
     /// <summary>
     /// How long a claim is valid before another worker may take the job.

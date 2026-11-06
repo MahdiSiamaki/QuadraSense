@@ -77,7 +77,7 @@ internal sealed partial class PlanningSnapshot(
     private partial void LogChunkFailed(Exception exception, ulong runId, string chunk, int attempt, int maxAttempts);
 
     /// <inheritdoc />
-    public async Task RunAsync(CancellationToken ct)
+    public async Task<bool> RunAsync(CancellationToken ct)
     {
         var settings = options.CurrentValue;
         var problems = settings.Problems();
@@ -90,20 +90,23 @@ internal sealed partial class PlanningSnapshot(
                 LogInvalid(text);
             }
 
-            return;
+            return false;
         }
 
         _reportedProblems = null;
         if (clock.GetUtcNow() < _quietUntil)
         {
-            return;
+            return false;
         }
 
         var step = await StepAsync(settings, force: false, ct).ConfigureAwait(false);
         if (step is PlanningSnapshotStep.Current or PlanningSnapshotStep.Waiting or PlanningSnapshotStep.Failed or PlanningSnapshotStep.NotDeployed)
         {
             _quietUntil = clock.GetUtcNow() + QuietFor;
+            return false;
         }
+
+        return true;
     }
 
     /// <summary>Does the next piece of work: plan a run, write one chunk, or publish.</summary>
