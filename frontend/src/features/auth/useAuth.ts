@@ -82,6 +82,8 @@ export function useAuth() {
      * The API will refuse everything except the password change until this clears.
      */
     mustChangePassword: computed(() => user.value?.mustChangePassword === true),
+    /** The same, for a second step a role demands. */
+    mustSetUpTwoStep: computed(() => user.value?.mustSetUpTwoStep === true),
     /** True for anyone who can reach any part of the administration section. */
     isAdministrator: computed(
       () =>

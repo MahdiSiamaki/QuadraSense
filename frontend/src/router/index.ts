@@ -23,12 +23,24 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Sign in', public: true, chrome: false },
   },
   {
+    path: '/recover',
+    name: 'recover',
+    component: () => import('@/features/auth/RecoverPage.vue'),
+    meta: { title: 'Forgot password', public: true, chrome: false },
+  },
+  {
     path: '/change-password',
     name: 'change-password',
     component: () => import('@/features/auth/ForcedPasswordChangePage.vue'),
     // Reachable while a password change is pending, which is the one state where every other
     // route is refused by the API.
     meta: { title: 'Change password', chrome: false, allowDuringPasswordChange: true },
+  },
+  {
+    path: '/set-up-two-step',
+    name: 'set-up-two-step',
+    component: () => import('@/features/auth/ForcedTwoStepPage.vue'),
+    meta: { title: 'Set up two-step sign-in', chrome: false, allowDuringTwoStepSetup: true },
   },
   {
     // The person's default dashboard - or Device Population, the page this used to be. It never
@@ -285,6 +297,15 @@ router.beforeEach(async (to) => {
     return { name: 'dashboard' }
   }
 
+  // After the password: a role that demands a second step holds everything else back the same way.
+  if (user.mustSetUpTwoStep && !to.meta['allowDuringTwoStepSetup']) {
+    return { name: 'set-up-two-step' }
+  }
+
+  if (!user.mustSetUpTwoStep && to.name === 'set-up-two-step') {
+    return { name: 'dashboard' }
+  }
+
   const required = to.meta['permission'] as string | undefined
   if (required && !user.permissions.includes(required)) {
     // Not a silent redirect to the dashboard: a user sent somewhere they did not ask for, with
@@ -309,11 +330,14 @@ router.beforeEach(async (to) => {
  * response handler is hard to follow when it misbehaves.
  */
 setUnauthenticatedHandler(() => {
-  if (router.currentRoute.value.meta['public']) return
+  // The address, not `currentRoute`: until the first navigation finishes that is the start
+  // location, public or not. The shell's request for the current user comes back 401 for anyone
+  // signed out, so a person opening /recover directly was sent to the sign-in page.
+  const here = router.resolve(window.location.pathname + window.location.search)
+  if (here.meta['public']) return
 
   forgetSession(queryClient)
-  const from = router.currentRoute.value.fullPath
-  void router.replace({ name: 'login', query: from === '/' ? {} : { next: from } })
+  void router.replace({ name: 'login', query: here.fullPath === '/' ? {} : { next: here.fullPath } })
 })
 
 router.afterEach((to) => {

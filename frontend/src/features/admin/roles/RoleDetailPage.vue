@@ -5,6 +5,7 @@ import Card from '@/design-system/Card.vue'
 import Button from '@/design-system/Button.vue'
 import Modal from '@/design-system/Modal.vue'
 import TextField from '@/design-system/TextField.vue'
+import Toggle from '@/design-system/Toggle.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import {
   useDeleteRole,
@@ -12,8 +13,10 @@ import {
   useRole,
   useRoleMembers,
   useSetRolePermissions,
+  useSetRoleTwoStep,
   useUpdateRole,
 } from '@/api/admin'
+import { useSignInOptions } from '@/api/auth'
 import { useAuth, Permission } from '@/features/auth/useAuth'
 import { ApiError } from '@/api/client'
 import { formatDateTime } from '@/lib/format'
@@ -32,6 +35,29 @@ import { formatDateTime } from '@/lib/format'
 const route = useRoute()
 const router = useRouter()
 const { can } = useAuth()
+
+const signInOptions = useSignInOptions()
+const setTwoStep = useSetRoleTwoStep()
+
+/** Asked before it applies: every member is held back until they have set it up. */
+const requiringTwoStep = ref(false)
+
+function changeTwoStep(required: boolean) {
+  if (required) {
+    requiringTwoStep.value = true
+    return
+  }
+
+  if (roleId.value !== null) setTwoStep.mutate({ id: roleId.value, required: false })
+}
+
+async function confirmTwoStep() {
+  if (roleId.value !== null) {
+    await setTwoStep.mutateAsync({ id: roleId.value, required: true }).catch(() => undefined)
+  }
+
+  requiringTwoStep.value = false
+}
 
 const roleId = computed(() => {
   const raw = route.params['id']
@@ -310,6 +336,21 @@ const deleteError = computed(() => message(remove.error.value))
           </Card>
 
           <div class="flex flex-col gap-5">
+            <Card
+              v-if="signInOptions.data.value?.twoStepAvailable || role.data.value.twoStepRequired"
+              title="Signing in"
+            >
+              <Toggle
+                :model-value="role.data.value.twoStepRequired"
+                label="Require two-step sign-in"
+                description="Members must set up an authenticator app before they can do anything else."
+                on-label="Required"
+                off-label="Optional"
+                :disabled="!manage || setTwoStep.isPending.value"
+                @update:model-value="changeTwoStep"
+              />
+            </Card>
+
             <Card :title="`Members (${role.data.value.memberCount})`" flush>
               <AsyncBoundary
                 :is-loading="members.isPending.value"
@@ -443,6 +484,24 @@ const deleteError = computed(() => message(remove.error.value))
           @click="submitDelete"
         >
           Delete role
+        </Button>
+      </template>
+    </Modal>
+
+    <Modal
+      :open="requiringTwoStep"
+      title="Require two-step sign-in?"
+      size="sm"
+      :description="`Each of the ${role.data.value?.memberCount ?? 0} members who has not set it up will be held back until they do, from their next page.`"
+      :busy="setTwoStep.isPending.value"
+      @close="requiringTwoStep = false"
+    >
+      <template #actions>
+        <Button :disabled="setTwoStep.isPending.value" @click="requiringTwoStep = false">
+          Cancel
+        </Button>
+        <Button variant="primary" :pending="setTwoStep.isPending.value" @click="confirmTwoStep">
+          Require it
         </Button>
       </template>
     </Modal>

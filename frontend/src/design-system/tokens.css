@@ -108,6 +108,17 @@
   */
   --brand-deep: #16306b;
   --brand-accent: #22b8ed;
+  /*
+    The night panel on the pages before sign-in: the README banner's gradient. The same in both
+    themes, which is why they are here once and not repeated under the dark palette.
+  */
+  --brand-night-1: #091228;
+  --brand-night-2: #101f4a;
+  --brand-night-3: #16306b;
+  --brand-on-night: #ffffff;
+  --brand-on-night-muted: #b4c4e4;
+  --brand-wave-from: #1f6fe0;
+  --brand-wave-to: #22b8ed;
 
   --c-accent: oklch(53% 0.17 264);
   --c-accent-hover: oklch(47% 0.175 264);

@@ -84,6 +84,9 @@ export interface UserDetail {
   /** Every permission in the catalogue, granted or not. */
   permissions: PermissionResolution[]
   activeSessions: number
+  emailVerifiedAt: string | null
+  phoneVerifiedAt: string | null
+  twoStepEnabledAt: string | null
 }
 
 export interface PermissionDefinition {
@@ -108,6 +111,8 @@ export interface RoleDetail {
   createdBy: string | null
   updatedAt: string
   updatedBy: string | null
+  /** Members must set up two-step sign-in before they can use anything else. */
+  twoStepRequired: boolean
 }
 
 export interface AuditRecord {
@@ -287,6 +292,14 @@ export function useRevokeUserSessions() {
   })
 }
 
+export function useResetTwoStep() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.post<void>(`/api/v1/users/${id}/two-step/reset`, {}),
+    onSuccess: (_, id) => invalidateUser(client, id),
+  })
+}
+
 // ---------------------------------------------------------------- roles
 
 export function useRoles() {
@@ -354,6 +367,19 @@ export function useUpdateRole() {
     mutationFn: (input: { id: number; displayName: string; description: string }) =>
       api.put<void>(`/api/v1/roles/${input.id}`, input),
     onSuccess: (_, input) => invalidateRoles(client, input.id),
+  })
+}
+
+export function useSetRoleTwoStep() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { id: number; required: boolean }) =>
+      api.put<void>(`/api/v1/roles/${input.id}/two-step`, { required: input.required }),
+    onSuccess: (_, input) => {
+      invalidateRoles(client, input.id)
+      // It can apply to the person who just changed it.
+      client.invalidateQueries({ queryKey: ['auth', 'me'] })
+    },
   })
 }
 
