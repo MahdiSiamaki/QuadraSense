@@ -91,7 +91,8 @@ public sealed partial class PostgresRoleDirectory : IRoleDirectory
                    r.created_at    AS CreatedAt,
                    r.created_by    AS CreatedBy,
                    r.updated_at    AS UpdatedAt,
-                   r.updated_by    AS UpdatedBy
+                   r.updated_by    AS UpdatedBy,
+                   r.two_step_required AS TwoStepRequired
             FROM auth.role r
             WHERE (@roleId::bigint IS NULL OR r.id = @roleId::bigint)
             ORDER BY r.is_system DESC, lower(r.display_name)
@@ -102,7 +103,8 @@ public sealed partial class PostgresRoleDirectory : IRoleDirectory
 
         return rows.Select(r => new RoleDetail(
             r.Id, r.Code, r.DisplayName, r.Description, r.IsSystem, r.MemberCount,
-            r.PermissionCodes, r.CreatedAt, r.CreatedBy, r.UpdatedAt, r.UpdatedBy)).ToList();
+            r.PermissionCodes, r.CreatedAt, r.CreatedBy, r.UpdatedAt, r.UpdatedBy,
+            r.TwoStepRequired)).ToList();
     }
 
     /// <inheritdoc />
@@ -219,6 +221,39 @@ public sealed partial class PostgresRoleDirectory : IRoleDirectory
         await transaction.CommitAsync(ct).ConfigureAwait(false);
 
         LogRoleChange(actor, "renamed", roleId);
+        return true;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> SetTwoStepRequiredAsync(
+        long roleId, bool required, string actor, AuthenticationContext context,
+        CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE auth.role
+            SET two_step_required = @required, updated_at = now(), updated_by = @actor
+            WHERE id = @roleId
+            RETURNING code
+            """;
+
+        await using var connection = await _db.OpenAsync(ct).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        var code = await connection.ExecuteScalarAsync<string?>(_db.Command(
+            sql, new { roleId, required, actor }, ct, transaction)).ConfigureAwait(false);
+
+        if (code is null)
+        {
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
+            return false;
+        }
+
+        await AuditAsync(connection, transaction, actor, "role.two_step", roleId, code, context,
+            new Dictionary<string, object?> { ["required"] = required }, ct).ConfigureAwait(false);
+
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
+
+        LogRoleChange(actor, required ? "required two-step sign-in on" : "stopped requiring two-step sign-in on", roleId);
         return true;
     }
 
@@ -418,6 +453,7 @@ public sealed partial class PostgresRoleDirectory : IRoleDirectory
         public string? CreatedBy { get; set; }
         public DateTimeOffset UpdatedAt { get; set; }
         public string? UpdatedBy { get; set; }
+        public bool TwoStepRequired { get; set; }
     }
 
     private sealed record MemberRow(

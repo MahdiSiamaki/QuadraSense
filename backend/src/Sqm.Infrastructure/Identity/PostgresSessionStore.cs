@@ -25,6 +25,7 @@ public sealed class PostgresSessionStore : ISessionStore
 
     private readonly IdentityDataSource _db;
     private readonly SessionSettings _options;
+    private readonly bool _twoStepAvailable;
     private readonly int _commandTimeout;
 
     /// <summary>Creates the store.</summary>
@@ -36,20 +37,23 @@ public sealed class PostgresSessionStore : ISessionStore
 
         _db = db;
         _options = auth.Value.Session;
+        _twoStepAvailable = auth.Value.TwoStep.IsAvailable;
         _commandTimeout = postgres.Value.CommandTimeoutSeconds;
     }
 
     /// <inheritdoc />
     public async Task<SessionCreation> CreateAsync(
-        long userId, string? ip, string? userAgent, CancellationToken ct)
+        long userId, string? ip, string? userAgent, bool remembered, CancellationToken ct)
     {
         var token = GenerateToken();
 
         const string sql = """
             INSERT INTO auth.session
-                (user_id, token_sha256, idle_expires_at, absolute_expires_at, ip, user_agent)
+                (user_id, token_sha256, idle_expires_at, absolute_expires_at, ip, user_agent,
+                 remembered)
             VALUES
-                (@userId, @hash, now() + @idle, now() + @absolute, @ip::inet, @userAgent)
+                (@userId, @hash, now() + @idle, now() + @absolute, @ip::inet, @userAgent,
+                 @remembered)
             RETURNING id                  AS Id,
                       idle_expires_at     AS IdleExpiresAt,
                       absolute_expires_at AS AbsoluteExpiresAt
@@ -61,10 +65,11 @@ public sealed class PostgresSessionStore : ISessionStore
         {
             userId,
             hash = Sha256(token),
-            idle = _options.IdleTimeout,
-            absolute = _options.AbsoluteTimeout,
+            idle = remembered ? _options.RememberedLifetime : _options.IdleTimeout,
+            absolute = remembered ? _options.RememberedLifetime : _options.AbsoluteTimeout,
             ip = IdentitySql.NormaliseIp(ip),
             userAgent = IdentitySql.Truncate(userAgent, 512),
+            remembered,
         }, ct)).ConfigureAwait(false);
 
         return new SessionCreation(row.Id, token, row.IdleExpiresAt, row.AbsoluteExpiresAt);
@@ -109,7 +114,13 @@ public sealed class PostgresSessionStore : ISessionStore
                    s.last_seen_at         AS LastSeenAt,
                    s.idle_expires_at      AS IdleExpiresAt,
                    s.absolute_expires_at  AS AbsoluteExpiresAt,
-                   ARRAY({IdentitySql.GrantedPermissionCodes("s.user_id")}) AS permissions
+                   ARRAY({IdentitySql.GrantedPermissionCodes("s.user_id")}) AS permissions,
+                   EXISTS (SELECT 1 FROM auth.user_role ur
+                           JOIN auth.role r ON r.id = ur.role_id
+                           WHERE ur.user_id = s.user_id AND r.two_step_required)
+                   AND NOT EXISTS (SELECT 1 FROM auth.user_two_step t
+                                   WHERE t.user_id = s.user_id AND t.confirmed_at IS NOT NULL)
+                       AS MustSetUpTwoStep
             FROM s
             JOIN auth.user_account u ON u.id = s.user_id AND u.is_active
             """;
@@ -129,7 +140,9 @@ public sealed class PostgresSessionStore : ISessionStore
             row.Username,
             row.DisplayName,
             row.MustChangePassword,
-            row.Permissions.ToFrozenSet(StringComparer.Ordinal));
+            row.Permissions.ToFrozenSet(StringComparer.Ordinal),
+            // Without a key nothing can be set up, and demanding it would lock the role out.
+            row.MustSetUpTwoStep && _twoStepAvailable);
 
         return new ResolvedSession(
             row.SessionId, user, row.LastSeenAt, row.IdleExpiresAt, row.AbsoluteExpiresAt);
@@ -143,7 +156,9 @@ public sealed class PostgresSessionStore : ISessionStore
         const string sql = """
             UPDATE auth.session
             SET last_seen_at    = now(),
-                idle_expires_at = LEAST(now() + @idle, absolute_expires_at)
+                idle_expires_at = LEAST(
+                    now() + CASE WHEN remembered THEN @remembered ELSE @idle END,
+                    absolute_expires_at)
             WHERE id = @sessionId
               AND revoked_at IS NULL
               AND last_seen_at < now() - @touchInterval
@@ -155,6 +170,7 @@ public sealed class PostgresSessionStore : ISessionStore
         {
             sessionId,
             idle = _options.IdleTimeout,
+            remembered = _options.RememberedLifetime,
             touchInterval = _options.TouchInterval,
         }, ct)).ConfigureAwait(false);
     }
@@ -212,6 +228,13 @@ public sealed class PostgresSessionStore : ISessionStore
               AND (@except::uuid IS NULL OR id <> @except::uuid)
             """;
 
+        // A sign-in half way through its second step goes too. Whatever ended these sessions -
+        // a new password, a deactivation - a ticket from before it proves nothing now.
+        await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM auth.sign_in_challenge WHERE user_id = @userId",
+            new { userId }, transaction, commandTimeout, cancellationToken: ct))
+            .ConfigureAwait(false);
+
         return await connection.ExecuteAsync(new CommandDefinition(
             sql,
             new { userId, except = exceptSessionId, revokedBy, reason },
@@ -232,7 +255,8 @@ public sealed class PostgresSessionStore : ISessionStore
                    revoked_reason      AS RevokedReason,
                    host(ip)            AS Ip,
                    user_agent          AS UserAgent,
-                   (id = @current)     AS IsCurrent
+                   (id = @current)     AS IsCurrent,
+                   remembered          AS Remembered
             FROM auth.session
             WHERE user_id = @userId
             ORDER BY (revoked_at IS NULL AND idle_expires_at > now()) DESC, last_seen_at DESC
@@ -259,6 +283,13 @@ public sealed class PostgresSessionStore : ISessionStore
             """;
 
         await using var connection = await _db.OpenAsync(ct).ConfigureAwait(false);
+
+        // Tickets and codes are useless once expired, and kept a day for the hourly send limit and
+        // for anyone reading the table during an incident. They are not a record: the audit is.
+        await connection.ExecuteAsync(_db.Command("""
+            DELETE FROM auth.sign_in_challenge WHERE expires_at < now();
+            DELETE FROM auth.one_time_code WHERE created_at < now() - interval '1 day';
+            """, null, ct)).ConfigureAwait(false);
 
         return await connection.ExecuteAsync(_db.Command(sql, new { retain = retainEndedFor }, ct))
             .ConfigureAwait(false);
@@ -297,6 +328,7 @@ public sealed class PostgresSessionStore : ISessionStore
         public string Username { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
         public bool MustChangePassword { get; set; }
+        public bool MustSetUpTwoStep { get; set; }
         public DateTimeOffset LastSeenAt { get; set; }
         public DateTimeOffset IdleExpiresAt { get; set; }
         public DateTimeOffset AbsoluteExpiresAt { get; set; }

@@ -234,7 +234,7 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
             ],
             "tests", IdentityFixture.Context, ct);
 
-        var session = await _fixture.Sessions.CreateAsync(id, "127.0.0.1", "tests", ct);
+        var session = await _fixture.Sessions.CreateAsync(id, "127.0.0.1", "tests", false, ct);
         var resolved = await _fixture.Sessions.ResolveAsync(session.Token, ct);
 
         Assert.NotNull(resolved);
@@ -264,7 +264,7 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
         var id = await CreateAsync("deactivate", "viewer");
         var ct = TestContext.Current.CancellationToken;
 
-        var session = await _fixture.Sessions.CreateAsync(id, "127.0.0.1", "tests", ct);
+        var session = await _fixture.Sessions.CreateAsync(id, "127.0.0.1", "tests", false, ct);
         Assert.NotNull(await _fixture.Sessions.ResolveAsync(session.Token, ct));
 
         await _fixture.Users.SetActiveAsync(
@@ -286,7 +286,7 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
         var id = await CreateAsync("revoke", "viewer");
         var ct = TestContext.Current.CancellationToken;
 
-        var session = await _fixture.Sessions.CreateAsync(id, "127.0.0.1", "tests", ct);
+        var session = await _fixture.Sessions.CreateAsync(id, "127.0.0.1", "tests", false, ct);
         Assert.NotNull(await _fixture.Sessions.ResolveAsync(session.Token, ct));
 
         await _fixture.Sessions.RevokeAsync(session.SessionId, "tests", "test", ct);
@@ -306,8 +306,8 @@ public sealed class AccessControlTests : IClassFixture<IdentityFixture>, IAsyncL
         var id = await CreateAsync("password", "viewer");
         var ct = TestContext.Current.CancellationToken;
 
-        var mine = await _fixture.Sessions.CreateAsync(id, "127.0.0.1", "this device", ct);
-        var theirs = await _fixture.Sessions.CreateAsync(id, "10.0.0.9", "other device", ct);
+        var mine = await _fixture.Sessions.CreateAsync(id, "127.0.0.1", "this device", false, ct);
+        var theirs = await _fixture.Sessions.CreateAsync(id, "10.0.0.9", "other device", false, ct);
 
         var changed = await _fixture.Users.ChangeOwnPasswordAsync(
             id, InitialPassword, ChangedPassword, mine.SessionId,

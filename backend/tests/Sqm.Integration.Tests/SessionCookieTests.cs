@@ -70,7 +70,7 @@ public sealed class SessionCookieTests : IClassFixture<WebApplicationFactory<Pro
             Task.FromResult(0);
 
         public Task<SessionCreation> CreateAsync(
-            long userId, string? ip, string? userAgent, CancellationToken ct) =>
+            long userId, string? ip, string? userAgent, bool remembered, CancellationToken ct) =>
             throw new NotSupportedException();
 
         public Task TouchAsync(Guid sessionId, CancellationToken ct) =>

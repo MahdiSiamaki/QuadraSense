@@ -73,6 +73,11 @@ public static class UserEndpoints
             .WithName("RevokeUserSessions")
             .WithSummary("Signs a user out of every device.");
 
+        group.MapPost("/{id:long}/two-step/reset", ResetTwoStepAsync)
+            .RequireAuthorization(Policy(Permissions.UserManage))
+            .WithName("ResetUserTwoStep")
+            .WithSummary("Turns two-step sign-in off for someone who has lost their authenticator.");
+
         return app;
     }
 
@@ -376,6 +381,22 @@ public static class UserEndpoints
                 ["newPassword"] = [ex.Message],
             });
         }
+    }
+
+    private static async Task<IResult> ResetTwoStepAsync(
+        long id, HttpContext http, ITwoStepService twoStep, CancellationToken ct)
+    {
+        // Not on oneself: turning it off for yourself takes a code, and this takes none.
+        if (CurrentUser.Require(http).UserId == id)
+        {
+            return GrantGuard.RefuseSelf();
+        }
+
+        var reset = await twoStep
+            .ResetAsync(id, CurrentUser.Actor(http), CurrentUser.Context(http), ct)
+            .ConfigureAwait(false);
+
+        return reset ? Results.NoContent() : Results.NotFound();
     }
 
     private static async Task<IResult> UnlockAsync(

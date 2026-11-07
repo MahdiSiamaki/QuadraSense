@@ -29,6 +29,7 @@ public sealed partial class PostgresUserDirectory : IUserDirectory
     private readonly IdentityDataSource _db;
     private readonly IPasswordHasher _hasher;
     private readonly PasswordPolicyOptions _policy;
+    private readonly string _defaultCountryCode;
     private readonly int _commandTimeout;
     private readonly ILogger<PostgresUserDirectory> _logger;
 
@@ -46,6 +47,7 @@ public sealed partial class PostgresUserDirectory : IUserDirectory
         _db = db;
         _hasher = hasher;
         _policy = auth.Value.Policy;
+        _defaultCountryCode = auth.Value.Recovery.DefaultCountryCode;
         _commandTimeout = postgres.Value.CommandTimeoutSeconds;
         _logger = logger;
     }
@@ -155,7 +157,11 @@ public sealed partial class PostgresUserDirectory : IUserDirectory
                    (SELECT count(*)::int FROM auth.session s
                     WHERE s.user_id = u.id AND s.revoked_at IS NULL
                       AND s.idle_expires_at > now() AND s.absolute_expires_at > now())
-                        AS ActiveSessions
+                        AS ActiveSessions,
+                   u.email_verified_at AS EmailVerifiedAt,
+                   u.phone_verified_at AS PhoneVerifiedAt,
+                   (SELECT t.confirmed_at FROM auth.user_two_step t WHERE t.user_id = u.id)
+                        AS TwoStepEnabledAt
             FROM auth.user_account u
             WHERE {predicate}
             """;
@@ -182,7 +188,10 @@ public sealed partial class PostgresUserDirectory : IUserDirectory
             row.CreatedAt, row.CreatedBy, row.UpdatedAt, row.UpdatedBy,
             roles.TryGetValue(row.Id, out var list) ? list : [],
             permissions,
-            row.ActiveSessions);
+            row.ActiveSessions,
+            row.EmailVerifiedAt,
+            row.PhoneVerifiedAt,
+            row.TwoStepEnabledAt);
     }
 
     /// <inheritdoc />
@@ -360,5 +369,6 @@ public sealed partial class PostgresUserDirectory : IUserDirectory
         short FailedLoginCount, DateTimeOffset? LockedUntil, DateTimeOffset? PasswordUpdatedAt,
         DateTimeOffset? DeactivatedAt, string? DeactivatedBy, string? DeactivationReason,
         DateTimeOffset CreatedAt, string? CreatedBy, DateTimeOffset UpdatedAt, string? UpdatedBy,
-        int ActiveSessions);
+        int ActiveSessions, DateTimeOffset? EmailVerifiedAt, DateTimeOffset? PhoneVerifiedAt,
+        DateTimeOffset? TwoStepEnabledAt);
 }

@@ -25,6 +25,12 @@ public static class AuthEndpoints
             .WithName("Login")
             .WithSummary("Exchanges a username and password for a session cookie.");
 
+        group.MapPost("/login/two-step", CompleteTwoStepAsync)
+            .AllowAnonymous()
+            .RequireRateLimiting(LoginRateLimiter)
+            .WithName("LoginSecondStep")
+            .WithSummary("Exchanges the ticket from a good password and a code for a session cookie.");
+
         group.MapPost("/logout", LogoutAsync)
             .RequireAuthorization(PermissionPolicyProvider.PasswordChangeAllowed)
             .WithName("Logout")
@@ -55,6 +61,11 @@ public static class AuthEndpoints
             .WithName("RevokeMySession")
             .WithSummary("Signs one other device out.");
 
+        group.MapDelete("/me/sessions", RevokeMyOtherSessionsAsync)
+            .RequireAuthorization(PermissionPolicyProvider.Authenticated)
+            .WithName("RevokeMyOtherSessions")
+            .WithSummary("Signs every other device out.");
+
         return app;
     }
 
@@ -75,11 +86,13 @@ public static class AuthEndpoints
         IPasswordAuthenticator authenticator,
         ISessionStore sessions,
         IUserDirectory users,
+        ITwoStepService twoStep,
         IOptions<AuthOptions> authOptions,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(http);
+        ArgumentNullException.ThrowIfNull(twoStep);
         ArgumentNullException.ThrowIfNull(authOptions);
 
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrEmpty(request.Password))
@@ -96,6 +109,17 @@ public static class AuthEndpoints
             .AuthenticateAsync(request.Username.Trim(), request.Password, context, ct)
             .ConfigureAwait(false);
 
+        if (outcome.Status == LoginStatus.TwoStepRequired)
+        {
+            var challenge = await twoStep
+                .BeginChallengeAsync(outcome.UserId!.Value, request.RememberMe, ct)
+                .ConfigureAwait(false);
+
+            return Results.Json(
+                new SecondStepRequired(challenge.Ticket, challenge.ExpiresAt),
+                statusCode: StatusCodes.Status202Accepted);
+        }
+
         if (!outcome.Succeeded)
         {
             return Results.Json(new LoginFailure(
@@ -104,10 +128,75 @@ public static class AuthEndpoints
                 outcome.LockedUntil), statusCode: StatusCodes.Status401Unauthorized);
         }
 
-        var options = authOptions.Value.Session;
+        return await StartSessionAsync(
+            outcome.UserId!.Value, request.RememberMe, http, sessions, users, twoStep,
+            authOptions.Value.Session, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Signs in with a code, after a good password.</summary>
+    private static async Task<IResult> CompleteTwoStepAsync(
+        SecondStepRequest request,
+        HttpContext http,
+        ITwoStepService twoStep,
+        ISessionStore sessions,
+        IUserDirectory users,
+        IOptions<AuthOptions> authOptions,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(twoStep);
+        ArgumentNullException.ThrowIfNull(authOptions);
+
+        if (string.IsNullOrEmpty(request.Ticket) || string.IsNullOrWhiteSpace(request.Code))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["code"] = ["Enter the code from your authenticator."],
+            });
+        }
+
+        var result = await twoStep
+            .CompleteChallengeAsync(request.Ticket, request.Code, CurrentUser.Context(http), ct)
+            .ConfigureAwait(false);
+
+        return result.Status switch
+        {
+            TwoStepResultStatus.Success => await StartSessionAsync(
+                result.UserId!.Value, result.Remember, http, sessions, users, twoStep,
+                authOptions.Value.Session, ct).ConfigureAwait(false),
+
+            TwoStepResultStatus.AccountLocked => Results.Json(new LoginFailure(
+                nameof(LoginStatus.AccountLocked),
+                Message(new LoginOutcome(LoginStatus.AccountLocked)),
+                result.LockedUntil), statusCode: StatusCodes.Status401Unauthorized),
+
+            TwoStepResultStatus.ChallengeExpired => Results.Json(new LoginFailure(
+                nameof(TwoStepResultStatus.ChallengeExpired),
+                "That sign-in has run out of time or attempts. Enter your password again.",
+                null), statusCode: StatusCodes.Status401Unauthorized),
+
+            _ => Results.Json(new LoginFailure(
+                nameof(TwoStepResultStatus.InvalidCode),
+                "That code is not right. Use the code showing now, or a recovery code.",
+                null), statusCode: StatusCodes.Status401Unauthorized),
+        };
+    }
+
+    /// <summary>Everything that follows a complete sign-in, by either path.</summary>
+    private static async Task<IResult> StartSessionAsync(
+        long userId,
+        bool remember,
+        HttpContext http,
+        ISessionStore sessions,
+        IUserDirectory users,
+        ITwoStepService twoStep,
+        SessionSettings options,
+        CancellationToken ct)
+    {
+        var context = CurrentUser.Context(http);
 
         var session = await sessions
-            .CreateAsync(outcome.UserId!.Value, context.Ip, context.UserAgent, ct)
+            .CreateAsync(userId, context.Ip, context.UserAgent, remember, ct)
             .ConfigureAwait(false);
 
         http.Response.Cookies.Append(CookieNames.Session(options), session.Token, new CookieOptions
@@ -116,16 +205,22 @@ public static class AuthEndpoints
             Secure = options.RequireSecureCookies,
             SameSite = SameSiteMode.Strict,
             Path = "/",
-            // No Expires: a session cookie dies with the browser, and the server enforces the
-            // real lifetime anyway. A persistent cookie would outlive the session it names and
-            // produce a silent 401 on the next visit instead of a login page.
+            // Without "remember me", no lifetime at all: a session cookie dies with the browser,
+            // and the server enforces the real limit anyway. With it, exactly the session's own
+            // lifetime, so the cookie ends with the session it names and with the CSRF cookie
+            // beside it. A session cookie that outlives its CSRF cookie refuses the next sign-in.
+            MaxAge = remember ? options.RememberedLifetime : null,
         });
 
-        CsrfMiddleware.IssueToken(http, options);
+        CsrfMiddleware.IssueToken(
+            http, options, remember ? options.RememberedLifetime : options.AbsoluteTimeout);
 
-        var detail = await users.GetAsync(outcome.UserId.Value, ct).ConfigureAwait(false);
+        var detail = await users.GetAsync(userId, ct).ConfigureAwait(false);
+        var status = await twoStep.GetStatusAsync(userId, ct).ConfigureAwait(false);
 
-        return Results.Ok(Describe(detail!, session.IdleExpiresAt, session.AbsoluteExpiresAt));
+        return Results.Ok(Describe(
+            detail!, session.IdleExpiresAt, session.AbsoluteExpiresAt,
+            status.Required && !status.Enabled));
     }
 
     private static string Message(LoginOutcome outcome) => outcome.Status switch
@@ -178,7 +273,9 @@ public static class AuthEndpoints
 
         return detail is null
             ? Results.Unauthorized()
-            : Results.Ok(Describe(detail, session.IdleExpiresAt, session.AbsoluteExpiresAt));
+            : Results.Ok(Describe(
+                detail, session.IdleExpiresAt, session.AbsoluteExpiresAt,
+                session.User.MustSetUpTwoStep));
     }
 
     private static async Task<IResult> UpdateProfileAsync(
@@ -204,7 +301,9 @@ public static class AuthEndpoints
             CurrentUser.Context(http), ct).ConfigureAwait(false);
 
         var detail = await users.GetAsync(session.User.UserId, ct).ConfigureAwait(false);
-        return Results.Ok(Describe(detail!, session.IdleExpiresAt, session.AbsoluteExpiresAt));
+        return Results.Ok(Describe(
+            detail!, session.IdleExpiresAt, session.AbsoluteExpiresAt,
+            session.User.MustSetUpTwoStep));
     }
 
     private static async Task<IResult> ChangePasswordAsync(
@@ -295,9 +394,37 @@ public static class AuthEndpoints
         return Results.NoContent();
     }
 
+    private static async Task<IResult> RevokeMyOtherSessionsAsync(
+        HttpContext http, ISessionStore sessions, IAuditLog audit, CancellationToken ct)
+    {
+        var session = CurrentUser.Session(http)!;
+
+        var revoked = await sessions
+            .RevokeAllForUserAsync(
+                session.User.UserId, session.SessionId, session.User.Username,
+                "signed out by the user", ct)
+            .ConfigureAwait(false);
+
+        await audit.WriteAsync(new AuditEntry(
+            ActorName: session.User.Username,
+            Action: "auth.session.revoke_others",
+            Category: AuditCategory.Authentication,
+            Outcome: AuditOutcome.Success,
+            ActorUserId: session.User.UserId,
+            Ip: http.Connection.RemoteIpAddress?.ToString(),
+            CorrelationId: http.TraceIdentifier,
+            Detail: new Dictionary<string, object?> { ["sessionsRevoked"] = revoked }), ct)
+            .ConfigureAwait(false);
+
+        return Results.Ok(new SessionsRevoked(revoked));
+    }
+
     /// <summary>Projects a user onto the shape the SPA needs to render itself.</summary>
     private static CurrentUserResponse Describe(
-        UserDetail detail, DateTimeOffset idleExpires, DateTimeOffset absoluteExpires) =>
+        UserDetail detail,
+        DateTimeOffset idleExpires,
+        DateTimeOffset absoluteExpires,
+        bool mustSetUpTwoStep) =>
         new(
             detail.Id,
             detail.Username,
@@ -316,11 +443,30 @@ public static class AuthEndpoints
             detail.PasswordUpdatedAt,
             detail.ActiveSessions,
             idleExpires,
-            absoluteExpires);
+            absoluteExpires,
+            detail.EmailVerifiedAt is not null,
+            detail.PhoneVerifiedAt is not null,
+            detail.TwoStepEnabledAt is not null,
+            mustSetUpTwoStep);
 }
 
 /// <summary>Credentials submitted to the login endpoint.</summary>
-public sealed record LoginRequest([Required] string Username, [Required] string Password);
+/// <param name="Username">The login name.</param>
+/// <param name="Password">The password.</param>
+/// <param name="RememberMe">Keep this browser signed in, for the configured number of days.</param>
+public sealed record LoginRequest(
+    [Required] string Username, [Required] string Password, bool RememberMe = false);
+
+/// <summary>The password was right. A code is needed next.</summary>
+/// <param name="Ticket">Carries the sign-in to the next step. Not a session.</param>
+/// <param name="ExpiresAt">When it stops working.</param>
+public sealed record SecondStepRequired(string Ticket, DateTimeOffset ExpiresAt);
+
+/// <summary>The second step of a sign-in.</summary>
+public sealed record SecondStepRequest(string? Ticket, string? Code);
+
+/// <summary>How many other devices were signed out.</summary>
+public sealed record SessionsRevoked(int Count);
 
 /// <summary>Why a sign-in was refused.</summary>
 /// <param name="Status">Machine-readable status, for the client to branch on.</param>
@@ -352,4 +498,8 @@ public sealed record CurrentUserResponse(
     DateTimeOffset? PasswordUpdatedAt,
     int ActiveSessions,
     DateTimeOffset SessionIdleExpiresAt,
-    DateTimeOffset SessionAbsoluteExpiresAt);
+    DateTimeOffset SessionAbsoluteExpiresAt,
+    bool EmailVerified,
+    bool PhoneVerified,
+    bool TwoStepEnabled,
+    bool MustSetUpTwoStep);

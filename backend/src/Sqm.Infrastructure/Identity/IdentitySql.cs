@@ -68,6 +68,133 @@ internal static class IdentitySql
             new { actor }, transaction, commandTimeout, cancellationToken: ct)).ConfigureAwait(false);
     }
 
+    /// <summary>Counts a failed sign-in and locks the account once it crosses the threshold.</summary>
+    /// <remarks>
+    /// Done in SQL rather than read-modify-write, so two simultaneous wrong guesses count as two.
+    /// A counter incremented in application code loses one of them, which is exactly the case an
+    /// attacker produces. Shared by both steps of a sign-in, so a wrong code costs what a wrong
+    /// password costs.
+    /// </remarks>
+    public static async Task<FailedSignIn> RecordFailedSignInAsync(
+        NpgsqlConnection connection,
+        IDbTransaction? transaction,
+        long userId,
+        LockoutOptions lockout,
+        int commandTimeout,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(lockout);
+
+        const string sql = """
+            UPDATE auth.user_account
+            SET failed_login_count   = LEAST(failed_login_count + 1, 30000),
+                last_failed_login_at = now(),
+                locked_until = CASE
+                    WHEN failed_login_count + 1 >= @maxAttempts
+                    -- The exponent is capped before it is used. Uncapped, 2^38 minutes is out of
+                    -- interval range: from the 43rd failure every wrong password was a 500, not
+                    -- counted, not locked, not audited - and guessing continued once the last
+                    -- lock ran out. 2^20 minutes is already far past any MaxLockout. The count
+                    -- is capped for the same reason: it is a smallint.
+                    THEN now() + LEAST(
+                        @initial * power(2, LEAST(failed_login_count + 1 - @maxAttempts, 20)),
+                        @maxLockout)
+                    ELSE locked_until
+                END
+            WHERE id = @userId
+            RETURNING failed_login_count AS FailedLoginCount, locked_until AS LockedUntil
+            """;
+
+        return await connection.QuerySingleAsync<FailedSignIn>(new CommandDefinition(sql, new
+        {
+            userId,
+            maxAttempts = lockout.MaxFailedAttempts,
+            initial = lockout.InitialLockout,
+            maxLockout = lockout.MaxLockout,
+        }, transaction, commandTimeout, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    /// <summary>Records a completed sign-in.</summary>
+    /// <remarks>
+    /// <c>previous_login_at</c> is shifted before <c>last_login_at</c> is overwritten. That pair is
+    /// what lets the profile page say "last sign-in: Tuesday 09:14" during a session - which is
+    /// the only form of it a user can act on. Showing them the session they are currently in tells
+    /// them nothing about whether anyone else has used the account.
+    /// </remarks>
+    public static async Task RecordSignInAsync(
+        NpgsqlConnection connection,
+        IDbTransaction? transaction,
+        long userId,
+        string? ip,
+        int commandTimeout,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+
+        const string sql = """
+            UPDATE auth.user_account
+            SET failed_login_count = 0,
+                locked_until       = NULL,
+                previous_login_at  = last_login_at,
+                last_login_at      = now(),
+                last_login_ip      = @ip::inet
+            WHERE id = @userId
+            """;
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            sql, new { userId, ip = NormaliseIp(ip) }, transaction, commandTimeout,
+            cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Whether this is the signed-in person's password, for anything that asks again before a
+    /// change to how the account is protected.
+    /// </summary>
+    /// <remarks>
+    /// A wrong one is audited under the action being attempted: somebody at an unlocked desk,
+    /// guessing the owner's password to turn off their protection, is what this log is for.
+    /// </remarks>
+    public static async Task<bool> VerifyOwnPasswordAsync(
+        NpgsqlConnection connection,
+        IPasswordHasher hasher,
+        long userId,
+        string password,
+        string action,
+        AuthenticationContext context,
+        int commandTimeout,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(hasher);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var row = await connection.QuerySingleOrDefaultAsync<OwnPasswordRow>(new CommandDefinition(
+            "SELECT username AS Username, password_hash AS PasswordHash "
+            + "FROM auth.user_account WHERE id = @userId AND provider = 'local'",
+            new { userId }, null, commandTimeout, cancellationToken: ct)).ConfigureAwait(false);
+
+        if (row?.PasswordHash is not null
+            && hasher.Verify(password, row.PasswordHash) != PasswordVerification.Failed)
+        {
+            return true;
+        }
+
+        await WriteAuditAsync(connection, null, new AuditEntry(
+            ActorName: row?.Username ?? $"user:{userId}",
+            Action: action,
+            Category: AuditCategory.Authentication,
+            Outcome: AuditOutcome.Failure,
+            ActorUserId: userId,
+            Ip: context.Ip,
+            UserAgent: context.UserAgent,
+            CorrelationId: context.CorrelationId,
+            Detail: new Dictionary<string, object?> { ["reason"] = "wrong_current_password" }),
+            commandTimeout, ct).ConfigureAwait(false);
+
+        return false;
+    }
+
     public static async Task WriteAuditAsync(
         NpgsqlConnection connection,
         IDbTransaction? transaction,
@@ -218,3 +345,9 @@ internal static class IdentitySql
     public static string? Truncate(string? value, int max) =>
         value is null || value.Length <= max ? value : value[..max];
 }
+
+/// <summary>Where the failure counters stand after a failed sign-in.</summary>
+internal sealed record FailedSignIn(short FailedLoginCount, DateTimeOffset? LockedUntil);
+
+/// <summary>What a repeated password is checked against.</summary>
+internal sealed record OwnPasswordRow(string Username, string? PasswordHash);

@@ -25,7 +25,8 @@ public sealed class PermissionRequirement : IAuthorizationRequirement
     /// <remarks>
     /// Only the handful needed to complete that change. A forced password change that can be
     /// skipped by not visiting the page is not a control, so everything else is refused until the
-    /// password is actually changed.
+    /// password is actually changed. Setting up a required second step works the same way, through
+    /// the same few endpoints.
     /// </remarks>
     public bool AllowedDuringForcedPasswordChange { get; }
 }
@@ -54,6 +55,13 @@ public sealed class PermissionAuthorizationHandler
         {
             context.Fail(new AuthorizationFailureReason(this,
                 "A password change is required before this account can be used."));
+            return Task.CompletedTask;
+        }
+
+        if (session.User.MustSetUpTwoStep && !requirement.AllowedDuringForcedPasswordChange)
+        {
+            context.Fail(new AuthorizationFailureReason(this,
+                "Two-step sign-in must be set up before this account can be used."));
             return Task.CompletedTask;
         }
 

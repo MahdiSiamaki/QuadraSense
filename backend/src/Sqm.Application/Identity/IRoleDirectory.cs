@@ -35,6 +35,12 @@ public interface IRoleDirectory
         long roleId, string displayName, string description, string actor,
         AuthenticationContext context, CancellationToken ct);
 
+    /// <summary>Whether the role's members must have two-step sign-in.</summary>
+    /// <returns><see langword="false"/> if the role does not exist.</returns>
+    Task<bool> SetTwoStepRequiredAsync(
+        long roleId, bool required, string actor, AuthenticationContext context,
+        CancellationToken ct);
+
     /// <summary>Replaces a role's permissions with exactly this set.</summary>
     /// <exception cref="LastAdministratorException">
     /// The change would leave nobody able to administer the system.

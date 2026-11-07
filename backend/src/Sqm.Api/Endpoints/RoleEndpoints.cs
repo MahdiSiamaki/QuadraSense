@@ -43,6 +43,11 @@ public static class RoleEndpoints
             .WithName("SetRolePermissions")
             .WithSummary("Replaces a role's permissions.");
 
+        group.MapPut("/{id:long}/two-step", SetTwoStepAsync)
+            .RequireAuthorization(Policy(Permissions.RoleManage))
+            .WithName("SetRoleTwoStep")
+            .WithSummary("Whether the role's members must have two-step sign-in.");
+
         group.MapDelete("/{id:long}", DeleteAsync)
             .RequireAuthorization(Policy(Permissions.RoleManage))
             .WithName("DeleteRole")
@@ -63,6 +68,29 @@ public static class RoleEndpoints
     private static string Policy(string permission) => PermissionPolicyProvider.Prefix + permission;
 
     // =======================================================================
+
+    private static async Task<IResult> SetTwoStepAsync(
+        long id, SetRoleTwoStepRequest request, HttpContext http, IRoleDirectory roles,
+        ITwoStepService twoStep, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(twoStep);
+
+        // It would do nothing, silently: members cannot be asked for what cannot be set up.
+        if (request.Required && !twoStep.IsAvailable)
+        {
+            return Results.Problem(
+                detail: "Two-step sign-in is not available on this system: Auth:TwoStep:SecretKey "
+                    + "is not set.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        var changed = await roles.SetTwoStepRequiredAsync(
+            id, request.Required, CurrentUser.Actor(http), CurrentUser.Context(http), ct)
+            .ConfigureAwait(false);
+
+        return changed ? Results.NoContent() : Results.NotFound();
+    }
 
     private static async Task<IResult> ListAsync(IRoleDirectory roles, CancellationToken ct) =>
         Results.Ok(await roles.GetRolesAsync(ct).ConfigureAwait(false));
@@ -210,6 +238,9 @@ public sealed record CreateRoleRequest(
 
 /// <summary>A role's editable text. The code is absent because it is immutable.</summary>
 public sealed record UpdateRoleRequest(string DisplayName, string? Description);
+
+/// <summary>Whether a role demands two-step sign-in.</summary>
+public sealed record SetRoleTwoStepRequest(bool Required);
 
 /// <summary>The complete set of permissions a role should carry after this call.</summary>
 public sealed record SetRolePermissionsRequest(IReadOnlyList<string>? PermissionCodes);

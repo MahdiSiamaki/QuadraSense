@@ -122,12 +122,21 @@ public sealed partial class PostgresUserDirectory
         // The SET list is exhaustive and fixed. This is what makes ProfileUpdate an allow-list
         // rather than a suggestion: there is no path here that can reach is_active, a role, or a
         // password, however the caller shapes the request body.
+        //
+        // A proof belongs to the value that was proved. Whoever changes a contact - its owner or an
+        // administrator - leaves it unproved, or editing a profile would be a way to point recovery
+        // at another phone. A proved number is stored in international form, so the same number
+        // written the local way is not a change.
         const string sql = """
             UPDATE auth.user_account
             SET display_name = @displayName,
+                email_verified_at = CASE WHEN lower(email) = lower(@email)
+                                         THEN email_verified_at END,
+                phone_verified_at = CASE WHEN phone = @phone OR phone = @phoneInternational
+                                         THEN phone_verified_at END,
+                phone        = CASE WHEN phone = @phoneInternational THEN phone ELSE @phone END,
                 email        = @email,
                 job_title    = @jobTitle,
-                phone        = @phone,
                 updated_at   = now(),
                 updated_by   = COALESCE(@actor, username)
             WHERE id = @userId
@@ -144,6 +153,7 @@ public sealed partial class PostgresUserDirectory
             email = Blank(update.Email),
             jobTitle = Blank(update.JobTitle),
             phone = Blank(update.Phone),
+            phoneInternational = PhoneNumber.Normalise(update.Phone, _defaultCountryCode),
             actor,
         }, ct, transaction)).ConfigureAwait(false);
 
