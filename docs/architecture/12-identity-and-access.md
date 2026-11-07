@@ -117,13 +117,20 @@ getting it wrong hides a button.
 | Idle timeout | 8 hours | `Auth:Session:IdleTimeout` |
 | Absolute timeout | 24 hours | `Auth:Session:AbsoluteTimeout` |
 | Touch interval | 1 minute | `Auth:Session:TouchInterval` |
+| "Remember me" | 7 days, in place of both limits | `Auth:Session:RememberedLifetime` |
 | Ended sessions retained | 30 days | `Auth:Session:RetainEndedSessionsFor` |
 
 The cookie carries 256 bits of CSPRNG output and nothing else; the database stores its SHA-256, so
 a dump of `auth.session` does not hand the reader live sessions.
 
+A session cookie has no lifetime and dies with the browser. "Remember me" gives it a `Max-Age` of
+exactly the session's seven days, and gives the CSRF cookie the same one: a session cookie that
+outlives its CSRF cookie refuses the next sign-in. The session's row says `remembered`; everything
+else about it is the same.
+
 **Sessions are revoked** — not merely left to expire — on deactivation, password change, password
-reset, an administrator's explicit revocation, and "sign out everywhere". Deactivation does it in
+reset, recovery, turning two-step sign-in on, an administrator's explicit revocation, and "sign out
+everywhere". A sign-in half way through its second step goes with them. Deactivation does it in
 the same transaction as the account change: an account disabled in one transaction and signed out
 in another has a window, short but real, in which it is disabled and still working.
 
@@ -159,6 +166,30 @@ Argon2 derivation against a throwaway salt either way. Measured over the running
 The login endpoint is additionally rate-limited to **6 attempts per minute per address**. That is
 not about guessing — the lockout handles that — it bounds the memory an unauthenticated caller can
 make the server allocate, since each attempt costs 19 MiB.
+
+### Getting back in, and the second step
+
+ADR-022 has the reasoning; this is what exists.
+
+| | |
+|---|---|
+| A one-time code | Six digits, ten minutes, void after five failures, one use, Argon2id at rest (`auth.one_time_code`, `Auth:Recovery`) |
+| Sent to | A **proved** contact only: `email_verified_at`, `phone_verified_at`. Proving one takes the password and a code; changing it clears the proof |
+| Limits | Six requests a minute per address; one code a minute and five an hour per account |
+| `POST auth/recovery/start` | Looks at no account. Queues the request and answers 202 with no body, for everyone |
+| `POST auth/recovery/complete` | One hash on every failing path, one answer for all of them. Success sets the password, lifts any lockout, ends every session and tells the owner. It signs nobody in |
+| The second step | An authenticator app (RFC 6238), and ten single-use recovery codes. `auth.user_two_step`, `auth.user_recovery_code` |
+| Between the steps | A ticket, not a session: five minutes, five attempts (`auth.sign_in_challenge`). A wrong code counts towards the lockout |
+| The secret | AES-256-GCM under `Auth:TwoStep:SecretKey`, bound to the user id. No key, no feature |
+| Demanded by a role | `auth.role.two_step_required`, held back like a forced password change. Off on every role |
+| Lost the phone | A recovery code, or an administrator's reset (`user.manage`, never on oneself) |
+
+A code by SMS or e-mail is not offered as a second step, on purpose: that phone and that mailbox can
+already reset the password, so one person holding them would hold both factors.
+
+Every step is audited under `auth.recovery.request`, `auth.recovery.complete`, `auth.contact.verify`,
+`auth.two_step.enable`, `auth.two_step.disable`, `auth.two_step.recovery_codes`, `user.two_step.reset`
+and `role.two_step`; a second step is part of `auth.login`.
 
 ## 5. Audit
 
@@ -248,8 +279,8 @@ a `__Host-` cookie that is not Secure, silently, with no error a developer can a
 
 ### If this ever faces the internet
 
-In order of importance: add per-IP lockout, drop the idle timeout to 30–60 minutes, and revisit the
-MFA decision. ADR-006 records why each is the way it is.
+In order of importance: add per-IP lockout, drop the idle timeout to 30–60 minutes, shorten "remember
+me", and have a role demand two-step sign-in. ADR-006 and ADR-022 record why each is the way it is.
 
 ## 7. Calling the API without a browser
 
@@ -271,16 +302,11 @@ A write without the header returns 403 with a body that says exactly this.
 
 ## 8. What is not built
 
-- **MFA.** Not required for a strictly internal deployment. No dead columns were added for it; the
-  four steps to add it are in ADR-006 and in the migration's comments.
 - **LDAP / Active Directory.** The seam is `IPasswordAuthenticator`, and `auth.user_account` already
   carries `provider` and `external_id`. Adding it is one implementation plus a group-to-role mapping.
 - **OIDC.** Deliberately not behind that interface — a redirect flow never sees a password. It adds
   a callback endpoint that maps a subject claim onto `external_id` and then creates a session
   through the same `ISessionStore`.
-- **Self-service password reset.** Local accounts have no email delivery behind them, so a reset
-  link would go nowhere. The login page says an administrator can reset it, rather than offering a
-  link that silently does nothing.
 
 ## Related
 

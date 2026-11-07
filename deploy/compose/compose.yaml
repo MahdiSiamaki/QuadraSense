@@ -185,6 +185,21 @@ services:
       # The worker is its own container (ADR-007). This is already the default outside
       # Development; stated so nobody has to know that.
       Import__RunWorkerInProcess: "false"
+      # Recovery and two-step sign-in (ADR-022). Each is off until its value is set in .env, and
+      # the sign-in page then does not offer it.
+      Auth__TwoStep__SecretKey: ${SQM_TWO_STEP_KEY:-}
+      Auth__Delivery__Email__Host: ${SQM_SMTP_HOST:-}
+      Auth__Delivery__Email__Port: ${SQM_SMTP_PORT:-587}
+      Auth__Delivery__Email__Security: ${SQM_SMTP_SECURITY:-StartTls}
+      Auth__Delivery__Email__Username: ${SQM_SMTP_USERNAME:-}
+      Auth__Delivery__Email__Password: ${SQM_SMTP_PASSWORD:-}
+      Auth__Delivery__Email__From: ${SQM_SMTP_FROM:-}
+      Auth__Delivery__Sms__Url: ${SQM_SMS_URL:-}
+      Auth__Delivery__Sms__Method: ${SQM_SMS_METHOD:-POST}
+      Auth__Delivery__Sms__ContentType: ${SQM_SMS_CONTENT_TYPE:-application/json}
+      Auth__Delivery__Sms__Body: ${SQM_SMS_BODY:-}
+      Auth__Delivery__Sms__SuccessContains: ${SQM_SMS_SUCCESS_CONTAINS:-}
+      Auth__Delivery__Sms__Headers__Authorization: ${SQM_SMS_AUTHORIZATION:-}
     volumes:
       - uploads:/var/lib/quadrasense/uploads
     mem_limit: ${API_MEMORY:-1536m}

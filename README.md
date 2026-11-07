@@ -110,9 +110,10 @@ left out of every count.
 #### Identity and audit
 
 Local sign-in, server-side sessions, permission-based RBAC, and an audit trail PostgreSQL itself keeps
-append-only. A test enumerates the router to prove no endpoint escapes a permission.
+append-only. A test enumerates the router to prove no endpoint escapes a permission. Password recovery
+that cannot be used to find out whether an account exists, and two-step sign-in with an authenticator.
 
-[Identity and access](docs/architecture/12-identity-and-access.md) · [ADR-006](docs/adr/ADR-006-authentication-and-access-control.md)
+[Identity and access](docs/architecture/12-identity-and-access.md) · [ADR-006](docs/adr/ADR-006-authentication-and-access-control.md) · [ADR-022](docs/adr/ADR-022-account-recovery-and-two-step.md)
 
 </td>
 </tr>
@@ -327,6 +328,7 @@ chosen because of that is [listed](docs/operations/dedicated-hardware.md), to re
 | [ADR-019](docs/adr/ADR-019-planning-snapshot.md) | Network planning: each number classed once per delivery by an idle-time snapshot, from parsed radio profiles | Accepted |
 | [ADR-020](docs/adr/ADR-020-rows-with-no-handset.md) | Rows with no handset stay stored and are left out of every count | Accepted |
 | [ADR-021](docs/adr/ADR-021-idle-lanes.md) | The worker runs what does not conflict in lanes, as many as the engine reports room for, with a brake, and gives way to people | Accepted |
+| [ADR-022](docs/adr/ADR-022-account-recovery-and-two-step.md) | Recovery by a code to a proved contact, and an authenticator as the second step | Accepted |
 
 Every one of these was decided against measurement on the real dataset, not on reputation. Where a claim
 appears in these documents, the number behind it is there too.

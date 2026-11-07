@@ -229,6 +229,9 @@ accounts exist is what makes a password spray cheap.
 
 ## Decision 4 — Multi-factor is not built, and the path to it is written down
 
+> **Superseded 2026-11-07 by ADR-022**, which built it along these four steps, and chose an
+> authenticator app over a code by SMS. Kept as it was decided.
+
 Not required for a strictly internal deployment, per the product owner. **No dead columns were
 added for it**, because a schema full of unused MFA fields is indistinguishable from a schema
 whose MFA is broken.
