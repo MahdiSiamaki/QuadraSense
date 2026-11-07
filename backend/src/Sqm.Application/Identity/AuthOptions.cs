@@ -3,7 +3,8 @@ namespace Sqm.Application.Identity;
 /// <summary>Everything tunable about authentication, in one place.</summary>
 /// <remarks>
 /// The defaults here are the ones the product owner's answers imply: a strictly internal
-/// deployment, local accounts, no MFA. They are stated as values rather than buried in code so
+/// deployment, local accounts, two-step sign-in offered and demanded of nobody until a role asks
+/// for it (ADR-022). They are stated as values rather than buried in code so
 /// that a different deployment is a configuration change, and so that a reviewer can see the
 /// whole policy without reading the implementation.
 /// </remarks>
@@ -23,6 +24,15 @@ public sealed class AuthOptions
 
     /// <summary>Password strength rules applied when a password is set.</summary>
     public PasswordPolicyOptions Policy { get; init; } = new();
+
+    /// <summary>One-time codes: how long they live and how often they may be sent.</summary>
+    public RecoveryOptions Recovery { get; init; } = new();
+
+    /// <summary>The authenticator second step.</summary>
+    public TwoStepOptions TwoStep { get; init; } = new();
+
+    /// <summary>How a message reaches a person: mail server, SMS gateway.</summary>
+    public DeliveryOptions Delivery { get; init; } = new();
 }
 
 /// <summary>Argon2id parameters.</summary>
@@ -89,6 +99,17 @@ public sealed class SessionSettings
     /// not - an attacker using the cookie keeps refreshing the idle window.
     /// </remarks>
     public TimeSpan AbsoluteTimeout { get; init; } = TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// How long a session started with "remember me" lives, however it is used.
+    /// </summary>
+    /// <remarks>
+    /// One number rather than an idle limit and an absolute limit of its own: a person who ticks
+    /// the box is told how long it lasts, and that should be true. It is also the lifetime of both
+    /// cookies, so the session cookie cannot outlive the CSRF cookie and block the next sign-in
+    /// (see <c>CookieNames.ClearSession</c>). Seven days: a working week, and no more.
+    /// </remarks>
+    public TimeSpan RememberedLifetime { get; init; } = TimeSpan.FromDays(7);
 
     /// <summary>
     /// How stale <c>last_seen_at</c> is allowed to get before a request writes it.
@@ -181,4 +202,164 @@ public sealed class PasswordPolicyOptions
     /// password for a known account tries.
     /// </remarks>
     public bool RejectContainingUsername { get; init; } = true;
+}
+
+/// <summary>One-time codes: their terms, and how often one may be sent.</summary>
+/// <remarks>
+/// The first two are the terms of MCI's security red lines for one-time passwords (section 2-3,
+/// row 2): six digits, random, void after five failures, expired after ten minutes. Six digits is
+/// not a setting, because nothing would ever want it different.
+/// </remarks>
+public sealed class RecoveryOptions
+{
+    /// <summary>How long a code works after it is sent.</summary>
+    public TimeSpan CodeLifetime { get; init; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>Wrong guesses after which a code is void, however long it has left.</summary>
+    public int MaxCodeAttempts { get; init; } = 5;
+
+    /// <summary>Quiet time between two codes to one account.</summary>
+    public TimeSpan ResendCooldown { get; init; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>Codes one account may be sent in an hour.</summary>
+    /// <remarks>
+    /// The per-address limiter stops one machine. This stops many machines filling one person's
+    /// phone, and it is what bounds an SMS bill, because every code sent is paid for.
+    /// </remarks>
+    public int MaxSendsPerHour { get; init; } = 5;
+
+    /// <summary>The country a number written the local way belongs to.</summary>
+    public string DefaultCountryCode { get; init; } = "98";
+}
+
+/// <summary>The authenticator second step.</summary>
+public sealed class TwoStepOptions
+{
+    /// <summary>
+    /// Base64 of 32 random bytes, the AES key that protects every authenticator secret.
+    /// </summary>
+    /// <remarks>
+    /// Empty means the feature is off: nothing is offered and no role can demand it, so a
+    /// deployment without a key behaves as it did before. It lives in configuration and never in
+    /// the database, so a stolen backup does not carry it. Losing it leaves every authenticator
+    /// unreadable; recovery codes and an administrator's reset still work.
+    /// </remarks>
+    public string? SecretKey { get; init; }
+
+    /// <summary>The name an authenticator app shows beside the code.</summary>
+    public string Issuer { get; init; } = "Quadrasense";
+
+    /// <summary>How long a person has between a good password and the second step.</summary>
+    public TimeSpan ChallengeLifetime { get; init; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>Wrong codes one password entry may be followed by.</summary>
+    public int MaxChallengeAttempts { get; init; } = 5;
+
+    /// <summary>How many recovery codes a person is given.</summary>
+    public int RecoveryCodeCount { get; init; } = 10;
+
+    /// <summary>Whether a key is configured.</summary>
+    public bool IsAvailable => !string.IsNullOrWhiteSpace(SecretKey);
+}
+
+/// <summary>How a message reaches a person.</summary>
+/// <remarks>
+/// A channel with nothing configured is off, and the sign-in page does not offer it. That is the
+/// state of a deployment that has been told about neither a mail server nor a gateway, and it is
+/// a supported one: an administrator's reset keeps working.
+/// </remarks>
+public sealed class DeliveryOptions
+{
+    /// <summary>The mail server.</summary>
+    public SmtpDeliveryOptions Email { get; init; } = new();
+
+    /// <summary>The SMS gateway.</summary>
+    public SmsGatewayOptions Sms { get; init; } = new();
+
+    /// <summary>
+    /// Writes every message, code included, to the log instead of sending it. Development only.
+    /// </summary>
+    /// <remarks>
+    /// Refused outside the Development environment, whatever this says: a code in a log file is a
+    /// password in a log file.
+    /// </remarks>
+    public bool WriteToLog { get; init; }
+}
+
+/// <summary>A mail server, reached over SMTP.</summary>
+public sealed class SmtpDeliveryOptions
+{
+    /// <summary>Host name. Empty turns e-mail off.</summary>
+    public string? Host { get; init; }
+
+    /// <summary>Port: 587 for STARTTLS, 465 for TLS, 25 for a relay that asks for neither.</summary>
+    public int Port { get; init; } = 587;
+
+    /// <summary><c>StartTls</c>, <c>Tls</c> or <c>None</c>.</summary>
+    /// <remarks>
+    /// <c>None</c> exists for a relay inside the data centre that speaks nothing else. A code then
+    /// crosses that network in clear, so it should be a decision and not a default.
+    /// </remarks>
+    public string Security { get; init; } = "StartTls";
+
+    /// <summary>Account to sign in to the server with. Empty for a relay that needs none.</summary>
+    public string? Username { get; init; }
+
+    /// <summary>Its password.</summary>
+    public string? Password { get; init; }
+
+    /// <summary>The address messages come from.</summary>
+    public string? From { get; init; }
+
+    /// <summary>The name shown beside it.</summary>
+    public string FromName { get; init; } = "Quadrasense";
+
+    /// <summary>How long to wait for the server.</summary>
+    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>Whether enough is configured to send anything.</summary>
+    public bool IsConfigured =>
+        !string.IsNullOrWhiteSpace(Host) && !string.IsNullOrWhiteSpace(From);
+}
+
+/// <summary>An SMS gateway, reached over HTTP.</summary>
+/// <remarks>
+/// <para>
+/// Gateways have no common protocol, so this describes the request rather than naming a product:
+/// a URL, a method, headers and a body with <c>{to}</c>, <c>{toDigits}</c>, <c>{toNational}</c> and
+/// <c>{text}</c> in it. Each value is escaped for where it lands: percent-encoded in the URL and
+/// in a form body, JSON-escaped in a JSON body.
+/// </para>
+/// <para>
+/// A gateway that speaks SMPP rather than HTTP needs its own implementation of
+/// <c>IContactDelivery</c>; nothing above that interface would change.
+/// </para>
+/// </remarks>
+public sealed class SmsGatewayOptions
+{
+    /// <summary>The gateway's address. Empty turns SMS off.</summary>
+    public string? Url { get; init; }
+
+    /// <summary>HTTP method.</summary>
+    public string Method { get; init; } = "POST";
+
+    /// <summary>Headers to send, such as an API key.</summary>
+    public Dictionary<string, string> Headers { get; init; } = [];
+
+    /// <summary>The request body's media type.</summary>
+    public string ContentType { get; init; } = "application/json";
+
+    /// <summary>The request body. Empty for a gateway that takes everything in the URL.</summary>
+    public string? Body { get; init; }
+
+    /// <summary>
+    /// Text the response must contain, for a gateway that answers 200 whatever happened.
+    /// </summary>
+    public string? SuccessContains { get; init; }
+
+    /// <summary>How long to wait for the gateway.</summary>
+    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>Whether enough is configured to send anything.</summary>
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(Url);
 }

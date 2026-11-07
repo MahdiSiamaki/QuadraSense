@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Sqm.Api.Auth;
 using Sqm.Api.Endpoints;
 using Sqm.Api.Infrastructure;
@@ -14,6 +15,7 @@ using Sqm.Infrastructure.Catalog;
 using Sqm.Infrastructure.ClickHouse;
 using Sqm.Infrastructure.DataImport;
 using Sqm.Infrastructure.Identity;
+using Sqm.Infrastructure.Identity.Delivery;
 using Sqm.Ingestion;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -213,6 +215,19 @@ builder.Services.AddSingleton<IRoleDirectory, PostgresRoleDirectory>();
 builder.Services.AddSingleton<IAuditLog, PostgresAuditLog>();
 builder.Services.AddHostedService<SessionSweeper>();
 
+// Recovery and the second step (ADR-022). What leaves the building is configuration: a channel
+// with nothing configured is simply off, and the sign-in page does not offer it.
+builder.Services.AddSingleton<IContactDelivery>(sp => new ContactDelivery(
+    sp.GetRequiredService<IOptions<AuthOptions>>().Value.Delivery,
+    sp.GetRequiredService<IHostEnvironment>().IsDevelopment(),
+    sp.GetRequiredService<ILogger<ContactDelivery>>()));
+builder.Services.AddSingleton<AccountOutbox>();
+builder.Services.AddSingleton<IAccountOutbox>(sp => sp.GetRequiredService<AccountOutbox>());
+builder.Services.AddSingleton<IAccountRecovery, PostgresAccountRecovery>();
+builder.Services.AddSingleton<IContactVerification, PostgresContactVerification>();
+builder.Services.AddSingleton<ITwoStepService, PostgresTwoStepService>();
+builder.Services.AddHostedService<AccountOutboxDispatcher>();
+
 builder.Services.AddAuthentication(SessionAuthenticationHandler.SchemeName)
     .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions,
         SessionAuthenticationHandler>(SessionAuthenticationHandler.SchemeName, null);
@@ -234,18 +249,29 @@ builder.Services.AddAuthorization();
 // wrong password by timing. Without a limiter, that property is also a way for anyone on the
 // network to occupy the process. Six attempts a minute per address is far above what a person
 // types and far below what an attack needs.
+//
+// Recovery has the same reason and one more: every code it sends is a message somebody receives,
+// and may be a text somebody pays for. The account's own limit is in Auth:Recovery; this one
+// stops a single machine walking through accounts. Anything that asks a signed-in person for a
+// password or a code again runs a hash or a guess too, so it is bounded as well, by a little more
+// because an office can share one address.
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    o.AddPolicy(AuthEndpoints.LoginRateLimiter, http =>
+
+    void PerAddress(string policy, int permitLimit) => o.AddPolicy(policy, http =>
         RateLimitPartition.GetFixedWindowLimiter(
             http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 6,
+                PermitLimit = permitLimit,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
             }));
+
+    PerAddress(AuthEndpoints.LoginRateLimiter, 6);
+    PerAddress(AccountSecurityEndpoints.RecoveryRateLimiter, 6);
+    PerAddress(AccountSecurityEndpoints.ConfirmRateLimiter, 12);
 });
 
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -334,6 +360,7 @@ app.MapHealthChecks("/health/ready", new()
 }).AllowAnonymous();
 
 app.MapAuthEndpoints();
+app.MapAccountSecurityEndpoints();
 app.MapUserEndpoints();
 app.MapRoleEndpoints();
 app.MapAuditEndpoints();

@@ -5,9 +5,18 @@ import Button from '@/design-system/Button.vue'
 import TextField from '@/design-system/TextField.vue'
 import AsyncBoundary from '@/design-system/AsyncBoundary.vue'
 import ChangePasswordForm from '@/features/auth/ChangePasswordForm.vue'
+import ContactVerifyDialog from './ContactVerifyDialog.vue'
 import SessionList from './SessionList.vue'
+import TwoStepCard from './TwoStepCard.vue'
 import { useAuth } from '@/features/auth/useAuth'
-import { useMySessions, useRevokeMySession, useUpdateProfile } from '@/api/auth'
+import {
+  useMySessions,
+  useRevokeMyOtherSessions,
+  useRevokeMySession,
+  useSignInOptions,
+  useUpdateProfile,
+  type ContactRouteName,
+} from '@/api/auth'
 import { ApiError } from '@/api/client'
 import { formatDateTime, formatRelative } from '@/lib/format'
 
@@ -26,7 +35,20 @@ const { user, query } = useAuth()
 
 const sessions = useMySessions()
 const revoke = useRevokeMySession()
+const revokeOthers = useRevokeMyOtherSessions()
 const save = useUpdateProfile()
+const options = useSignInOptions()
+
+/** Which contact is being proved in the dialog. */
+const verifying = ref<ContactRouteName | null>(null)
+
+/** Other devices that are still signed in, which is what the button would end. */
+const otherSessions = computed(
+  () =>
+    (sessions.data.value ?? []).filter(
+      (s) => !s.isCurrent && !s.revokedAt && new Date(s.idleExpiresAt) > new Date(),
+    ).length,
+)
 
 const displayName = ref('')
 const email = ref('')
@@ -116,13 +138,14 @@ function submit() {
                 type="email"
                 optional-note="optional"
                 :error="fieldErrors['email'] ?? null"
-                hint="Not used for sign-in or password reset."
+                hint="Once verified, it can be used to reset your password."
               />
               <TextField
                 v-model="phone"
                 label="Phone"
                 optional-note="optional"
                 :error="fieldErrors['phone'] ?? null"
+                hint="Once verified, it can be used to reset your password."
               />
 
               <div class="flex items-center gap-3 sm:col-span-2">
@@ -147,6 +170,52 @@ function submit() {
             <p class="mt-4 border-t pt-3 text-xs text-[var(--c-text-muted)]">
               Your username, roles and permissions can only be changed by an administrator.
             </p>
+          </Card>
+
+          <Card
+            v-if="options.data.value?.recoverByEmail || options.data.value?.recoverBySms"
+            title="Password recovery"
+            subtitle="A verified contact can receive a code if you forget your password."
+          >
+            <ul class="flex flex-col gap-2.5">
+              <li
+                v-for="contact in [
+                  {
+                    channel: 'email' as const,
+                    label: 'Email',
+                    value: user?.email,
+                    verified: user?.emailVerified,
+                    offered: options.data.value?.recoverByEmail,
+                  },
+                  {
+                    channel: 'sms' as const,
+                    label: 'Phone',
+                    value: user?.phone,
+                    verified: user?.phoneVerified,
+                    offered: options.data.value?.recoverBySms,
+                  },
+                ].filter((c) => c.offered)"
+                :key="contact.channel"
+                class="flex flex-wrap items-center justify-between gap-2"
+              >
+                <div class="min-w-0">
+                  <p class="text-xs text-[var(--c-text-muted)]">{{ contact.label }}</p>
+                  <p class="truncate text-sm">
+                    {{ contact.value || 'Not set' }}
+                  </p>
+                </div>
+                <span v-if="contact.verified" class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium" :style="{ backgroundColor: 'var(--c-success-subtle)', color: 'var(--c-success-text)' }">Verified</span>
+                <Button
+                  v-else
+                  size="sm"
+                  :disabled="!contact.value || dirty"
+                  :title="dirty ? 'Save your changes first' : undefined"
+                  @click="verifying = contact.channel"
+                >
+                  Verify
+                </Button>
+              </li>
+            </ul>
           </Card>
 
           <Card title="Password">
@@ -199,8 +268,7 @@ function submit() {
               </div>
 
               <div>
-                <dt class="text-xs text-[var(--c-text-muted)]">Session expires</dt>
-                <dd class="tabular mt-0.5 text-sm">
+                <dt class="text-xs text-[var(--c-text-muted)]">Session expires</dt>                <dd class="tabular mt-0.5 text-sm">
                   <span v-if="user" :title="formatDateTime(user.sessionIdleExpiresAt)">
                     {{ formatRelative(user.sessionIdleExpiresAt) }} if idle
                   </span>
@@ -208,6 +276,8 @@ function submit() {
               </div>
             </dl>
           </Card>
+
+          <TwoStepCard />
 
           <Card
             title="Signed-in devices"
@@ -219,9 +289,24 @@ function submit() {
               :revoking="revoke.isPending.value"
               @revoke="(id) => revoke.mutate(id)"
             />
+            <div v-if="otherSessions > 0" class="border-t px-4 py-2.5">
+              <Button
+                size="sm"
+                :pending="revokeOthers.isPending.value"
+                @click="revokeOthers.mutate()"
+              >
+                Sign out {{ otherSessions === 1 ? 'the other device' : `all ${otherSessions} other devices` }}
+              </Button>
+            </div>
           </Card>
         </div>
       </div>
     </AsyncBoundary>
+
+    <ContactVerifyDialog
+      :channel="verifying"
+      :destination="(verifying === 'email' ? user?.email : user?.phone) ?? ''"
+      @close="verifying = null"
+    />
   </div>
 </template>

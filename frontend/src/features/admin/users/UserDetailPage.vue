@@ -14,6 +14,7 @@ import {
   useRoles,
   useSetUserActive,
   useSetUserRoles,
+  useResetTwoStep,
   useUnlockUser,
   useUser,
   useUserSessions,
@@ -48,6 +49,18 @@ const setRoles = useSetUserRoles()
 const resetPassword = useResetPassword()
 const unlock = useUnlockUser()
 const revokeSessions = useRevokeUserSessions()
+const resetTwoStep = useResetTwoStep()
+
+/** The confirmation before taking someone's second step away. */
+const resettingTwoStep = ref(false)
+
+async function confirmResetTwoStep() {
+  const id = user.data.value?.id
+  if (id === undefined) return
+
+  await resetTwoStep.mutateAsync(id).catch(() => undefined)
+  resettingTwoStep.value = false
+}
 
 const manage = computed(() => can(Permission.UserManage))
 const isSelf = computed(() => me.value?.id === user.data.value?.id)
@@ -214,6 +227,17 @@ const resetError = computed(() => message(resetPassword.error.value))
             >
               Sign out everywhere
             </Button>
+            <!--
+              Not on yourself, here or in the API: turning it off for yourself takes a code, and
+              this takes none.
+            -->
+            <Button
+              v-if="user.data.value.twoStepEnabledAt && !isSelf"
+              size="sm"
+              @click="resettingTwoStep = true"
+            >
+              Reset two-step sign-in
+            </Button>
 
             <!--
               Self-deactivation is refused by the API with a 409, and hidden here for the same
@@ -318,6 +342,34 @@ const resetError = computed(() => message(resetPassword.error.value))
                     <span v-else class="text-[var(--c-text-muted)]">—</span>
                   </dd>
                 </div>
+                <div class="flex justify-between gap-3">
+                  <dt class="text-[var(--c-text-muted)]">Two-step sign-in</dt>
+                  <dd class="tabular text-right">
+                    <span
+                      v-if="user.data.value.twoStepEnabledAt"
+                      :title="formatDateTime(user.data.value.twoStepEnabledAt)"
+                    >
+                      on, {{ formatRelative(user.data.value.twoStepEnabledAt) }}
+                    </span>
+                    <span v-else class="text-[var(--c-text-muted)]">off</span>
+                  </dd>
+                </div>
+                <div class="flex justify-between gap-3">
+                  <dt class="text-[var(--c-text-muted)]">Can recover by</dt>
+                  <dd class="text-right">
+                    <template v-if="user.data.value.emailVerifiedAt || user.data.value.phoneVerifiedAt">
+                      {{
+                        [
+                          user.data.value.emailVerifiedAt ? 'email' : null,
+                          user.data.value.phoneVerifiedAt ? 'phone' : null,
+                        ]
+                          .filter(Boolean)
+                          .join(', ')
+                      }}
+                    </template>
+                    <span v-else class="text-[var(--c-text-muted)]">administrator only</span>
+                  </dd>
+                </div>
                 <div v-if="user.data.value.mustChangePassword" class="flex justify-between gap-3">
                   <dt class="text-[var(--c-text-muted)]">Pending</dt>
                   <dd class="text-right text-[var(--c-warning-text)]">must change password</dd>
@@ -366,6 +418,24 @@ const resetError = computed(() => message(resetPassword.error.value))
     </AsyncBoundary>
 
     <!-- --------------------------------------------------------- dialogs -->
+    <Modal
+      :open="resettingTwoStep"
+      title="Reset two-step sign-in"
+      size="sm"
+      description="For someone who has lost their authenticator and their recovery codes. They are signed out everywhere, and a password alone will sign them in until they set it up again."
+      :busy="resetTwoStep.isPending.value"
+      @close="resettingTwoStep = false"
+    >
+      <template #actions>
+        <Button :disabled="resetTwoStep.isPending.value" @click="resettingTwoStep = false">
+          Cancel
+        </Button>
+        <Button variant="danger" :pending="resetTwoStep.isPending.value" @click="confirmResetTwoStep">
+          Reset
+        </Button>
+      </template>
+    </Modal>
+
     <Modal
       :open="editingRoles"
       title="Roles"

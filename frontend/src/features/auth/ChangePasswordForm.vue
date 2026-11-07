@@ -78,6 +78,7 @@ async function submit() {
       v-model="current"
       label="Current password"
       type="password"
+      revealable
       autocomplete="current-password"
       required
       :error="fieldErrors['currentPassword'] ?? null"
@@ -88,6 +89,7 @@ async function submit() {
       v-model="next"
       label="New password"
       type="password"
+      revealable
       autocomplete="new-password"
       required
       :hint="`At least ${minimumLength} characters. A passphrase of a few words is ideal.`"
@@ -102,6 +104,7 @@ async function submit() {
       v-model="confirm"
       label="Confirm new password"
       type="password"
+      revealable
       autocomplete="new-password"
       required
       :error="mismatch ? 'The two passwords do not match.' : null"

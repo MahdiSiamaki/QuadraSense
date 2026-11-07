@@ -40,13 +40,72 @@ export interface CurrentUser {
   activeSessions: number
   sessionIdleExpiresAt: string
   sessionAbsoluteExpiresAt: string
+  /** Proved by a code sent to it. Only a proved contact can receive a recovery code. */
+  emailVerified: boolean
+  phoneVerified: boolean
+  twoStepEnabled: boolean
+  /**
+   * A role demands two-step sign-in and it is not set up. Like `mustChangePassword`, the API
+   * refuses everything else until it is done.
+   */
+  mustSetUpTwoStep: boolean
 }
 
 /** Why a sign-in was refused. */
 export interface LoginFailure {
-  status: 'InvalidCredentials' | 'AccountLocked' | 'AccountDisabled'
+  status:
+    | 'InvalidCredentials'
+    | 'AccountLocked'
+    | 'AccountDisabled'
+    | 'InvalidCode'
+    | 'ChallengeExpired'
   message: string
   lockedUntil: string | null
+}
+
+/** The password was right and this account has a second step. There is no session yet. */
+export interface SecondStepRequired {
+  ticket: string
+  expiresAt: string
+}
+
+/** What a good password gets back. */
+export type LoginResult = CurrentUser | SecondStepRequired
+
+export function isSecondStep(result: LoginResult): result is SecondStepRequired {
+  return 'ticket' in result
+}
+
+/** What the sign-in page may offer on this deployment. */
+export interface SignInOptions {
+  recoverByEmail: boolean
+  recoverBySms: boolean
+  twoStepAvailable: boolean
+  rememberDays: number
+  codeMinutes: number
+}
+
+/** A channel, as the API's enum spells it in a body. */
+export type ContactChannelName = 'Email' | 'Sms'
+
+/** A channel, as it appears in a route. */
+export type ContactRouteName = 'email' | 'sms'
+
+export interface TwoStepStatus {
+  available: boolean
+  enabled: boolean
+  enabledAt: string | null
+  recoveryCodesLeft: number
+  required: boolean
+}
+
+export interface TwoStepSetupResponse {
+  secret: string
+  uri: string
+}
+
+export interface RecoveryCodesResponse {
+  codes: string[]
 }
 
 /** A device this account has signed in from. */
@@ -61,6 +120,8 @@ export interface SessionInfo {
   ip: string | null
   userAgent: string | null
   isCurrent: boolean
+  /** Started with "remember me": it outlives the browser. */
+  remembered: boolean
 }
 
 /** Query key for the current user. Exported so anything can invalidate it. */
@@ -106,13 +167,54 @@ export function useLogin() {
   const client = useQueryClient()
 
   return useMutation({
-    mutationFn: (credentials: { username: string; password: string }) =>
-      api.post<CurrentUser>('/api/v1/auth/login', credentials),
-    onSuccess: (user) => {
+    mutationFn: (credentials: { username: string; password: string; rememberMe: boolean }) =>
+      api.post<LoginResult>('/api/v1/auth/login', credentials),
+    onSuccess: (result) => {
       // Seeded rather than invalidated: the login response already IS the current user, and
       // refetching it would add a round trip before the dashboard can render.
-      client.setQueryData(CURRENT_USER_KEY, user)
+      if (!isSecondStep(result)) client.setQueryData(CURRENT_USER_KEY, result)
     },
+  })
+}
+
+/** The code that follows a good password. */
+export function useSecondStep() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (step: { ticket: string; code: string }) =>
+      api.post<CurrentUser>('/api/v1/auth/login/two-step', step),
+    onSuccess: (user) => client.setQueryData(CURRENT_USER_KEY, user),
+  })
+}
+
+/**
+ * What this deployment can offer. Asked once: it changes when the server's configuration does.
+ *
+ * `retry: false`, and every reader treats no answer as "nothing to offer", so an API that cannot be
+ * reached leaves the page saying who can help rather than offering what may not work.
+ */
+export function useSignInOptions() {
+  return useQuery({
+    queryKey: ['auth', 'options'],
+    queryFn: ({ signal }) => api.get<SignInOptions>('/api/v1/auth/options', undefined, signal),
+    retry: false,
+    staleTime: Infinity,
+  })
+}
+
+/** Asks for a recovery code. The answer says nothing about the account, on purpose. */
+export function useStartRecovery() {
+  return useMutation({
+    mutationFn: (request: { identifier: string; channel: ContactChannelName }) =>
+      api.post<void>('/api/v1/auth/recovery/start', request),
+  })
+}
+
+export function useCompleteRecovery() {
+  return useMutation({
+    mutationFn: (request: { identifier: string; code: string; newPassword: string }) =>
+      api.post<void>('/api/v1/auth/recovery/complete', request),
   })
 }
 
@@ -163,6 +265,90 @@ export function useMySessions() {
     queryKey: ['auth', 'sessions'],
     queryFn: ({ signal }) => api.get<SessionInfo[]>('/api/v1/auth/me/sessions', undefined, signal),
     staleTime: 30_000,
+  })
+}
+
+export function useRevokeMyOtherSessions() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => api.delete<{ count: number }>('/api/v1/auth/me/sessions'),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['auth', 'sessions'] })
+      client.invalidateQueries({ queryKey: CURRENT_USER_KEY })
+    },
+  })
+}
+
+export function useSendContactCode() {
+  return useMutation({
+    mutationFn: ({ channel, currentPassword }: { channel: ContactRouteName; currentPassword: string }) =>
+      api.post<void>(`/api/v1/auth/me/contacts/${channel}/code`, { currentPassword }),
+  })
+}
+
+export function useConfirmContact() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ channel, code }: { channel: ContactRouteName; code: string }) =>
+      api.post<void>(`/api/v1/auth/me/contacts/${channel}/confirm`, { code }),
+    onSuccess: () => client.invalidateQueries({ queryKey: CURRENT_USER_KEY }),
+  })
+}
+
+const TWO_STEP_KEY = ['auth', 'two-step'] as const
+
+export function useTwoStepStatus() {
+  return useQuery({
+    queryKey: TWO_STEP_KEY,
+    queryFn: ({ signal }) => api.get<TwoStepStatus>('/api/v1/auth/me/two-step', undefined, signal),
+    staleTime: 30_000,
+  })
+}
+
+export function useBeginTwoStep() {
+  return useMutation({
+    mutationFn: (request: { currentPassword: string }) =>
+      api.post<TwoStepSetupResponse>('/api/v1/auth/me/two-step/setup', request),
+  })
+}
+
+export function useConfirmTwoStep() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (request: { code: string }) =>
+      api.post<RecoveryCodesResponse>('/api/v1/auth/me/two-step/confirm', request),
+    onSuccess: () => {
+      // The session list changed too: turning this on signs every other device out.
+      client.invalidateQueries({ queryKey: TWO_STEP_KEY })
+      client.invalidateQueries({ queryKey: CURRENT_USER_KEY })
+      client.invalidateQueries({ queryKey: ['auth', 'sessions'] })
+    },
+  })
+}
+
+export function useNewRecoveryCodes() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (request: { currentPassword: string }) =>
+      api.post<RecoveryCodesResponse>('/api/v1/auth/me/two-step/recovery-codes', request),
+    onSuccess: () => client.invalidateQueries({ queryKey: TWO_STEP_KEY }),
+  })
+}
+
+export function useDisableTwoStep() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (request: { currentPassword: string; code: string }) =>
+      api.post<void>('/api/v1/auth/me/two-step/disable', request),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: TWO_STEP_KEY })
+      client.invalidateQueries({ queryKey: CURRENT_USER_KEY })
+    },
   })
 }
 

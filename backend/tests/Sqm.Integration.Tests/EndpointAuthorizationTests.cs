@@ -40,6 +40,10 @@ public sealed class EndpointAuthorizationTests : IClassFixture<WebApplicationFac
                            + "kills a process whose only problem is a dependency",
         ["/health/ready"] = "readiness is polled by the orchestrator, which has no account",
         ["/api/v1/auth/login"] = "the endpoint that issues the session cannot require one",
+        ["/api/v1/auth/login/two-step"] = "the second half of signing in: no session exists yet",
+        ["/api/v1/auth/options"] = "the sign-in page asks what to offer before anyone has signed in",
+        ["/api/v1/auth/recovery/start"] = "whoever needs this cannot sign in",
+        ["/api/v1/auth/recovery/complete"] = "whoever needs this cannot sign in",
         ["/openapi/{documentName}.json"] = "development only; not mapped outside Development",
     };
 

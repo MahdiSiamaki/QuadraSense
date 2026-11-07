@@ -21,6 +21,29 @@ cp .env.example .env
 
 Every variable the stack reads is listed there. Nothing is committed with a credential in it.
 
+### Recovery and two-step sign-in
+
+Each part is off until it is configured, and the sign-in page offers only what is on. ADR-022 has the
+reasoning.
+
+| To turn on | Set | Then |
+|---|---|---|
+| Two-step sign-in | `Auth:TwoStep:SecretKey`: `openssl rand -base64 32`, kept apart from the database's backups | People turn it on from their profile; a role can demand it |
+| Recovery by e-mail | `Auth:Delivery:Email:Host` and `:From`, with `:Port`, `:Security`, `:Username`, `:Password` as the server needs | Each person proves their address from their profile |
+| Recovery by SMS | `Auth:Delivery:Sms:Url`, and `:Method`, `:ContentType`, `:Body`, `:Headers:*`, `:SuccessContains` as the gateway needs | Each person proves their number from their profile |
+
+In `deploy/compose` the same settings are `SQM_TWO_STEP_KEY`, `SQM_SMTP_*` and `SQM_SMS_*` in `.env`.
+
+**On a development machine** `appsettings.Development.json` turns everything on without a mail server:
+`Auth:Delivery:WriteToLog` writes each message, code included, to the API's console, and a key for that
+machine only is set. Outside Development that setting is refused, whatever it says.
+
+**The mail server's certificate** has to be trusted by the API's image, and the container needs a route
+to it: the department's network is closed, and red line 1-4 row 4 allows egress only for what calls out.
+
+**If the key is lost**, no authenticator can be read. Recovery codes still sign in, and an administrator
+can reset the second step from the user's page, after which that person sets it up again.
+
 ## 3. Schema
 
 ```bash

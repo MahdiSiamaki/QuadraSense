@@ -18,8 +18,15 @@ namespace Sqm.Application.Identity;
 public interface ISessionStore
 {
     /// <summary>Issues a new session and returns the cookie value exactly once.</summary>
+    /// <param name="userId">Whose.</param>
+    /// <param name="ip">From where.</param>
+    /// <param name="userAgent">In what.</param>
+    /// <param name="remembered">
+    /// "Remember me": it lives for <c>SessionSettings.RememberedLifetime</c>, not the usual limits.
+    /// </param>
+    /// <param name="ct">Cancellation.</param>
     Task<SessionCreation> CreateAsync(
-        long userId, string? ip, string? userAgent, CancellationToken ct);
+        long userId, string? ip, string? userAgent, bool remembered, CancellationToken ct);
 
     /// <summary>
     /// Resolves a cookie value to its session and the user's current effective permissions.

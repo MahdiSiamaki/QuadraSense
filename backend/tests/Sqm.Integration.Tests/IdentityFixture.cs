@@ -62,8 +62,32 @@ public sealed class IdentityFixture : IAsyncLifetime
     /// <summary>Dashboards, their grants and preferences (operational migration 016).</summary>
     public PostgresDashboardStore Dashboards { get; private set; } = null!;
 
+    /// <summary>Password recovery, sending to <see cref="Delivery"/>.</summary>
+    public PostgresAccountRecovery Recovery { get; private set; } = null!;
+
+    /// <summary>Proving a contact, sending to <see cref="Delivery"/>.</summary>
+    public PostgresContactVerification Contacts { get; private set; } = null!;
+
+    /// <summary>Two-step sign-in, on <see cref="Clock"/>.</summary>
+    public PostgresTwoStepService TwoStep { get; private set; } = null!;
+
+    /// <summary>Everything sent, instead of it being sent.</summary>
+    public CapturingDelivery Delivery { get; } = new();
+
+    /// <summary>Everything queued. Nothing drains it here; a test reads it.</summary>
+    public RecordingOutbox Outbox { get; } = new();
+
+    /// <summary>The time two-step sign-in believes it is.</summary>
+    public MovableClock Clock { get; } = new();
+
+    /// <summary>Counts the hashes recovery computes, each one being real.</summary>
+    public CountingHasher Hasher { get; private set; } = null!;
+
     /// <summary>The options the stack was built with.</summary>
-    public AuthOptions Options { get; } = new();
+    public AuthOptions Options { get; } = new()
+    {
+        TwoStep = new TwoStepOptions { SecretKey = Convert.ToBase64String(new byte[32]) },
+    };
 
     private IdentityDataSource? _dataSource;
 
@@ -113,6 +137,17 @@ public sealed class IdentityFixture : IAsyncLifetime
             SavedQueries = new PostgresExplorerSavedQueryStore(_dataSource, postgres);
             Dashboards = new PostgresDashboardStore(_dataSource, postgres);
 
+            Hasher = new CountingHasher(hasher);
+            Recovery = new PostgresAccountRecovery(
+                _dataSource, Hasher, Delivery, Outbox, auth, postgres,
+                NullLogger<PostgresAccountRecovery>.Instance);
+            Contacts = new PostgresContactVerification(
+                _dataSource, hasher, Delivery, auth, postgres,
+                NullLogger<PostgresContactVerification>.Instance);
+            TwoStep = new PostgresTwoStepService(
+                _dataSource, hasher, Outbox, auth, postgres,
+                NullLogger<PostgresTwoStepService>.Instance, Clock);
+
             IsAvailable = true;
         }
         catch (NpgsqlException ex)
@@ -150,6 +185,47 @@ public sealed class IdentityFixture : IAsyncLifetime
         await command.ExecuteNonQueryAsync();
     }
 
+    /// <summary>Runs a statement a test needs to set the scene with, such as ageing a code.</summary>
+    public async Task ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
+    {
+        if (!IsAvailable)
+        {
+            return;
+        }
+
+        await using var connection = new NpgsqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        foreach (var (name, value) in parameters)
+        {
+            command.Parameters.AddWithValue(name, value);
+        }
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>Reads one value.</summary>
+    public async Task<T?> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
+    {
+        if (!IsAvailable)
+        {
+            return default;
+        }
+
+        await using var connection = new NpgsqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        foreach (var (name, value) in parameters)
+        {
+            command.Parameters.AddWithValue(name, value);
+        }
+
+        var result = await command.ExecuteScalarAsync();
+        return result is null or DBNull ? default : (T)result;
+    }
+
     /// <summary>Removes a role the test created.</summary>
     public async Task DeleteRoleAsync(long roleId)
     {
@@ -174,5 +250,101 @@ public sealed class IdentityFixture : IAsyncLifetime
         {
             await _dataSource.DisposeAsync();
         }
+    }
+}
+
+/// <summary>Keeps what would have been sent.</summary>
+public sealed class CapturingDelivery : IContactDelivery
+{
+    private readonly System.Collections.Concurrent.ConcurrentQueue<SentMessage> _sent = new();
+
+    /// <summary>When set, every send fails as a mail server's refusal would.</summary>
+    public bool Failing { get; set; }
+
+    /// <summary>Everything sent so far.</summary>
+    public IReadOnlyList<SentMessage> Sent => [.. _sent];
+
+    /// <summary>What was sent to one address or number, oldest first.</summary>
+    public IReadOnlyList<SentMessage> To(string destination) =>
+        [.. _sent.Where(m => m.Destination == destination)];
+
+    /// <summary>The six digits at the start of the latest message to this contact.</summary>
+    public string LatestCode(string destination) => To(destination)[^1].Message.Text[..6];
+
+    /// <inheritdoc />
+    public bool IsAvailable(ContactChannel channel) => true;
+
+    /// <inheritdoc />
+    public Task SendAsync(
+        ContactChannel channel, string destination, OutgoingMessage message, CancellationToken ct)
+    {
+        if (Failing)
+        {
+            throw new ContactDeliveryException("the server said no");
+        }
+
+        _sent.Enqueue(new SentMessage(channel, destination, message));
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>One message that was not really sent.</summary>
+public sealed record SentMessage(ContactChannel Channel, string Destination, OutgoingMessage Message);
+
+/// <summary>Keeps what was queued.</summary>
+public sealed class RecordingOutbox : IAccountOutbox
+{
+    private readonly System.Collections.Concurrent.ConcurrentQueue<AccountWork> _work = new();
+
+    /// <summary>Everything queued so far.</summary>
+    public IReadOnlyList<AccountWork> Work => [.. _work];
+
+    /// <inheritdoc />
+    public bool TryEnqueue(AccountWork work)
+    {
+        _work.Enqueue(work);
+        return true;
+    }
+}
+
+/// <summary>A clock a test can move, for codes that belong to a moment.</summary>
+public sealed class MovableClock : TimeProvider
+{
+    private TimeSpan _offset;
+
+    /// <inheritdoc />
+    public override DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow + _offset;
+
+    /// <summary>Moves it on.</summary>
+    public void Advance(TimeSpan by) => _offset += by;
+}
+
+/// <summary>A real hasher that counts, because "one hash on every path" is a claim to test.</summary>
+public sealed class CountingHasher : IPasswordHasher
+{
+    private readonly IPasswordHasher _inner;
+    private int _work;
+
+    /// <summary>Wraps a hasher.</summary>
+    public CountingHasher(IPasswordHasher inner) => _inner = inner;
+
+    /// <summary>Verifications and burns so far.</summary>
+    public int Work => Volatile.Read(ref _work);
+
+    /// <inheritdoc />
+    public string Hash(string password) => _inner.Hash(password);
+
+    /// <inheritdoc />
+    public PasswordVerification Verify(string password, string storedHash)
+    {
+        Interlocked.Increment(ref _work);
+        return _inner.Verify(password, storedHash);
+    }
+
+    /// <inheritdoc />
+    public void BurnTime()
+    {
+        Interlocked.Increment(ref _work);
+        _inner.BurnTime();
     }
 }

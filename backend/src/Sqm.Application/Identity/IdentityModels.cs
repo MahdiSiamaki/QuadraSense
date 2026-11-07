@@ -17,12 +17,17 @@ namespace Sqm.Application.Identity;
 /// forced password change that can be skipped by not visiting the page is not a control.
 /// </param>
 /// <param name="Permissions">The resolved effective set: roles, plus direct grants, minus denies.</param>
+/// <param name="MustSetUpTwoStep">
+/// A role this person holds demands two-step sign-in, it is not set up, and this deployment can
+/// offer it. Handled like <paramref name="MustChangePassword"/>, for the same reason.
+/// </param>
 public sealed record AuthenticatedUser(
     long UserId,
     string Username,
     string DisplayName,
     bool MustChangePassword,
-    FrozenSet<string> Permissions)
+    FrozenSet<string> Permissions,
+    bool MustSetUpTwoStep = false)
 {
     /// <summary>Whether this user holds a permission.</summary>
     public bool Can(string permission) => Permissions.Contains(permission);
@@ -101,7 +106,10 @@ public sealed record UserDetail(
     string? UpdatedBy,
     IReadOnlyList<RoleRef> Roles,
     IReadOnlyList<PermissionResolution> Permissions,
-    int ActiveSessions);
+    int ActiveSessions,
+    DateTimeOffset? EmailVerifiedAt = null,
+    DateTimeOffset? PhoneVerifiedAt = null,
+    DateTimeOffset? TwoStepEnabledAt = null);
 
 /// <summary>
 /// One permission, and the full account of why this user does or does not have it.
@@ -152,7 +160,8 @@ public sealed record RoleDetail(
     DateTimeOffset CreatedAt,
     string? CreatedBy,
     DateTimeOffset UpdatedAt,
-    string? UpdatedBy);
+    string? UpdatedBy,
+    bool TwoStepRequired = false);
 
 /// <summary>A live or historical session, as shown on the profile and user detail pages.</summary>
 public sealed record SessionInfo(
@@ -165,7 +174,8 @@ public sealed record SessionInfo(
     string? RevokedReason,
     string? Ip,
     string? UserAgent,
-    bool IsCurrent);
+    bool IsCurrent,
+    bool Remembered);
 
 /// <summary>The result of creating a session: the cookie value, and when it dies.</summary>
 /// <remarks>
@@ -204,6 +214,12 @@ public enum LoginStatus
 
     /// <summary>The account exists but an administrator has deactivated it.</summary>
     AccountDisabled,
+
+    /// <summary>
+    /// The password was right and this account has a second step. No session yet, and nothing
+    /// recorded as a sign-in until the second step succeeds.
+    /// </summary>
+    TwoStepRequired,
 }
 
 /// <summary>The outcome of a sign-in attempt.</summary>
@@ -213,9 +229,9 @@ public enum LoginStatus
 /// (the password is correct but expired). The distinction lives here; what reaches the browser
 /// is decided in the endpoint.
 /// <para>
-/// When TOTP is added this record gains a <c>MfaRequired</c> status and a challenge token, and
-/// the endpoint gains a second step. Nothing else on this path changes - which is the point of
-/// returning a status rather than a user or null.
+/// <see cref="LoginStatus.TwoStepRequired"/> was added exactly this way: a status, and a second
+/// endpoint. Nothing else on this path changed - which is the point of returning a status rather
+/// than a user or null.
 /// </para>
 /// </remarks>
 public sealed record LoginOutcome(

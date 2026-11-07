@@ -71,7 +71,7 @@ public sealed class CsrfMiddleware
     /// can run script in this origin already has the session cookie's privileges through the
     /// browser and does not need to steal anything.
     /// </remarks>
-    public static string IssueToken(HttpContext context, SessionSettings options)
+    public static string IssueToken(HttpContext context, SessionSettings options, TimeSpan lifetime)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(options);
@@ -85,7 +85,7 @@ public sealed class CsrfMiddleware
             Secure = options.RequireSecureCookies,
             SameSite = SameSiteMode.Strict,
             Path = "/",
-            MaxAge = options.AbsoluteTimeout,
+            MaxAge = lifetime,
         });
 
         return token;

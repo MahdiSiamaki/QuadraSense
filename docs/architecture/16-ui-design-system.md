@@ -209,11 +209,27 @@ see ADR-011's amendment.
   `submit`, so Enter submits; a destructive confirmation does not listen, so it needs its button.
   Focus starts on the first field (`autofocus`, which the browser's dialog focusing steps
   honour), never on the close button, which is 32×32.
+- **A password field can be revealed** (`TextField`'s `revealable`): a real button in the tab order
+  that says what it will do, back to hidden as soon as the field is cleared.
+- **A field that arrives with the next step takes focus on mount** (`autofocus` on `TextField`). The
+  attribute alone works once per document, so the second step of a form left focus on the body.
 - **What exists only in a `title` is out of reach of a phone and a keyboard.** A KPI card's
   definition and exact figure are also behind a small "i" button, in a popover over the card -
   over, not inside, because a card that grows stretches its whole row.
 - **A focus ring inside a clipping frame is drawn inside** (`focus-visible:-outline-offset-2`):
   segmented controls, the user menu's items.
+
+## The pages before sign-in
+
+`AuthShell.vue` is their frame: a night-blue brand panel and a form, in one card, which folds to a band
+above the form below `md`. The panel's colours are tokens of their own, `--brand-night-*`, the same in
+both themes, as the README's banner is. Nothing on it moves: this page is seen daily, and it says what
+this is and nothing else.
+
+The second step replaces the form rather than being a route, because there is nothing to link to and
+its ticket must not outlive the page. Recovery is a route, `/recover`, and its wording is deliberate:
+the server answers the same whether or not the account exists, so the page says what is true for
+everyone and shows no masked address.
 
 ## Colour for words
 

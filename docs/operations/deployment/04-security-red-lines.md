@@ -141,13 +141,13 @@ the Import Center in a browser.
 | # | Requirement | Quadrasense today | Action | |
 |---|---|---|---|---|
 | 1 | **A system identification document, its architecture and its traffic-flow map, approved by the security office** | `docs/architecture/` describes the system; the traffic-flow table is in `03-…` | Assemble them in the office's format | gap |
-| 2 | SMS one-time passwords: six digits, random, void after five failures, expire in ten minutes | No OTP. MFA is recorded as not built (`docs/backlog.md`) | Follow these terms if MFA is ever added | n/a |
+| 2 | SMS one-time passwords: six digits, random, void after five failures, expire in ten minutes | Recovery codes follow these terms on both channels (ADR-022, `OneTimeCodes`), each proved by a test. Two-step sign-in is an authenticator app, not SMS | - | met |
 | 3 | **Captcha**: hidden at first, shown after three failed logins (five elsewhere); Persian digits and letters in several Persian fonts; at least ten patterns; resistant to OCR; with an on-screen keyboard | Login is rate-limited (six attempts a minute per address) and every attempt costs an Argon2id verification (ADR-006). **No captcha** | Decision 2 above; then a self-hosted captcha (row 4 of §1-3: nothing external) | gap |
 | 4 | Prefer CNCF-landscape software; horizontal scaling in code, service and database layers | API stateless (sessions in PostgreSQL), can run several replicas. One worker. **Each store is one node** | `03-…`, "High availability" | partly |
 | 5 | TLS 1.2 or later | The web image allows 1.2 and 1.3 only | - | met |
 | 6 | Uploads: format and size limits, renamed, stored where nothing executes and nobody else reads | Size enforced while writing (`ImportStorage:MaxFileBytes`); stored under a generated name, never the client's (`DirectoryImportFileStore`); in a volume only the API and worker mount, mode 2770. The format is judged by the parser, which quarantines what it cannot read | Mount the VM's data disk `noexec` | met |
-| 7 | No sensitive data in GET requests | Checked 2026-10-22: lookups are POST bodies; no GET route or query string carries an MSISDN, IMSI or IMEI | - | met |
-| 8 | Secrets that need not be read back are stored hashed | Passwords Argon2id; session tokens SHA-256 (`PostgresSessionStore`) | - | met |
+| 7 | No sensitive data in GET requests | Checked 2026-10-22: lookups are POST bodies; no GET route or query string carries an MSISDN, IMSI or IMEI. Recovery is a code in a POST body, not a link | - | met |
+| 8 | Secrets that need not be read back are stored hashed | Passwords and one-time codes Argon2id; session tokens, sign-in tickets and recovery codes SHA-256. An authenticator secret must be read back, so it is encrypted under a key outside the database (ADR-022) | - | met |
 | 9 | **Clustered servers; every service active-active across two sites** | Single nodes | Decision 3 above | gap |
 | 10 | OS and services hardened to CIS / DISA benchmarks | Containers follow the CIS Docker items that apply to an image (non-root, read-only, no capabilities, limits, health checks) | OS hardening is the department's (stage 1) and the platform's (stage 2) | partly |
 | 11 | Platform tested per NIST SP 800-115 / ISSAF; application per NIST SP 800-70 and the OWASP Testing Guide v4 | Never tested | Expect a penetration test; self-check against OWASP ASVS first | gap |

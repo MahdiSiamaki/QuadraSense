@@ -112,6 +112,13 @@ function describe(agent: string | null): string {
             >
               this browser
             </span>
+            <span
+              v-if="session.remembered && isLive(session)"
+              class="shrink-0 rounded-full border px-1.5 py-0.5 text-2xs text-[var(--c-text-muted)]"
+              :title="`Stays signed in until ${formatDateTime(session.absoluteExpiresAt)}`"
+            >
+              remembered
+            </span>
           </p>
 
           <p class="tabular mt-0.5 text-2xs text-[var(--c-text-muted)]">

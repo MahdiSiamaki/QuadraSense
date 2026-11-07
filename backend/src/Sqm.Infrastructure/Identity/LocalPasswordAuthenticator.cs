@@ -74,8 +74,10 @@ public sealed partial class LocalPasswordAuthenticator : IPasswordAuthenticator
         const string findSql = """
             SELECT id, username, display_name AS DisplayName, password_hash AS PasswordHash,
                    provider, is_active AS IsActive, must_change_password AS MustChangePassword,
-                   failed_login_count AS FailedLoginCount, locked_until AS LockedUntil
-            FROM auth.user_account
+                   failed_login_count AS FailedLoginCount, locked_until AS LockedUntil,
+                   EXISTS (SELECT 1 FROM auth.user_two_step t
+                           WHERE t.user_id = u.id AND t.confirmed_at IS NOT NULL) AS HasTwoStep
+            FROM auth.user_account u
             WHERE lower(username) = lower(@username)
             """;
 
@@ -100,7 +102,8 @@ public sealed partial class LocalPasswordAuthenticator : IPasswordAuthenticator
 
         if (verification == PasswordVerification.Failed)
         {
-            var failures = await RecordFailureAsync(connection, account.Id, ct).ConfigureAwait(false);
+            var failures = await IdentitySql.RecordFailedSignInAsync(
+                connection, null, account.Id, _lockout, _commandTimeout, ct).ConfigureAwait(false);
 
             await AuditAsync(connection, account.Id, account.Username, "auth.login",
                 AuditOutcome.Failure, context, new Dictionary<string, object?>
@@ -148,7 +151,21 @@ public sealed partial class LocalPasswordAuthenticator : IPasswordAuthenticator
             LogRehashed(account.Id);
         }
 
-        await RecordSuccessAsync(connection, account.Id, context.Ip, ct).ConfigureAwait(false);
+        // A good password is half a sign-in here. Nothing is recorded as a sign-in, and the failure
+        // count is left alone, until the second step succeeds; a password alone must not be able
+        // to clear the lockout that guessing the second step built up.
+        if (account.HasTwoStep)
+        {
+            return new LoginOutcome(
+                LoginStatus.TwoStepRequired,
+                account.Id,
+                account.Username,
+                account.DisplayName,
+                account.MustChangePassword);
+        }
+
+        await IdentitySql.RecordSignInAsync(
+            connection, null, account.Id, context.Ip, _commandTimeout, ct).ConfigureAwait(false);
 
         await AuditAsync(connection, account.Id, account.Username, "auth.login",
             AuditOutcome.Success, context, null, ct).ConfigureAwait(false);
@@ -161,68 +178,6 @@ public sealed partial class LocalPasswordAuthenticator : IPasswordAuthenticator
             account.Username,
             account.DisplayName,
             account.MustChangePassword);
-    }
-
-    /// <summary>Increments the failure count and locks the account once it crosses the threshold.</summary>
-    /// <remarks>
-    /// Done in SQL rather than read-modify-write, so two simultaneous wrong guesses count as two.
-    /// A counter incremented in application code loses one of them, which is exactly the case an
-    /// attacker produces.
-    /// </remarks>
-    private async Task<FailureRow> RecordFailureAsync(
-        Npgsql.NpgsqlConnection connection, long userId, CancellationToken ct)
-    {
-        const string sql = """
-            UPDATE auth.user_account
-            SET failed_login_count   = LEAST(failed_login_count + 1, 30000),
-                last_failed_login_at = now(),
-                locked_until = CASE
-                    WHEN failed_login_count + 1 >= @maxAttempts
-                    -- The exponent is capped before it is used. Uncapped, 2^38 minutes is out of
-                    -- interval range: from the 43rd failure every wrong password was a 500, not
-                    -- counted, not locked, not audited - and guessing continued once the last
-                    -- lock ran out. 2^20 minutes is already far past any MaxLockout. The count
-                    -- is capped for the same reason: it is a smallint.
-                    THEN now() + LEAST(
-                        @initial * power(2, LEAST(failed_login_count + 1 - @maxAttempts, 20)),
-                        @maxLockout)
-                    ELSE locked_until
-                END
-            WHERE id = @userId
-            RETURNING failed_login_count AS FailedLoginCount, locked_until AS LockedUntil
-            """;
-
-        return await connection.QuerySingleAsync<FailureRow>(_db.Command(sql, new
-        {
-            userId,
-            maxAttempts = _lockout.MaxFailedAttempts,
-            initial = _lockout.InitialLockout,
-            maxLockout = _lockout.MaxLockout,
-        }, ct)).ConfigureAwait(false);
-    }
-
-    /// <remarks>
-    /// <c>previous_login_at</c> is shifted before <c>last_login_at</c> is overwritten. That pair is
-    /// what lets the profile page say "last sign-in: Tuesday 09:14" during a session - which is
-    /// the only form of it a user can act on. Showing them the session they are currently in tells
-    /// them nothing about whether anyone else has used the account.
-    /// </remarks>
-    private async Task RecordSuccessAsync(
-        Npgsql.NpgsqlConnection connection, long userId, string? ip, CancellationToken ct)
-    {
-        const string sql = """
-            UPDATE auth.user_account
-            SET failed_login_count = 0,
-                locked_until       = NULL,
-                previous_login_at  = last_login_at,
-                last_login_at      = now(),
-                last_login_ip      = @ip::inet
-            WHERE id = @userId
-            """;
-
-        await connection.ExecuteAsync(
-            _db.Command(sql, new { userId, ip = IdentitySql.NormaliseIp(ip) }, ct))
-            .ConfigureAwait(false);
     }
 
     private Task AuditAsync(
@@ -257,7 +212,6 @@ public sealed partial class LocalPasswordAuthenticator : IPasswordAuthenticator
         bool IsActive,
         bool MustChangePassword,
         short FailedLoginCount,
-        DateTimeOffset? LockedUntil);
-
-    private sealed record FailureRow(short FailedLoginCount, DateTimeOffset? LockedUntil);
+        DateTimeOffset? LockedUntil,
+        bool HasTwoStep);
 }

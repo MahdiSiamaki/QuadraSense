@@ -117,7 +117,10 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await send(path, init)
   if (response.status === 204) return undefined as T
-  return (await response.json()) as T
+
+  // Read as text first: a 202 from recovery has no body at all, and that is the point of it.
+  const text = await response.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
 
 /** Sends a request and returns the response once it is known to be a success; throws ApiError otherwise. */

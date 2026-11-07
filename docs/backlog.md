@@ -87,7 +87,9 @@ decisions some of these wait on are numbered in `docs/operations/deployment/READ
 
 | What | Status |
 |---|---|
-| MFA | Not required for a strictly internal deployment; four steps to add it are in ADR-006 (`12-identity-and-access.md` §8) |
 | LDAP / Active Directory | The seam exists (`IPasswordAuthenticator`, `provider` / `external_id`) |
 | OIDC | A callback endpoint mapping a subject claim onto `external_id` |
-| Self-service password reset | Needs email delivery, which local accounts do not have |
+| A notice to the old contact when one changes | A hijacked session can change a contact, though it cannot prove the new one without the password. Telling the old address is the standard extra. Small: the update already knows both values (ADR-022) |
+| An SMPP sender | `IContactDelivery` takes one if MCI's gateway speaks SMPP rather than HTTP. Waits on knowing the gateway |
+| Rotating the two-step key | One key today; a key id on each secret would allow a second during a change. Nothing needs it yet. Small |
+| Captcha after three failures | Red line 2-3 row 3; waits on decision 2 of `docs/operations/deployment/04-security-red-lines.md` |
